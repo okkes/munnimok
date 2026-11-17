@@ -7,13 +7,6 @@ import type { AgentView, Catalogue, RetentionRun } from '../../../types';
 import { AbsentCard } from '../../dashboard/DashboardScreen';
 import { runChip, runSummary } from './retentionFacts';
 
-/**
- * The retention bench (#441 L4): pick an agent and a party, and the lab
- * signs in on that agent with the recording on, fetches, reads what the
- * agent kept, fetches again expecting no sign-in, and — for a hosted
- * slot — releases it and watches the wipe. Every run is a report with its
- * steps' verdicts, kept on the relay, listed here newest first.
- */
 export function RetentionScreen({ call, busy }: Readonly<ScreenProps>) {
   const query = useRouteQuery();
   const [runs, setRuns] = useState<RetentionRun[] | null | 'unreachable' | 'loading'>('loading');

@@ -1,6 +1,5 @@
 import type { OperatorJob } from '../../types';
 
-/** a job's state as a chip: the connector's word, coloured by what it means */
 const STATE_CHIP: Record<string, string> = {
   succeeded: 'ok-chip',
   failed: 'danger-chip',
@@ -12,7 +11,6 @@ const STATE_CHIP: Record<string, string> = {
 };
 export const stateChip = (state: string): string => STATE_CHIP[state] ?? '';
 
-/** who asked for the run, as the operator reads it */
 const TRIGGER_WORD: Record<string, string> = {
   user: 'a person',
   schedule: 'the schedule',
@@ -22,7 +20,6 @@ const TRIGGER_WORD: Record<string, string> = {
 };
 export const triggerWord = (trigger: string | null | undefined): string => (trigger ? (TRIGGER_WORD[trigger] ?? trigger) : 'nobody in particular');
 
-/** the person behind a run: the relay's name for the subject, the lab for its own runs, else the pseudonym */
 export function whoLine(job: Pick<OperatorJob, 'who' | 'subject' | 'trigger'>): string {
   if (job.who) return job.who;
   if (job.trigger === 'lab') return 'the lab';
@@ -30,7 +27,6 @@ export function whoLine(job: Pick<OperatorJob, 'who' | 'subject' | 'trigger'>): 
   return job.subject;
 }
 
-/** what a failed run left behind, in one word */
 export function artifactsLine(job: Pick<OperatorJob, 'artifacts' | 'hasScreenshot'> & { trace?: unknown }): string {
   const parts: string[] = [];
   if (job.artifacts === 'pending') parts.push('awaiting the person');
@@ -39,7 +35,6 @@ export function artifactsLine(job: Pick<OperatorJob, 'artifacts' | 'hasScreensho
   return parts.join(' · ');
 }
 
-/** how the run ended, in a few words: the code, the count it gathered, or whether the party holds more */
 export function outcomeLine(job: Pick<OperatorJob, 'error' | 'progress' | 'state' | 'complete'>): string {
   if (job.error) return job.error.code;
   if (job.progress?.found != null) return `${job.progress.found} found`;
@@ -47,7 +42,6 @@ export function outcomeLine(job: Pick<OperatorJob, 'error' | 'progress' | 'state
   return '';
 }
 
-/** the query string the jobs route takes, from the filter form's values; empty values are left out */
 export function jobsQuery(filters: Readonly<Record<string, string>>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {

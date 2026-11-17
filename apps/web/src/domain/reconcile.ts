@@ -1,30 +1,15 @@
 import type { TransactionRow } from '@/db/types';
 import { cleanBankText } from '@/lib/text';
 
-/**
- * Imported-vs-linked reconciliation (financial-accounts master plan,
- * user requirement x): when a bank connection covers an account that
- * statement uploads already fed, THE CONNECTION IS THE TRUTH. Imported
- * rows inside the connection's coverage either match a linked row (the
- * user's edits migrate — with a per-match opt-out) or they are
- * mismatches, shown in full before deletion. Rows OUTSIDE the coverage
- * are history the connection cannot see and always survive ("mismatch
- * is based on in-between dates, not the edges").
- *
- * Provenance without an evidence table (v1): statement parsers write
- * SYNTHETIC references ('ing:…', 'paypal:…'); provider rows carry the
- * bank's own reference. CAMT files carry real references too — those
- * collide with the provider rows by deterministic id and never surface
- * here as duplicates.
- */
+// a bank connection covering a statement-fed account is THE TRUTH: imported rows inside its coverage match or are mismatches
+// rows outside the coverage are history the connection cannot see and always survive
+// parsers write SYNTHETIC refs ('ing:…', 'paypal:…'); CAMT's real refs collide with provider rows by id, never as duplicates
 
 const SYNTHETIC_REF = /^(ing|paypal):/;
 
-/** a row whose reference the parser invented — statement-fed evidence */
 export const isImportedRow = (tx: Pick<TransactionRow, 'importRef'>): boolean =>
   !!tx.importRef && SYNTHETIC_REF.test(tx.importRef);
 
-/** a row vouched for by a provider or a reference-carrying statement */
 export const isLinkedRow = (tx: Pick<TransactionRow, 'importRef'>): boolean =>
   !!tx.importRef && !SYNTHETIC_REF.test(tx.importRef);
 
@@ -36,23 +21,16 @@ export interface ReconcileMatch {
 export interface ReconcilePlan {
   /** linked coverage, exclusive edges (yyyy-mm-dd) — null when no linked rows */
   coverage: { from: string; to: string } | null;
-  /** imported rows the truth confirms — edits migrate unless opted out */
   matches: ReconcileMatch[];
-  /** imported rows INSIDE the coverage with no counterpart — deleted after review */
   mismatched: TransactionRow[];
-  /** imported rows outside the coverage — history that survives untouched */
   kept: TransactionRow[];
 }
 
 const fingerprint = (tx: TransactionRow) => `${tx.date}:${tx.amountCents}`;
 const normName = (raw: string | undefined) => (cleanBankText(raw ?? '') ?? '').toLowerCase().replaceAll(/[^a-z0-9]/g, '');
 
-/**
- * Build the plan for ONE account's raw rows (any mix of sources).
- * Matching is deliberately strict-then-fuzzy: same day + same amount is
- * a candidate; when several linked rows share that shape, the closest
- * counterparty name wins. A linked row vouches for at most one import.
- */
+// same day + same amount is a candidate, the closest counterparty name wins among several
+// a linked row vouches for at most one import
 export function reconcilePlan(rows: readonly TransactionRow[]): ReconcilePlan {
   const live = rows.filter((r) => r.deleted === 0);
   const linked = live.filter(isLinkedRow);
@@ -76,8 +54,7 @@ export function reconcilePlan(rows: readonly TransactionRow[]): ReconcilePlan {
   const kept: TransactionRow[] = [];
 
   for (const row of imported) {
-    // edges are uncertain (a statement's partial first/last day) — only
-    // rows STRICTLY inside the linked coverage are judged
+    // edges are uncertain (a statement's partial first/last day): only rows STRICTLY inside the linked coverage are judged
     const inRange = row.date > coverage.from && row.date < coverage.to;
     if (!inRange) {
       kept.push(row);

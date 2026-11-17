@@ -5,13 +5,8 @@ namespace Munni.Api.Logos;
 
 public sealed record LogoResult(string Name, string Domain, string LogoUrl);
 
-/// <summary>
-/// Brand-logo search for recurring costs, proxied through the API so the
-/// logo.dev secret key never reaches a client. Images are served straight
-/// from img.logo.dev with the publishable token baked into the returned
-/// URLs. Only mapped when both keys are configured; the vendored
-/// simpleicons set remains the offline fallback either way.
-/// </summary>
+// proxied so the logo.dev secret key never reaches a client; images come from img.logo.dev with the publishable token
+// in the URL; only mapped when both keys are set; the vendored simpleicons set is the offline fallback
 public static class LogoEndpoints
 {
     public const string HttpClientName = "logodev";
@@ -25,16 +20,14 @@ public static class LogoEndpoints
         var publicToken = config["Logos:PublicToken"];
         var secretKey = config["Logos:SecretKey"];
 
-        // diagnosis endpoint (user request: "is my logo config right?") —
-        // mapped even when unconfigured so the verdict is always reachable
+        // mapped even when unconfigured, so the verdict is always reachable
         app.MapGet("/logos/health", (IHttpClientFactory http, CancellationToken ct) =>
             LogoHealthAsync(http, secretKey, publicToken, ct)).RequireAuthorization();
 
         if (string.IsNullOrEmpty(secretKey) || string.IsNullOrEmpty(publicToken)) return;
 
-        // the two keys are easy to swap: search auth needs the SECRET key
-        // (sk_…); image URLs carry the PUBLISHABLE key (pk_…). A swap
-        // fails silently upstream (401 → empty results), so refuse loudly.
+        // search needs the SECRET key (sk_), image URLs the PUBLISHABLE (pk_).
+        // a swap fails silently upstream (401, empty results): refuse loudly
         var log = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Logos");
         if (secretKey.StartsWith("pk_", StringComparison.Ordinal))
             log.LogError("LOGODEV_SECRET_KEY looks like a publishable key (pk_…) — use the SECRET key (sk_…) from logo.dev's Manage Keys; searches will return nothing");
@@ -64,7 +57,6 @@ public static class LogoEndpoints
         }).RequireAuthorization();
     }
 
-    /// <summary>One live canary search + a pk_/sk_ swap check.</summary>
     private static async Task<IResult> LogoHealthAsync(
         IHttpClientFactory http, string? secretKey, string? publicToken, CancellationToken ct)
     {

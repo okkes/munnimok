@@ -4,11 +4,7 @@ import { REIMBURSED_ID, UNCATEGORIZED_ID, mainCatOf } from './categories';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
 
-/**
- * The insight vocabulary every detector speaks (#516): one finding, the
- * inputs the detectors read, and the spending arithmetic they share — so
- * "what counts as spending" is decided once.
- */
+// #516: what counts as spending is decided once here, for every detector
 
 /** alert = check it now (a late salary, a missing or doubled charge); leak = money that drains; pattern = how you spend; win = what a change buys */
 export type InsightSeverity = 'alert' | 'leak' | 'pattern' | 'win';
@@ -31,7 +27,6 @@ export type InsightKind =
   | 'debtacc'
   | 'debtclear';
 
-/** a value in a finding's copy, typed so every screen words it the same way */
 export type InsightParam =
   | string
   | number
@@ -55,16 +50,11 @@ export interface Insight {
   /** the short line under the title; absent = the yearly impact (a win: what it saves) */
   subKey?: TranslationKey;
   detailKey: TranslationKey;
-  /** the finding as one line of a card that holds several; absent = its title */
   lineKey?: TranslationKey;
   params: Record<string, InsightParam>;
-  /** what the finding is about, for a card that lists several (a name or a category) */
   about?: InsightParam;
-  /** small history the card can chart */
   chart?: number[];
-  /** the bar the chart stresses; absent = the last */
   chartFocus?: number;
-  /** where the fix lives */
   actionTo?: string;
 }
 
@@ -83,15 +73,12 @@ export interface InsightInputs {
   catalog: CatalogLookup;
   /** oldest → current: the space's last complete periods and the running one */
   periods: readonly Period[];
-  /** the local day (yyyy-mm-dd) */
   today: string;
   /** the space's ledger currency — sums never mix in another one */
   currency: string;
   /** the space's first weekday + period shape — budget cycles depend on them (#369, #370) */
   space?: { weekStart?: WeekStart; periodType: SpacePeriodType; periodDay: number } | null;
 }
-
-// ── dates ──────────────────────────────────────────────────────────────
 
 const utcDay = (iso: string): number => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -120,14 +107,11 @@ export function firstKnownDay(txs: readonly TxView[]): string | null {
   return first;
 }
 
-/** the complete periods (every one but the running) whose whole span the data covers */
 export function coveredPastPeriods(inputs: Pick<InsightInputs, 'periods' | 'txs'>): Period[] {
   const first = firstKnownDay(inputs.txs);
   if (first === null) return [];
   return inputs.periods.slice(0, -1).filter((p) => p.start >= first);
 }
-
-// ── spending ───────────────────────────────────────────────────────────
 
 /** the funding pot and the reimbursement family are money that comes back or moves on — never spending */
 const NOT_SPENDING = new Set(['funding', 'reimbursement']);
@@ -144,18 +128,12 @@ export const mainOf = (catId: string | undefined, catalog: Pick<CatalogLookup, '
 export const inCurrency = (tx: Pick<TxView, 'currency'>, currency: string): boolean => !tx.currency || tx.currency === currency;
 
 export interface SpendFilter {
-  /** leave out what a recurring cost pays — fixed obligations, not day-to-day choices */
   skipRecurring?: boolean;
-  /** leave out what belongs to an event — a one-off occasion, not a habit */
   skipEvents?: boolean;
 }
 
-/**
- * The spending inside one transaction, per category it touches (refunds
- * negative): its expense parts, minus the funding pot and the
- * reimbursement family, the settled value never — the overview's Spent
- * without the money that comes back.
- */
+// per category touched (refunds negative): expense parts minus the funding and reimbursement families
+// the settled value never counts
 export function spendParts(tx: TxView, catalog: Pick<CatalogLookup, 'byId'>, filter: SpendFilter = {}): { catId: string | undefined; cents: number }[] {
   const out: { catId: string | undefined; cents: number }[] = [];
   for (const view of txSliceViews(tx)) {
@@ -171,10 +149,8 @@ export function spendParts(tx: TxView, catalog: Pick<CatalogLookup, 'byId'>, fil
 export const spentCents = (tx: TxView, catalog: Pick<CatalogLookup, 'byId'>, filter: SpendFilter = {}): number =>
   spendParts(tx, catalog, filter).reduce((sum, part) => sum + part.cents, 0);
 
-/** the day-to-day spending: no recurring obligations, no events */
 export const EVERYDAY: SpendFilter = { skipRecurring: true, skipEvents: true };
 
-/** per day, what was spent in the space's currency (net of refunds) */
 export function dailySpend(inputs: Pick<InsightInputs, 'txs' | 'catalog' | 'currency'>, filter: SpendFilter, from: string, to: string): Map<string, number> {
   const days = new Map<string, number>();
   for (const tx of inputs.txs) {

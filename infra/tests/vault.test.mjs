@@ -1,6 +1,3 @@
-// Vaultwarden-as-code crypto: Bitwarden protocol shapes pinned with
-// round-trip proofs (the live registration is the interop check; these
-// keep the derivations from drifting).
 import { createPrivateKey } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,12 +34,10 @@ test('buildAccount: register payload decrypts back to a working key set', () => 
   assert.equal(register.kdf, 0);
   assert.equal(register.kdfIterations, KDF_ITERATIONS);
   assert.equal(register.masterPasswordHash, hash);
-  // the protected key opens with the stretched master key → 64 bytes
   const stretched = stretchKey(masterKey(email, password));
   const symBytes = decString(stretched, register.key);
   assert.equal(symBytes.length, 64);
   assert.deepEqual(splitSymKey(symBytes).enc, userKeys.enc);
-  // the encrypted private key opens with the user key → valid pkcs8
   const der = decString(userKeys, register.keys.encryptedPrivateKey);
   const pk = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
   assert.equal(pk.asymmetricKeyType, 'rsa');
@@ -145,7 +140,7 @@ test('buildCipher names the account the item is encrypted for when told (Vaultwa
   assert.equal(buildCipher(keys, { name: 'n', kind: 'note', notes: 't' }, { encryptedFor: 'user-uuid-1' }).encryptedFor, 'user-uuid-1');
 });
 
-/* a Vaultwarden of 1.37.0 or later (user 2026-10-09): every cipher must name the signed-in account as `encryptedFor` — a bare 422 otherwise */
+/* Vaultwarden 1.37.0+: every cipher must name the signed-in account as `encryptedFor`, a bare 422 otherwise */
 test('vaultReplaceFolder on a 1.37+ server: every item carries the account\'s id from the sync profile; an item the server still refuses keeps its OLD copy, the others are replaced, and the error names the refusal with the server\'s message', async () => {
   const email = 'ops@munni.test';
   const password = 'master-pw';
@@ -179,7 +174,6 @@ test('vaultReplaceFolder on a 1.37+ server: every item carries the account\'s id
   const firstDelete = seen.findIndex((x) => x.method === 'DELETE');
   const lastCreate = seen.map((x) => x.method === 'POST' && x.url.endsWith('/api/ciphers')).lastIndexOf(true);
   assert.ok(firstDelete > lastCreate, 'the new items exist before any old one goes');
-  // the server refuses the console item alone: its old copy stays, the M2M item is replaced, the error says which and why
   seen.length = 0;
   refuse.add('Logto console');
   await assert.rejects(

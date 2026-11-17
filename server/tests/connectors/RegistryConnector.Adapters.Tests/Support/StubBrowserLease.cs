@@ -4,14 +4,8 @@ using Microsoft.Playwright;
 
 namespace RegistryConnector.Adapters.Tests;
 
-/// <summary>
-/// A lease that hands back a cookie jar and nothing else.
-///
-/// The jar is the point. BKR's session IS its cookie - B2C gives the portal an
-/// id_token by form_post and the browser is never handed a token worth
-/// storing - so a login that does not carry the jar out looks entirely
-/// successful and leaves every later fetch signed out.
-/// </summary>
+// hands back only a cookie jar: BKR's session IS its cookie (B2C form_post id_token),
+// so a login that does not carry the jar out looks successful and leaves every later fetch signed out
 internal sealed class StubBrowserLease : IBrowserLease
 {
     public const string Jar = """{"cookies":[{"name":"portal","value":"fixture"}],"origins":[]}""";

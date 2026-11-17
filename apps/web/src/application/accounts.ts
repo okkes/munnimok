@@ -6,17 +6,8 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 
-/**
- * Global financial accounts (user decision: accounts are NOT
- * space-scoped). Everything is computed from local synced data, so the
- * overview works offline:
- *
- * - a FEED account lives in a feed space — recognizable locally because
- *   feeds carry no space row (only spaces the user is a member of do);
- * - `sharedVia` collects every local space attached to the account;
- * - ownership comes from /me/feeds (fetched by the screen when online)
- *   — accounts on feeds the user does not own are "shared with me".
- */
+// accounts are not space-scoped: a FEED account lives in a feed space (feeds carry no space row), `sharedVia` collects
+// the attached local spaces, and accounts on feeds the user does not own (/me/feeds) are "shared with me"
 
 export interface SharedVia {
   spaceId: string;
@@ -24,10 +15,8 @@ export interface SharedVia {
   archived: boolean;
   attachedByName?: string;
   historyFrom?: string;
-  /** #305: the SPACE's type opinion for the attachment (#152) — the
-   *  consumer's read-only info sheet reports it */
+  /** #305: the SPACE's type opinion for the attachment (#152) */
   type?: AccountType;
-  /** synced link row id (client mirror) */
   linkRowId: string;
 }
 
@@ -45,11 +34,9 @@ export interface SpaceScopedAccounts {
 }
 
 export interface GlobalAccounts {
-  /** feed accounts (bank connections + statement imports) — truly
-   *  user-level; the only rows that are "global" (user ruling 2026-07-28) */
+  /** feed accounts (bank connections + statement imports): the only truly user-level rows */
   mine: GlobalAccount[];
-  /** manual accounts, which live INSIDE a space — grouped per space so
-   *  the overview says clearly where each one belongs */
+  /** manual accounts live inside a space, grouped per space */
   spaceScoped: SpaceScopedAccounts[];
   /** accounts reaching the user only through someone else's attachment */
   sharedWithMe: GlobalAccount[];
@@ -68,12 +55,8 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
     const links = allLinks.filter((l) => l.deleted === 0);
     const spaceNames = new Map(spaces.map((s) => [s.id, s.name]));
     const memberSpaceIds = new Set(spaces.map((s) => s.id));
-    // #295 (user ss): debris of a DELETED space renders nowhere — after a
-    // delete-account → re-signup cycle the old spaces were tombstoned but
-    // their manual/default account rows stayed live, and "no live space
-    // row" made them read as FEED accounts wearing a false "not attached"
-    // badge in the global list. Real feed accounts are unaffected: a feed
-    // never has a local 'space' row at all, live or tombstoned.
+    // #295: a deleted space's account rows stay live and, with no live space row, read as FEED accounts with a false
+    // "not attached" badge; real feeds never have a local space row
     const tombstonedSpaceIds = new Set(allSpaces.filter((s) => s.deleted !== 0).map((s) => s.id));
 
     const viaByAccount = new Map<string, SharedVia[]>();
@@ -96,7 +79,7 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
     const scopedBySpace = new Map<string, GlobalAccount[]>();
     const sharedWithMe: GlobalAccount[] = [];
     for (const account of accounts) {
-      if (tombstonedSpaceIds.has(account.spaceId)) continue; // #295: dead space's debris
+      if (tombstonedSpaceIds.has(account.spaceId)) continue;
       const isFeedAccount = !memberSpaceIds.has(account.spaceId);
       const entry: GlobalAccount = {
         account,
@@ -104,16 +87,12 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
         sharedVia: viaByAccount.get(account.id) ?? [],
       };
       if (!isFeedAccount) {
-        // manual rows live inside their space — never in the global list
         const list = scopedBySpace.get(account.spaceId) ?? [];
         list.push(entry);
         scopedBySpace.set(account.spaceId, list);
       } else if (!myFeedIds || myFeedIds.has(account.spaceId) || entry.sharedVia.length === 0) {
-        // #182: a feed with ZERO links can only be MY OWN — someone
-        // else's account reaches this device through an attachment or
-        // not at all. Mid-import the ownership fetch is stale and a
-        // just-registered feed used to land under "shared with me"
-        // wearing a false "Archived" pill until the refresh.
+        // #182: a feed with ZERO links can only be mine; mid-import the ownership fetch is stale and it landed under
+        // "shared with me" with a false Archived pill
         mine.push(entry);
       } else {
         sharedWithMe.push(entry);
@@ -126,12 +105,7 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
   }, [myFeedIds]);
 }
 
-/**
- * #205: the newest transaction date on an account, read from RAW rows
- * across every locally known space — a feed account's rows live in the
- * feed space with per-space overlays elsewhere, so visibleTransactions
- * (member spaces only, gated) would under-report the account-level fact.
- */
+// #205: read from RAW rows across all local spaces: visibleTransactions (member spaces, gated) under-reports the fact
 export async function newestTxDate(store: StorageBackend, accountId: string): Promise<string | undefined> {
   let newest: string | undefined;
   for (const tx of await store.allRows('transaction')) {
@@ -141,16 +115,8 @@ export async function newestTxDate(store: StorageBackend, accountId: string): Pr
   return newest;
 }
 
-/**
- * #212 (user): changing an account's TYPE is destructive by design —
- * the type drives the stamping rules, so every transaction on the
- * account goes back to review with a fresh interpretation (category
- * cleared, type re-derived from the new stamp), "as if the account is
- * added for the first time". Physical facts survive: balances, links
- * and pairs describe money that actually moved and are not the type's
- * business. Writes go through the transform choke per space, so
- * per-space overlays (feed rows) and plain rows both land correctly.
- */
+// #212: a type change is destructive by design: the type drives stamping, so every transaction on the account goes
+// back to review with the category cleared; balances, links and pairs are physical facts and survive
 export async function changeAccountType(
   store: StorageBackend,
   repo: Repo,
@@ -173,13 +139,8 @@ export async function changeAccountType(
   return touched;
 }
 
-/**
- * #212 r2 (user): for an ATTACHED account the type is the SPACE's fact
- * — it lives on the accountLink and each space reads its own. Changing
- * it is destructive within that space alone: this space's rows on the
- * account return to review under the new stamp; other spaces' readings
- * and the physical facts (balances, links, pairs) stand untouched.
- */
+// #212: an attached account's type is the SPACE's fact on the accountLink: only this space's rows return to review,
+// other spaces' readings stand
 export async function changeLinkedAccountType(
   store: StorageBackend,
   repo: Repo,

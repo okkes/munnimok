@@ -1,9 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
-// Guide captures (npm run shots — never in CI): All accounts with the demo
-// space's accounts (16-accounts-list) and a space's Add account (17).
-// Creating an account is part of the offline e2e flow; its rules are unit-tested.
+// guide captures (npm run shots, never in CI): 16-accounts-list and 17-accounts-add;
+// creating an account is covered by the offline e2e flow, its rules by unit tests
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;

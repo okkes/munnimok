@@ -7,153 +7,50 @@ using Microsoft.Playwright;
 
 namespace ShopConnector.Adapters.MediaMarkt;
 
-/// <summary>What one call to MediaMarkt's GraphQL endpoint answered.</summary>
-/// <param name="Status">The HTTP status. Zero when the call could not be made at all.</param>
-/// <param name="Url">
-/// The request url, whole. This is the field the walk pages with: the client
-/// asks with GET, so the operation, its persisted hash and its variables are
-/// all in here, and a later page is this url with one parameter changed.
-/// </param>
-/// <param name="Body">The response text, whatever it turned out to be.</param>
-/// <param name="Headers">
-/// The request headers MediaMarkt's own client sent, filtered to the ones worth
-/// repeating. Never a cookie and never an authorization: the session travels in
-/// the browser's own jar and this process never holds it.
-/// </param>
+/// Url is whole: the client asks with GET, so a later page is this url with one parameter changed.
+/// Headers never hold a cookie or authorization: the session stays in the browser's jar.
 internal readonly record struct MediaMarktCall(
     int Status,
     string Url,
     string? Body,
     IReadOnlyDictionary<string, string>? Headers = null);
 
-/// <summary>
-/// A document as it came back: the status, what MediaMarkt SAID it is, the
-/// bytes and the name it suggested. The media type is carried rather than
-/// assumed from the name, because a session that expired between the list
-/// and here answers a link ending in .pdf with a sign-in page.
-/// </summary>
+/// the media type is carried, not assumed from the name: an expired session answers a .pdf link with a sign-in page
 internal sealed record MediaMarktDocument(int Status, string MediaType, byte[] Bytes, string? Filename)
 {
-    /// <summary>
-    /// The order's page offers no invoice at all - NORMAL, not a drift:
-    /// MediaMarkt offers "Factuur aanvragen" on its recent orders only (the
-    /// account holder, #430, 2026-11-02).
-    /// </summary>
+    /// no invoice offered is NORMAL, not a drift: "Factuur aanvragen" exists on recent orders only (#430)
     public static MediaMarktDocument NotOffered { get; } = new(204, string.Empty, [], null);
 }
 
-/// <summary>
-/// The seam between "which pages of orders to read" and "how to reach them".
-///
-/// Behind an interface for the same reason DUO's is: the decisions worth
-/// testing - when to stop paging, what a refusal means, whether a session is
-/// really alive - should not need a browser and somebody's real MediaMarkt
-/// account to exercise.
-/// </summary>
+/// behind an interface so paging, refusal and session-liveness decisions are testable without a browser or account
 internal interface IMediaMarktPortal
 {
-    /// <summary>
-    /// Navigates, and answers with the operation's OWN call once the page makes
-    /// it - the request url, the headers it carried and the body it received.
-    /// </summary>
-    /// <remarks>
-    /// THIS IS THE WHOLE DESIGN, and it is what makes MediaMarkt buildable at
-    /// all.
-    /// <para>
-    /// The storefront runs with <c>isPersistedQueryManifestActive: true</c>: the
-    /// server accepts only query hashes from the manifest its own bundle ships,
-    /// and rejects a document we write ourselves. Extracting the hash from that
-    /// bundle would work exactly until the next front-end deploy - the bundle id
-    /// moved from <c>ec9060f</c> to <c>de0feeb</c> between two checks two weeks
-    /// apart.
-    /// <para>
-    /// So nothing here knows a hash. The page is asked to load, MediaMarkt's own
-    /// javascript asks its own question with its own current hash, and this
-    /// listens. Rotation becomes MediaMarkt's problem, which is where it
-    /// belongs.
-    /// </para>
-    /// </para>
-    /// </remarks>
+    /// isPersistedQueryManifestActive is true: the server accepts only hashes from its own bundle's manifest, and the
+    /// bundle id moved (ec9060f to de0feeb) within two weeks. So nothing here knows a hash: the page's own JS asks, we listen.
     Task<MediaMarktCall?> ObserveAsync(string url, string operationName, int timeoutMs, CancellationToken ct);
 
-    /// <summary>
-    /// The invoice MediaMarkt holds for one order, fetched the way a shopper
-    /// gets it: the order's own page, "Factuur aanvragen" when it is offered,
-    /// then "Download de factuur" (the user's walk-through, 2026-10-02).
-    /// <see cref="MediaMarktDocument.NotOffered"/> when the order offers none;
-    /// null when the page did not do what it should, with the reason handed
-    /// to <paramref name="note"/> so the fetch can say so.
-    /// </summary>
+    /// null when the page did not do what it should, with the reason handed to note; NotOffered when the order has none
     Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct);
 
-    /// <summary>
-    /// The same wait, WITHOUT navigating: watches the page the browser is
-    /// already on until it makes the call, or the budget runs out.
-    /// </summary>
-    /// <remarks>
-    /// This is the correction the first live run forced. Login used to submit
-    /// the form and then call <see cref="ObserveAsync"/>, which navigates - and
-    /// navigating on top of a sign-in that is still in flight cancels it. The
-    /// browser dutifully arrived at the orders page as an anonymous visitor,
-    /// was bounced to the login form, never asked for orders, and the adapter
-    /// reported the credentials as refused. They were not; they were
-    /// interrupted.
-    /// <para>
-    /// MediaMarkt's form already carries <c>redirectURL=/nl/myaccount/orders</c>,
-    /// so the app navigates itself once the sign-in completes. The right thing
-    /// to do after pressing the button is nothing at all.
-    /// </para>
-    /// </remarks>
+    /// waits WITHOUT navigating: navigating over an in-flight sign-in cancels it and reads as refused credentials;
+    /// the form's redirectURL moves the app on by itself
     Task<MediaMarktCall?> WatchAsync(string operationName, int timeoutMs, CancellationToken ct);
 
-    /// <summary>
-    /// Where the browser ended up and what it is showing, for a failure message
-    /// that names something.
-    /// </summary>
-    /// <remarks>
-    /// "Either the credentials were refused or the form has changed" is the
-    /// kind of sentence that costs a live sign-in to get past, and this
-    /// adapter shipped one. The page states which it is - MediaMarkt renders a
-    /// message into the form - and a diagnostic that quotes it turns a second
-    /// attempt into a decision.
-    /// </remarks>
+    /// MediaMarkt renders a message into the form: quoting it tells refused credentials from a changed form
     Task<string> DescribeAsync(CancellationToken ct);
 
-    /// <summary>
-    /// Asks for one more page, from inside the signed-in page.
-    /// </summary>
-    /// <remarks>
-    /// Through the page's own <c>fetch</c> rather than an HTTP client, because
-    /// the session IS the browser's cookie jar and this is the only way to spend
-    /// it without copying it anywhere. It is also the same request the SPA makes
-    /// from the same origin, so nothing here is a shape MediaMarkt does not
-    /// already serve.
-    /// </remarks>
+    /// through the page's own fetch: the session is the browser's cookie jar and must not be copied out
     Task<MediaMarktCall> ReadAsync(
         string url, IReadOnlyDictionary<string, string> headers, CancellationToken ct);
 }
 
-/// <summary>MediaMarkt's GraphQL endpoint, read from inside the signed-in page.</summary>
 internal sealed class PageMediaMarktPortal : IMediaMarktPortal
 {
     private readonly IPage _page;
     private readonly MediaMarktOptions _options;
 
-    /// <summary>
-    /// The most recent answer to each operation, latched as it arrives.
-    /// </summary>
-    /// <remarks>
-    /// A LATCH RATHER THAN A WAIT, because the call this adapter cares about
-    /// can easily land before anything is waiting for it. MediaMarkt's app
-    /// redirects itself after a sign-in and fires the orders query
-    /// immediately; a listener armed after that has already missed it and
-    /// waits out its whole budget for a call that will not come again.
-    /// <para>
-    /// Subscribed in the constructor so the window is open from the moment the
-    /// portal exists, and cleared explicitly before a navigation that is meant
-    /// to provoke a fresh one.
-    /// </para>
-    /// </remarks>
+    /// a latch, not a wait: the app fires the orders query right after sign-in, before any listener is armed;
+    /// subscribed in the constructor, cleared before a navigation meant to provoke a fresh one
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MediaMarktCall> _seen =
         new(StringComparer.Ordinal);
 
@@ -169,10 +66,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         if (!response.Url.Contains(_options.GraphQlPath, StringComparison.OrdinalIgnoreCase)) return;
         if (MediaMarktCalls.Parameter(response.Url, "operationName") is not { } operation) return;
 
-        // The body has to be read while the response is still alive, so this
-        // cannot wait until somebody asks. Fire-and-forget on purpose: a body
-        // that has gone is latched without one, and the status and url still
-        // say plenty.
+        // the body must be read while the response is alive; fire-and-forget, a gone body is latched without one
         _ = Task.Run(async () =>
         {
             string? body = null;
@@ -183,10 +77,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
-                // The body went with the page - navigated away or torn down
-                // before it could be read. Nothing to recover: the reading
-                // below is latched without one, and the status and url still
-                // say plenty.
+                // the body went with the page (navigated away or torn down): latched without one
             }
 
             _seen[operation] = new MediaMarktCall(
@@ -214,8 +105,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
     {
         ct.ThrowIfCancellationRequested();
 
-        // Cleared first, so what comes back is this navigation's answer rather
-        // than one latched before it.
+        // cleared so the answer is this navigation's, not an earlier latch
         _seen.TryRemove(operationName, out _);
 
         try
@@ -225,8 +115,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // A navigation that was superseded is not a failure by itself -
-            // the latch below is what decides whether the call happened.
+            // a superseded navigation is no failure: the latch decides whether the call happened
         }
 
         return await WatchAsync(operationName, timeoutMs, ct).ConfigureAwait(false);
@@ -248,10 +137,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         }
     }
 
-    /// <summary>
-    /// The page's address, and any message it is showing, capped and
-    /// single-lined so a page of markup cannot land in an operator's log.
-    /// </summary>
+    /// capped and single-lined so a page of markup cannot land in an operator's log
     private const string DescribeScript = """
     () => {
       const vis = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
@@ -324,19 +210,15 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
                 "stored session is over.");
         }
 
-        // THE PAGE IS A CLIENT-RENDERED APP: at DOMContentLoaded it is a shell.
-        // "Is 'Factuur aanvragen' there?" asked at that moment was answered no
-        // on every order, so the invoice was never asked for and the download
-        // it produces never came (#430). The order itself is waited for first.
+        // client-rendered app: at DOMContentLoaded it is a shell, and asking for "Factuur aanvragen" then said no on
+        // every order (#430); the order itself is waited for first
         if (!await AppearsAsync(Any(_options.OrderPageSelectors), _options.OrderPageMs).ConfigureAwait(false))
         {
             note($"order '{orderId}': its page never showed the order; " + await DescribeAsync(ct).ConfigureAwait(false));
             return null;
         }
 
-        // An order that offers no invoice at all is normal - MediaMarkt
-        // offers one on its recent orders only - and says nothing. The
-        // controls can trail the order block by a moment.
+        // no invoice is normal (recent orders only) and silent; the controls can trail the order block
         var request = Any(_options.RequestInvoiceSelectors);
         var link = Any(_options.DownloadInvoiceSelectors);
         if (!await AppearsAsync(Any([.. _options.RequestInvoiceSelectors, .. _options.DownloadInvoiceSelectors]), _options.InvoiceControlsMs)
@@ -345,8 +227,6 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
             return MediaMarktDocument.NotOffered;
         }
 
-        // Asked for when MediaMarkt offers to issue one; an order that has its
-        // invoice already shows the download straight away.
         if (!await VisibleAsync(link).ConfigureAwait(false) && await VisibleAsync(request).ConfigureAwait(false))
         {
             await request.ClickAsync(new LocatorClickOptions { Timeout = _options.StepProbeMs }).ConfigureAwait(false);
@@ -354,8 +234,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
 
         if (!await AppearsAsync(link, _options.InvoiceProbeMs).ConfigureAwait(false))
         {
-            // The page as it stands, so a selector that drifted is one log
-            // line from its fix rather than a silent absence of invoices.
+            // the page as it stands, so a drifted selector is one log line from its fix
             note($"order '{orderId}': the invoice was asked for and no download appeared within {_options.InvoiceProbeMs} ms; " +
                  await DescribeAsync(ct).ConfigureAwait(false));
             return null;
@@ -369,7 +248,6 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
             return await FetchDocumentAsync(href).ConfigureAwait(false);
         }
 
-        // A button that starts a download rather than a link that points at one.
         try
         {
             var download = await _page.RunAndWaitForDownloadAsync(
@@ -392,10 +270,7 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         }
     }
 
-    /// <summary>
-    /// A linked document over the browser's own session - its cookie jar,
-    /// so the sign-in a person just did is the one the download rides on.
-    /// </summary>
+    /// rides the browser's cookie jar, so the sign-in just done carries the download
     private async Task<MediaMarktDocument> FetchDocumentAsync(string href)
     {
         var absolute = Uri.TryCreate(href, UriKind.Absolute, out var already)
@@ -412,7 +287,6 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         return new MediaMarktDocument(response.Status, mediaType, body, Path.GetFileName(absolute.AbsolutePath));
     }
 
-    /// <summary>The first visible match of any of these selectors.</summary>
     private ILocator Any(IEnumerable<string> selectors) => _page.Locator(string.Join(", ", selectors)).First;
 
     /// <summary>Whether it turns up visible within the budget - a wait, where <see cref="VisibleAsync"/> is a glance.</summary>
@@ -458,10 +332,8 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // The page navigated under us, or is no longer on MediaMarkt's
-            // origin so the browser refused outright. A reading with no status,
-            // not an exception - thrown, this reaches a user as "something broke
-            // on our side, HTTP 500", which is both unhelpful and untrue.
+            // page navigated or left MediaMarkt's origin: a status-less reading, not a throw, which a user would
+            // see as "HTTP 500, our side"
             return new MediaMarktCall(0, url, $"<not reached: {ex.Message}>");
         }
 
@@ -469,17 +341,11 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
             answer.Int32("status") ?? 0,
             answer.Text("url") ?? url,
 
-            // Untrimmed, unlike everything else read here: this is the response
-            // itself, and a parser downstream is entitled to the bytes the
-            // provider sent rather than a tidied copy of them.
+            // untrimmed: the response itself, a parser downstream is entitled to the provider's bytes
             answer.Child("body") is { ValueKind: JsonValueKind.String } body ? body.GetString() : null);
     }
 
-    /// <summary>
-    /// The client's own headers, filtered to the allowlist. Names are compared
-    /// case-insensitively because a browser lowercases them and a capture does
-    /// not promise to.
-    /// </summary>
+    /// names compared case-insensitively: a browser lowercases them, a capture may not
     private Dictionary<string, string> Carried(IRequest request)
     {
         var carried = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -494,20 +360,9 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
     }
 }
 
-/// <summary>
-/// What this connector asks MediaMarkt for, and what an answer means.
-/// </summary>
 internal static class MediaMarktCalls
 {
-    /// <summary>
-    /// Is this response the operation we are waiting for?
-    /// </summary>
-    /// <remarks>
-    /// Matched on the path AND the operation name, because every call on this
-    /// site goes to the same url and the orders page fires a dozen of them -
-    /// the header, the consent categories, a recommendations block. A predicate
-    /// on the path alone returns whichever arrived first.
-    /// </remarks>
+    /// matched on path AND operation name: every call goes to one url and the orders page fires a dozen
     public static bool IsOperation(string url, string operationName, MediaMarktOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -518,16 +373,7 @@ internal static class MediaMarktCalls
                    Parameter(url, "operationName"), operationName, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The same call, asking for a different slice.
-    /// </summary>
-    /// <remarks>
-    /// Only <c>variables</c> is rewritten. <c>extensions</c> carries the
-    /// persisted-query hash and MediaMarkt's own channel configuration and is
-    /// passed through untouched - it is the part that must stay exactly as the
-    /// client sent it, and the part this connector deliberately does not
-    /// understand.
-    /// </remarks>
+    /// only variables is rewritten; extensions (persisted-query hash, channel config) passes through untouched
     public static string AtOffset(string url, int limit, int offset, MediaMarktOptions options)
     {
         ArgumentNullException.ThrowIfNull(url);
@@ -540,7 +386,6 @@ internal static class MediaMarktCalls
         return Replace(url, "variables", variables);
     }
 
-    /// <summary>Reads one query parameter, decoded. Null when it is not there.</summary>
     public static string? Parameter(string url, string name)
     {
         ArgumentNullException.ThrowIfNull(url);
@@ -588,32 +433,15 @@ internal static class MediaMarktCalls
         return url[..query] + "?" + string.Join("&", rebuilt);
     }
 
-    /// <summary>
-    /// Turns a reading into either a body or the right exception.
-    /// </summary>
-    /// <remarks>
-    /// A signed-out browser does not get a 401 here - it gets bounced to
-    /// <c>/myaccount/auth</c> and served the login page, which arrives as a
-    /// perfectly successful response carrying HTML. A reader that only looked at
-    /// the status would hand that to the JSON parser and report a changed
-    /// provider when the truth is an expired session and a sign-in button.
-    /// </remarks>
+    /// a signed-out browser is bounced to /myaccount/auth and gets a 200 login page in HTML; judging by status alone
+    /// would report a changed provider instead of an expired session
     public static string Body(
         MediaMarktCall call, MediaMarktOptions options, string what, Action<string>? note = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        // THE REFUSAL ITSELF, QUOTED.
-        //
-        // A gateway that refuses a call usually says what was missing, and that
-        // sentence is the difference between another live run and an answer.
-        // This adapter's first fetch died on "page 2 answered 400 with 406
-        // characters" - 406 characters that named the problem exactly and that
-        // nobody could read. GraphQL states its errors in the body on a 400,
-        // and they are error text rather than anybody's data.
-        //
-        // Capped and single-lined so a page of HTML cannot land in an
-        // operator's terminal.
+        // the refusal is quoted: a gateway's 400 (GraphQL errors) names what was missing; capped and single-lined
+        // so HTML cannot land in an operator's terminal
         if (call.Status is < 200 or > 299 && !string.IsNullOrWhiteSpace(call.Body))
         {
             var quoted = call.Body.Length > 400 ? call.Body[..400] : call.Body;

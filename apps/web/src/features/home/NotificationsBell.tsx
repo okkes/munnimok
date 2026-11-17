@@ -1,12 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useSession } from '@/app/session';
-import { appendNotification, readInbox, stampNotifSeen, unreadNotifCount, type InboxEntry, type InboxKind } from '@/application/notifications';
+import {
+  appendNotification,
+  GENERAL_SCOPE,
+  readInbox,
+  scopeOf,
+  stampNotifSeen,
+  unreadNotifCount,
+  type InboxEntry,
+  type InboxKind,
+} from '@/application/notifications';
 import { clearNotifications, syncNotificationsCleared } from '@/application/inboxClear';
+import { settleAnswered, settleReviewed } from '@/application/deliveredResolve';
+import { settleInbox } from '@/application/inboxResolve';
 import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
 import { latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from '@/features/help/releaseNotes';
@@ -16,6 +27,7 @@ import type { SplitInvitation } from '@/application/splitsApi';
 import { refreshPushRegistrationOnce } from '@/lib/push';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { fmtTimeAgo } from '@/lib/text';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -33,7 +45,6 @@ interface PendingInvite {
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
-/** per-kind history line + icon (unknown kinds render the generic line) */
 const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   review: { key: 'act.review', icon: 'check-decagram-outline' },
   note: { key: 'act.note', icon: 'note-edit-outline' },
@@ -55,6 +66,7 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   catAdd: { key: 'act.catAdd', icon: 'shape-plus' },
   catEdit: { key: 'act.catEdit', icon: 'shape-outline' },
   catRemove: { key: 'act.catRemove', icon: 'shape-outline' },
+  catCopyDecline: { key: 'act.catCopyDecline', icon: 'shape-outline' },
   recAdd: { key: 'act.recAdd', icon: 'autorenew' },
   recEdit: { key: 'act.recEdit', icon: 'autorenew' },
   recRemove: { key: 'act.recRemove', icon: 'autorenew' },
@@ -75,10 +87,27 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   planStart: { key: 'act.planStart', icon: 'clipboard-text-outline' },
   planFund: { key: 'act.planFund', icon: 'clipboard-text-outline' },
   planEdit: { key: 'act.planEdit', icon: 'clipboard-text-outline' },
+  planSet: { key: 'act.planSet', icon: 'clipboard-arrow-down-outline' },
+  planEmpty: { key: 'act.planEmpty', icon: 'clipboard-arrow-up-outline' },
+  planFill: { key: 'act.planFill', icon: 'clipboard-arrow-down-outline' },
+  planFillMany: { key: 'act.planFillMany', icon: 'clipboard-arrow-down-outline' },
+  planCover: { key: 'act.planCover', icon: 'swap-horizontal' },
+  planWithdraw: { key: 'act.planWithdraw', icon: 'clipboard-arrow-up-outline' },
+  planSubjectAdd: { key: 'act.planSubjectAdd', icon: 'clipboard-plus-outline' },
+  planSubjectEdit: { key: 'act.planSubjectEdit', icon: 'clipboard-edit-outline' },
+  planSubjectRemove: { key: 'act.planSubjectRemove', icon: 'clipboard-remove-outline' },
+  planTarget: { key: 'act.planTarget', icon: 'clipboard-edit-outline' },
+  planSkip: { key: 'act.planSkip', icon: 'clipboard-clock-outline' },
+  planUnskip: { key: 'act.planUnskip', icon: 'clipboard-clock-outline' },
+  planClear: { key: 'act.planClear', icon: 'clipboard-off-outline' },
+  planSegments: { key: 'act.planSegments', icon: 'clipboard-list-outline' },
+  planPool: { key: 'act.planPool', icon: 'bank-outline' },
+  planToAhead: { key: 'act.planToAhead', icon: 'calendar-sync-outline' },
+  planAheadBack: { key: 'act.planAheadBack', icon: 'calendar-sync-outline' },
+  planAheadFund: { key: 'act.planAheadFund', icon: 'calendar-sync-outline' },
   planAhead: { key: 'act.planAhead', icon: 'calendar-sync-outline' },
   planBlueprint: { key: 'act.planBlueprint', icon: 'content-copy' },
   planSandbox: { key: 'act.planSandbox', icon: 'flask-outline' },
-  // #541: which accounts and set-asides safe to spend counts
   spendEdit: { key: 'act.spendEdit', icon: 'calendar-arrow-right' },
   holdingAdd: { key: 'act.holdingAdd', icon: 'chart-line' },
   holdingEdit: { key: 'act.holdingEdit', icon: 'chart-line' },
@@ -98,16 +127,13 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   deviceRevoke: { key: 'act.deviceRevoke', icon: 'cellphone-remove' },
   reconcile: { key: 'act.reconcile', icon: 'bank-check' },
   importRollback: { key: 'act.importRollback', icon: 'file-undo' },
-  // user 2026-10-08: the custom trend graphs on the space row
   trendGraphAdd: { key: 'act.trendGraphAdd', icon: 'chart-bar' },
   trendGraphEdit: { key: 'act.trendGraphEdit', icon: 'chart-bar' },
   trendGraphRemove: { key: 'act.trendGraphRemove', icon: 'chart-bar' },
-  // #577: the space's phone bar
   navEdit: { key: 'act.navEdit', icon: 'dock-bottom' },
 };
 const GENERIC_VISUAL: { key: TranslationKey; icon: string } = { key: 'act.generic', icon: 'history' };
 
-/** the in-app inbox rows (arc 6): icon + destination per kind */
 const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debts' | '/insights' | '/planning' }> = {
   whatsnew: { icon: 'bullhorn-variant-outline' },
   recurringDue: { icon: 'autorenew', to: '/recurring' },
@@ -116,13 +142,36 @@ const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debt
   planOverspent: { icon: 'clipboard-alert-outline', to: '/planning' },
 };
 
-/** #551: "Household · " before the row's age — the space the row is about, while the person is in it */
-function spaceLabel(names: Map<string, string> | undefined, entry: InboxEntry): string {
-  const name = entry.payload?.spaceId ? names?.get(entry.payload.spaceId) : undefined;
-  return name ? `${name} · ` : '';
+/** #614: the name of a part of the list — "General", then the open space */
+function GroupLabel({ testId, children }: Readonly<{ testId: string; children: ReactNode }>) {
+  return (
+    <div data-testid={testId} className="m-cap px-1 pt-3 pb-1 text-[10px] text-ink-4 first:pt-0">
+      {children}
+    </div>
+  );
 }
 
-/** one localized line per inbox kind — reusing the OS-notification copy */
+function InboxRow({ entry, line, age, onOpen }: Readonly<{ entry: InboxEntry; line: string; age: string; onOpen: (entry: InboxEntry) => void }>) {
+  return (
+    <button
+      data-testid={`notif-inbox-${entry.id}`}
+      onClick={() => onOpen(entry)}
+      className="m-tap flex items-start gap-3 border-b border-line-2 bg-transparent px-1 py-3 text-left last:border-0"
+    >
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
+        <Icon name={INBOX_VISUAL[entry.kind].icon} size={17} color="var(--m-ink-2)" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] leading-snug text-ink">{line}</span>
+        <span className="block truncate pt-0.5 text-[11px] text-ink-4" data-testid={`notif-inbox-meta-${entry.id}`}>
+          {age}
+        </span>
+      </span>
+      <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
 function inboxLine(t: TFunc, entry: InboxEntry): string {
   const p = entry.payload ?? {};
   if (entry.kind === 'whatsnew') return t('notif.whatsnewRow', { version: p.version ?? '' });
@@ -132,12 +181,14 @@ function inboxLine(t: TFunc, entry: InboxEntry): string {
   return t('ins.digestBody', { n: p.n ?? '' });
 }
 
-/** the space's newest-first action history (YNAB-style, user request) */
 function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'members') => void }>) {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const identity = useSession((s) => s.identity);
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  const { fmt } = useDisplayMoney();
+  const currency = useQuery(store, async () => (await store.get('space', spaceId))?.currency, [spaceId]) ?? 'EUR';
+  const money = (cents: number | undefined) => (cents === undefined ? '' : fmt(cents, currency));
   const rows = useQuery(
     store,
     async () =>
@@ -158,14 +209,17 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
     <div className="flex flex-col" data-testid="history-list">
       {rows.map((row) => {
         const visual = ACT_VISUAL[row.kind] ?? GENERIC_VISUAL;
-        // "You" whenever the row is provably mine — or on single-user
-        // identities (offline/demo), where every action IS yours; other
-        // members show their frozen display name
+        // "You" when provably mine, or on single-user identities (offline/demo) where every action is yours
         const mine = row.actorSub ? row.actorSub === mySub : !mySub;
         const actor = mine ? t('act.you') : (row.actorName ?? t('act.someone'));
-        // the actor sits mid-sentence in some languages (TR) — split on a
-        // marker so the highlighted name lands wherever {actor} does
-        const [before, after] = t(visual.key, { actor: '\u0000', detail: row.detail ?? '' }).split('\u0000');
+        // the actor sits mid-sentence in some languages (TR): split on a marker so the name lands where {actor} does
+        const [before, after] = t(visual.key, {
+          actor: '\u0000',
+          detail: row.detail ?? '',
+          detail2: row.detail2 ?? '',
+          amount: money(row.amountCents),
+          from: money(row.fromCents),
+        }).split('\u0000');
         return (
           <div
             key={row.id}
@@ -178,8 +232,7 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] leading-snug text-ink">
                 {before}
-                {/* only the person is tappable (user rule): it opens their
-                    profile — the rest of the line is plain text */}
+                {/* only the person is tappable: it opens their profile */}
                 <button
                   data-testid={`history-actor-${row.id}`}
                   onClick={() => onNavigate(mine ? '/profile' : 'members')}
@@ -198,19 +251,13 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
   );
 }
 
-/**
- * Home inbox: everything waiting on the user (friend requests, space
- * invites) plus the space's action history behind one bell. Alerts are
- * server-mediated (signed-in only); history is local-first and shows
- * for every identity.
- */
+/** requests and invites are server-mediated (signed-in only); history is local-first for every identity */
 export function NotificationsBell() {
   const { t, lang } = useLang();
   const isUser = useSession((s) => s.identity?.kind === 'user');
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  // Notifications | Activity for EVERY identity (arc 6) — the inbox is
-  // local and works offline; activity stays the audit trail it was
+  // Notifications | Activity for every identity: the inbox is device-local and works offline
   const [tab, setTab] = useState<'notifications' | 'activity'>('notifications');
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -219,28 +266,36 @@ export function NotificationsBell() {
   const { store, spaceId } = useData();
   const markWhatsNewSeen = useMarkWhatsNewSeen();
 
-  // a fresh release drops a What's-new row into the inbox (once per
-  // version — dedupe key) and the Home banner is retired
+  // a fresh release drops one What's-new row into the inbox, deduped per version
   const whatsnewUnseen = useWhatsNewUnseen();
   useEffect(() => {
     const version = latestWhatsNewVersion();
     if (whatsnewUnseen && version) void appendNotification(store, 'whatsnew', { version }, `v${version}`);
   }, [whatsnewUnseen, store]);
 
-  const inbox = useQuery(store, async () => readInbox(store), []);
-  const unread = useQuery(store, async () => unreadNotifCount(store), []);
-  // #551: each row says which space it is about (a space since left says nothing)
-  const spaceNames = useQuery(
+  // #614: the bell shows what is about no space and what is about the open one; another space's rows wait in that space
+  const inbox = useQuery(
     store,
-    async () => new Map((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => [s.id, s.name])),
-    [],
+    async () => (await readInbox(store)).filter((entry) => scopeOf(entry) === GENERAL_SCOPE || scopeOf(entry) === spaceId),
+    [spaceId],
   );
+  const general = (inbox ?? []).filter((entry) => scopeOf(entry) === GENERAL_SCOPE);
+  const here = (inbox ?? []).filter((entry) => scopeOf(entry) === spaceId);
+  const unread = useQuery(store, async () => unreadNotifCount(store, [GENERAL_SCOPE, spaceId]), [spaceId]);
+  const spaceName = useQuery(store, async () => (await store.get('space', spaceId))?.name, [spaceId]);
 
-  // opening the Notifications tab stamps everything seen — the badge's
+  // opening the Notifications tab stamps what it shows as seen — the badge's
   // inbox share clears; actionable server items keep their own count
   useEffect(() => {
-    if (open && tab === 'notifications') void stampNotifSeen(store);
-  }, [open, tab, store]);
+    if (open && tab === 'notifications') void stampNotifSeen(store, [GENERAL_SCOPE, spaceId]);
+  }, [open, tab, store, spaceId]);
+
+  // #614: whoever looks at the list sees what is still true, and the phone lets go of what was handled
+  useEffect(() => {
+    if (!open) return;
+    void settleInbox(store).catch(() => undefined);
+    void settleReviewed(store).catch(() => undefined);
+  }, [open, store]);
 
   const openActor = (to: '/profile' | 'members') => {
     setOpen(false);
@@ -260,19 +315,26 @@ export function NotificationsBell() {
       apiFetch('/friends').catch(() => null),
       apiFetch('/me/invites').catch(() => null),
     ]);
-    if (friendsRes?.ok) {
-      const body = (await friendsRes.json()) as { receivedPending: PendingRequest[] };
-      setRequests(body.receivedPending);
-    }
-    if (invitesRes?.ok) setInvites((await invitesRes.json()) as PendingInvite[]);
+    const friendRequests = friendsRes?.ok ? ((await friendsRes.json()) as { receivedPending: PendingRequest[] }).receivedPending : undefined;
+    if (friendRequests) setRequests(friendRequests);
+    const spaceInvites = invitesRes?.ok ? ((await invitesRes.json()) as PendingInvite[]) : undefined;
+    if (spaceInvites) setInvites(spaceInvites);
     // #538: an owner asked the person into a split — it waits here like a space's invitation
-    setSplitInvites((await serverSplits.invitations()) ?? []);
+    const invitedTo = await serverSplits.invitations();
+    setSplitInvites(invitedTo ?? []);
+    // #614: what the server no longer lists was answered — on this device or another — and the phone lets go of it
+    void settleAnswered({
+      friendRequests: friendRequests?.length,
+      spaceInvites: spaceInvites?.length,
+      splitInvites: invitedTo?.map((invite) => invite.splitId),
+    }).catch(() => undefined);
   }, [isUser, store]);
 
   useEffect(() => void reload(), [reload]);
   useServerRefresh(reload);
 
-  const count = requests.length + invites.length + splitInvites.length + (unread ?? 0);
+  const pendingCount = requests.length + invites.length + splitInvites.length;
+  const count = pendingCount + (unread ?? 0);
 
   const go = (to: '/friends' | '/spaces' | '/splits') => {
     setOpen(false);
@@ -314,8 +376,6 @@ export function NotificationsBell() {
       </button>
 
       <Sheet open={open} onOpenChange={setOpen} title={t('notif.title')} size="tall">
-        {/* Notifications | Activity for every identity (arc 6): the
-            inbox is device-local, activity stays the audit trail */}
         <div className="mb-2 flex gap-1 rounded-input border border-line bg-surface p-1" role="tablist">
           {(
             [
@@ -345,13 +405,13 @@ export function NotificationsBell() {
                 <p className="text-[13px] text-ink-3">{t('notif.empty')}</p>
               </div>
             )}
-            {/* #580: the list empties here and on the person's other devices, and the phone's
-                own notification centre lets go of them; requests and invites wait for an answer */}
+            {/* #580, #614: what the bell shows empties here and on the person's other devices, and the phone's own
+                notification centre lets go of it; requests and invites wait for an answer */}
             {(inbox?.length ?? 0) > 0 && (
               <div className="flex justify-end">
                 <button
                   data-testid="notif-clear"
-                  onClick={() => void clearNotifications(store, isUser)}
+                  onClick={() => void clearNotifications(store, isUser, [GENERAL_SCOPE, spaceId])}
                   className="m-tap flex items-center gap-1 border-none bg-transparent px-1 py-1 text-[12px] font-medium text-accent-deep"
                 >
                   <Icon name="notification-clear-all" size={15} />
@@ -360,6 +420,7 @@ export function NotificationsBell() {
               </div>
             )}
             <div className="flex flex-col">
+              {pendingCount + general.length > 0 && <GroupLabel testId="notif-group-general">{t('notif.groupGeneral')}</GroupLabel>}
               {requests.map((r) => (
                 <button
                   key={r.id}
@@ -411,33 +472,25 @@ export function NotificationsBell() {
                   <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </button>
               ))}
-              {/* the local inbox (arc 6): what's-new, due reminders, the
-                  rate nudge, the weekly digest — identical offline */}
-              {(inbox ?? []).map((entry) => (
-                <button
-                  key={entry.id}
-                  data-testid={`notif-inbox-${entry.id}`}
-                  onClick={() => openInboxRow(entry)}
-                  className="m-tap flex items-start gap-3 border-b border-line-2 bg-transparent px-1 py-3 text-left last:border-0"
-                >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
-                    <Icon name={INBOX_VISUAL[entry.kind].icon} size={17} color="var(--m-ink-2)" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] leading-snug text-ink">{inboxLine(t, entry)}</span>
-                    <span className="block truncate pt-0.5 text-[11px] text-ink-4" data-testid={`notif-inbox-meta-${entry.id}`}>
-                      {spaceLabel(spaceNames, entry)}
-                      {fmtTimeAgo(entry.ts, lang)}
-                    </span>
-                  </span>
-                  <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
-                </button>
+              {general.map((entry) => (
+                <InboxRow key={entry.id} entry={entry} line={inboxLine(t, entry)} age={fmtTimeAgo(entry.ts, lang)} onOpen={openInboxRow} />
+              ))}
+              {here.length > 0 && <GroupLabel testId="notif-group-space">{spaceName ?? t('notif.groupSpace')}</GroupLabel>}
+              {here.map((entry) => (
+                <InboxRow key={entry.id} entry={entry} line={inboxLine(t, entry)} age={fmtTimeAgo(entry.ts, lang)} onOpen={openInboxRow} />
               ))}
             </div>
           </>
         )}
       </Sheet>
-      <WhatsNewSheet open={whatsnewOpen} onOpenChange={setWhatsnewOpen} />
+      <WhatsNewSheet
+        open={whatsnewOpen}
+        onOpenChange={(next) => {
+          setWhatsnewOpen(next);
+          // read: its row has said what it had to say
+          if (!next) void settleInbox(store).catch(() => undefined);
+        }}
+      />
     </>
   );
 }

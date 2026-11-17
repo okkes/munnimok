@@ -11,21 +11,16 @@ using ShopConnector.Adapters;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Crash reports to GlitchTip (2026-10-05), the environment's connector
-// project shared with the control plane: an adapter that threw reaches it
-// as the scrubbed LogError the runner already writes; a login the person
-// has to redo never does. An empty DSN disables the SDK.
+// crash reports to GlitchTip (the environment's connector project, shared with the control plane): an adapter that threw
+// reaches it as the scrubbed LogError; a login the person has to redo never does. An empty DSN disables the SDK
 builder.Logging.AddSentry(options =>
 {
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.SendDefaultPii = false;
     // a 5xx of the control plane is retried by the host's own loops, which report what did not land in the end
     options.CaptureFailedRequests = false;
-    // performance tracing (user 2026-10-09, docs/observability.md): a generic
-    // host starts no transaction of its own, so the rate only governs the
-    // spans a job transaction would carry once one exists; the control
-    // plane is the one peer the agent's trace headers may reach — a shop's
-    // or a bank's site, dialled from the same process, gets none
+    // a generic host starts no transaction, so the rate only governs a job transaction's spans; only the control plane may
+    // receive trace headers, never a shop's or a bank's site
     options.TracesSampleRate =
         double.TryParse(builder.Configuration["Sentry:TracesSampleRate"], NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate is >= 0 and <= 1
             ? rate
@@ -43,9 +38,8 @@ builder.Logging.AddSentry(options =>
     options.SetBeforeSend((e, _) => { e.SetTag("role", "agent"); return e; });
 });
 
-// The same sections the three control planes bind. They have to be here as
-// well: an agent is where a selector actually gets used, so an unconfirmed
-// value corrected on an API alone would be corrected nowhere that matters.
+// the same sections the control planes bind: an agent is where a selector is used,
+// so a correction on an API alone applies nowhere that matters
 var banks = builder.Configuration.GetSection("BankAdapters").Get<BankAdapterOptions>()
             ?? new BankAdapterOptions();
 var shops = builder.Configuration.GetSection("ShopAdapters").Get<ShopAdapterOptions>()
@@ -55,31 +49,16 @@ var registries = builder.Configuration.GetSection("RegistryAdapters").Get<Regist
 
 builder.Services.AddConnectorAgent(builder.Configuration, agent =>
 {
-    // EVERY ADAPTER THIS PLATFORM HAS, ADVERTISED TO EVERY CONNECTOR THIS
-    // AGENT ATTACHES TO - and that is safe rather than sloppy.
-    //
-    // What an agent may lease is ITS connector's own catalogue filtered by
-    // what the agent says it can serve: EfLeasedJobQueue.TryLeaseAsync takes
-    // registry.Manifests and keeps the ones capabilities.CanServe. So the
-    // bank connector matches asn, ing and the bank mocks out of this list and
-    // has never heard of duo or jumbo; nothing anywhere validates the ids it
-    // does not know. The alternative - telling each connector only its own
-    // third - would mean this image knowing which provider belongs to which
-    // product, which is exactly the split the household should not have to
-    // care about.
+    // every adapter is advertised to every connector this agent serves: a lease takes the connector's own catalogue
+    // filtered by capabilities.CanServe (EfLeasedJobQueue.TryLeaseAsync), so unknown ids are harmless; per-connector
+    // lists would make this image know which provider belongs to which product
     foreach (var adapter in BankAdapters.All(banks)) agent.AddAdapter(adapter);
     foreach (var adapter in ShopAdapters.All(shops)) agent.AddAdapter(adapter);
     foreach (var adapter in RegistryAdapters.All(registries)) agent.AddAdapter(adapter);
 });
 
-// The drain window plus the abort grace must fit inside the host's own
-// shutdown timeout, which defaults to 30s and would otherwise stop waiting
-// first. A dropped login is a browser left open on a provider with a
-// half-submitted form and a session nothing will unstick until a TTL notices.
-//
-// One window for the process, and it is enough for several connectors: the
-// machine runs MaxConcurrency jobs in total, not that many per connector, so
-// the number of browsers to drain does not grow with the connection list.
+// drain window plus abort grace must fit the host's shutdown timeout (default 30s), or a dropped login leaves a browser open
+// on a half-submitted form; one window per process suffices: MaxConcurrency jobs run in total, not per connector
 builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(45));
 
 await builder.Build().RunAsync();

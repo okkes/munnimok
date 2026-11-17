@@ -1,6 +1,5 @@
-// GENERATED from apps/legacy/src/features/accounts/data.js by scripts/port-demo-data.mjs.
-// Dates are day-offsets so the demo dataset is always recent relative to
-// seeding time.
+// GENERATED from apps/legacy/src/features/accounts/data.js by scripts/port-demo-data.mjs;
+// dates are day-offsets so the dataset is always recent relative to seeding time
 export interface DemoAccount {
   id: string;
   name: string;

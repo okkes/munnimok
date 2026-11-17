@@ -8,9 +8,6 @@ import { renderApp } from '@/test/harness';
 // Local-first law also applies to demo/offline sign-in: zero network.
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
-// deterministic regardless of the developer's .env.local; localCaUrl and
-// logtoConfigured are steerable per test (LOCAL native builds get a
-// trust-certificate button; the sign-in-error spec needs the button)
 const mockCaUrl = { value: null as string | null };
 const mockLogto = { value: false };
 vi.mock('@/app/config', async (importOriginal) => {
@@ -23,9 +20,7 @@ vi.mock('@/app/config', async (importOriginal) => {
     localCaUrl: () => mockCaUrl.value,
   };
 });
-// controllable OIDC surface: signIn rejections must SHOW on the login
-// screen (iOS report 2026-09-08: an untrusted family cert made the
-// discovery fetch die and the button looked simply dead)
+// signIn rejections must SHOW on the login screen: an untrusted cert killed the discovery fetch and the button looked dead
 const mockSignIn = vi.fn((_options?: unknown) => Promise.resolve());
 vi.mock('@logto/react', () => ({
   Prompt: { None: 'none', Consent: 'consent', Login: 'login' },
@@ -61,7 +56,6 @@ describe('LoginScreen', () => {
       fireEvent.click(await screen.findByTestId('login-signin-btn'));
       const err = await screen.findByTestId('login-signin-error');
       expect(err.textContent).toContain('Load failed');
-      // the LOCAL build appends the certificate hint (full-trust step)
       expect(err.textContent).toContain('Certificate Trust Settings');
     } finally {
       mockLogto.value = false;
@@ -102,28 +96,22 @@ describe('LoginScreen', () => {
   it('creates an offline profile and enters a personal space named after it', async () => {
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    // step 1: the trade-off screen (info only, no profiles yet)
     expect(await screen.findByTestId('screen-offline-intro')).toBeTruthy();
     expect(screen.getByTestId('offline-keep-card')).toBeTruthy();
     expect(screen.getByTestId('offline-lose-card')).toBeTruthy();
     expect(screen.queryByTestId('offline-name')).toBeNull();
-    // browser back leaves the offline screen (login modes honor popstate)
     fireEvent.popState(window);
     expect(screen.queryByTestId('screen-offline-intro')).toBeNull();
     fireEvent.click(screen.getByTestId('login-offline-btn'));
-    // step 2: profiles live on their own screen behind Continue
     fireEvent.click(screen.getByTestId('offline-continue'));
     expect(await screen.findByTestId('screen-offline-profiles')).toBeTruthy();
     const name = await screen.findByTestId('offline-name');
-    // #195: stays tappable — a nameless tap names the blocker instead
     fireEvent.click(screen.getByTestId('offline-create'));
     expect(await screen.findByTestId('offline-create-blocker')).toBeTruthy();
     fireEvent.change(name, { target: { value: 'Okkes' } });
     await waitFor(() => expect(screen.queryByTestId('offline-create-blocker')).toBeNull());
     fireEvent.click(screen.getByTestId('offline-create'));
 
-    // offline users get the same first-run setup (user ruling): name is
-    // prefilled from the profile; finish it to reach home
     await screen.findByTestId('screen-onboarding');
     await waitFor(() => expect((screen.getByTestId('onboarding-name') as HTMLInputElement).value).toBe('Okkes'));
     fireEvent.click(screen.getByTestId('onboarding-save'));
@@ -141,18 +129,15 @@ describe('LoginScreen', () => {
     fireEvent.click(screen.getByTestId('offline-continue'));
     await screen.findByTestId('screen-offline-profiles');
 
-    // the existing world is offered AND the add row stays available
     expect(screen.getByTestId('offline-profile-p1')).toBeTruthy();
     fireEvent.change(screen.getByTestId('offline-name'), { target: { value: 'Partner' } });
     fireEvent.click(screen.getByTestId('offline-create'));
 
-    // Mina explains separate worlds; Go back changes nothing
     await screen.findByTestId('mina-profiles-ask');
     fireEvent.click(screen.getByTestId('mina-profiles-back'));
     await waitFor(() => expect(screen.queryByTestId('mina-profiles-ask')).toBeNull());
     expect(JSON.parse(localStorage.getItem('munni_offline_profiles')!)).toHaveLength(1);
 
-    // Continue mints the second world and enters it
     fireEvent.click(screen.getByTestId('offline-create'));
     await screen.findByTestId('mina-profiles-ask');
     fireEvent.click(screen.getByTestId('mina-profiles-continue'));
@@ -170,7 +155,7 @@ describe('LoginScreen', () => {
     fireEvent.click(await screen.findByTestId('login-lang-nl'));
     await waitFor(() => expect(screen.getByTestId('login-demo-btn').textContent).toContain('demo'));
     expect(localStorage.getItem('munni_lang')).toBe('nl');
-    expect(fetchSpy).not.toHaveBeenCalled(); // language art/data is bundled
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('without Logto the login offers the demo and offline doors, no sign-in button', async () => {
@@ -181,7 +166,6 @@ describe('LoginScreen', () => {
   });
 
   it('an existing offline profile is offered on the next visit and keeps its data', async () => {
-    // first visit: create the profile
     const first = renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
     fireEvent.click(await screen.findByTestId('offline-continue'));
@@ -194,7 +178,7 @@ describe('LoginScreen', () => {
     const identity = readSessionIdentity();
     first.unmount();
 
-    // sign out (session cleared) but local data must survive for offline profiles
+    // sign out clears the session, but local data must survive for offline profiles
     localStorage.removeItem('munni_session');
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));

@@ -14,17 +14,8 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.AlbertHeijn;
 
-/// <summary>
-/// Albert Heijn - T2. A browser drives the OAuth login exactly once and the
-/// refresh token serves every fetch after that over plain HTTP.
-///
-/// The predecessor asked the human to log in on AH's page, read a failed
-/// <c>appie://</c> navigation out of their browser's console and paste it
-/// back. There is no console on a phone, so that flow was unusable for most
-/// of the people it was for. The agent now types the credentials and catches
-/// the redirect itself; the paste survives only as the last resort, for the
-/// case where the agent's browser meets a wall the human's would not.
-/// </summary>
+/// Albert Heijn, T2: a browser drives the OAuth login once; the refresh token serves every fetch after it over HTTP.
+/// The pasted-redirect flow (no console on a phone) survives only as the last resort.
 public sealed class AlbertHeijnAdapter : IProviderAdapter
 {
     public const string ProviderId = "ah";
@@ -33,7 +24,6 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
     /// <summary>Undeclared on purpose - see <see cref="ObtainCodeAsync"/>.</summary>
     private const string RedirectInput = "redirect_url";
 
-    /// <summary>Short probes: the settle loop runs them on every pass.</summary>
     private const int PageProbeMs = 500;
 
     private readonly ProviderManifest Manifest;
@@ -47,16 +37,10 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         _options = options ?? new AlbertHeijnOptions();
         _time = time ?? TimeProvider.System;
 
-        // Built from the options, so the flow the manifest declares and the
-        // login this adapter actually performs cannot drift apart. A manifest
-        // promising a password form for a login that never asks for one is a
-        // consumer drawing two boxes nobody can fill.
+        // built from the options so the declared flow cannot drift from the login actually performed
         Manifest = AlbertHeijnManifest.Build(_options.LiveLogin);
 
-        // The policy is shared; only the selectors and the patience are AH's.
-        // Naming hCaptcha's two frames is what opts this provider into the
-        // relay: the gate cannot tell a grid from the widget around it without
-        // a claim about the markup, and that claim is a provider's to make.
+        // naming hCaptcha's two frames opts this provider into the relay: a claim about the markup is the provider's to make
         _captcha = new CaptchaGate(new CaptchaSpec
         {
             ProviderId = ProviderId,
@@ -92,15 +76,9 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
                 RefreshToken = tokens.RefreshToken,
                 AccessTokenExpiresAt = tokens.ExpiresAt,
             },
-            // A brand name is not prose and needs no translation. There is no
-            // external id to show: nothing in the login response identifies
-            // the member.
+            // no external id: nothing in the login response identifies the member
             Account = new ProviderAccount { DisplayName = Manifest.Name },
-            // ExpiresAt is deliberately unset: the access token's own expiry
-            // says nothing about how long the connection lasts, and the
-            // refresh token keeps it alive well past it. Claiming the short
-            // one would make the consumer prompt for a reconnect that is not
-            // needed.
+            // ExpiresAt unset on purpose: the access token's expiry is not the connection's, the refresh token outlives it
         };
     }
 
@@ -124,9 +102,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         var receipts = new List<Receipt>(summaries.Count);
 
-        // Only ever populated when the caller asked. AH's detail response is
-        // exactly the document to have in front of you when a field is renamed:
-        // the normalised receipt just loses a value and says nothing about why.
+        // only populated when asked: AH's detail response is the document to have when a field is renamed
         var raw = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var summary in summaries)
@@ -139,37 +115,25 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
             if (request.WantsItems)
             {
-                // The detail is the expensive call and the one most likely to
-                // trip protection, so it only happens when items were asked
-                // for.
+                // the detail call is the expensive one and the likeliest to trip protection: only when items were asked for
                 using var detail = await DetailAsync(ctx, session, summary.Id, ct).ConfigureAwait(false);
 
                 items = AlbertHeijnReceiptParser.ParseItems(detail.RootElement, _options);
                 payment = AlbertHeijnReceiptParser.ParsePayment(detail.RootElement, _options);
 
-                // The detail document, which is the richer of the two and the
-                // one worth having when a field moves.
                 if (request.WantsRaw) detailRaw = detail.RootElement.GetRawText();
             }
 
-            // Whichever document this receipt actually came from. Without
-            // items there is no detail call and never was one, and returning
-            // nothing for `raw` - which is what this did - reads as "the
-            // provider sent nothing" rather than "you did not ask for the call
-            // that produces it". The list row is a real answer.
+            // without items there is no detail call: the list row is the raw, since nothing reads as "provider sent nothing"
             if (request.WantsRaw && (detailRaw ?? summary.Raw) is { } document)
             {
                 raw[summary.Id] = document;
             }
 
-            // The list's total against the detail's own lines is the one
-            // redundancy AH gives us, and ReceiptFactory spends it: every
-            // receipt leaves here with a reconciliation verdict on it.
             receipts.Add(ReceiptFactory.Build(
                 ctx.SessionId,
                 summary.Id,
-                // The confirmed operations select no store, so there is no
-                // store name to state. Null, not a guess.
+                // the confirmed operations select no store: null, not a guess
                 AlbertHeijnReceiptParser.Merchant(null),
                 summary.PurchasedAt,
                 summary.Total,
@@ -189,69 +153,28 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>Delegates: the same paste arrives here and at Lidl.</summary>
     internal static string? ExtractCode(string? candidate) => Support.RedirectCode.Extract(candidate);
 
-    /// <summary>
-    /// Confirmed shape: only the client id is substituted, and the redirect
-    /// URI goes in verbatim exactly as the reference sends it.
-    /// </summary>
+    /// only the client id is substituted; the redirect URI goes in verbatim, as the reference sends it
     internal string AuthorizeUrl() => _options.AuthorizeUrlTemplate
         .Replace("{client_id}", Uri.EscapeDataString(_options.ClientId), StringComparison.Ordinal)
         .Replace("{redirect_uri}", _options.RedirectUri, StringComparison.Ordinal);
 
-    // ---- login -------------------------------------------------------------
-
-    /// <summary>
-    /// Albert Heijn's own login page, streamed to whoever owns the account.
-    ///
-    /// This adapter types nothing. It opens the page, starts watching for the
-    /// redirect, and raises a live view; the human signs in on the page in
-    /// front of them, meets whatever AH puts in the way - a captcha, an SMS
-    /// code, an app approval, something none of us has seen yet - and deals
-    /// with it the way they would on their own laptop. The login finishes when
-    /// the redirect arrives, and the redirect is the only thing this waits for.
-    ///
-    /// What that buys is the whole reason for it: no username and no password
-    /// are asked for, so none is posted to the connector, written to a job's
-    /// inputs, or held anywhere by anything here. The manifest declares no
-    /// fields and the validator refuses one that does.
-    ///
-    /// <see cref="IJobContext.CredentialSubmitted"/> is deliberately NOT
-    /// latched. It exists so a lost lease does not requeue a login whose
-    /// password already counted against an account, and this adapter never
-    /// submits one - the attempts are the human's own, on the provider's own
-    /// page, exactly as if they had opened ah.nl themselves. Latching here
-    /// would fail jobs permanently to protect against something that cannot
-    /// happen.
-    /// </summary>
+    // nothing is typed: the human signs in on AH's page, so no credential reaches the platform
+    // CredentialSubmitted is deliberately not latched: no password is submitted here, latching would fail jobs for nothing
     private async Task<string> LiveCodeAsync(IJobContext ctx, CancellationToken ct)
     {
         ctx.Progress(JobStep.OpeningProvider);
 
         var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
 
-        // Attached before the page is navigated, and so before the human can
-        // touch anything. AH's redirect arrives the instant the last step
-        // passes, and a watcher attached afterwards misses the one event the
-        // whole login turns on - including the case where AH still remembers
-        // this browser and answers the authorize call with the callback.
+        // attached before navigating: the redirect arrives the instant the last step passes, and a later watcher misses it
         using var watcher = new RedirectWatcher(page, _options.RedirectUri, _time);
 
         return await LiveCodeAsync(ctx, new PlaywrightLoginPage(page, Manifest), watcher, ct)
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The streamed login, behind the seam.
-    ///
-    /// Internal rather than private for the reason <see cref="SettleAsync"/>
-    /// is, and more urgently: this is the path production takes by default, so
-    /// every promise the summary above makes - that nothing is typed, that no
-    /// credential is latched, that the view is ENDED rather than abandoned when
-    /// the redirect lands - was until now asserted by nobody. The typed path
-    /// below it had the whole suite; this had a live account and a human.
-    /// </summary>
     internal async Task<string> LiveCodeAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
     {
@@ -263,18 +186,8 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // Raised and awaited on its own: the answer to a live view is the empty
-        // one every passive challenge sends, and what actually ends this is the
-        // redirect. Whichever comes first wins - somebody who signs in without
-        // ever touching the consumer's UI again still finishes.
-        // Linked so the ask can be ENDED, not merely abandoned.
-        //
-        // The first version observed this task's exception and walked away,
-        // which left the live view open for its whole window after the login
-        // had already succeeded: the shutter kept photographing, the agent
-        // stayed occupied, and the human sat looking at a frozen picture of a
-        // step they had finished. An agent runs one job at a time, so a login
-        // that never lets go wedges every later one behind it.
+        // linked so the ask can be ENDED, not abandoned: an abandoned live view keeps the shutter and agent busy and an agent
+        // runs one job at a time, so every later job wedges behind it
         using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var asked = ctx.AskAsync(new Challenge
@@ -310,19 +223,8 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         }
         finally
         {
-            // However this ended, the sign-in the view existed for is over.
-            // Cancelled rather than left running: this is what stops the
-            // shutter, releases the browser and lets the job finish. An agent
-            // runs one job at a time, so a login that never lets go wedges
-            // every later one behind it.
-            //
-            // In the finally rather than on the success path alone, because
-            // the window running out is the case where somebody IS still
-            // looking at the picture - and disposing this source merely
-            // unlinks it from the job's token, which would orphan the ask
-            // instead of ending it. Its exception is still observed: an
-            // unobserved one for a view we deliberately closed is a crash
-            // report for something that went right.
+            // cancelled in finally, not only on success: when the window runs out someone is still looking at the picture.
+            // the ask's exception is observed because an unobserved one is a crash report for a deliberate close
             await view.CancelAsync().ConfigureAwait(false);
             _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
         }
@@ -330,15 +232,8 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
     private async Task<string> ObtainCodeAsync(IJobContext ctx, CancellationToken ct)
     {
-        // The escape hatch, and the only path that starts no browser: a host
-        // that already holds a redirect - a native client that intercepted
-        // the appie:// scheme itself - hands it straight over.
-        //
-        // Deliberately not a manifest field: it would put a third box on a
-        // login form that exists to have two. The consequence is that the
-        // control plane's endpoint refuses it as an undeclared input, so this
-        // path belongs to a host driving the adapter directly. It costs one
-        // lookup and it is the difference between needing an agent and not.
+        // escape hatch, not a manifest field (a third box on a two-box form): the control plane refuses it as undeclared,
+        // so only a host driving the adapter directly uses it
         if (ctx.Inputs.TryGetValue(RedirectInput, out var supplied) && ExtractCode(supplied) is { } handed)
         {
             ctx.Progress(JobStep.Authenticating);
@@ -362,57 +257,30 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         await PageOps.FillAsync(page, _options.PasswordSelectors, password, ProviderId, "password field",
             _options.SelectorTimeoutMs, ct).ConfigureAwait(false);
 
-        // Before the click, never after: AH's redirect regularly lands while
-        // the click is still being awaited, and a listener attached later
-        // misses the one event the whole login turns on.
+        // before the click: the redirect often lands while the click is awaited
         using var watcher = new RedirectWatcher(page, _options.RedirectUri, _time);
 
-        // Latch before the credentials leave the machine. After this a lost
-        // lease fails the job rather than requeuing it: a retried login is
-        // how an account gets locked.
+        // latch before the credentials leave: after this a lost lease fails the job, a retried login is how an account gets locked
         ctx.CredentialSubmitted();
         await PageOps.ClickAsync(page, _options.SubmitSelectors, ProviderId, "login submit",
             _options.SelectorTimeoutMs, ct).ConfigureAwait(false);
 
-        // The same page instance, twice over: the login state lives in it, and
-        // so does the widget the taps have to land in. A second page - or the
-        // lease's next one - would be a different browsing context holding
-        // none of it.
+        // the same page instance: the login state and the widget live in it, another page is a different browsing context
         var redirect = await SettleAsync(
             ctx, new PlaywrightLoginPage(page, Manifest), watcher, new MouseTapSurface(page), ct)
             .ConfigureAwait(false);
 
-        // The URL itself is never quoted back: it carries a live credential.
+        // the URL is never quoted back: it carries a live credential
         return ExtractCode(redirect)
                ?? throw ConnectorException.ProviderChanged("ah: the callback carried no authorization code");
     }
 
-    /// <summary>
-    /// Waits for the login to resolve into one of four outcomes: the
-    /// redirect, a stated credential error, a captcha, or nothing
-    /// recognisable.
-    ///
-    /// The last case is deliberately not <c>invalid_credentials</c>. Guessing
-    /// "wrong password" from silence sends the user to reset a password that
-    /// was fine, and a credential error is never retried - so the mistake is
-    /// permanent for that session too.
-    ///
-    /// Internal rather than private so the offline suite can drive it through
-    /// <see cref="ILoginPage"/>: every branch below decides how a human is
-    /// treated, and none of them was reachable without a live account.
-    /// </summary>
+    /// silence is deliberately not invalid_credentials: that guess is permanent, as credential errors are never retried
     internal Task<string> SettleAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct) =>
         SettleAsync(ctx, page, watcher, taps: null, ct);
 
-    /// <summary>
-    /// As above, with somewhere for a relayed tap to land.
-    /// </summary>
-    /// <param name="taps">
-    /// The page's mouse. Null means no relay is possible - a caller with no
-    /// browser - and hCaptcha falls back to the person at the keyboard, or to
-    /// a refusal when there is nobody there.
-    /// </param>
+    /// <param name="taps">null: no relay possible; hCaptcha falls back to the person at the keyboard, or a refusal</param>
     internal async Task<string> SettleAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface? taps, CancellationToken ct)
     {
@@ -436,10 +304,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
                 if (outcome.Redirect is { } finished) return finished;
                 if (!outcome.Handled) break;
 
-                // The settle budget measures how long AH takes to answer,
-                // so it restarts once a wait on a human is over: the
-                // minutes they spent are not the provider being slow, and
-                // charging them to it fails a login that is about to work.
+                // the settle budget restarts after a human wait: their minutes are not AH being slow
                 deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
                 continue;
             }
@@ -450,11 +315,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         return await AskTheHumanAsync(ctx, captchaSeen, page.Url, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The page states a credential failure itself. This is the only path
-    /// that may report invalid_credentials, and nothing retries it - by
-    /// construction rather than by discipline here.
-    /// </summary>
+    /// the only path that may report invalid_credentials
     private async Task ThrowIfCredentialErrorStatedAsync(ILoginPage page, CancellationToken ct)
     {
         var stated = await page.FindAsync(_options.LoginErrorSelectors, PageProbeMs, ct).ConfigureAwait(false);
@@ -464,9 +325,6 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         }
     }
 
-    /// <summary>
-    /// The wall, met, when one stands. Null when the page shows none.
-    /// </summary>
     private async Task<CaptchaOutcome?> MeetWallAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface? taps, CancellationToken ct)
     {
@@ -476,13 +334,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         return await _captcha.FaceAsync(ctx, page, watcher, wall, taps, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The last resort: the human finishes on AH's own page, in their own
-    /// browser, and hands back the redirect. Their IP and their browser are
-    /// the ones most likely to get past whatever stopped the agent - which is
-    /// exactly the case this fallback exists for, and the only one it is
-    /// reached in.
-    /// </summary>
+    /// last resort: the human's own IP and browser are the likeliest to get past what stopped the agent
     private async Task<string> AskTheHumanAsync(
         IJobContext ctx, bool captchaSeen, string lastUrl, CancellationToken ct)
     {
@@ -516,13 +368,10 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
     private async Task DismissConsentAsync(IPage page, CancellationToken ct)
     {
-        // Best effort: a consent wall left standing covers the form, and a
-        // missing one is the normal case on a fresh profile.
+        // best effort: a consent wall left standing covers the form
         var accept = await PageOps.FindAsync(page, _options.ConsentSelectors, 2_000, ct).ConfigureAwait(false);
         if (accept is not null) await accept.ClickAsync().ConfigureAwait(false);
     }
-
-    // ---- transport ---------------------------------------------------------
 
     private Task<TokenSet> ExchangeAsync(IJobContext ctx, string code, CancellationToken ct) =>
         PostTokenAsync(ctx, _options.TokenPath,
@@ -549,9 +398,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         using var response = await ProviderHttp.SendAsync(ctx.Http, request, ProviderId, ct).ConfigureAwait(false);
 
-        // A rejected code or a dead refresh token is the session ending, not
-        // a wrong password: whatever the human typed, AH already accepted it
-        // to issue the code.
+        // a rejected code or dead refresh token is the session ending, not a wrong password
         if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.BadRequest)
         {
             throw ConnectorException.SessionExpired($"ah: {what} rejected ({(int)response.StatusCode})");
@@ -572,8 +419,6 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         var complete = true;
         var offset = 0;
 
-        // Page after page, until the page itself says the next one is not
-        // worth asking for.
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -596,8 +441,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         if (ordered.Count > cap)
         {
-            // More remains than one pass may return. The caller gets a
-            // partial pass and comes back for the rest under a fresh cursor.
+            // more remains than one pass may return: partial, the caller returns for the rest under a fresh cursor
             ordered = [.. ordered.Take(cap)];
             complete = false;
         }
@@ -605,10 +449,6 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         return (ordered, complete);
     }
 
-    /// <summary>
-    /// One page of the list, folded into the walk. False when the walk is
-    /// over: the next page is not worth asking for.
-    /// </summary>
     private static bool CollectPage(
         IReadOnlyList<AhReceiptSummary> rows, ResourceRequest request, HashSet<string> seen,
         List<AhReceiptSummary> collected, int pageSize, int cap)
@@ -627,28 +467,17 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
             if (ReceiptFactory.InWindow(row.PurchasedAt, request)) collected.Add(row);
         }
 
-        // A page that repeats the previous one means the offset is not
-        // advancing anything upstream; carrying on would be the same
-        // request twenty times against a defended endpoint.
+        // a repeated page means the offset advances nothing upstream: stop rather than repeat a request against a defended endpoint
         if (fresh == 0) return false;
 
-        // The list runs newest first, so a page entirely older than the
-        // window means every later page is too. Stopping here is what
-        // keeps two years of history from being walked on every sync.
+        // newest first: a page wholly older than the window means every later page is too
         if (older == rows.Count) return false;
 
-        // A short page is the end of the history.
-        //
-        // Sound only because the parser maps AH's rows one for one: it now
-        // refuses a row it cannot key rather than dropping it, so this
-        // counts what AH SENT rather than what could be read. While it
-        // skipped, one unkeyable receipt shortened the page, stopped the
-        // walk here, and left everything older missing from a pass that
-        // called itself complete.
+        // a short page ends the history; sound only because the parser refuses an unkeyable row instead of skipping it,
+        // so the count is what AH sent
         if (rows.Count < pageSize) return false;
 
-        // One page past the cap is enough to know the pass is partial;
-        // more would be work the caller is about to discard.
+        // one page past the cap proves the pass is partial
         return collected.Count <= cap;
     }
 
@@ -661,18 +490,14 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
     {
         var url = _options.ApiBaseUrl.TrimEnd('/') + _options.GraphQlPath;
 
-        // Confirmed: query and variables, and no operationName field.
-        // Serialised once - the factory below runs a second time on a refresh
-        // and must not depend on a node that has already been consumed.
+        // confirmed: query and variables, no operationName; serialised once because the factory reruns on refresh
         var body = new JsonObject { ["query"] = query, ["variables"] = variables }.ToJsonString();
 
         using var response = await session.SendAsync(ctx.Http,
             token => Request(url, token, body),
             (refresh, token) => RefreshAsync(ctx, refresh, token), what, ct).ConfigureAwait(false);
 
-        // 403, 502 and 504 are bot protection refusing us, never a wrong
-        // password. The body is kept on failure because a GraphQL 400 names
-        // the field it rejected, which is the whole diagnosis.
+        // 403, 502 and 504 are bot protection, never a wrong password; the body is kept because a GraphQL 400 names the field
         await ProviderHttp.EnsureSuccessAsync(
             response, ProviderId, what, RetailHttp.RetailBlockStatuses, ct).ConfigureAwait(false);
 
@@ -680,8 +505,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
         try
         {
-            // GraphQL reports a failure in the body with a 200 status, so the
-            // errors array is read before the data is trusted at all.
+            // GraphQL reports a failure in the body with a 200: read the errors array before trusting the data
             AlbertHeijnReceiptParser.ThrowOnErrors(document.RootElement);
         }
         catch
@@ -693,13 +517,8 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         return document;
     }
 
-    /// <summary>
-    /// The header block <c>appie-go</c> sets on every api.ah.nl call. It is
-    /// sent because the API needs it to route and to answer at all, not to
-    /// disguise anything - the honest client identity the platform's posture
-    /// allows and nothing beyond it. Omitting it is what the adapter used to
-    /// do, and it is one of the reasons a real login failed.
-    /// </summary>
+    /// the header block appie-go sets on every api.ah.nl call: the API needs it to route and answer;
+    /// omitting it was one reason a real login failed
     private HttpRequestMessage Request(string url, string? accessToken, string jsonBody)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -708,8 +527,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         };
 
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
-        // The same literal as the client id in the reference; one option so
-        // the two cannot drift apart in a way AH would notice.
+        // the same literal as the client id in the reference; one option so the two cannot drift
         request.Headers.TryAddWithoutValidation("x-client-name", _options.ClientId);
         request.Headers.TryAddWithoutValidation("x-client-version", _options.ClientVersion);
         request.Headers.TryAddWithoutValidation("x-application", _options.Application);

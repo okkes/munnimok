@@ -8,7 +8,6 @@ COPY src/ src/
 RUN dotnet publish src/Munni.Api/Munni.Api.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
-# ICU for proper globalization (currency/date formatting server-side)
 RUN apk add --no-cache icu-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 WORKDIR /app

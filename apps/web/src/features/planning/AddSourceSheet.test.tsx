@@ -6,7 +6,6 @@ import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { renderWithProviders } from '@/test/harness';
 import { AddSourceSheet } from './AddSourceSheet';
 
-/** a model with two recurring costs (one with a brand logo) and one goal to pick from, and no subjects yet */
 const model = {
   subjectsOf: () => [],
   data: {
@@ -34,7 +33,6 @@ describe('AddSourceSheet (user ss 2026-10-07: "4 of 1")', () => {
     expect(screen.getByTestId('plan-add-source-all').textContent).toContain('0 of 1');
     expect((screen.getByTestId('plan-add-source-save') as HTMLButtonElement).disabled).toBe(true);
 
-    // a pick here adds only what this segment offers
     fireEvent.click(screen.getByTestId('plan-add-source-g1'));
     fireEvent.click(screen.getByTestId('plan-add-source-save'));
     expect(ops.addMirrored).toHaveBeenCalledTimes(1);
@@ -87,7 +85,6 @@ describe('AddSourceSheet (user ss 2026-10-07: "4 of 1")', () => {
     const ops = { addMirrored: vi.fn(async () => 'id'), freeCategories: vi.fn(async () => undefined), removeSubject: vi.fn(async () => undefined) } as unknown as PlanningOps;
     renderWithProviders(<AddSourceSheet segment="budgets" model={withBudgets} plan={plan} ops={ops} onClose={() => undefined} />);
     expect(screen.getByTestId('plan-add-source-blocked-s1').textContent).toMatch(/Consumption came first and counts Groceries/);
-    // only the free budget can be picked
     expect(screen.getByTestId('plan-add-source-all').textContent).toContain('0 of 1');
     fireEvent.click(screen.getByTestId('plan-add-source-free-s1'));
     expect(ops.freeCategories).toHaveBeenCalledWith('s1', ['groceries']);

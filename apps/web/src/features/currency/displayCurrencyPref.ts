@@ -12,12 +12,8 @@ interface MetaStore {
   metaPut(key: string, value: unknown): Promise<void>;
 }
 
-/**
- * Persist the display-currency preference outside the profile screen
- * (the balance-band quick toggle): the meta copy applies instantly on
- * this device; signed-in users also push it to /me so other devices
- * follow. A failed push is fine — the next profile save carries it.
- */
+// the meta copy applies instantly on this device; signed-in users also push to /me
+// a failed push is fine: the next profile save carries it
 export async function setDisplayCurrency(
   store: MetaStore,
   identityKind: string | undefined,

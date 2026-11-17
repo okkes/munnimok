@@ -7,15 +7,8 @@ import type { TxReimbursement, TxSplit, TxSplitCat } from '@/db/types';
 import { isReimbContainer, largestOpenPartId, reimbCentsByPart, reimbSettleFields } from '@/domain/reimbursement';
 import { cachedCatalog } from '@/sync/catalogSync';
 
-/**
- * AC3: apply the catalog document's tombstones locally, once per
- * published version. Retired builtins detach their transactions (raw
- * rows and per-space overlays) to Uncategorized and put them back into
- * review — the same story as deleting a user category. Custom subs the
- * user created under a retired premade parent cascade away with it
- * (user ruling: "in that case we can't do much about it"); custom
- * categories are otherwise never touched by catalog updates.
- */
+// AC3: once per catalog version, retired builtins detach their transactions and overlays to Uncategorized and back to
+// review; custom subs under a retired premade parent cascade away; other custom categories are never touched
 export async function applyCatalogTombstones(store: StorageBackend, repo: Repo): Promise<number> {
   const doc = await cachedCatalog(store);
   if (!doc) return 0;
@@ -25,13 +18,12 @@ export async function applyCatalogTombstones(store: StorageBackend, repo: Repo):
   if (await store.metaGet(markerKey)) return 0;
 
   let touched = 0;
-  // cascade: custom subs under a retired premade parent
   const orphans = (await store.allRows('category')).filter(
     (c) => c.deleted === 0 && !!c.parentId && dead.has(c.parentId),
   );
   for (const orphan of orphans) {
     await repo.remove('category', orphan.spaceId, orphan.id);
-    dead.add(orphan.id); // their transactions detach in the same pass
+    dead.add(orphan.id);
     touched++;
   }
   for (const tx of await store.allRows('transaction')) {
@@ -50,22 +42,18 @@ export async function applyCatalogTombstones(store: StorageBackend, repo: Repo):
   return touched;
 }
 
-/**
- * #228 (user 2026-08-13): reimbursement on a SPLIT transaction stays on
- * the split. EVERY boot normalizes the settle bookkeeping: a link made
- * before its row was split still points at the whole row, so it is
- * given a part name, and each side's partition is recomputed from its
- * links. Runs through the same reimbSettleFields builder the write hook
- * uses, with ID-based tie-breaks so concurrent heals on two devices
- * write byte-identical rows and LWW converges cleanly.
- */
+// #228: reimbursement on a SPLIT stays on the split. EVERY boot: a link made before its row was split gets a part name
+// and each side is recomputed; ID-based tie-breaks make concurrent heals on two devices write identical rows (LWW)
 export async function normalizeReimbursements(store: StorageBackend, repo: Repo): Promise<number> {
   let touched = 0;
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  for (const space of spaces) {
-    touched += await normalizeSpaceReimbursements(repo, await visibleTransactions(store, space.id));
-  }
+  for (const space of spaces) touched += await settleSpaceReimbursements(store, repo, space.id);
   return touched;
+}
+
+/** #617: one space settled now, right after its transactions were deleted, so neither side waits for the next start */
+export async function settleSpaceReimbursements(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  return normalizeSpaceReimbursements(store, repo, await visibleTransactions(store, spaceId));
 }
 
 /** settle bookkeeping still on a side whose links may all be gone */
@@ -79,8 +67,6 @@ const bump = (map: Map<string, number>, key: string, cents: number): void => {
   map.set(key, (map.get(key) ?? 0) + cents);
 };
 
-/** assign one loose link its part name(s) — expense side first, then
- *  the credit side, each landing on the largest open part (S3776) */
 function nameLooseLink(
   tx: SpaceRows[number],
   link: TxReimbursement,
@@ -107,8 +93,6 @@ function nameLooseLink(
   return next;
 }
 
-/** the fixed given-by-part view: every link that already names a credit
- *  part, keyed by the credit it names (S3776) */
 function seedNamedGiven(txs: SpaceRows): Map<string, Map<string, number>> {
   const namedGiven = new Map<string, Map<string, number>>();
   for (const tx of txs) {
@@ -122,10 +106,7 @@ function seedNamedGiven(txs: SpaceRows): Map<string, Map<string, number>> {
   return namedGiven;
 }
 
-/** pass A: every link on a split side NAMES its part (#228) — a link
- *  made before the row was split lands on the largest open part,
- *  assigned in stable row order so two devices converge on the same
- *  names */
+// pass A: a link made before the row was split lands on the largest open part, in stable row order so devices converge
 async function nameReimbursementParts(repo: Repo, txs: SpaceRows): Promise<Map<string, TxReimbursement[]>> {
   const byId = new Map(txs.map((tx) => [tx.id, tx]));
   const namedGiven = seedNamedGiven(txs);
@@ -152,9 +133,7 @@ async function nameReimbursementParts(repo: Repo, txs: SpaceRows): Promise<Map<s
   return nextLinks;
 }
 
-/** compare shapes on their STORED essence — the join enriches cats
- *  entries (and parts) with derived view fields, and comparing those
- *  against the rebuilt plain entries would rewrite every boot */
+// compare the stored essence: the join adds derived view fields, and comparing those to rebuilt entries rewrites every boot
 const plainCats = (cats: TxSplitCat[] | null | undefined): { catId: string; amountCents: number; pct?: number }[] | null =>
   cats?.length
     ? cats.map((c) => ({ catId: c.catId, amountCents: c.amountCents, ...(c.pct !== undefined ? { pct: c.pct } : {}) }))
@@ -162,20 +141,52 @@ const plainCats = (cats: TxSplitCat[] | null | undefined): { catId: string; amou
 const comparableSplits = (splits: TxSplit[] | null | undefined) =>
   splits?.length ? splits.map((p) => ({ ...p, txType: undefined, cats: plainCats(p.cats) ?? undefined })) : null;
 
-async function normalizeSpaceReimbursements(repo: Repo, allRows: SpaceRows): Promise<number> {
+// #617: a link to a deleted transaction is no link; only a row this device holds as deleted counts, one it lacks may not
+// have arrived
+async function dropLinksToDeleted(store: StorageBackend, repo: Repo, txs: SpaceRows): Promise<{ rows: SpaceRows; dropped: number }> {
+  const live = new Set(txs.map((tx) => tx.id));
+  const gone = new Map<string, boolean>();
+  const isGone = async (id: string): Promise<boolean> => {
+    if (live.has(id)) return false;
+    if (!gone.has(id)) gone.set(id, (await store.get('transaction', id))?.deleted === 1);
+    return gone.get(id) ?? false;
+  };
+  const rows: SpaceRows = [];
+  let dropped = 0;
+  for (const tx of txs) {
+    const links = tx.reimbursements ?? [];
+    const kept: TxReimbursement[] = [];
+    for (const link of links) {
+      if (!(await isGone(link.txId))) kept.push(link);
+    }
+    if (kept.length === links.length) {
+      rows.push(tx);
+      continue;
+    }
+    await writeTxTransform(repo, tx, { reimbursements: kept });
+    rows.push({ ...tx, reimbursements: kept });
+    dropped++;
+  }
+  return { rows, dropped };
+}
+
+async function normalizeSpaceReimbursements(store: StorageBackend, repo: Repo, allRows: SpaceRows): Promise<number> {
   const nameOf = (id: string) => id;
-  const txs = allRows.filter((tx) => tx.deleted === 0);
+  const { rows: txs, dropped } = await dropLinksToDeleted(
+    store,
+    repo,
+    allRows.filter((tx) => tx.deleted === 0),
+  );
   const renamed = await nameReimbursementParts(repo, txs);
   const linksOf = (tx: SpaceRows[number]) => renamed.get(tx.id) ?? tx.reimbursements ?? [];
 
-  // pass B: recompute each side's settle bookkeeping from the links
   const namedBy = new Map<string, TxReimbursement[]>();
   for (const tx of txs) {
     for (const link of linksOf(tx)) {
       namedBy.set(link.txId, [...(namedBy.get(link.txId) ?? []), link]);
     }
   }
-  let touched = 0;
+  let touched = dropped;
   for (const tx of txs) {
     const own = linksOf(tx);
     const named = namedBy.get(tx.id) ?? [];
@@ -191,7 +202,6 @@ async function normalizeSpaceReimbursements(repo: Repo, allRows: SpaceRows): Pro
   return touched;
 }
 
-/** only what actually CHANGED, compared on the stored essence (S3776) */
 function settleDiffFields(
   tx: SpaceRows[number],
   patch: ReturnType<typeof reimbSettleFields>,

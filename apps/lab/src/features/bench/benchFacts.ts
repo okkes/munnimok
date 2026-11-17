@@ -1,22 +1,18 @@
 import type { ParamSpec, ProviderEntry, ResourceSpec } from '../../types';
 
-/** the states a sign-in or a job ends in */
 export const TERMINAL = new Set(['active', 'failed', 'expired', 'blocked', 'disabled', 'succeeded']);
 
-/** a session whose sign-in is still under way — its run (an explore run's live view among it) is still there to pick up (#576) */
+/** sign-in still under way: its run (an explore run's live view too) can still be picked up (#576) */
 export const SIGNING_IN = new Set(['queued', 'running', 'awaiting_input']);
 
-/** the manifest's sign-in fields, every step flattened with its step id */
 export function signInFields(p: ProviderEntry): { step: string; key: string; type: string; secret: boolean; required: boolean }[] {
   return (p.auth?.steps ?? []).flatMap((step) =>
     step.fields.map((f) => ({ step: step.id, key: f.key, type: f.type, secret: !!f.secret, required: !!f.required })),
   );
 }
 
-/** the params a resource takes from the operator: everything the manifest declares and does not mark internal */
 export const fetchParams = (resource: ResourceSpec | undefined): ParamSpec[] => (resource?.params ?? []).filter((p) => !p.internal);
 
-/** the fetch body's params from the form's values: a date, a word, or the picked values of a multi param; empty ones are left out */
 export function paramsBody(specs: readonly ParamSpec[], values: Readonly<Record<string, string | string[]>>): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   for (const spec of specs) {
@@ -31,7 +27,6 @@ export function paramsBody(specs: readonly ParamSpec[], values: Readonly<Record<
   return body;
 }
 
-/** the columns a page of records is read by: the keys of its first rows, the id-like ones first */
 export function columnsOf(records: readonly Record<string, unknown>[]): string[] {
   const keys = new Set<string>();
   for (const record of records.slice(0, 25)) for (const key of Object.keys(record)) keys.add(key);
@@ -44,7 +39,6 @@ export function columnsOf(records: readonly Record<string, unknown>[]): string[]
   });
 }
 
-/** a record's cell as text: money as `amount currency`, objects as compact JSON, long values cut */
 export function cellText(value: unknown): string {
   if (value === null || value === undefined) return '';
   let text: string;

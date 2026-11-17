@@ -1,8 +1,5 @@
-// The CLI entrypoints the workflows and the helper spawn must at least LOAD:
-// a stale import (a renamed export) crashes at load time, which no unit
-// test of the modules catches — the Bootstrap of munni-nas-shared failed
-// exactly so on 2026-09-18. So: every script parses, and bootstrap.mjs
-// gets as far as asking for its stack.
+// every CLI entrypoint must at least load: a stale import (a renamed export) crashes at load,
+// which no module unit test catches
 import { spawnSync } from 'node:child_process';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';

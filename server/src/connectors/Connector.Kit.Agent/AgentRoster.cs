@@ -3,26 +3,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent;
 
-/// <summary>
-/// Which connectors this process is still serving, and the one decision that
-/// depends on knowing: when there is nothing left to serve, stop.
-/// </summary>
-/// <remarks>
-/// <b>An agent that could not enroll, or that was revoked, used to stop the
-/// application - and that was right when the process served one connector.</b>
-/// It is wrong the moment it serves several: a bank connector that has been
-/// restored from a backup taken before this agent enrolled answers 401, and the
-/// agent would have torn down the registry lease loop beside it, taking DUO -
-/// which has no pooled fleet to fall back to - off the air over somebody else's
-/// database restore.
-/// <para>
-/// So a connection retires on its own, and the process goes on. When the last
-/// one retires there is genuinely nothing left to do, and stopping is still an
-/// honest exit code for an operator or a container runtime - a container that
-/// sits up healthy and serves nobody is the failure this whole file exists to
-/// avoid.
-/// </para>
-/// </remarks>
+// a connector that cannot enroll or is revoked retires alone: stopping the application was right for one connector, but with
+// several a 401 from a restored-from-backup bank connector would take DUO (no pooled fleet to fall back to) off the air.
+// The last one retiring stops the process: a container healthy but serving nobody is the failure avoided
 public sealed class AgentRoster
 {
     private readonly int _total;
@@ -42,27 +25,18 @@ public sealed class AgentRoster
         _logger = logger;
     }
 
-    /// <summary>Connectors this process has given up on, by name.</summary>
     public IReadOnlyCollection<string> Retired
     {
         get { lock (_gate) return [.. _retired]; }
     }
 
-    /// <summary>Whether any connector is still being served.</summary>
     public bool AnyServed
     {
         get { lock (_gate) return _retired.Count < _total; }
     }
 
-    /// <summary>
-    /// This connector is no longer served, for the reason given.
-    /// </summary>
-    /// <remarks>
-    /// Idempotent per connection, and that is load-bearing rather than
-    /// defensive: the lease loop and the heartbeat loop both meet the same 401
-    /// and both revoke, so a counter would tick twice for one connector and
-    /// stop a process that is still serving two others perfectly well.
-    /// </remarks>
+    // idempotent per connection is load-bearing: the lease and heartbeat loops meet the same 401 and both revoke,
+    // and a counter would tick twice and stop a process still serving other connectors
     public void Retire(string connection, string why)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connection);

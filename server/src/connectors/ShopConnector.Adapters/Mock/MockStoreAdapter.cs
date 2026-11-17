@@ -10,25 +10,13 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Mock;
 
-/// <summary>
-/// The offline backbone. One adapter, six registered identities, and not one
-/// byte of network traffic between them.
-///
-/// These ship before any real provider and stay useful afterwards: they are
-/// how the control plane, the agent protocol, the challenge relay and the
-/// consuming app are all exercised end to end without an account, a browser
-/// or an egress IP. Every output is deterministic given a session id and the
-/// clock, so a test can assert on ids and content hashes rather than on shapes.
-/// </summary>
+/// The offline backbone: six identities, no network. Output is deterministic given session id and clock,
+/// so tests assert on ids and content hashes rather than shapes.
 public sealed class MockStoreAdapter : IProviderAdapter
 {
     public const string ReceiptsResource = "receipts";
 
-    /// <summary>
-    /// A valid 1x1 PNG. Deliberately minimal - its job is to prove that real
-    /// image bytes survive capture, redaction, upload and rendering, not to
-    /// look like a CAPTCHA.
-    /// </summary>
+    /// a valid 1x1 PNG: proves real image bytes survive capture, redaction, upload and rendering
     private const string PlaceholderPngBase64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -64,9 +52,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
         var username = Required(ctx, "username");
         var password = Required(ctx, "password");
 
-        // The one path that must exist offline: a credential the provider
-        // rejects, so the never-retry rule can be tested without an account
-        // to lock.
+        // the offline path for a rejected credential, so the never-retry rule is testable without an account to lock
         if (string.Equals(password, _profile.RejectedPassword, StringComparison.Ordinal))
         {
             ctx.CredentialSubmitted();
@@ -93,12 +79,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
                 break;
         }
 
-        // WHICH DOOR THIS SIGN-IN WENT THROUGH, for the same reason the fetch
-        // note below exists: the mock fleet is what proves the note path end to
-        // end, and a SIGN-IN is where a real adapter writes most of its notes.
-        // ING alone says which of two login screens it was served, whether the
-        // password form ever opened and what scope came back - and until a
-        // session carried notes, every one of those went to the agent's stdout.
+        // the mock fleet proves the sign-in note path end to end; a real adapter writes most of its notes at sign-in
         if (_profile.Behaviour is MockStoreBehaviour.SmsChallenge or MockStoreBehaviour.ImageChallenge)
         {
             ctx.Note(
@@ -111,8 +92,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
 
         return new LoginResult
         {
-            // Deterministic and obviously fake: a mock token that looked
-            // real would eventually be pasted somewhere real.
+            // obviously fake: a realistic mock token would eventually be pasted somewhere real
             Material = new SessionMaterial
             {
                 AccessToken = $"mock-access-{ctx.SessionId}",
@@ -135,8 +115,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
 
         if (_profile.Behaviour == MockStoreBehaviour.Broken)
         {
-            // The alert path: provider_changed degrades the provider and
-            // pages an operator, and is never retried.
+            // the alert path: provider_changed degrades the provider, pages an operator and is never retried
             throw ConnectorException.ProviderChanged(
                 $"{_profile.Id}: this provider always reports a shape change, by design");
         }
@@ -151,10 +130,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
             ctx.Progress(JobStep.Parsing);
         }
 
-        // What the store holds today: the fixture's receipts repeated up to the
-        // clock's now, kept as far back as this manifest's own history limit -
-        // the same limit the platform clamps a since to, so a whole-history
-        // fetch leaves nothing out.
+        // the fixture's receipts up to now, as far back as the manifest's history limit (the limit the platform clamps since to)
         var all = MockReceiptFixture
             .Read(
                 _profile.FixtureName,
@@ -167,11 +143,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
 
         var receipts = all.Where(r => ReceiptFactory.InWindow(r.PurchasedAt, request)).ToList();
 
-        // Said out loud, because "you bought nothing then" and "your window
-        // excluded everything" are the same empty list to whoever asked. Real
-        // adapters carry the same kind of sentence for the same reason; this
-        // one is here so the mock fleet exercises the note path end to end
-        // rather than leaving it only ever proven by a unit test.
+        // said out loud: "bought nothing" and "window excluded everything" are the same empty list; also exercises the note path
         if (all.Count > receipts.Count)
         {
             ctx.Note(
@@ -193,15 +165,13 @@ public sealed class MockStoreAdapter : IProviderAdapter
     {
         ctx.Progress(JobStep.Finalizing);
 
-        // Derived from the session id rather than random, so a second run of
-        // the same test routes to the same profile. A real T4 login takes
-        // these from the agent that served the job.
+        // derived from the session id so a rerun routes to the same profile; a real T4 login takes these from the serving agent
         var agentId = Value(ctx, "agent_id") ?? Ids.ForRecord(Ids.Agent, ctx.SessionId, "mock-agent");
         var profileId = Value(ctx, "profile_id") ?? Ids.ForRecord(Ids.Profile, ctx.SessionId, "mock-profile");
 
         return new LoginResult
         {
-            // No secret at all - the whole point of agent custody.
+            // no secret at all: agent custody
             Material = SessionMaterial.ForAgent(agentId, profileId),
             Account = new ProviderAccount { DisplayName = _profile.Name, ExternalId = profileId },
         };
@@ -245,11 +215,7 @@ public sealed class MockStoreAdapter : IProviderAdapter
         }
     }
 
-    /// <summary>
-    /// Walks the progress vocabulary slowly, which is what a consumer needs
-    /// to see an SSE stream do something and what an agent needs to have to
-    /// renew a lease mid-job.
-    /// </summary>
+    /// slow on purpose: lets a consumer see an SSE stream move and an agent renew a lease mid-job
     private async Task WalkSlowlyAsync(IJobContext ctx, CancellationToken ct)
     {
         foreach (var step in SlowSteps)

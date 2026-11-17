@@ -13,37 +13,14 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Jumbo;
 
-/// <summary>
-/// Jumbo - T3. A browser drives an Auth0 login, and the cookie it leaves
-/// behind serves plain HTTP GraphQL until it dies about a day later.
-///
-/// Six defaults in this adapter were built from assumptions and are now
-/// corrected against a working client and a live walk of the login chain.
-/// The dangerous one was money: order amounts are decimal-string euros and
-/// this adapter used to declare them minor units, which made every Jumbo
-/// total a hundredth of the truth - and because the item unit was wrong the
-/// same way, reconciliation passed. The unit is now declared per field from a
-/// source, both of Jumbo's two conventions are written down side by side in
-/// <see cref="JumboOptions"/>, and neither is ever inferred from a value.
-///
-/// The other five: there is no persisted-query handshake to speak; the
-/// response paths are <c>data.onlineOrders.orders</c> and
-/// <c>data.storeReceipts.receipts</c>; those two page independently and one
-/// counter drives neither; line items come from <c>OrderPagesOrder</c>; and
-/// in-store receipts have no structured items at all, only a receipt-printer
-/// layout to read as text.
-/// </summary>
+// T3: a browser drives an Auth0 login; the cookie it leaves serves plain HTTP GraphQL for about a day
+// order amounts are decimal-string euros, declared per field, never inferred (declared minor once made totals a hundredth)
 public sealed class JumboAdapter : IProviderAdapter
 {
     public const string ProviderId = "jumbo";
     public const string ReceiptsResource = "receipts";
 
-    /// <summary>
-    /// Built from the options, so the flow this manifest declares and the login
-    /// this adapter performs cannot drift apart. A manifest promising a password
-    /// form for a login that never asks for one is a consumer drawing two boxes
-    /// nobody can fill.
-    /// </summary>
+    // built from the options so the manifest's flow and the login this adapter performs cannot drift apart
     private readonly ProviderManifest Manifest;
 
     private readonly JumboOptions _options;
@@ -71,10 +48,8 @@ public sealed class JumboAdapter : IProviderAdapter
 
         Manifest = JumboManifest.Build();
 
-        // The policy is shared with Albert Heijn and Lidl Plus; only the
-        // selectors and the patience are Jumbo's. Auth0 Universal Login ships
-        // hCaptcha, reCAPTCHA and Turnstile and activates one on risk score,
-        // so a widget is the likely wall here rather than a picture.
+        // policy shared with Albert Heijn and Lidl Plus; Auth0 ships hCaptcha, reCAPTCHA and Turnstile
+        // and activates one on risk score: a widget is the likely wall
         _captcha = new CaptchaGate(new CaptchaSpec
         {
             ProviderId = ProviderId,
@@ -103,23 +78,8 @@ public sealed class JumboAdapter : IProviderAdapter
         return await LoginAsync(ctx, login, watcher, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Types what it was given, and hands the page to the human the moment
-    /// Jumbo asks something only they can answer.
-    ///
-    /// Both credentials are OPTIONAL, and that is the design rather than a
-    /// convenience. Auth0 raises Cloudflare Turnstile on a risk score - some
-    /// days it is there and some days it is not - and a Turnstile token is
-    /// minted by its own JavaScript in the browser that rendered it, against
-    /// that browser. It can never be relayed as a picture and never solved
-    /// here. So the wall decides who finishes: on a quiet day the stored
-    /// credential goes in and nobody is disturbed; on a walled day the same
-    /// half-filled page is streamed to whoever owns the account and they carry
-    /// on from where this stopped.
-    ///
-    /// A login with no credentials at all is the same path with nothing typed,
-    /// which is what a first connect looks like.
-    /// </summary>
+    // credentials are OPTIONAL: a Turnstile token is minted in the rendering browser and cannot be relayed or solved
+    // so on a walled day the half-filled page is streamed to the account owner, who carries on
     internal async Task<LoginResult> LoginAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
     {
@@ -127,8 +87,7 @@ public sealed class JumboAdapter : IProviderAdapter
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(watcher);
 
-        // Minted once, at connect, and carried for the life of the session. A
-        // device that changes identity every run looks like exactly what it is.
+        // minted once at connect: a device that changes identity every run looks like what it is
         var deviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString();
 
         var username = OptionalInput(ctx, "username");
@@ -137,14 +96,11 @@ public sealed class JumboAdapter : IProviderAdapter
         bool filled;
         try
         {
-            // CONFIRMED-live: this 302s to /api/auth/login and on to Auth0. The
-            // address this adapter used to open, /inloggen, is a 404.
+            // 302s to /api/auth/login and on to Auth0; the old /inloggen is a 404
             await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
             await DismissConsentAsync(page, ct).ConfigureAwait(false);
 
-            // The username first, on its own. It is not a secret, so it may sit in
-            // the box while the page is photographed - and it is the half a human
-            // would otherwise have to go and look up.
+            // username first: not secret, so it may sit in the box while the page is photographed
             ctx.Progress(JobStep.Authenticating);
 
             var identified = username is not null
@@ -152,16 +108,8 @@ public sealed class JumboAdapter : IProviderAdapter
                                     _options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
                                 .ConfigureAwait(false);
 
-            // Checked BEFORE the password goes anywhere near the DOM, and before
-            // any click. Two things follow from that: a walled day never spends one
-            // of the account's attempts, and the password is never typed into a
-            // page this run is about to hand to a shutter.
-            //
-            // Interactive alone. A picture captcha is relayable - photographed out,
-            // typed back - and the gate below already does that well; streaming a
-            // whole page to answer one small picture would be the worse experience
-            // for a wall we can already carry. What cannot be carried is a widget:
-            // Turnstile mints its token in the browser that rendered it.
+            // wall check before the password is typed or anything clicked: a walled day spends no attempt
+            // interactive only: a picture captcha is relayable by the gate below, a widget (Turnstile) is not
             var walled = (await _captcha.DetectAsync(page, ct).ConfigureAwait(false)).Kind
                 is CaptchaKind.Interactive;
 
@@ -172,11 +120,7 @@ public sealed class JumboAdapter : IProviderAdapter
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // A page that would not settle inside the typed attempt's budget - a
-            // slow Auth0, a consent layer that moved, a navigation that hung - is
-            // not something munni did wrong, and it surfaced as exactly that
-            // ("something went wrong on munni's side", user ss 2026-10-01). The
-            // person can see what this could not: the run is handed over.
+            // a page that would not settle (slow Auth0, moved consent layer) is not munni's fault: the run is handed over
             ctx.Note(
                 $"jumbo: the typed sign-in did not complete ({ex.GetType().Name}: {ex.Message}); " +
                 "the page is being handed over instead");
@@ -188,9 +132,7 @@ public sealed class JumboAdapter : IProviderAdapter
             return await LiveLoginAsync(ctx, page, watcher, deviceId, ct).ConfigureAwait(false);
         }
 
-        // Latch before the credentials leave the machine. After this a lost
-        // lease fails the job rather than requeuing it: a retried login is how
-        // an account gets locked.
+        // latch before the credentials leave: a lost lease must fail the job, not requeue it, since a retried login locks an account
         ctx.CredentialSubmitted();
 
         if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
@@ -204,16 +146,8 @@ public sealed class JumboAdapter : IProviderAdapter
         }
         catch (ConnectorException ex) when (ex.Code is ErrorCode.BlockedByProvider or ErrorCode.ProviderChanged)
         {
-            // The form went in and Jumbo did not hand back a session: a wall
-            // that appeared after the click, a one-time code, something none of
-            // us has seen. Every one of those is answerable by the person who
-            // owns the account, on the page in front of them - so the run is
-            // handed over rather than failed.
-            //
-            // invalid_credentials deliberately does NOT come through here. A
-            // stated wrong password is the one outcome streaming cannot fix,
-            // and it has to reach the consumer so a stored credential is
-            // dropped instead of re-submitted tomorrow.
+            // a late wall, a one-time code or something unseen is answerable by the owner: hand over rather than fail
+            // invalid_credentials must not come through here: it reaches the consumer so a stored credential is dropped
             return await LiveLoginAsync(ctx, page, watcher, deviceId, ct).ConfigureAwait(false);
         }
 
@@ -221,28 +155,18 @@ public sealed class JumboAdapter : IProviderAdapter
         return await HarvestAsync(ctx, deviceId, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Puts the password in, on whichever screen Auth0 is asking for it.
-    ///
-    /// False when the box never appeared, which is not a failure: the page may
-    /// have changed, and the human on a streamed view can see what this could
-    /// not.
-    /// </summary>
+    // false when the box never appeared: not a failure, the human on a streamed view can see what this could not
     private async Task<bool> FillPasswordAsync(
         IJobContext ctx, ILoginPage page, string password, CancellationToken ct)
     {
-        // Auth0 can ask for the two credentials on two screens. Probed rather
-        // than assumed, with a short budget: on a single-page form the probe
-        // always misses, and that wait is pure latency on every login.
+        // Auth0 may split the credentials over two screens; short probe, since on a single page it always misses
         if (await page.FillAsync(_options.PasswordSelectors, password, _options.PasswordProbeMs, ct)
                 .ConfigureAwait(false))
         {
             return true;
         }
 
-        // Advancing the wizard submits the identifier, so the account is
-        // touched from here on: latch first, or a lease lost between the click
-        // and the next line would requeue a login that already reached Jumbo.
+        // advancing submits the identifier: latch first, or a lease lost after the click requeues a login that reached Jumbo
         ctx.CredentialSubmitted();
 
         return await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false)
@@ -253,35 +177,9 @@ public sealed class JumboAdapter : IProviderAdapter
     private static string? OptionalInput(IJobContext ctx, string key) =>
         ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
-    /// <summary>
-    /// Jumbo's own login page, streamed to whoever owns the account.
-    ///
-    /// This adapter types nothing. It opens the page, starts watching for the
-    /// session, and raises a live view; the human signs in on the page in front
-    /// of them, meets whatever Auth0 puts in the way - the Turnstile box, a
-    /// one-time code, something none of us has seen yet - and deals with it the
-    /// way they would on their own laptop.
-    ///
-    /// The wall is why. A real connect met <c>captcha-provider="auth0_v2"</c>,
-    /// which is Cloudflare Turnstile, and a Turnstile token is minted by its
-    /// own JavaScript in the browser that rendered it. Relaying a picture of it
-    /// buys nothing, because the answer is not a picture - so the browser goes
-    /// to the human instead of the wall coming to us.
-    ///
-    /// What that also buys is the whole custody argument: no username and no
-    /// password is asked for, so none is posted to the connector, written to a
-    /// job's inputs, or held anywhere by anything here. The manifest declares
-    /// no fields and the validator refuses one that does.
-    ///
-    /// <see cref="IJobContext.CredentialSubmitted"/> is deliberately NOT
-    /// latched. It exists so a lost lease does not requeue a login whose
-    /// password already counted against an account, and this path never submits
-    /// one - the attempts are the human's own, on Jumbo's own page.
-    /// </summary>
-    /// <param name="deviceId">
-    /// Carried in rather than minted here, so a run that typed first and then
-    /// handed over keeps the identity it started with.
-    /// </param>
+    // types nothing: Turnstile (auth0_v2) mints its token in the human's browser, so the browser goes to the human
+    // no credential is posted or held (the validator refuses manifest fields)
+    // CredentialSubmitted is NOT latched: the attempts are the human's own
     internal async Task<LoginResult> LiveLoginAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, string deviceId, CancellationToken ct)
     {
@@ -289,26 +187,13 @@ public sealed class JumboAdapter : IProviderAdapter
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(watcher);
 
-        // Not navigated again: the caller has already opened the page, and on a
-        // walled day it is carrying the username this adapter just typed.
-        // Reloading would throw that away and make the human start over.
-        //
-        // Secrets out first, whatever route got here. The redactor refuses to
-        // photograph a page while a field the manifest calls secret holds
-        // content - correctly - so a password left in the box would relay a
-        // live view of nothing at all. The password is deliberately not typed
-        // before the wall check for exactly this reason; this is the belt to
-        // that brace, for the two-screen path that may have filled one before
-        // a wall appeared.
+        // no navigation: the caller's page may carry the typed username
+        // secrets cleared first: the redactor refuses to photograph a page with a filled secret field
         await page.ClearSecretsAsync(ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // Raised and awaited on its own: the answer to a live view is the empty
-        // one every passive challenge sends, and what actually ends this is the
-        // session appearing. Whichever comes first wins - somebody who signs in
-        // without ever touching the consumer's UI again still finishes.
-        // Linked so the ask can be ENDED, not merely abandoned.
+        // raised on its own: a live view's answer is empty, the session appearing is what ends it; linked so the ask can be ended
         using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var asked = ctx.AskAsync(new Challenge
@@ -327,9 +212,6 @@ public sealed class JumboAdapter : IProviderAdapter
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Back on jumbo.com and off every login marker: the session
-                // exists. The same terminal signal the typed path settles on,
-                // which is why streaming needed no new way to know it is done.
                 if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null)
                 {
                     ctx.Progress(JobStep.Finalizing);
@@ -344,18 +226,13 @@ public sealed class JumboAdapter : IProviderAdapter
         }
         finally
         {
-            // However this ended, the sign-in the view existed for is over.
-            // Cancelled rather than left running: this is what stops the
-            // shutter, releases the browser and lets the job finish.
+            // cancelling stops the shutter, releases the browser and lets the job finish
             await view.CancelAsync().ConfigureAwait(false);
             _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
         }
     }
 
-    /// <summary>
-    /// The cookies are the credential, so a login that left none behind did not
-    /// happen however good the URL looked.
-    /// </summary>
+    // the cookies are the credential: a login that left none did not happen, whatever the URL
     private async Task<LoginResult> HarvestAsync(IJobContext ctx, string deviceId, CancellationToken ct)
     {
         var storageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
@@ -383,11 +260,8 @@ public sealed class JumboAdapter : IProviderAdapter
             throw ConnectorException.Unsupported($"jumbo: no resource '{request.ResourceId}'");
         }
 
-        // Optional, not required. The confirmed working client sends no device
-        // header at all, so refusing a fetch because a bundle carries no device
-        // id would be sending a user back through a login for a header the API
-        // may never read. The cookies are the credential, and the transport
-        // says so if they are missing.
+        // optional: the working client sends no device header, so refusing would send users back through a login
+        // for a header the API may never read
         var deviceId = ctx.Material?.DeviceId;
 
         ctx.Progress(JobStep.Downloading);
@@ -438,9 +312,7 @@ public sealed class JumboAdapter : IProviderAdapter
 
             if (receipt is null)
             {
-                // Only reachable with SkipUnreadableStoreReceipts on. The pass
-                // is partial by definition, and saying so beats quietly
-                // reporting fewer shops than the user made.
+                // only with SkipUnreadableStoreReceipts: the pass is partial and says so
                 complete = false;
                 continue;
             }
@@ -455,46 +327,28 @@ public sealed class JumboAdapter : IProviderAdapter
         {
             Receipts = [.. receipts.OrderByDescending(r => r.PurchasedAt)],
             Complete = complete,
-            // Nothing rotates. The Auth0 tokens are exchanged into the
-            // user-session cookie by Jumbo's own backend and the browser never
-            // holds a refresh token, so the stored bundle stays as it is until
-            // it expires.
+            // nothing rotates: Jumbo's backend exchanges the Auth0 tokens into the cookie, the browser holds no refresh token
             Via = "graphql",
             Raw = raw,
         };
     }
 
-    // ---- login helpers -----------------------------------------------------
-
-    /// <summary>What one pass of the settle loop found.</summary>
     private enum SettleStep
     {
-        /// <summary>Nothing recognisable yet.</summary>
         Nothing,
 
-        /// <summary>Back on jumbo.com and off every login marker: the session exists.</summary>
         SignedIn,
 
-        /// <summary>A one-time code was relayed to the human and typed in.</summary>
         CodeAnswered,
 
         /// <summary>A wall stood and was carried to the human; the page is still worth watching.</summary>
         WallRelayed,
 
-        /// <summary>A wall stood and nothing here could carry it.</summary>
         WallStanding,
     }
 
-    /// <summary>
-    /// Waits for the login to resolve into one of four outcomes: a session, a
-    /// stated credential error, a challenge to meet, or nothing recognisable.
-    ///
-    /// The last case is deliberately <c>provider_changed</c> and not
-    /// <c>invalid_credentials</c>. Guessing "wrong password" from silence
-    /// sends the user to reset a password that was fine, and the platform
-    /// never retries a credential error - so the mistake is also permanent for
-    /// that session.
-    /// </summary>
+    // the last case is provider_changed, not invalid_credentials: guessing "wrong password" from silence
+    // sends users to reset a good password, and credential errors are never retried
     internal async Task SettleAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
     {
@@ -517,9 +371,7 @@ public sealed class JumboAdapter : IProviderAdapter
                 break;
             }
 
-            // The settle budget measures how long Jumbo takes to answer,
-            // so it restarts once a wait on a human is over: the minutes
-            // they spent are not the provider being slow.
+            // the settle budget measures Jumbo's answer time: it restarts after a wait on a human
             if (step is SettleStep.CodeAnswered)
             {
                 mfaAnswered = true;
@@ -544,21 +396,15 @@ public sealed class JumboAdapter : IProviderAdapter
                 $"{_options.LoginSettleSeconds}s; last url was '{page.Url}'");
     }
 
-    /// <summary>
-    /// One pass of the settle loop: a look for the session, for a stated
-    /// credential error, for a code box and for a wall, in that order.
-    /// </summary>
     private async Task<SettleStep> SettleOnceAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, bool mfaAnswered, bool captchaSeen,
         CancellationToken ct)
     {
         var poll = TimeSpan.FromSeconds(_options.SettlePollSeconds);
 
-        // Back on jumbo.com and off every login marker: the session exists.
         if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return SettleStep.SignedIn;
 
-        // The page states a credential failure itself. This is the only
-        // path that may report invalid_credentials, and nothing retries it.
+        // the only path that may report invalid_credentials; nothing retries it
         if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
             is not null)
         {
@@ -578,26 +424,19 @@ public sealed class JumboAdapter : IProviderAdapter
         var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
         if (wall.Kind is CaptchaKind.None) return SettleStep.Nothing;
 
-        // The gate relays a picture to whoever owns the account and
-        // refuses an interactive widget outright when nobody is
-        // sitting at this browser. It never solves one.
+        // the gate relays a picture and refuses an interactive widget when nobody is at the browser; it never solves one
         var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
         if (outcome.Redirect is not null) return SettleStep.SignedIn;
 
         return outcome.Handled ? SettleStep.WallRelayed : SettleStep.WallStanding;
     }
 
-    /// <summary>
-    /// Relays a one-time code. Never solves anything: the code is on the
-    /// account owner's phone or in their mailbox, and only they can read it.
-    /// </summary>
+    // never solves: the code is on the owner's phone or in their mailbox
     private async Task AnswerCodeAsync(IJobContext ctx, ILoginPage page, CancellationToken ct)
     {
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // Delivery is deliberately unset. Auth0 sends the code the way the
-        // account is configured, and telling somebody to watch a phone that
-        // will never ring is a failure they cannot recover from on their own.
+        // delivery unset: Auth0 sends the code as the account is configured, and naming a phone that never rings strands the user
         var answer = await ctx.AskAsync(new Challenge
         {
             Type = ChallengeType.MfaCode,
@@ -616,16 +455,10 @@ public sealed class JumboAdapter : IProviderAdapter
 
     private async Task DismissConsentAsync(ILoginPage page, CancellationToken ct)
     {
-        // Best effort: a consent wall left standing covers the form, and a
-        // missing one is the normal case on a fresh profile.
+        // best effort: a missing consent wall is the normal case on a fresh profile
         await page.ClickAsync(_options.ConsentSelectors, 2_000, ct).ConfigureAwait(false);
     }
 
-    // ---- the two walks -----------------------------------------------------
-
-    /// <summary>
-    /// What one pass collected, before any detail call is spent on it.
-    /// </summary>
     private sealed record Walk
     {
         public required List<JumboOrderSummary> Orders { get; init; }
@@ -635,15 +468,8 @@ public sealed class JumboAdapter : IProviderAdapter
         public required bool Complete { get; init; }
     }
 
-    /// <summary>
-    /// One operation, two paginations, two cursors.
-    ///
-    /// Online orders page by <c>offset</c>/<c>limit</c> nested inside
-    /// <c>ordersInput</c>; in-store receipts page by a top-level, zero-based
-    /// <c>page</c>. They exhaust at different rates and a single counter
-    /// drives neither, so each side advances its own and stops on its own -
-    /// which is exactly what the repeated-page guard used to be papering over.
-    /// </summary>
+    // online orders page by offset/limit inside ordersInput, receipts by a top-level zero-based page
+    // separate cursors: each side stops on its own
     private async Task<Walk> WalkAsync(
         IJobContext ctx, string? deviceId, ResourceRequest request, TimeZoneInfo zone, int cap, CancellationToken ct)
     {
@@ -686,8 +512,7 @@ public sealed class JumboAdapter : IProviderAdapter
             ctx.Found(orders.Count + receipts.Count);
         }
 
-        // Ran out of passes with one side still going: there is more upstream
-        // than this pass returned, and the caller must be told.
+        // out of passes with a side still going: there is more upstream, and the caller must be told
         if (!ordersDone || !receiptsDone) complete = false;
 
         var selectedOrders = orders.OrderByDescending(o => o.PurchasedAt).ToList();
@@ -697,10 +522,8 @@ public sealed class JumboAdapter : IProviderAdapter
             complete = false;
         }
 
-        // An in-store receipt states no total anywhere except in its own
-        // detail document, so each one costs a second round trip. Budgeted
-        // newest-first: the oldest fall off the end and the pass reports
-        // itself partial rather than hammering a defended endpoint.
+        // an in-store receipt states its total only in its detail: one extra round trip each, budgeted newest-first
+        // the oldest fall off and the pass reports itself partial rather than hammering a defended endpoint
         var room = Math.Max(0, Math.Min(cap - selectedOrders.Count, _options.StoreReceiptDetailBudget));
         var selectedReceipts = receipts.OrderByDescending(r => r.PurchasedAt).ToList();
         if (selectedReceipts.Count > room)
@@ -717,10 +540,6 @@ public sealed class JumboAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>
-    /// One page of online orders, folded into the walk. True when that side
-    /// has nothing more to give.
-    /// </summary>
     private bool CollectOrdersPage(
         JsonElement root, ResourceRequest request, TimeZoneInfo zone, int cap,
         List<JumboOrderSummary> orders, HashSet<string> seen)
@@ -743,22 +562,15 @@ public sealed class JumboAdapter : IProviderAdapter
         var stated = JumboOrders.TotalCount(root, _options);
 
         return rows.Count == 0
-               // The offset is not advancing anything upstream; carrying
-               // on would be the same request twenty times against a
-               // defended endpoint.
+               // an offset that advances nothing: carrying on repeats the request against a defended endpoint
                || fresh == 0
-               // Newest first, so a page entirely below the window means
-               // every later page is too.
+               // newest first: a page entirely below the window means every later page is too
                || older == rows.Count
                || rows.Count < _options.OrdersPageSize
                || (stated is { } total && seen.Count >= total)
                || orders.Count > cap;
     }
 
-    /// <summary>
-    /// One page of in-store receipts, folded into the walk. True when that
-    /// side has nothing more to give.
-    /// </summary>
     private bool CollectReceiptsPage(
         JsonElement root, ResourceRequest request, TimeZoneInfo zone, int cap,
         List<JumboStoreReceiptSummary> receipts, HashSet<string> seen)
@@ -778,8 +590,7 @@ public sealed class JumboAdapter : IProviderAdapter
             if (ReceiptFactory.InWindow(summary.PurchasedAt, request)) receipts.Add(summary);
         }
 
-        // receiptOverview states totalResults, so this walk ends on a
-        // number rather than on a heuristic.
+        // receiptOverview states totalResults: the walk ends on a number, not a heuristic
         var stated = JumboStoreReceipts.TotalResults(root, _options);
 
         return rows.Count == 0
@@ -790,26 +601,18 @@ public sealed class JumboAdapter : IProviderAdapter
                || receipts.Count > cap;
     }
 
-    // ---- building one receipt ---------------------------------------------
-
     private async Task<(Receipt Receipt, string? Raw)> OnlineReceiptAsync(
         IJobContext ctx, string? deviceId, JumboOrderSummary order, ResourceRequest request, CancellationToken ct)
     {
         var detail = new JumboOrderDetail();
 
-        // The list row, until a detail call produces something richer. Without
-        // this, asking for raw and not items would hand back nothing at all -
-        // which reads as "Jumbo sent nothing" rather than "you did not ask for
-        // the call that produces it".
+        // the list row stands in until a detail call: raw without items would otherwise hand back nothing
         var raw = order.Raw;
 
         if (request.WantsItems)
         {
-            // The detail is the expensive call and the one most likely to trip
-            // protection, so it only happens when items were asked for. The
-            // order's own total still comes from the list, which is what makes
-            // the two a real reconciliation pair rather than one number
-            // repeated back to itself.
+            // the detail is the expensive call and most likely to trip protection: only when items are asked
+            // the total still comes from the list, so the two are a real reconciliation pair
             using var document = await ExecuteAsync(ctx, deviceId, new JumboGraphQlRequest
             {
                 OperationName = _options.OrderDetailOperationName,
@@ -820,8 +623,7 @@ public sealed class JumboAdapter : IProviderAdapter
             detail = JumboOrders.ParseDetail(
                 document.RootElement, _options, order.Total.Currency, order.OrderId);
 
-            // The detail document is the richer of the two and the one worth
-            // having when a field moves.
+            // the detail document is the richer raw
             if (request.WantsRaw) raw = document.RootElement.GetRawText();
         }
 
@@ -835,16 +637,10 @@ public sealed class JumboAdapter : IProviderAdapter
             detail.Items), raw);
     }
 
-    /// <summary>
-    /// One in-store receipt, or null when it could not be read and the
-    /// operator has said to keep going anyway.
-    /// </summary>
     private async Task<(Receipt? Receipt, string? Raw)> StoreReceiptAsync(
         IJobContext ctx, string? deviceId, JumboStoreReceiptSummary summary, bool keepRaw, CancellationToken ct)
     {
-        // Always fetched, whether or not items were asked for: the receipt
-        // list states no total at all, so without this call there is nothing
-        // to say about the purchase except that it happened.
+        // always fetched: the list states no total, so nothing else says anything about the purchase
         using var document = await ExecuteAsync(ctx, deviceId, new JumboGraphQlRequest
         {
             OperationName = _options.DigitalReceiptOperationName,
@@ -879,15 +675,10 @@ public sealed class JumboAdapter : IProviderAdapter
             ReceiptFactory.Payment(contents.PaymentMethod),
             contents.Items);
 
-        // The whole digital-receipt document. This one is always fetched, so a
-        // caller asking for raw always gets one for an in-store shop.
         var raw = keepRaw ? document.RootElement.GetRawText() : null;
 
-        // A layout we could only half-read must not claim to reconcile. An
-        // empty item list reconciles trivially - there is nothing to check
-        // against - and letting that stand would be the parser vouching for
-        // work it did not do. The content hash covers the facts and not the
-        // verdict, so overriding it here leaves the hash correct.
+        // a half-read layout must not claim to reconcile: an empty item list reconciles trivially
+        // the content hash covers facts, not the verdict, so overriding it keeps the hash correct
         return (contents.Shortfall is null ? receipt : receipt with { Reconciled = false }, raw);
     }
 
@@ -899,8 +690,6 @@ public sealed class JumboAdapter : IProviderAdapter
             $"jumbo: in-store receipt '{transactionId}' cannot be stated because {why}");
     }
 
-    // ---- transport ---------------------------------------------------------
-
     private async Task<JsonDocument> ExecuteAsync(
         IJobContext ctx, string? deviceId, JumboGraphQlRequest request, CancellationToken ct)
     {
@@ -908,8 +697,7 @@ public sealed class JumboAdapter : IProviderAdapter
 
         try
         {
-            // GraphQL reports a failure in the body with a 200 status, so the
-            // errors array is read before the data is trusted at all.
+            // GraphQL reports failures in the body with a 200: errors are read before the data is trusted
             JumboGraphQlErrors.Throw(document.RootElement);
         }
         catch
@@ -921,12 +709,7 @@ public sealed class JumboAdapter : IProviderAdapter
         return document;
     }
 
-    /// <summary>
-    /// CONFIRMED, exactly as the working client sends them. Note that
-    /// <c>offset</c> and <c>limit</c> live <em>inside</em> <c>ordersInput</c>
-    /// while <c>page</c> and <c>pageSize</c> are top level: they are two
-    /// paginations over two different systems, not two spellings of one.
-    /// </summary>
+    // offset/limit live inside ordersInput while page/pageSize are top level: two paginations over two systems
     internal JsonObject ListVariables(int offset, int page) => new()
     {
         ["ordersInput"] = new JsonObject
@@ -941,11 +724,7 @@ public sealed class JumboAdapter : IProviderAdapter
         ["pageSize"] = _options.ReceiptsPageSize,
     };
 
-    /// <summary>
-    /// <c>$orderId</c> is declared <c>Float!</c>, so it goes on the wire as a
-    /// number. Sending the string Jumbo handed us back is a schema validation
-    /// error, not a slower path.
-    /// </summary>
+    // $orderId is Float!, so it goes as a number: the string Jumbo handed us is a schema validation error
     internal static JsonObject OrderDetailVariables(string orderId)
     {
         if (!double.TryParse(orderId, NumberStyles.Float, CultureInfo.InvariantCulture, out var numeric))
@@ -957,11 +736,7 @@ public sealed class JumboAdapter : IProviderAdapter
         return new JsonObject { ["orderId"] = numeric };
     }
 
-    /// <summary>
-    /// Prefixed, because the two halves of Jumbo mint their own ids and an
-    /// order id and a transaction id could otherwise collide in the dedupe
-    /// set that keeps a re-fetch idempotent.
-    /// </summary>
+    // prefixed: the two halves of Jumbo mint their own ids, which could collide in the dedupe set
     internal static string OrderExternalId(string orderId) => $"order-{orderId}";
 
     internal static string ReceiptExternalId(string transactionId) => $"receipt-{transactionId}";
@@ -971,16 +746,8 @@ public sealed class JumboAdapter : IProviderAdapter
             $"{ProviderId}: no element for the {what}; tried [{string.Join(", ", selectors)}]");
 }
 
-/// <summary>
-/// The signal that says a Jumbo login worked.
-///
-/// There is no custom-scheme callback to catch here: the Auth0 code is
-/// exchanged by Jumbo's own backend at <c>/api/auth/callback</c> and all the
-/// browser ever sees is a cookie and a redirect back onto the shop. So
-/// "signed in" is "the page is on jumbo.com and on none of the login
-/// markers", which is also what the settle loop and the captcha gate both
-/// need to watch while a human works.
-/// </summary>
+// "signed in" is on jumbo.com and off every login marker: Jumbo's backend exchanges the Auth0 code at
+// /api/auth/callback, so the browser sees only a cookie and a redirect
 internal sealed class JumboReturnWatcher : IRedirectWaiter
 {
     private const int PollMilliseconds = 250;
@@ -996,11 +763,7 @@ internal sealed class JumboReturnWatcher : IRedirectWaiter
         _time = time;
     }
 
-    /// <summary>
-    /// Back on the shop's own domain and off every login marker. Both halves
-    /// are needed: an <c>about:blank</c> or an error page is on neither, and
-    /// <c>auth.jumbo.com</c> ends in the shop's domain but is the login.
-    /// </summary>
+    // both halves needed: about:blank and error pages are on neither; auth.jumbo.com ends in the shop's domain but is the login
     internal static bool IsSignedIn(string? url, JumboOptions options)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;
@@ -1026,19 +789,9 @@ internal sealed class JumboReturnWatcher : IRedirectWaiter
     }
 }
 
-/// <summary>
-/// The registration line for the shared adapter list.
-///
-/// A factory rather than an edit: the registry file is the one thing every
-/// provider touches, and a factory here means adding Jumbo to it is a single
-/// line somebody else can apply without merging this work.
-/// </summary>
+// a factory so adding Jumbo to the shared registry is a single line
 public static class JumboRegistration
 {
-    /// <summary>
-    /// <c>JumboRegistration.Create(settings.Jumbo, time)</c> in
-    /// <c>ShopAdapters.Real</c>.
-    /// </summary>
     public static IProviderAdapter Create(JumboOptions? options = null, TimeProvider? time = null) =>
         new JumboAdapter(options, graphql: null, time);
 }

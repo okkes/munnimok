@@ -1,11 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiOrFail } from '../helpers/base.js';
 
-// Critical flows only a real API + Postgres + two browsers can prove: two
-// devices converge, an edit shows live on the other device, a shared space
-// reaches the friend it was offered to, and a brand-new account onboards
-// once. Runs against deploy/docker-compose.test.yml: a stack that is down
-// skips them on a developer's machine and fails them on CI.
+// these need a real API + Postgres + two browsers (deploy/docker-compose.test.yml): a stack that is down
+// skips them on a developer's machine and fails them on CI
 
 async function addCashAccount(page, name, balance) {
   await gotoGlobalSettings(page);
@@ -68,7 +65,6 @@ for (const V of VARIANTS) {
     await addCashAccount(a.page, 'Sync Wallet', '12,34');
     await shot(a.page, k('25-sync-devices') + '--s1');
 
-    // a second device of the same user pulls the space and everything in it
     const b = await createPage(browser, V);
     await base(b.page, V, { userSub: sub });
     await openAccounts(b.page);
@@ -79,7 +75,6 @@ for (const V of VARIANTS) {
     await expect(b.page.locator('[data-testid="screen-spaces"] [data-testid^="space-row-"]')).toHaveCount(1);
     await shot(b.page, k('26-sync-single-space'));
 
-    // B renames; A sees it after its next pull
     await openAccounts(b.page);
     await b.page.click('[data-testid="screen-accounts"] button:has-text("Sync Wallet")');
     await b.page.fill('[data-testid="acctedit-name"]', 'Renamed on B');
@@ -108,7 +103,6 @@ for (const V of VARIANTS) {
     await a.page.fill('[data-testid="txform-amount"]', '10');
     await a.page.fill('[data-testid="txform-merchant"]', 'Live Cafe');
     await a.page.click('[data-testid="txform-save"]');
-    // saving opens the new transaction's page — A stays on it
     await expect(a.page.locator('[data-testid="screen-tx-detail"]')).toContainText('Live Cafe');
 
     const b = await createPage(browser, V);
@@ -119,7 +113,6 @@ for (const V of VARIANTS) {
     await a.page.waitForSelector('[data-testid="tx-detail-notes"]');
     await b.page.waitForSelector('[data-testid="tx-detail-notes"]');
 
-    // A files a category, B writes a note — each sees the other's change live
     await a.page.click('[data-testid="tx-detail-category-row"]');
     await a.page.click('[data-testid="part-cat-0"]');
     await a.page.waitForSelector('[data-testid="catpicker-search"]');
@@ -147,7 +140,6 @@ for (const V of VARIANTS) {
     await alice.page.click('[data-testid="space-create-save"]');
     await expect(alice.page.locator('[data-testid="screen-spaces"]')).toContainText('Shared Home');
 
-    // they become friends first: the invitation goes to a friend
     const bob = await createPage(browser, V);
     await base(bob.page, V, { userSub: `e2e-member-${run}` });
     const bobId = await friendIdOf(bob.page);

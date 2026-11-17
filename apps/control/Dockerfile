@@ -1,5 +1,3 @@
-# Control cockpit: standalone SPA in its own container (nginx) — the
-# shared-services console, a completely separate app from apps/admin
 FROM node:24-alpine AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
@@ -21,8 +19,7 @@ RUN npm run build --workspace @munni/control
 FROM nginx:alpine
 COPY apps/control/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
-# runtime-config overlay: renders /runtime-config.js from MUNNI_* env at
-# container start so one image serves every stack (empty env = baked config)
+# runtime config from MUNNI_* env at start: one image serves every stack (empty env = baked config)
 COPY --chmod=755 deploy/nginx/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
 COPY --from=build /repo/apps/control/dist /usr/share/nginx/html
 EXPOSE 80

@@ -5,12 +5,8 @@ import { Picture } from '@/ui/Picture';
 import { connectorApi } from './api';
 import type { LookupOption } from './types';
 
-/**
- * A `lookup` field (§15): the values the party lists at connect time — an
- * aggregator's institutions — searched as the person types, with the logo
- * the control plane vendors. The other values of the step ride along as
- * context (the country picks the list).
- */
+// a lookup field (§15): values the party lists at connect time, searched as typed;
+// the step's other values ride along as context (the country picks the list)
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
 const DEBOUNCE_MS = 250;
 
@@ -25,7 +21,6 @@ export function LookupField({
   provider: string;
   field: string;
   value: string;
-  /** the step's other values, the party's context for the list */
   context: Readonly<Record<string, string>>;
   invalid: boolean;
   onChange: (value: string, label: string) => void;

@@ -9,13 +9,8 @@ import type { ErrorEnvelope, ProviderManifest } from './types';
 /** an aggregator reaches the bank through the bank's own consent page; munni's own connectors sign in at the bank */
 export const isOpenBanking = (manifest: Pick<ProviderManifest, 'auth'>): boolean => manifest.auth.flow === 'oauth_redirect';
 
-/**
- * #527: connecting a bank from an accounts screen offers the ways munni
- * reaches a bank — each open-banking party, and munni's own connector —
- * and goes straight on into the one picked (the hub's whole catalogue,
- * shops included, sat in between). munni's connector lists its banks on a
- * sheet of its own, over this one.
- */
+// #527: goes straight into the party picked, skipping the hub's whole catalogue; munni's connector lists its banks on a
+// sheet over this one
 export function BankPickerSheet({
   open,
   onOpenChange,

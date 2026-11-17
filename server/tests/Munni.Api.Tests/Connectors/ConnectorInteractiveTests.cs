@@ -7,13 +7,7 @@ using Munni.Api.Connectors;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The relay when a party asks the human something (docs/connector-
-/// integration-plan.md §5.2, §5.4): the challenge reaches the app in its own
-/// casing, the picture comes through, the answer goes back, and every
-/// change of the session's view rides the app's own event stream as a
-/// <c>connector</c> frame — never with a bundle on it.
-/// </summary>
+/// <summary>Challenge frames reach the app on its own event stream as <c>connector</c> frames, never a bundle.</summary>
 public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Captcha = "mock-store-captcha";
@@ -31,7 +25,6 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         const string sub = "captcha-solver";
         using var client = factory.ClientFor(sub);
 
-        // the app already holds the event stream when it starts a login
         using var stream = await client.GetAsync("/sync/events", HttpCompletionOption.ResponseHeadersRead);
         Assert.Equal(HttpStatusCode.OK, stream.StatusCode);
         var reader = new StreamReader(await stream.Content.ReadAsStreamAsync());
@@ -41,7 +34,6 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         var started = await login.Content.ReadFromJsonAsync<JsonObject>();
         var sessionId = started!["sessionId"]!.GetValue<string>();
 
-        // the run stops to ask: 202 now, or a poll that lands on the question
         var awaiting = started["state"]!.GetValue<string>() == "awaiting_input"
             ? started
             : await AwaitStateAsync(client, Captcha, sessionId, "awaiting_input");
@@ -53,30 +45,25 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         var challengeId = challenge["id"]!.GetValue<string>();
         Assert.Equal("awaiting_input", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
 
-        // the picture, through the relay, for the owner
         using var image = await client.GetAsync($"/connectors/{Captcha}/login/{sessionId}/challenges/{challengeId}/image");
         Assert.Equal(HttpStatusCode.OK, image.StatusCode);
         Assert.Equal("image/png", image.Content.Headers.ContentType?.MediaType);
         Assert.True((await image.Content.ReadAsByteArrayAsync()).Length > 0);
 
-        // the app hears the question through its own stream BEFORE it answers:
-        // the bridge speaks when it observes the session, and on a loaded runner
-        // an answer sent at once left it nothing but the settled states to
-        // report (CI, 2026-10-03) - so the question's frame is waited for first
+        // wait for the question's frame before answering: the bridge speaks when it observes the session,
+        // and on a loaded runner an immediate answer left it only the settled states (CI)
         var asked = await DrainFramesAsync(
             reader, TimeSpan.FromSeconds(10),
             f => f["sessionId"]?.GetValue<string>() == sessionId,
             until: f => f["state"]?.GetValue<string>() == "awaiting_input" && f["challenge"] is not null);
         Assert.Contains(asked, f => f["state"]!.GetValue<string>() == "awaiting_input" && f["challenge"] is not null);
 
-        // the answer, and the session settles with its bundle
         using var answered = await client.PostAsJsonAsync($"/connectors/{Captcha}/login/{sessionId}/answer", new { challengeId, value = "MOCK1" });
         Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync());
         var settled = await AwaitBundleAsync(client, Captcha, sessionId);
         Assert.StartsWith("sb_v1.", settled, StringComparison.Ordinal);
         Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
 
-        // and the rest of the run through the same stream, without a bundle
         var frames = await DrainFramesAsync(reader, TimeSpan.FromSeconds(10), f => f["sessionId"]?.GetValue<string>() == sessionId);
         frames.InsertRange(0, asked);
         Assert.NotEmpty(frames);
@@ -152,8 +139,6 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         Assert.Equal("ephemeral", view!["custody"]!.GetValue<string>());
     }
-
-    // ── helpers ──────────────────────────────────────────────────────────
 
     private static async Task<JsonObject> AwaitStateAsync(HttpClient client, string provider, string sessionId, string state)
     {

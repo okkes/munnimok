@@ -3,14 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// Reads the control plane's own tables.
-///
-/// Used only for invariants that have no wire surface by design - "the staged
-/// rows are really gone", "that job was never leased a second time". Asserting
-/// them through the API would mean adding an endpoint whose only caller is a
-/// test, which is a worse trade than reaching into the database from one.
-/// </summary>
+// only for invariants with no wire surface by design: an endpoint whose only caller is a test is the worse trade
 internal static class Db
 {
     public static T Read<T>(ShopApiFactory factory, Func<ConnectorDbContext, T> read)
@@ -23,10 +16,7 @@ internal static class Db
         return read(db);
     }
 
-    /// <summary>
-    /// Put a row into a state the API alone cannot reach - an uncollected
-    /// bundle, say, which the delivery path clears the moment it is read.
-    /// </summary>
+    // a state the API alone cannot reach, e.g. an uncollected bundle (the delivery path clears it on read)
     public static void Write(ShopApiFactory factory, Action<ConnectorDbContext> write)
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -42,7 +32,6 @@ internal static class Db
     public static int StagedRows(ShopApiFactory factory, string sessionId) =>
         Read(factory, db => db.Results.Count(r => r.SessionId == sessionId));
 
-    /// <summary>The newest job for a subject's only session. For a failure that never returned a session id.</summary>
     public static JobRow JobForSubject(ShopApiFactory factory, string subject) =>
         Read(factory, db =>
         {

@@ -2,16 +2,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// A minimum gap between outbound provider calls, installed on the client
-/// every adapter is handed.
-///
-/// It lives in the handler rather than in adapter discipline because
-/// politeness is a platform non-negotiable: only the authenticated user's own
-/// data, at a human-plausible cadence, never a firehose. An adapter that
-/// wants to go faster has to reach for a client it was not given, which is a
-/// visible act rather than an oversight.
-/// </summary>
+// politeness is a platform non-negotiable (the user's own data, human cadence), so it lives in the handler,
+// not in adapter discipline
 public sealed class PolitenessHandler(IOptions<ConnectorOptions> options) : DelegatingHandler
 {
     private readonly SemaphoreSlim _gate = new(1, 1);

@@ -1,8 +1,4 @@
-// Regenerates src/generated/bundledCatalog.json from the web app's
-// bundled category + keyword data, so the admin catalog editor can show
-// what the baseline contains (admin shares no runtime code with the
-// member app — this build-time copy keeps that boundary).
-//   node scripts/gen-bundled-catalog.mjs
+// build-time copy of the web app's bundled categories + keywords: admin shares no runtime code with the member app
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');

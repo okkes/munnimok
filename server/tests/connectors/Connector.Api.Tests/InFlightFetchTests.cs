@@ -10,17 +10,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// A fetch of a resource already in flight for a connection IS the fetch
-/// the caller gets.
-///
-/// Prod, 2026-10-06: a phone that kept reopening the app queued four Amazon
-/// fetches in twelve minutes. One ran for half an hour; the other three
-/// waited behind the per-session lease and died as <c>agent_unavailable</c>
-/// - and the app, which had never seen the first one finish, started a
-/// fifth. The handle of the running job is the same contract as a fresh
-/// 202, so answering with it costs the caller nothing and the fleet a lot.
-/// </summary>
+// prod incident: a phone reopening the app queued four Amazon fetches in twelve minutes, three died waiting behind the lease
+// the running job's handle is the same contract as a fresh 202, so answering with it costs the caller nothing
 [Collection(ShopApiCollection.Name)]
 public sealed class InFlightFetchTests(ShopApiFactory factory)
 {
@@ -42,7 +33,6 @@ public sealed class InFlightFetchTests(ShopApiFactory factory)
         Assert.True(fetch.StatusCode == HttpStatusCode.Accepted, body.ToString());
         Assert.Equal(running, body.Text("job_id"));
 
-        // And nothing new was queued behind it.
         Assert.Equal(
             1,
             Db.Read(factory, db => db.Jobs.Count(j => j.SessionId == connection.SessionId && j.Kind == JobKind.Fetch)));
@@ -54,11 +44,7 @@ public sealed class InFlightFetchTests(ShopApiFactory factory)
         Assert.NotEqual(running, (await theirs.JsonAsync()).TextOrNull("job_id"));
     }
 
-    /// <summary>
-    /// The running job is the caller's fetch only when it asks the party the same. A pass over older
-    /// history handed the job that fetches the newest rows would take them for its own window - and
-    /// end its walk on them - so another window is another fetch, queued behind the first.
-    /// </summary>
+    // another window is another fetch: handing a pass over older history the newest rows' job would end its walk on them
     [Fact]
     public async Task A_fetch_for_another_window_is_not_handed_the_running_job()
     {
@@ -100,11 +86,7 @@ public sealed class InFlightFetchTests(ShopApiFactory factory)
 
     private static string Day(DateOnly day) => day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// A fetch an agent holds right now, asked with <paramref name="since"/>: leased, the lease fresh,
-    /// so neither the inline pump (it leases Queued) nor the sweeper (it requeues expired leases)
-    /// touches it while a test looks. Its id.
-    /// </summary>
+    // leased with a fresh lease, so neither the inline pump (leases Queued) nor the sweeper (requeues expired leases) touches it
     private string Running(Connection connection, string since)
     {
         var manifest = factory.Services.GetRequiredService<IProviderRegistry>().RequireManifest(Provider);

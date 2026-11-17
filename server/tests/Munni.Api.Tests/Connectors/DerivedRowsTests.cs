@@ -10,12 +10,8 @@ using Xunit;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// Rows whose id the connector derived (2026-10-07: ING's card repayments
-/// landed twice after a new sign-in): the reconciler lands a re-keyed row
-/// on the row it is the same transaction as, and the one-time repair takes
-/// the copies already there back out - the untouched ones first.
-/// </summary>
+// ING's card repayments landed twice after a new sign-in: the reconciler lands a re-keyed row on its twin, the repair
+// takes the copies already there back out, the untouched ones first
 public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
 {
     private readonly FeedsApiFactory _factory;
@@ -33,7 +29,6 @@ public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
     private static Dictionary<string, JsonElement> Fields(params (string Name, object Value)[] fields) =>
         fields.ToDictionary(f => f.Name, f => JsonSerializer.SerializeToElement(f.Value));
 
-    /// <summary>A feed row as the ingest writes it, born at the given wall-clock second (the stamp's first part).</summary>
     private static SyncOpDto FeedRow(string feedId, string id, long bornMs, string account, string date, long cents, string merchant, string reference) =>
         new(Guid.NewGuid().ToString("N"), feedId, "transaction", id,
             Fields(("accountId", account), ("date", date), ("amountCents", cents), ("currency", "EUR"), ("merchant", merchant), ("description", merchant), ("importRef", reference)),
@@ -75,7 +70,6 @@ public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
         var client = ClientFor(sub);
         const string account = "acct-card";
         await PushAsync(client, feedId, new SyncOpDto(Guid.NewGuid().ToString("N"), feedId, "space", feedId, Fields(("name", "Feed")), "000000100-0000-dev1"));
-        // the repayment as the first sign-in keyed it, a second identical one the same day, and an unrelated row
         await PushAsync(client, feedId,
             FeedRow(feedId, "old-1", 1_000_000, account, "2026-10-04", 96_600, "AFLOSSING", "ing-d-aaaa"),
             FeedRow(feedId, "old-2", 1_000_500, account, "2026-10-04", 96_600, "AFLOSSING", "ing-d-bbbb"),
@@ -90,17 +84,14 @@ public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
             {
                 await reconciler.ResolveAsync(reference, "stable-1", "ing-d-1111", key, CancellationToken.None),
                 await reconciler.ResolveAsync(reference, "stable-2", "ing-d-2222", key, CancellationToken.None),
-                // a third identical row this pass: no twin left, so it is new
                 await reconciler.ResolveAsync(reference, "stable-3", "ing-d-3333", key, CancellationToken.None),
-                // a row of another content: its own id
                 await reconciler.ResolveAsync(reference, "stable-4", "ing-d-4444", DerivedRowReconciler.Key("2026-10-05", 96_600, "EUR", "AFLOSSING"), CancellationToken.None),
-                // a reference a row already adopted on an earlier pass
                 await reconciler.ResolveAsync(reference, "stable-5", "ing-d-cccc", DerivedRowReconciler.Key("2026-10-04", -2_300, "EUR", "OPENAI"), CancellationToken.None),
             };
         });
 
-        Assert.Equal("old-1", resolved[0]);   // the oldest twin first
-        Assert.Equal("old-2", resolved[1]);   // the next one, never the same twin twice
+        Assert.Equal("old-1", resolved[0]);
+        Assert.Equal("old-2", resolved[1]);
         Assert.Equal("stable-3", resolved[2]);
         Assert.Equal("stable-4", resolved[3]);
         Assert.Equal("other", resolved[4]);
@@ -157,10 +148,8 @@ public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
         Assert.DoesNotContain("din-a2", deleted);
         Assert.Equal(6, removed);
 
-        // the devices pull ordinary tombstones
         var pull = await client.GetFromJsonAsync<PullResponse>($"/sync/{feedId}/pull?since=0");
         Assert.Contains(pull!.Ops, o => o.EntityId == "rep-sep-b" && o.Deleted && o.OpId == ImportIds.OpId($"repair:derived-dup:{feedId}:rep-sep-b"));
-        // idempotent
         Assert.Equal(0, await WithDbAsync(db => DerivedDuplicateRepair.RepairAsync(db, CancellationToken.None)));
     }
 

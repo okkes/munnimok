@@ -10,7 +10,6 @@ const KINDS = ['navigation', 'request', 'response', 'console', 'dom', 'note'] as
 
 const PRODUCTS = ['shop', 'bank', 'registry'] as const;
 
-/** a provider id as a type name: kebab to Pascal */
 export const pascalOf = (id: string): string =>
   id
     .split(/[^a-z0-9]+/i)
@@ -18,7 +17,6 @@ export const pascalOf = (id: string): string =>
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join('');
 
-/** the scaffold's query, or null while the names are not usable */
 export function scaffoldQuery(provider: string, name: string, product: string, country: string): string | null {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(provider) || !/^[A-Z][A-Za-z0-9]{1,63}$/.test(name) || !/^[A-Z]{2}$/.test(country)) return null;
   return `?provider=${encodeURIComponent(provider)}&name=${encodeURIComponent(name)}&product=${encodeURIComponent(product)}&country=${encodeURIComponent(country)}`;
@@ -35,14 +33,6 @@ function download(name: string, text: string | Blob, type: string): void {
   URL.revokeObjectURL(url);
 }
 
-/**
- * A run's recording (#441 L3): the timeline of what the browser and the
- * HTTP client did, filtered by kind and text, with the noise (scripts,
- * pictures, fonts) folded away by default; an entry opens to its headers
- * and its body; the cookie jar at the end; the digest an adapter author
- * reads first, and the raw trace, as downloads. Secrets were taken out
- * before any of it was written down.
- */
 export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const [trace, setTrace] = useState<JobTrace | null | 'unreachable' | 'loading'>('loading');
   const [kind, setKind] = useState('');
@@ -204,12 +194,6 @@ export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & S
   );
 }
 
-/**
- * The new-service scaffold (#441 L5): from this recording, the files an adapter
- * author starts from — a manifest stub, the OBSERVED options, an adapter stub
- * with a to-do per call, the JSON answers as redacted fixtures, a test skeleton,
- * a README and the digest — zipped at their repo paths.
- */
 function ScaffoldCard({ jobId, provider, call }: Readonly<{ jobId: string; provider: string; call: ScreenProps['call'] }>) {
   const [id, setId] = useState(provider === 'explore' ? '' : provider);
   const [name, setName] = useState(provider === 'explore' ? '' : pascalOf(provider));

@@ -9,12 +9,7 @@ const selectionState = (all: boolean, some: boolean): SelectionState => {
   return 'none';
 };
 
-/**
- * #378 (user): ONE way to select or deselect every transaction in a list —
- * a header row with the same square check the rows wear, half-filled
- * while the pick is partial, the count on the right. The row toggles:
- * a partial or empty pick selects all, a full pick clears it.
- */
+/** #378: toggles: a partial or empty pick selects all, a full pick clears it */
 export function SelectAllRow({
   total,
   selected,

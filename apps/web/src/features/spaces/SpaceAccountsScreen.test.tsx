@@ -9,7 +9,6 @@ const ME = '11111111-1111-1111-1111-111111111111';
 const BOB = '22222222-2222-2222-2222-222222222222';
 const member = (userId: string, name: string, role: string) => ({ userId, displayName: name, role, picture: null });
 
-/** one linked feed account + one space-owned manual account */
 const seedRows = async () => {
   const { MunniDB } = await import('@/db/schema');
   const { Repo } = await import('@/db/repo');
@@ -36,7 +35,6 @@ const seedRows = async () => {
   db.close();
 };
 
-/** one UNATTACHED feed account — the attach candidate (#310) */
 const seedCandidate = async () => {
   const { MunniDB } = await import('@/db/schema');
   const { Repo } = await import('@/db/repo');
@@ -55,9 +53,7 @@ const seedCandidate = async () => {
   db.close();
 };
 
-/** the REST surface the attach-intent specs need (#308/#310) — the
- *  member list must agree with the kind: healSharedKind flips a space
- *  to shared the moment a fetch reports 2+ members */
+/** the member list must agree with the kind: healSharedKind flips a space to shared once a fetch reports 2+ members */
 const apiWithCandidate = (kind: 'personal' | 'shared') => ({
   'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
   'GET /me': () => ({ userId: ME, displayName: 'Me' }),
@@ -89,13 +85,10 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
       },
     });
 
-    // the quiet note lands once the role resolves…
     await screen.findByTestId('space-accounts-reader-note', {}, { timeout: 5000 });
-    // …and the add/attach doors are gone with it
     expect(screen.queryByTestId('space-accounts-add')).toBeNull();
     expect(screen.queryByTestId('space-accounts-attach')).toBeNull();
 
-    // the info sheet stays READABLE; detach, type change and rename don't
     fireEvent.click(await screen.findByTestId('space-account-link-1'));
     const sheet = await screen.findByTestId('space-account-info');
     expect(sheet.textContent).toContain('ING Betaal');
@@ -105,7 +98,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('space-account-info')).toBeNull());
 
-    // a manual row opens the read-only info sheet, NOT the editor
     fireEvent.click(await screen.findByTestId('space-account-manual-1'));
     expect(await screen.findByTestId('space-account-info')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull();
@@ -129,7 +121,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     expect(await screen.findByTestId('space-accounts-add')).toBeTruthy();
     expect(screen.getByTestId('space-accounts-attach')).toBeTruthy();
     expect(screen.queryByTestId('space-accounts-reader-note')).toBeNull();
-    // #305: my OWN feed's attachment never wears the shared badge
     expect(screen.queryByTestId('space-account-shared-link-1')).toBeNull();
   }, 15_000);
 
@@ -143,15 +134,12 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
       api: apiWithCandidate('shared'),
     });
 
-    // the sheet opened by itself on the final step: the named account
-    // stands pre-picked, the pick list never mounts
     const focus = await screen.findByTestId('space-attach-focus', {}, { timeout: 10_000 });
     expect(focus.textContent).toContain('Bunq Main');
     expect(screen.queryByTestId('space-attach-candidates')).toBeNull();
     expect(await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 })).toBeTruthy();
     expect(screen.getByTestId('space-attach-save')).toBeTruthy();
 
-    // #308: attaching into a SHARED space says so, right above the button
     const warn = await screen.findByTestId('space-attach-share-warn', {}, { timeout: 10_000 });
     expect(warn.textContent).toContain('Familie');
   }, 20_000);
@@ -166,11 +154,9 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
       api: apiWithCandidate('shared'),
     });
 
-    // fallback: the sheet still opens, but on the pick list (no focus row)
     await screen.findByTestId('space-attach-candidates', {}, { timeout: 10_000 });
     expect(screen.queryByTestId('space-attach-focus')).toBeNull();
 
-    // picking by hand reaches the same confirm step — warning included
     fireEvent.click(screen.getByTestId('space-attach-pick-feedacct-2'));
     expect(await screen.findByTestId('space-attach-share-warn', {}, { timeout: 10_000 })).toBeTruthy();
   }, 20_000);
@@ -231,7 +217,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
       iban: 'NL69INGB0123456789',
     });
     await repo.upsert('accountLink', 's-user', 'link-elo', { feedSpaceId: 'feed-elo', accountId: 'feedacct-elo', type: 'checking', attachedBy: 'elo-sub', attachedByName: 'Elo' });
-    // my own account, fetched by a connection that is gone from this device: that one says so
     await repo.upsert('account', 'feed-mine', 'feedacct-mine', {
       name: 'ING mine',
       type: 'checking',
@@ -353,7 +338,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     });
 
     expect(await screen.findByTestId('space-account-shared-link-1', {}, { timeout: 5000 })).toBeTruthy();
-    // the space's own manual account stays badge-free
     expect(screen.queryByTestId('space-account-shared-manual-1')).toBeNull();
   }, 15_000);
 
@@ -408,7 +392,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 });
     expect(screen.getByTestId('space-attach-type-loan').className).toContain('border-accent');
     expect(screen.getByTestId('space-attach-type-checking').className).not.toContain('border-accent');
-    // a suggestion only: the space's own pick replaces it
     fireEvent.click(screen.getByTestId('space-attach-type-mortgage'));
     expect(screen.getByTestId('space-attach-type-mortgage').className).toContain('border-accent');
     expect(screen.getByTestId('space-attach-type-loan').className).not.toContain('border-accent');
@@ -494,7 +477,6 @@ describe('SpaceAccountsScreen — connecting and reconnecting from the space (#5
     const picker = await screen.findByTestId('bank-picker', {}, { timeout: 5000 });
     expect((await screen.findByTestId('conn-party-enablebanking', {}, { timeout: 5000 })).textContent).toContain('Enable Banking');
     expect(picker.querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeNull();
-    // no detour: still the space's own accounts
     expect(screen.getByTestId('screen-space-accounts')).toBeTruthy();
     fireEvent.click(screen.getByTestId('conn-party-enablebanking'));
     expect(await screen.findByTestId('connect-form', {}, { timeout: 5000 })).toBeTruthy();

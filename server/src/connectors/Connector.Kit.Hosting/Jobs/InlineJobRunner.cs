@@ -13,11 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// The in-process agent. It leases through the same queue, renews the same
-/// lease and reports through the same outcome path as a remote one - the only
-/// difference is that it never has a browser and never leaves the process.
-/// </summary>
+// the in-process agent: same queue, lease and outcome path as a remote one, but never a browser
 public sealed class InlineJobRunner(
     IServiceScopeFactory scopes,
     IProviderRegistry registry,
@@ -27,10 +23,8 @@ public sealed class InlineJobRunner(
     IOptions<ConnectorOptions> options,
     ILogger<InlineJobRunner> logger) : IInlineJobRunner
 {
-    /// <summary>The lease owner an in-process run claims jobs under.</summary>
     public const string AgentId = "agt_inline";
 
-    /// <summary>The politeness-limited client every adapter is handed.</summary>
     public const string HttpClientName = "connector.provider";
 
     private readonly ConnectorOptions _options = options.Value;
@@ -50,7 +44,6 @@ public sealed class InlineJobRunner(
 
     public void Dispatch() => signals.Signal(ConnectorSignals.Queue);
 
-    /// <summary>What the pump advertises when it asks the queue for work.</summary>
     public AgentCapabilities Capabilities => new()
     {
         Providers = Providers,
@@ -75,17 +68,12 @@ public sealed class InlineJobRunner(
         await using var context = new InlineJobContext(
             job, scopes, httpClients.CreateClient(HttpClientName), quotas, logger, budget.Token);
 
-        // An inline run holds its own lease exactly as a remote agent does, so
-        // the expiry sweeper treats a wedged in-process job identically to a
-        // dead machine - including the rule that it never comes back twice.
-        // Disposed before the budget is (declaration order), so the loop is
-        // stopped and awaited while every token it holds is still alive.
+        // holds its own lease like a remote agent, so the sweeper treats a wedged inline job as a dead machine
+        // disposed before the budget (declaration order): the loop is stopped while every token it holds is alive
         await using var renewal = LeaseRenewal.Start(
             scopes, job.JobId, AgentId, TimeSpan.FromSeconds(_options.Timeouts.LeaseSeconds), logger, budget.Token);
 
-        // A recorded run (#441 L3): the book is open for this asynchronous flow,
-        // the named client's handler writes every call into it, and it is kept
-        // before the outcome is reported - on a failure too.
+        // recorded run (#441 L3): kept before the outcome is reported, on a failure too
         var book = job.Record ? new TraceBook(job.JobId, job.Provider, SecretsOf(job), TimeProvider.System) : null;
         using var recording = book is null ? null : TraceScope.Open(book);
 
@@ -101,16 +89,11 @@ public sealed class InlineJobRunner(
                 if (book is not null) await KeepTraceAsync(job, book, ct);
             }
 
-            // Every step the adapter reported reaches the row BEFORE the
-            // outcome does. Progress is drained by a pump of its own, and the
-            // queue discards a report that arrives after the job has gone
-            // terminal, so an outcome recorded first erased the tail of any
-            // run that finished faster than its own reports - which a mock
-            // does on every call and a real T1 adapter does on a good day.
+            // flush progress BEFORE the outcome: the queue discards a report arriving after terminal state,
+            // which erased the tail of fast runs
             await context.FlushProgressAsync();
 
-            // Attached here rather than in each branch of ExecuteAsync, so a
-            // job kind added later carries them without anybody remembering to.
+            // attached here, not per branch of ExecuteAsync, so a new job kind carries them
             await ReportSuccessAsync(job, run with { Notes = context.Notes }, ct);
         }
         catch (ConnectorException ex)
@@ -131,11 +114,7 @@ public sealed class InlineJobRunner(
         }
     }
 
-    /// <summary>
-    /// The failure path flushes for the same reason the success path does: the
-    /// steps a run got through before it broke are the first thing anyone
-    /// reads about it.
-    /// </summary>
+    // flushed like success: the steps before a break are the first thing read about a run
     private async Task FailAsync(InlineJobContext context, LeasedJob job, ErrorCode code, string? detail, CancellationToken ct)
     {
         await context.FlushProgressAsync();
@@ -232,15 +211,8 @@ public sealed class InlineJobRunner(
             Notes = notes,
         }, ct));
 
-    /// <summary>
-    /// Both reports go through here because of what a refusal means. The
-    /// outcome service answers "not leased to agt_inline" (or "unknown job")
-    /// when the queue has moved on without this run: the lease ran out - a
-    /// restart, a database that did not answer the renewal - and the sweeper
-    /// has re-queued or ended the job on its own. Nothing a developer fixes
-    /// in code, so a warning and never an event (GlitchTip #26, 2026-10-06,
-    /// at an agent restart: the refusal escaped as an unhandled exception).
-    /// </summary>
+    // a refused outcome (not leased to agt_inline, unknown job) means the lease moved on and the sweeper
+    // re-queued or ended the job: not fixable in code, so a warning, never an event (GlitchTip #26)
     private async Task ReportAsync(LeasedJob job, Func<JobOutcomeService, Task> report)
     {
         using var scope = scopes.CreateScope();
@@ -259,14 +231,8 @@ public sealed class InlineJobRunner(
     }
 }
 
-/// <summary>
-/// Pulls inline-eligible work off the same queue a remote agent uses.
-///
-/// Modelled as a pump rather than "run this job now" on purpose: a login
-/// endpoint that ran the adapter on the request thread would tie the run's
-/// lifetime to a socket, and the first challenge - which can take a human
-/// minutes - would kill it.
-/// </summary>
+// a pump, not "run now": running the adapter on the request thread ties the run to a socket,
+// and a challenge that takes minutes would kill it
 public sealed class InlineJobPump(
     IInlineJobRunner runner,
     IServiceScopeFactory scopes,
@@ -286,9 +252,7 @@ public sealed class InlineJobPump(
         logger.LogInformation("inline runner serving {Providers}", string.Join(", ", runner.Providers));
 
         var capabilities = runner.Capabilities;
-        // Deliberately not disposed: a job still finishing at shutdown releases
-        // its slot, and releasing a disposed semaphore would turn an orderly
-        // stop into an exception storm.
+        // not disposed: a job finishing at shutdown releases its slot, and a disposed semaphore would throw
         var slots = new SemaphoreSlim(Math.Max(1, capabilities.MaxConcurrency));
         var ttl = TimeSpan.FromSeconds(_options.Timeouts.LeaseSeconds);
 
@@ -301,9 +265,7 @@ public sealed class InlineJobPump(
             {
                 using var scope = scopes.CreateScope();
                 var queue = scope.ServiceProvider.GetRequiredService<ILeasedJobQueue>();
-                // No owner scope: this is the control plane running the job in
-                // its own process, not a machine somebody enrolled. It already
-                // holds every session's material by definition.
+                // no owner scope: this is the control plane's own process, not an enrolled machine, and it already holds every material
                 job = await queue.TryLeaseAsync(
                     InlineJobRunner.AgentId, null, capabilities, AllKinds, ttl, stoppingToken);
             }

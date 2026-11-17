@@ -2,25 +2,9 @@ import { config, publicOrigin } from '@/app/config';
 import { deepLinkToPath, nativePlatform } from '@/lib/platform';
 import { callbackSchemeOf, ownReturn } from './manifestForm';
 
-/**
- * A `redirect` challenge: the party's page opens where a first-party
- * sign-in would (docs/native-auth-popupless.md) — iOS runs it in the auth
- * session with the PARTY's callback scheme, so the address the login ends
- * on comes straight back; Android opens a Custom Tab and the web a new
- * tab, and both fall back to the human pasting that address.
- *
- * A party that comes back to the app's own return page (§15: an
- * open-banking consent lands on `/gc-callback`) is different. On iOS it
- * runs in the auth session with the APP's own scheme: the return page,
- * loaded inside that session, hands the bank's query to the scheme, the
- * session ends on it and the landing address is answered right here. A
- * Safari view never came back by itself — a redirect is not a tap, so the
- * universal link did not open the app and the return page sat in the
- * browser (user ss 2026-10-03). On Android a Custom Tab opens it and the
- * return page re-enters the app through its App Link or its scheme; on
- * the web this very tab goes to the bank and comes back to the return
- * page. Nothing to paste.
- */
+// a party's own scheme (docs/native-auth-popupless.md): iOS runs the auth session with the PARTY's scheme; else pasting
+// a return to the app's own page (§15, /gc-callback): iOS runs the auth session with the APP's scheme, since a Safari
+// view never came back (a redirect is not a tap, so the universal link did not open the app)
 interface AuthSessionPlugin {
   start(options: { url: string; callbackScheme: string }): Promise<{ url: string | null; cancelled?: boolean }>;
 }
@@ -30,7 +14,6 @@ interface BrowserPlugin {
 const plugins = (): { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } | undefined =>
   (globalThis as { Capacitor?: { Plugins?: { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } } }).Capacitor?.Plugins;
 
-/** opens the page; resolves with the captured return address, or null when the human has to paste it — or when the return page takes over */
 export async function openPartyPage(url: string, returnPattern: string | undefined): Promise<string | null> {
   const p = plugins();
   if (ownReturn(returnPattern, publicOrigin())) {

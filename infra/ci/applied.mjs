@@ -1,15 +1,6 @@
 #!/usr/bin/env node
-/**
- * Record what a Deploy applied (#416): the config the run rendered, on the
- * stack's GitHub environment as `MUNNI_APPLIED`, so the wizard's pending
- * strip knows the fingerprint it just published is live.
- *
- *   node infra/ci/applied.mjs --stack munni-nas-prod --by deploy
- *
- * Env: GH_TOKEN (a token that may write environment variables — the
- * wizard's GH_PAT; GITHUB_TOKEN cannot), GITHUB_RUN_ID. Never red: a
- * refused write is a warning, the next run records again.
- */
+// records the config a Deploy rendered as MUNNI_APPLIED on the stack's GitHub environment (#416), for the pending strip
+// GH_TOKEN must be the wizard's GH_PAT (GITHUB_TOKEN cannot write environment variables); never red, next run records again
 import { loadStack } from '../modules/stack.mjs';
 import { writeApplied } from '../modules/config.mjs';
 

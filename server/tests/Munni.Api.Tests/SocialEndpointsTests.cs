@@ -48,7 +48,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         var res = await client.GetFromJsonAsync<JsonElement>("/geo");
         Assert.Equal("NL", res.GetProperty("country").GetString());
 
-        // second request for the SAME ip is served from the per-IP cache
         var before = FakeGeoLookupHandler.Calls;
         var cached = await client.GetFromJsonAsync<JsonElement>("/geo");
         Assert.Equal("NL", cached.GetProperty("country").GetString());
@@ -60,7 +59,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     {
         var client = ClientFor($"fx-{Guid.NewGuid():N}");
 
-        // set (lowercase input normalizes), null leaves it alone, '' clears
         await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "try"));
         Assert.Equal("TRY", (await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
 
@@ -70,7 +68,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: ""));
         Assert.Null((await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
 
-        // not a currency code → validation rejects
         var bad = await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "EURO"));
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
     }
@@ -82,24 +79,20 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         var alice = ClientFor($"alice-{suffix}");
         var bob = ClientFor($"bob-{suffix}");
 
-        // display names
         await alice.PutAsJsonAsync("/me", new UpdateMeRequest("Alice"));
         await bob.PutAsJsonAsync("/me", new UpdateMeRequest("Bob"));
         var aliceId = await UserIdOf(alice);
         var bobId = await UserIdOf(bob);
 
-        // alice invites bob; bob sees a received pending request with Alice's name
         Assert.True((await alice.PostAsJsonAsync("/friends/requests", new SendFriendRequest(bobId))).IsSuccessStatusCode);
         var bobFriends = await bob.GetFromJsonAsync<FriendsResponse>("/friends");
         var request = Assert.Single(bobFriends!.ReceivedPending);
         Assert.Equal("Alice", request.FromName);
 
-        // bob accepts -> both are friends
         await bob.PostAsync($"/friends/requests/{request.Id}/accept", null);
         var aliceFriends = await alice.GetFromJsonAsync<FriendsResponse>("/friends");
         Assert.Equal("Bob", Assert.Single(aliceFriends!.Friends).DisplayName);
 
-        // alice creates a shared space by pushing to it, then invites bob
         var spaceId = $"space_{suffix}";
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("devA",
             [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "space", spaceId,
@@ -107,7 +100,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.True((await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites",
             new SendSpaceInvite(bobId, "contributor", "Household"))).IsSuccessStatusCode);
 
-        // bob sees + accepts the invite -> space appears in his discovery + pull works
         var invites = await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites");
         var invite = Assert.Single(invites!);
         Assert.Equal("Household", invite.SpaceName);
@@ -118,7 +110,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         var pull = await bob.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
         Assert.Single(pull!.Ops);
 
-        // members list shows both with roles; owner can kick, member cannot
         var members = await alice.GetFromJsonAsync<List<MemberDto>>($"/spaces/{spaceId}/members");
         Assert.Equal(2, members!.Count);
         Assert.Equal("owner", members.Single(m => m.UserId == aliceId).Role);
@@ -128,8 +119,6 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.True((await alice.DeleteAsync($"/spaces/{spaceId}/members/{bobId}")).IsSuccessStatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.GetAsync($"/sync/{spaceId}/pull?since=0")).StatusCode);
     }
-
-    // ── #169: a friend request may piggyback a space ────────────────────
 
     private async Task SeedSpaceWithOwnerAsync(string spaceId, Guid ownerId, params (Guid UserId, string Role)[] others)
     {
@@ -151,13 +140,11 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         var aliceId = await UserIdOf(alice);
         var bobId = await UserIdOf(bob);
 
-        // not a member of the space at all -> 403, nothing stored
         var spaceId = $"space_fro_{suffix}";
         var res = await alice.PostAsJsonAsync("/friends/requests",
             new SendFriendRequest(bobId, SpaceId: spaceId, Role: "contributor", SpaceName: "Nope"));
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
 
-        // a mere contributor may not piggyback the space either
         await SeedSpaceWithOwnerAsync(spaceId, bobId, (aliceId, SpaceRoles.Contributor));
         res = await alice.PostAsJsonAsync("/friends/requests",
             new SendFriendRequest(bobId, SpaceId: spaceId, Role: "contributor", SpaceName: "Nope"));
@@ -183,18 +170,16 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.True((await alice.PostAsJsonAsync("/friends/requests",
             new SendFriendRequest(bobId, SpaceId: spaceId, Role: "reader", SpaceName: "Piggy"))).IsSuccessStatusCode);
 
-        // the receiver sees where accepting will land them (#169 DTO field)
         var bobFriends = await bob.GetFromJsonAsync<FriendsResponse>("/friends");
         var request = Assert.Single(bobFriends!.ReceivedPending);
         Assert.Equal("Piggy", request.SpaceName);
 
         Assert.True((await bob.PostAsync($"/friends/requests/{request.Id}/accept", null)).IsSuccessStatusCode);
 
-        // one shot: friendship AND membership, with the stored role
         var members = await alice.GetFromJsonAsync<List<MemberDto>>($"/spaces/{spaceId}/members");
         var bobRow = Assert.Single(members!, m => m.UserId == bobId);
         Assert.Equal("reader", bobRow.Role);
-        Assert.NotNull(bobRow.JoinedAt); // #172: member-since stamped at creation
+        Assert.NotNull(bobRow.JoinedAt);
     }
 
     [Fact]
@@ -229,11 +214,9 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("devA",
             [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "space", spaceId, new(), "000000100-0000-devA")]));
 
-        // not friends -> 400
         var response = await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "contributor", null));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
-        // non-owner cannot invite at all
         Assert.Equal(HttpStatusCode.Forbidden,
             (await mallory.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "contributor", null))).StatusCode);
     }

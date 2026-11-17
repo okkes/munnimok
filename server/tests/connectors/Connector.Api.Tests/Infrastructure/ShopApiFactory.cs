@@ -8,11 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// Boots the real <c>Connector.Api</c> host - its own <c>Program.cs</c>,
-/// its own composition, its own start-up refusals - against Sqlite and
-/// development auth.
-/// </summary>
+/// boots the real Connector.Api host - its own Program.cs and start-up refusals - on Sqlite with development auth
 public sealed class ShopApiFactory : WebApplicationFactory<Program>
 {
     /// <summary>What <c>X-Connector-Key</c> must carry. Absent, every call is a 401.</summary>
@@ -25,35 +21,24 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
     {
         Directory.CreateDirectory(_root);
 
-        // Environment variables rather than UseSetting or ConfigureAppConfiguration.
-        // AddConnectorPlatform binds its options eagerly inside Program.cs, and the
-        // default builder places environment variables after appsettings.Development.json -
-        // so this is the only override guaranteed to be both early enough and last.
+        // environment variables: options bind eagerly inside Program.cs and env vars come after appsettings.Development.json
         Set("Connector__Mode", "Development");
         Set("Connector__Database__Provider", "Sqlite");
         Set("Connector__Database__ConnectionString", $"Data Source={Path.Combine(_root, "connector.db")}");
         Set("Connector__Auth__SharedSecret", SharedSecret);
 
-        // The captcha provider parks on a challenge a few hundred milliseconds in.
-        // The default three seconds is enough on a developer's machine and not
-        // always on a loaded CI agent; widening it only makes the 202 deterministic,
-        // since the wait returns the moment the session settles either way.
+        // the captcha provider parks on a challenge; a wider wait only makes the 202 deterministic on a loaded CI agent
         Set("Connector__Timeouts__LoginWaitSeconds", "15");
 
         // The pushed live view's keep-alive (#429) at a second rather than
         // ten, so a quiet stream proves it keeps itself open inside a test.
         Set("Connector__Timeouts__LiveStreamKeepAliveSeconds", "1");
 
-        // The operator's own fleet, named exactly as the local compose file
-        // names it. Without this every agent is owner-scoped and the one case
-        // where a machine legitimately serves more than one person - which is
-        // the case a shared profile would leak across - is unreachable from a
-        // test. No other suite owns an agent under this subject, so nothing
-        // else changes.
+        // the operator's fleet, named as the local compose file names it: else every agent is owner-scoped and a machine
+        // serving several people is unreachable from a test
         Set("Connector__FleetSubjects__0", ConnectorOptions.DevFleetSubject);
     }
 
-    /// <summary>A client that is authenticated. Use <see cref="WebApplicationFactory{T}.CreateClient()"/> for the 401 case.</summary>
     public HttpClient CreateAuthorizedClient()
     {
         var client = CreateClient();
@@ -68,46 +53,25 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
-            // None of the registered mock providers rotate their material, so the
-            // manifest's own `rotates_on_use: true` contract - a fetch may re-issue
-            // the bundle and the caller must persist the newest - has nothing in the
-            // shipped fleet to exercise it. This provider exists only for that.
+            // no registered mock rotates material, so rotates_on_use has nothing in the shipped fleet to exercise
             services.AddSingleton<IProviderAdapter>(new RotatingStoreAdapter());
 
-            // Jumbo's shape - a password login whose session cannot be
-            // refreshed - which is the only shape a credential store is
-            // offerable on, and which no offline provider otherwise has.
+            // Jumbo's shape: the only shape a credential store is offerable on; no offline provider has it
             services.AddSingleton<IProviderAdapter>(new DailyLoginAdapter());
 
-            // ASN's shape - a browser that lives on the user's own machine -
-            // which is the only runtime that routes a session to a profile,
-            // and whose one shipped provider is a bank no test can drive.
+            // ASN's shape: the only runtime that routes a session to a profile; its one shipped provider is a bank no test can drive
             services.AddSingleton<IProviderAdapter>(new PersistentStoreAdapter());
 
-            // DUO's shape - agent-required and BYO, but NOT persistent - which
-            // is the combination that had every one of those routing rules
-            // written for it and none of them applied, because they all keyed
-            // on the runtime instead of on what the manifest asked for.
+            // DUO's shape: agent-required and BYO but not persistent; the routing rules keyed on the runtime and missed it
             services.AddSingleton<IProviderAdapter>(new OwnMachineStoreAdapter());
 
-            // The ordinary shop shape with nothing else attached - pooled,
-            // agent-required, and asking for no particular address - which is
-            // the only kind of provider where "the operator's fleet" and "a
-            // machine of mine" are both real answers, and therefore the only
-            // one where choosing between them can be tested.
+            // pooled, no address: the only provider where "the operator's fleet" and "a machine of mine" are both real answers
             services.AddSingleton<IProviderAdapter>(new PooledStoreAdapter());
 
-            // Jumbo's and BKR's shape - pooled, and only reachable from a
-            // residential line - which is the axis CanServe declared for
-            // months and compared never. Every shipped provider that asks for
-            // an address also asks for something else, so a double that asks
-            // for nothing but the address is what separates a failure about
-            // egress from a failure about a human at the browser.
+            // Jumbo's and BKR's shape: pooled, residential only; separates an egress failure from a headed-browser one
             services.AddSingleton<IProviderAdapter>(new ResidentialStoreAdapter());
 
-            // The budget shape (prod 2026-10-08): a fetch the party refuses
-            // with rate_limited on a session that is perfectly valid, which
-            // no shipped mock does and which used to end the session for good.
+            // budget shape (prod 2026-10-08): rate_limited on a valid session, which used to end the session for good
             services.AddSingleton<IProviderAdapter>(new BudgetStoreAdapter());
         });
     }
@@ -134,11 +98,7 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
     private static void Set(string key, string value) => Environment.SetEnvironmentVariable(key, value);
 }
 
-/// <summary>
-/// One host for the whole assembly. Booting a fresh one per class would cost
-/// more than the isolation is worth, and every test already scopes itself with
-/// its own subject.
-/// </summary>
+/// one host for the whole assembly: a host per class costs more than the isolation is worth; tests scope by subject
 [CollectionDefinition(ShopApiCollection.Name)]
 public sealed class ShopApiCollection : ICollectionFixture<ShopApiFactory>
 {

@@ -1,20 +1,14 @@
 import { create } from 'zustand';
 import { adoptedStoreKeys, getOfflineProfile } from '@/features/auth/offlineProfiles';
 
-/**
- * Who is using the app on this device. Demo and offline identities never
- * touch the network; user identities sync through the API (auth via Logto,
- * or header-based test auth in e2e).
- */
+/** demo and offline identities never touch the network; user identities sync through the API (Logto, or test auth in e2e) */
 export type Identity =
   | { kind: 'demo' }
   | { kind: 'offline'; profileId: string }
   | { kind: 'user'; sub: string; testAuth?: boolean };
 
-// localStorage, deliberately: local-first means killing/restarting the app
-// (or the PWA process) must NOT sign you out — your data is on the device.
-// Only an explicit sign-out clears the identity. Logto tokens live in
-// localStorage too, so background token refresh survives restarts.
+// localStorage on purpose: a restart must not sign out, the data is on the device; Logto tokens live there too
+// so background refresh survives restarts
 const SS_KEY = 'munni_session';
 
 export function readSessionIdentity(): Identity | null {
@@ -29,15 +23,12 @@ export function readSessionIdentity(): Identity | null {
   return null;
 }
 
-/** Stable database identity string, e.g. 'demo', 'offline_<id>', 'user_<sub>'. */
 export function identityKey(identity: Identity): string {
   switch (identity.kind) {
     case 'demo':
       return 'demo';
     case 'offline': {
-      // OO1 rebind: a profile minted by "Go offline" adopted the former
-      // signed-in identity's store — its key points there (registry read
-      // is sync localStorage; a missing profile falls back cleanly)
+      // a profile minted by "Go offline" adopted the former signed-in identity's store: its key points there
       const adopted = getOfflineProfile(identity.profileId)?.storeKey;
       return adopted ?? `offline_${identity.profileId}`;
     }
@@ -48,10 +39,8 @@ export function identityKey(identity: Identity): string {
 
 const USER_STORE_PREFIX = 'munni_user_store_';
 
-/**
- * A login's store is the one it used last — unless "Go offline" handed that one to a profile: the server gave
- * the login a fresh account, and opening the old store as that account would wipe the profile's data.
- */
+// a login uses its last store unless "Go offline" handed it to a profile: the server gave the login a fresh account,
+// and opening the old store as that account would wipe the profile's data
 function userStoreKey(sub: string): string {
   // subs can contain chars unsafe for db names
   const base = `user_${sub.replace(/[^a-zA-Z0-9_-]/g, '_')}`;

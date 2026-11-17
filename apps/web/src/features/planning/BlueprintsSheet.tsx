@@ -9,7 +9,6 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-/** how many of a blueprint's subjects point at things that no longer exist */
 function brokenCount(model: PlanningModel, blueprint: PlanRow): number {
   return brokenSubjects(model.subjectsOf(blueprint), {
     catalog: model.data.catalog,
@@ -88,11 +87,6 @@ function BlueprintRow({
   );
 }
 
-/**
- * Blueprints (#128): a plan's shape saved without its money — save the
- * current plan as one (an identical twin is refused, with an override),
- * apply one to this period (and the periods ahead), repair, rename, delete.
- */
 export function BlueprintsSheet({
   open,
   onOpenChange,

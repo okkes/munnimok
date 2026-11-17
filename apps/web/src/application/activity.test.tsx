@@ -30,7 +30,6 @@ describe('activity history', () => {
     expect(rows[0].kind).toBe('txAdd');
     expect(rows[0].detail).toBe('Coffee');
 
-    // stuff the log past the cap, then one prune pass trims to the cap
     for (let i = 0; i < ACTIVITY_CAP + 10; i++) {
       await repo.upsert('activity', 's1', repo.newId(), {
         kind: 'note',
@@ -39,12 +38,10 @@ describe('activity history', () => {
     }
     await pruneActivity(store, repo, 's1');
     rows = (await store.bySpace('activity', 's1')).filter((r) => r.deleted === 0);
-    // the 2026-01-01 seeds are older than the 90-day age bound too, so
-    // the age rule removes them all — only the fresh first row survives
+    // the 2026-01-01 seeds are older than the 90-day bound too: only the fresh first row survives
     expect(rows).toHaveLength(1);
     expect(rows[0].detail).toBe('Coffee');
 
-    // rows within the age window prune by COUNT only
     for (let i = 0; i < ACTIVITY_CAP + 10; i++) {
       await repo.upsert('activity', 's2', repo.newId(), {
         kind: 'note',
@@ -54,8 +51,6 @@ describe('activity history', () => {
     await pruneActivity(store, repo, 's2');
     rows = (await store.bySpace('activity', 's2')).filter((r) => r.deleted === 0);
     expect(rows).toHaveLength(ACTIVITY_CAP);
-    // the newest rows survive — the seconds run up to CAP+9, so the very
-    // first (i=0 …) seeded rows are the pruned ones
     const times = rows.map((r) => r.at).sort((a, b) => a.localeCompare(b));
     expect(times[0] > new Date(Date.UTC(2026, 0, 1, 0, 0, 0)).toISOString()).toBe(true);
     db.close();
@@ -71,9 +66,7 @@ describe('activity history', () => {
     const repo = new Repo(store, new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('budget', 's1', 'b1', { name: 'Groceries' });
 
-    // no explicit name: the helper reads it off the stored row
     await logRowActivity(store, repo, 's1', 'budget', 'b1', 'budgetEdit');
-    // explicit name wins without a lookup
     await logRowActivity(store, repo, 's1', 'budget', 'b1', 'budgetRemove', 'Renamed');
     const rows = (await store.bySpace('activity', 's1')).filter((r) => r.deleted === 0);
     expect(rows.map((r) => [r.kind, r.detail]).sort()).toEqual([
@@ -93,19 +86,15 @@ describe('activity history', () => {
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-save'));
-    // #348: the save opens the new transaction's own page
     await waitFor(() => expect(screen.getByTestId('screen-tx-detail').textContent).toContain('Bakery'));
 
     fireEvent.click(screen.getAllByTestId('tab-home')[0]);
     await screen.findByTestId('screen-home');
     fireEvent.click(screen.getByTestId('home-notifications'));
-    // the audit trail lives on the Activity tab now (arc 6)
     fireEvent.click(await screen.findByTestId('notif-tab-activity'));
     const list = await screen.findByTestId('history-list');
     expect(list.textContent).toContain('Bakery');
 
-    // only the person is tappable (user rule): the row itself is not a
-    // button; clicking the actor name opens my profile
     const row = list.querySelector('[data-testid^="history-row-"]');
     expect(row?.tagName).not.toBe('BUTTON');
     const actorButton = list.querySelector('[data-testid^="history-actor-"]') as HTMLElement;

@@ -16,14 +16,9 @@ const subscribeSideNav = (listener: () => void) => {
 };
 const readSideNav = () => globalThis.matchMedia?.(SIDE_NAV_QUERY)?.matches ?? false;
 
-/** true where the side panel lists every feature instead of the bottom bar */
 export const useSideNavShown = (): boolean => useSyncExternalStore(subscribeSideNav, readSideNav, () => false);
 
-/**
- * The active space's bar after Home. Until the space row has loaded, the
- * bar this device drew for the space last (a cold start would otherwise
- * flash the default bar), else the default one.
- */
+/** until the space row loads, the bar this device drew for the space last: a cold start would flash the default bar */
 export function useNavTabs(): NavFeatureId[] {
   const { store, spaceId } = useData();
   const identity = useSession((s) => s.identity);
@@ -49,12 +44,7 @@ export interface NavOps {
 
 const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
 
-/**
- * The bar's edits: one LWW write of the whole list on the space row (like
- * homeBlocks) and a line in the space's history. Every op reads the row
- * FRESH — two quick taps against the render's copy lost the first one
- * (the balance band's lesson).
- */
+/** every op reads the row FRESH: two quick taps against the render's copy lost the first one */
 export function useNavOps(spaceId: string, readOnly: boolean): NavOps {
   const { store, repo } = useData();
   const identity = useSession((s) => s.identity);

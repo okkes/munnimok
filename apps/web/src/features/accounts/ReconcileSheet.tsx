@@ -26,13 +26,8 @@ function TxLine({ tx, lang }: Readonly<{ tx: TransactionRow; lang: ReturnType<ty
   );
 }
 
-/**
- * Review-before-delete reconciliation (master plan requirement x): the
- * bank connection is the truth inside its coverage — matched imports
- * hand their edits over (each match can be opted out, answer 2), the
- * FULL list of mismatched rows is shown before anything is deleted,
- * and pre-coverage history is called out as untouched.
- */
+// the bank connection is the truth inside its coverage: the full list of mismatched rows shows before anything
+// is deleted, each match can be opted out, and pre-coverage history stays untouched
 export function ReconcileSheet({
   open,
   onOpenChange,
@@ -42,9 +37,7 @@ export function ReconcileSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountIds: string[];
-  /** #311 r4 (user): the pair to MERGE — the imported account dissolves
-   *  into the bank one after the reconcile runs; absent = the classic
-   *  in-place reconcile of one mixed-source account */
+  /** #311: the pair to MERGE: the imported account dissolves into the bank one; absent = in-place reconcile */
   merge?: { importedAccountId: string; bankAccountId: string };
 }>) {
   const { t, lang } = useLang();
@@ -53,15 +46,11 @@ export function ReconcileSheet({
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReconcileResult | null>(null);
-  // #311 r2 (user): "I dont have to scroll a lot to get to the mismatch
-  // section" — the (usually long) match list starts folded
+  // #311: the (usually long) match list starts folded so the mismatch section is in reach
   const [matchesOpen, setMatchesOpen] = useState(false);
-  // #311 r2 (user, "nothing happens"): a failed apply SAYS so
   const [failed, setFailed] = useState(false);
-  // #311 r3 (user): nothing "auto-matches" — the sheet first ASKS
-  // whether these two sources are the same account before any list
+  // #311: nothing auto-matches: the sheet first asks whether the two sources are the same account
   const [step, setStep] = useState<'ask' | 'review'>('ask');
-  // #311 r3: the apply narrates — done/total while it runs
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
@@ -73,8 +62,7 @@ export function ReconcileSheet({
     setStep('ask');
     setProgress(null);
     void (async () => {
-      // one plan across every involved account: the same-IBAN pair case
-      // feeds both accounts' rows in — linked rows vouch either way
+      // one plan across every involved account: the same-IBAN pair feeds both accounts' rows in
       const rows: TransactionRow[] = [];
       for (const accountId of accountIds) {
         rows.push(...((await store.allRows('transaction')).filter((r) => r.deleted === 0 && r.accountId === accountId)));
@@ -106,7 +94,7 @@ export function ReconcileSheet({
           : await applyReconcile(store, repo, spaceId, plan, ignored, tick),
       );
     } catch {
-      // #311 r2: dying silently read as "nothing happens" — say it
+      // dying silently read as "nothing happens" (#311)
       setFailed(true);
     } finally {
       setBusy(false);
@@ -115,9 +103,7 @@ export function ReconcileSheet({
   };
 
   const judged = plan ? plan.matches.length + plan.mismatched.length : 0;
-  // #311 r4: a merge with nothing overlapping is still real work — the
-  // imported history MOVES onto the bank account (a fresh link's rows
-  // may not overlap yet)
+  // #311: a merge with nothing overlapping is still real work: the imported history moves onto the bank account
   const workable = judged > 0 || (!!merge && (plan?.kept.length ?? 0) > 0);
 
   return (
@@ -126,11 +112,9 @@ export function ReconcileSheet({
       onOpenChange={onOpenChange}
       title={t('reconcile.title')}
       size="tall"
-      // #311 r3 (user): the desktop dialog uses the width — pairs read
-      // side by side without truncating titles
+      // the desktop dialog uses the width: pairs read side by side
       wide
-      // …and clicking away mid-apply says what's running instead of
-      // closing over it (the import flow's mechanic)
+      // clicking away mid-apply says what is running instead of closing over it
       busyNote={busy ? t('reconcile.busy') : null}
     >
       {result && (
@@ -149,9 +133,7 @@ export function ReconcileSheet({
           {t('reconcile.nothing')}
         </p>
       )}
-      {/* #311 r3 (user): "rather than doing it automatically, show a
-          popup like: these two look similar — is that correct?" — the
-          question comes FIRST, the match list only after a yes */}
+      {/* #311: the question comes first, the match list only after a yes */}
       {!result && plan && workable && step === 'ask' && (
         <div className="flex flex-col gap-3 pt-2" data-testid="reconcile-ask">
           <div className="flex items-start gap-3">
@@ -178,9 +160,6 @@ export function ReconcileSheet({
 
           {plan.matches.length > 0 && (
             <div>
-              {/* #311 r2 (user): the long match list folds — the header
-                  is the toggle, closed by default so the mismatches are
-                  one glance away */}
               <button
                 data-testid="reconcile-matches-toggle"
                 onClick={() => setMatchesOpen((v) => !v)}
@@ -192,7 +171,6 @@ export function ReconcileSheet({
               {matchesOpen && (
                 <>
                   <p className="mb-1 px-1 text-[11px] text-ink-4">{t('reconcile.matchSub')}</p>
-                  {/* #378: the one select-all row every transaction list wears */}
                   <SelectAllRow
                     total={plan.matches.length}
                     selected={plan.matches.filter((match) => !ignored.has(match.imported.id)).length}
@@ -202,7 +180,7 @@ export function ReconcileSheet({
                   />
                   <div className="overflow-hidden rounded-card border border-line bg-surface">
                     {plan.matches.map((match) => (
-                      <label
+                      <label // NOSONAR(S6853) its text (both halves of the pair) sits deeper than the rule looks
                         key={match.imported.id}
                         data-testid={`reconcile-match-${match.imported.id}`}
                         className="flex cursor-pointer items-start gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
@@ -214,10 +192,6 @@ export function ReconcileSheet({
                           onChange={() => toggleIgnore(match.imported.id)}
                           className="mt-1 h-4 w-4 accent-(--m-accent)"
                         />
-                        {/* #311 r2 (user): BOTH halves of the pair, side
-                            by side on desktop, stacked on the phone —
-                            "right now I have no clue what I am looking
-                            at" */}
                         <span className="grid min-w-0 flex-1 gap-x-4 gap-y-1.5 lg:grid-cols-2">
                           <span className="min-w-0">
                             <span className="m-cap block text-[10px] text-ink-4">{t('reconcile.sideImported')}</span>

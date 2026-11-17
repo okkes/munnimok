@@ -1,11 +1,6 @@
 import { Icon } from './Icon';
 import { useLang } from '@/i18n';
 
-/**
- * #234 (user): ONE search field for the whole app — a magnify lead and
- * a clear × the moment there is text. Every hand-rolled search input
- * converges here (the pattern started life in BrandIconPicker).
- */
 export function SearchField({
   value,
   onChange,
@@ -33,9 +28,7 @@ export function SearchField({
       </span>
       <input
         data-testid={testId}
-        // #312 r5 (user): search is the ONE surface where a scroll
-        // dismisses the keyboard — the browse gesture means reading
-        // results, not typing. Form fields keep their keyboard.
+        // #312: search is the one surface where a scroll dismisses the keyboard; form fields keep theirs
         data-search-dismiss=""
         value={value}
         onFocus={onFocus}

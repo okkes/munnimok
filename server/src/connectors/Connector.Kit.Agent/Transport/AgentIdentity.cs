@@ -2,10 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Agent.Transport;
 
-/// <summary>
-/// Who this agent is, once it has enrolled. Held in memory and read by the
-/// auth handler on every outbound call.
-/// </summary>
 public sealed class AgentIdentity
 {
     private AgentEnrollment? _current;
@@ -14,7 +10,6 @@ public sealed class AgentIdentity
 
     public bool IsEnrolled => Current is not null;
 
-    /// <summary>The agent id, for the T4 material pointer. Throws before enrollment.</summary>
     public string AgentId =>
         Current?.AgentId ?? throw new InvalidOperationException("the agent has not enrolled yet");
 
@@ -27,10 +22,7 @@ public sealed class AgentIdentity
     public void Clear() => Volatile.Write(ref _current, null);
 }
 
-/// <summary>
-/// What survives a restart. The token is the only secret this agent holds at
-/// rest, and it is scoped to <c>/agent/v1/*</c> and revocable on its own.
-/// </summary>
+/// the token is the only secret held at rest; scoped to /agent/v1/* and revocable on its own
 public sealed record AgentEnrollment
 {
     [JsonPropertyName("agent_id")]
@@ -38,11 +30,7 @@ public sealed record AgentEnrollment
 
     public required string Token { get; init; }
 
-    /// <summary>
-    /// The control plane this token was issued by. Pointing an agent at a
-    /// different host must force a fresh enrollment rather than send one
-    /// service's token to another.
-    /// </summary>
+    /// a different control plane forces a fresh enrollment: one service's token is never sent to another
     [JsonPropertyName("control_plane")]
     public required string ControlPlane { get; init; }
 

@@ -1,7 +1,3 @@
-/**
- * Access-token bridge: the Logto provider (React context) registers a
- * getter here so non-React code (ApiSyncBackend) can fetch tokens.
- */
 type TokenGetter = () => Promise<string | undefined>;
 
 let getter: TokenGetter | null = null;
@@ -10,11 +6,8 @@ export function setAccessTokenGetter(fn: TokenGetter | null): void {
   getter = fn;
 }
 
-// ── auth readiness ───────────────────────────────────────────────────────
-// On a cold PWA start the sync engine used to race Logto's session
-// restore: the first requests went out without a token, got a 401 and
-// poisoned the bootstrap. Sync now waits for this signal (the Logto
-// provider fires it once restoring finished, either way).
+// sync waits for this signal: on a cold PWA start it raced Logto's session restore, went out
+// tokenless and the 401 poisoned the bootstrap
 let authReadyResolve: (() => void) | null = null;
 const authReadyPromise = new Promise<void>((resolve) => {
   authReadyResolve = resolve;
@@ -25,11 +18,8 @@ export function signalAuthReady(): void {
   authReadyResolve = null;
 }
 
-/**
- * #594: neither wait below may be endless. A restore that never reported back, or a mint that never
- * answered, left a phone on the connecting screen with nothing failing — so nothing was ever offered.
- * Past its limit a wait counts as lost: requests go out without a bearer and the 401 path takes over.
- */
+/** #594: a wait past its limit counts as lost (a phone sat on the connecting screen with nothing failing): requests go out
+ * without a bearer and the 401 path takes over */
 export const AUTH_READY_WAIT_MS = 15_000;
 export const TOKEN_MINT_WAIT_MS = 20_000;
 
@@ -39,7 +29,6 @@ export const authWaits = (): Readonly<typeof waits> => waits;
 
 let restoreDeadline: ReturnType<typeof setTimeout> | null = null;
 
-/** resolves once the OIDC session restore finished (test auth: immediately) — or its limit passed */
 export function waitForAuthReady(): Promise<void> {
   // the first waiter starts the clock: a restore nobody waits for needs none
   if (authReadyResolve) {
@@ -54,25 +43,19 @@ export function waitForAuthReady(): Promise<void> {
   });
 }
 
-// Single-flight: Logto ROTATES refresh tokens, so two concurrent refreshes
-// race — the loser presents the already-consumed token and Logto revokes the
-// whole grant family (dead refresh token → double 401 → forced re-login).
-// Serializing concurrent callers onto one in-flight fetch removes the race.
+// single-flight: Logto rotates refresh tokens, so concurrent refreshes race and the loser's
+// consumed token revokes the grant family
 let inflight: Promise<string | undefined> | null = null;
 
-// #222: the single-flight only guards THIS context. An installed PWA
-// window and a browser tab share the same localStorage refresh token and
-// refresh independently — the loser presents the already-rotated token
-// and Logto revokes the whole grant family (the "have to log out to get
-// the connection back" state). A Web Lock serializes the refresh across
-// every context of the origin; where unsupported, behavior is unchanged.
+// #222: an installed PWA window and a browser tab share one refresh token and refresh independently;
+// a Web Lock serializes it
 const withCrossTabLock = (fn: TokenGetter): Promise<string | undefined> =>
   !lockStuck && typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('munni:oidc-token', fn) : fn();
 
 // a mint that never answered still holds the lock: the mints after it would queue behind it for good
 let lockStuck = false;
 
-/** the mint, or nothing once its limit passed — which counts as a failed refresh, so the next callers ask nobody for a while */
+/** a mint past its limit counts as a failed refresh: the next callers ask nobody for a while */
 function withinLimit(mint: Promise<string | undefined>): Promise<string | undefined> {
   let limit: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<undefined>((resolve) => {
@@ -86,17 +69,9 @@ function withinLimit(mint: Promise<string | undefined>): Promise<string | undefi
   return Promise.race([mint, late]).finally(() => clearTimeout(limit));
 }
 
-// The single-flight folds CONCURRENT callers only: the very next call after
-// a refresh that FAILED ran its own refresh again (prod Logto logs
-// 2026-10-08: the admin portal hammered a dead grant 669 times in three
-// minutes — the web app has the expiry mark, but a transient failure or a
-// verdict the SDK swallowed left the same hole). After a failed attempt
-// nobody asks Logto again for 15 s: callers get "no bearer" (the request
-// goes out without one — a 401 that proves nothing, lib/api.ts) and the
-// expiry handling or the revival probe decide what comes next. A minted
-// token lifts the cooldown at once. The getter (features/auth/logto.tsx)
-// is the attempt site, so only a real attempt arms it — never the
-// expired-mark short-circuit.
+// the single-flight folds concurrent callers only; after a failed refresh nobody asks Logto for 15 s
+// (prod 2026-10-08: 669 refreshes of a dead grant in three minutes); a minted token lifts the cooldown;
+// only the getter arms it, so the expired-mark short-circuit never does
 export const REFRESH_RETRY_AFTER_MS = 15_000;
 let retryAfter = 0;
 
@@ -127,7 +102,6 @@ export async function getAccessToken(): Promise<string | undefined> {
   return inflight;
 }
 
-/** Logto's signOut, registered by the provider (no-op when unconfigured). */
 let signOutHandler: ((postLogoutRedirectUri: string) => Promise<void>) | null = null;
 
 export function setOidcSignOut(fn: ((uri: string) => Promise<void>) | null): void {
@@ -140,12 +114,8 @@ export async function oidcSignOut(postLogoutRedirectUri: string): Promise<boolea
   return true;
 }
 
-/**
- * Logto's signIn, registered by the provider — the 401 self-heal uses it
- * to re-enter the OIDC flow when a signed-in user has no mintable token
- * (evicted/wiped client keys while the IdP session cookie survives: the
- * round-trip is silent and re-mints tokens).
- */
+/** the 401 self-heal re-enters the OIDC flow when a signed-in user has no mintable token
+ * (client keys wiped, IdP cookie alive) */
 let signInHandler: ((redirectUri: string, fresh?: boolean) => Promise<void>) | null = null;
 
 export function setOidcSignIn(fn: ((uri: string, fresh?: boolean) => Promise<void>) | null): void {

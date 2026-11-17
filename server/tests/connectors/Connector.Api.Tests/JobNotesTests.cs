@@ -5,16 +5,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §2.4: what the adapter said about a run, all the way out to a
-/// caller.
-///
-/// The gap this closes: a note went to the agent's logger and stopped there,
-/// so every explanation of an outcome - "this pass is partial", "that account
-/// type could not be listed", "the provider states no balance for this card" -
-/// lived on whichever machine ran the job, while the caller got a blank and no
-/// way to ask why.
-/// </summary>
+// api-spec §2.4: what the adapter said about a run reaches the caller, not only the agent's logger
 [Collection(ShopApiCollection.Name)]
 public sealed class JobNotesTests(ShopApiFactory factory)
 {
@@ -24,12 +15,7 @@ public sealed class JobNotesTests(ShopApiFactory factory)
         ["password"] = "hunter2",
     };
 
-    /// <summary>
-    /// A window that excludes some of the fixture but not all of it, so the
-    /// mock has something true to say: two weeks back from the test's own day.
-    /// The store keeps a year of receipts, and none is more than two weeks
-    /// after the one before it.
-    /// </summary>
+    // two weeks back: excludes part of the fixture, so the mock has something true to say
     private static string NarrowWindow() =>
         DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-14).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
@@ -53,15 +39,10 @@ public sealed class JobNotesTests(ShopApiFactory factory)
         var note = Assert.Single(notes);
         Assert.Contains("outside the requested window", note, StringComparison.Ordinal);
 
-        // The records the caller DID get are unaffected: a note explains an
-        // outcome, it does not change one.
         Assert.NotEmpty(page.GetProperty("data").EnumerateArray());
     }
 
-    /// <summary>
-    /// And nothing is carried when the adapter had nothing to say, so a
-    /// consumer can render the field's presence as meaning something.
-    /// </summary>
+    // no notes when the adapter had nothing to say: the field's presence means something
     [Fact]
     public async Task A_run_with_nothing_to_explain_carries_no_notes()
     {
@@ -77,21 +58,7 @@ public sealed class JobNotesTests(ShopApiFactory factory)
         Assert.Empty(page.GetProperty("notes").EnumerateArray());
     }
 
-    /// <summary>
-    /// A SIGN-IN CARRIES ITS NOTES TOO, and it is the outcome that carries the
-    /// most of them.
-    /// </summary>
-    /// <remarks>
-    /// The fetch path had this from the start; the login path did not, so an
-    /// adapter's account of how somebody got connected - which screen the
-    /// provider served, whether a form ever opened, what scope came back -
-    /// reached the agent's stdout and stopped. On the one provider where it was
-    /// checked, eight notes per sign-in went nowhere.
-    /// <para>
-    /// Read off the session rather than a job, because a caller connecting
-    /// polls the session and never learns the login job's id.
-    /// </para>
-    /// </remarks>
+    // a sign-in carries notes too, read off the session: a connecting caller polls it and never learns the login job's id
     [Fact]
     public async Task A_sign_in_carries_what_the_adapter_said_about_it()
     {
@@ -129,10 +96,6 @@ public sealed class JobNotesTests(ShopApiFactory factory)
             Assert.Single(notes));
     }
 
-    /// <summary>
-    /// And a sign-in with nothing to explain carries none, so a consumer can
-    /// render the field's presence as meaning something.
-    /// </summary>
     [Fact]
     public async Task A_sign_in_with_nothing_to_explain_carries_no_notes()
     {

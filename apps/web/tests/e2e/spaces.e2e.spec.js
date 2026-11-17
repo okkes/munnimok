@@ -1,9 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, gotoSpaces, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: per-space data — a new space starts empty and active, and
-// switching back brings the first space's data back unchanged.
-
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
 

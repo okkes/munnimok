@@ -1,5 +1,4 @@
-/** every new space starts seeing this much history (arc 5 default:
- *  two months back — the create sheet hints "3 months at most") */
+/** default history start for a new space: two months back (the create sheet hints "3 months at most") */
 export const DEFAULT_HISTORY_MONTHS = 2;
 
 /** local-date ISO string `months` months back — for history-start defaults */
@@ -9,8 +8,7 @@ export const isoMonthsAgo = (months: number): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-/** the space identity palette — shared by the create sheet and the
- *  space settings screen (arc 4: creation grew the same editor) */
+/** the space identity palette, shared by the create sheet and the space settings screen */
 export const SPACE_ICONS = [
   'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
   'piggy-bank-outline', 'cart-outline', 'star-outline', 'beach', 'paw', 'baby-carriage',

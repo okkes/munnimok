@@ -6,12 +6,7 @@ using Munni.Api.Connectors;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// #566: a student debt lands as the loan it is — the balance and the day
-/// it was calculated to, what was owed when repayment began, the monthly
-/// instalment and its day — where it used to land as a bare figure (€0.00
-/// on a debt in its repayment phase) beside a note in one language.
-/// </summary>
+/// #566: a student debt lands as a loan (balance and its day, original size, instalment and day), not a bare figure.
 public class ConnectorStudentDebtTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Sub = "duo-debtor";

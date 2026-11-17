@@ -10,8 +10,7 @@ interface AppBarProps {
 
 export function AppBar({ title, sub, leading, trailing, large }: AppBarProps) {
   if (large) {
-    // one row: the trailing icons sit on the title's line, not floating
-    // above it — the detached top-right icons read as unrelated chrome
+    // the trailing icons share the title's row: detached top-right icons read as unrelated chrome
     return (
       <div className="shrink-0 px-5 pt-3 pb-2">
         <div className="flex min-h-10 items-center justify-between gap-2">

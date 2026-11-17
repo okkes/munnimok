@@ -6,25 +6,14 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// The mock fleet's data, held to the invariant it exists to demonstrate.
-///
-/// A bank hands us a redundant fact - the running balance after each row -
-/// and an unchecked redundancy is a redundancy wasted. The consistent ledger
-/// must pass the chain check; the deliberately broken one must fail it with
-/// <see cref="ErrorCode.ProviderChanged"/>. Without both halves the check
-/// could be silently inert and every test would still be green.
-/// </summary>
+// a bank's running balance is a redundancy worth checking: the consistent ledger must pass and the broken one must
+// fail with ProviderChanged; both halves, or the check could be inert with every test green
 public sealed class MockBankLedgerTests
 {
     private const string SessionId = "ses_0123456789abcdef0123456789abcdef";
     private const string ProviderId = "mock-bank-simple";
 
-    /// <summary>
-    /// The day these tests read the ledger through - the adapters read it
-    /// through their clock's today. Pinned, so a window is a fixed range: a
-    /// day's rows are the same on every later day (see the test below).
-    /// </summary>
+    // pinned so a window is a fixed range: a day's rows are the same on every later day
     private static readonly DateOnly Today = new(2026, 7, 26);
 
     private static MockBankLedger Consistent => MockBankLedger.Through(Today);
@@ -57,9 +46,8 @@ public sealed class MockBankLedgerTests
         var error = Assert.Throws<ConnectorException>(
             () => BankEmission.VerifyPerAccount("mock-bank-broken", rows));
 
-        // provider_changed degrades the provider and pages an operator, and
-        // is never retried - a broken chain is what a bank changing its
-        // export looks like from here.
+        // provider_changed degrades the provider, pages an operator and is never retried: a broken chain is what a changed
+        // export looks like
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.False(error.Retriable);
         Assert.Contains("balance chain broken", error.Detail, StringComparison.Ordinal);
@@ -76,8 +64,7 @@ public sealed class MockBankLedgerTests
 
         var differences = consistent.Zip(broken).Where(pair => pair.First != pair.Second).ToList();
 
-        // One nudged balance and nothing else: the fixture proves the check
-        // fires on a realistic corruption rather than on a mangled file.
+        // one nudged balance only: the check fires on a realistic corruption, not a mangled file
         var difference = Assert.Single(differences);
         Assert.Equal(difference.First.Amount, difference.Second.Amount);
         Assert.Equal(difference.First.BalanceAfter + 500, difference.Second.BalanceAfter);
@@ -88,9 +75,8 @@ public sealed class MockBankLedgerTests
     {
         var recent = new FetchWindow(Today.AddDays(-104), Today);
 
-        // A default 90-day window widened by the 14-day settlement lag. A
-        // corruption older than that would simply not be fetched, and the
-        // provider would look healthy - which would defeat the fixture.
+        // the default 90-day window plus the 14-day settlement lag: an older corruption would not be fetched and the
+        // provider would look healthy
         Assert.Throws<ConnectorException>(
             () => BankEmission.VerifyPerAccount("mock-bank-broken", Rows(Broken, recent)));
     }
@@ -100,10 +86,8 @@ public sealed class MockBankLedgerTests
     {
         var rows = Rows(Consistent);
 
-        // Grouped, it holds. Concatenated, the balance jumps from one
-        // account's closing figure to another's at every seam - so a naive
-        // whole-list check would fail on data that is perfectly correct, and
-        // whoever "fixed" that would probably delete the check.
+        // verified per account: concatenated, the balance jumps at every seam, and whoever "fixed" that would delete the
+        // check
         BankEmission.VerifyPerAccount(ProviderId, rows);
         Assert.Throws<ConnectorException>(() => BalanceChain.Verify(rows, ProviderId));
     }
@@ -122,8 +106,7 @@ public sealed class MockBankLedgerTests
             Assert.Contains(rows, t => t.AccountId == account.Id);
         });
 
-        // A credit card has no IBAN, which is exactly why open banking cannot
-        // see it and why this service exists.
+        // a credit card has no IBAN, which is why open banking cannot see it
         var card = Assert.Single(accounts, a => a.Type == AccountType.CreditCard);
         Assert.Null(card.Iban);
         Assert.Equal(MockBankLedger.CreditCardNumber, card.MaskedNumber);
@@ -148,22 +131,15 @@ public sealed class MockBankLedgerTests
         var then = Rows(Consistent);
         var yearLater = Rows(MockBankLedger.Through(Today.AddDays(365)), WholeHistory);
 
-        // The first day is fixed and the last one follows the clock: a day's
-        // rows are a function of the days before it alone, so a ledger read a
-        // year later carries the same ids and content hashes for the days both
-        // cover. A fixture whose rows moved with the clock would make every
-        // idempotency assertion in the suite either flaky or vacuous.
+        // a day's rows depend only on the days before it, so a ledger read a year later has the same ids and hashes; rows
+        // that moved with the clock would make idempotency assertions flaky or vacuous
         Assert.Equal(then.Select(t => t.Id), yearLater.Select(t => t.Id));
         Assert.Equal(then.Select(t => t.ContentHash), yearLater.Select(t => t.ContentHash));
         Assert.Equal(new DateOnly(2026, 1, 27), MockBankLedger.Start);
     }
 
-    /// <summary>
-    /// The history limit is always filled: whatever day the ledger is read
-    /// through, its rows reach from the limit's first week to the last week.
-    /// A ledger that ended on a fixed day held nothing in reach from
-    /// 2027-01-23 on, and every test expecting mock transactions turned red.
-    /// </summary>
+    // whatever day it is read through, rows reach from the limit's first week to the last; a fixed end day held
+    // nothing in reach from 2027-01-23 on
     [Theory]
     [InlineData("2026-07-26")]
     [InlineData("2027-01-23")]
@@ -199,8 +175,7 @@ public sealed class MockBankLedgerTests
 
         var (page, complete) = BankEmission.Page(rows, 10);
 
-        // Dropping rows out of the middle would break the chain, and dropping
-        // the oldest would leave the caller with a gap it can never discover.
+        // dropping from the middle breaks the chain, dropping the oldest leaves a gap the caller never discovers
         Assert.Equal(10, page.Count);
         Assert.False(complete);
         Assert.Equal(rows.Take(10).Select(t => t.ExternalId), page.Select(t => t.ExternalId));
@@ -240,8 +215,8 @@ public sealed class MockBankLedgerTests
     {
         var reachable = Consistent.Reachable;
 
-        // Sealed into the bundle for cheap discovery without a provider round
-        // trip, and spelled in the wire form the accounts parameter takes.
+        // sealed into the bundle for discovery without a provider round trip, in the wire form the accounts parameter
+        // takes
         Assert.Equal(["current", "savings", "credit_card"], reachable.Select(a => a.Type));
         Assert.All(reachable, a => Assert.Contains(a.Type, AccountTypes.Selectable));
     }

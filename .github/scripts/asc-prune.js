@@ -1,33 +1,10 @@
-// Prune the Apple Development certificates that pile up from
-// ephemeral-runner archives (each CI run WITHOUT a persistent
-// certificate mints one; unchecked they hit Apple's cap: "Choose a
-// certificate to revoke" — the twelfth was refused on 2026-09-09).
-//
-// Race-safe without validity assumptions: certificates of the same type
-// expire in creation order, so the KEEP_NEWEST most recent (by
-// expirationDate) are spared — they may belong to in-flight runs (at
-// most one per branch thanks to the per-branch concurrency groups) —
-// and everything older is revoked. Deriving age from expirationDate
-// minus an assumed validity does NOT work: cloud-managed dev certs are
-// short-lived, which made every cert look freshly created.
-// Distribution certificates are never touched.
-//
-// PROTECT_SERIALS names certificates that are never revoked whatever
-// their age: the persistent one a repo holds as APPLE_DEV_CERT_P12. The
-// whole Apple team shares ONE such certificate — the 2026-09-08 mint
-// cleared the deck blindly, revoked the hosted track's certificate and
-// ten throwaways piled up within a day. Serials compare case- and
-// leading-zero-insensitively (openssl prints 07C9…, Apple 7C9…).
-// DRY_RUN=1 prints the plan and revokes nothing.
-//
-// Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID; KEEP_NEWEST (default 3),
-// PROTECT_SERIALS (comma-separated), DRY_RUN.
+// revokes piled-up Development certs (each CI run without a persistent cert mints one; Apple's cap refuses more)
+// the KEEP_NEWEST by expirationDate are spared (maybe in flight); age cannot come from expiry (certs are short-lived)
+// PROTECT_SERIALS (the team's ONE persistent APPLE_DEV_CERT_P12) never revoke; serials ignore case and leading zeros
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
-// dev + master in flight + one margin; the iOS workflow passes 1 once a
-// persistent certificate signs (nothing of its own mints any more) and
-// the mint workflow 0 to clear the deck before creating the persistent one
+// dev + master in flight + one margin; the iOS workflow passes 1 once a persistent cert signs, the mint workflow 0
 const KEEP_NEWEST = Number(process.env.KEEP_NEWEST ?? 3);
 const DRY_RUN = process.env.DRY_RUN === '1';
 const normSerial = (s) => String(s ?? '').trim().toUpperCase().replace(/^0+/, '');

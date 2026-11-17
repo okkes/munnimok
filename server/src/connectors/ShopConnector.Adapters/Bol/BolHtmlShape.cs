@@ -5,22 +5,8 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Bol;
 
-/// <summary>
-/// The default shape: the account page's own markup.
-///
-/// Nobody on this project has seen the page - it needs an account, and this
-/// service does not spend a login to look - so every hook is a candidate list
-/// in <see cref="BolOptions"/> and every miss is reported with the list in
-/// the message. That is not defeatism, it is the only honest way to ship a
-/// parser for a page you have not read: an operator with devtools open fixes
-/// it in configuration, and the failure already tells them which list to fix.
-///
-/// One rule is not tolerant, on purpose. A block that matched but is missing
-/// its id, its date or its total is
-/// <see cref="ErrorCode.ProviderChanged"/> rather than a skipped row: quietly
-/// dropping orders whose markup moved would show a user a shorter history
-/// than they have and nothing would ever say so.
-/// </summary>
+// nobody has seen the page (it needs an account): every hook is a candidate list in BolOptions and a miss names its list
+// a matched block missing its id, date or total is ProviderChanged, not a skipped row: dropped orders would go unnoticed
 internal sealed class BolHtmlShape : IBolOrdersShape
 {
     private const string ProviderId = BolAdapter.ProviderId;
@@ -50,9 +36,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
 
         if (blocks.Count == 0)
         {
-            // "The page changed" and "this shopper has never ordered anything"
-            // are the same observation - no blocks - and the honest answers to
-            // them are opposite. Only the page can tell them apart.
+            // "the page changed" and "never ordered" both show no blocks but need opposite answers; only the page can tell them apart
             if (IsEmptyState(body, options)) return [];
 
             throw ConnectorException.ProviderChanged(
@@ -93,9 +77,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
 
     private static string OrderId(HtmlElement block, BolOptions options)
     {
-        // The block's own attribute first: a front end almost always carries
-        // the order number there, and an attribute survives a restyle that a
-        // rendered label does not.
+        // the block's own attribute first: it survives a restyle that a rendered label does not
         if (BolHtml.Attribute(block.OpenTag, options.OrderIdAttributes) is { Length: > 0 } attribute)
         {
             return attribute;
@@ -120,11 +102,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
                 $"[{string.Join(", ", options.OrderDateSelectors)}]");
         }
 
-        // A machine-readable attribute beats the rendered Dutch every time -
-        // it states its own offset, and it cannot be defeated by a redesign
-        // that changes "14 juni 2026" to "vandaag". It sits either on the
-        // labelled element or on a <time> one level inside it, and both are
-        // worth more than the prose.
+        // a machine-readable attribute (on the element or a time inside) beats rendered Dutch: it states its offset
         return BolHtml.Attribute(element.OpenTag, options.DateAttributes)
                ?? BolHtml.AttributeWithin(element.Inner, options.DateAttributes)
                ?? BolHtml.Text(element.Inner);
@@ -154,9 +132,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
 
             var quantity = BolHtml.Number(BolHtml.TextOf(line.Inner, options.ItemQuantitySelectors));
 
-            // A line with a name and no price at all is a shipping note or a
-            // status label, not a purchase - counting it as an item at zero
-            // would break reconciliation for a row that is not money.
+            // a name with no price is a shipping note or status label, not a purchase: counted at zero it would break reconciliation
             Money lineTotal;
             if (total is { } stated) lineTotal = stated;
             else if (unit is { } each) lineTotal = BolNormalize.Extended(each, quantity);
@@ -184,8 +160,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
 
         if (amount.Value == 0) return null;
 
-        // Providers state a discount with either sign; the schema requires it
-        // negative so that summing for reconciliation is unconditional.
+        // providers state a discount with either sign; the schema requires negative so summing for reconciliation is unconditional
         return new ReceiptDiscount
         {
             Amount = amount.Value > 0 ? amount.Negated() : amount,
@@ -200,12 +175,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
             $"{ProviderId}: no amount for {field}; tried [{string.Join(", ", selectors)}]" +
             (text is null ? string.Empty : $" and found the text '{text}'"));
 
-    /// <summary>
-    /// The unit is the caller's, always. There is no overload that looks at
-    /// the value and decides what it means - a heuristic that guesses wrong
-    /// corrupts money silently, and reconciliation cannot catch a whole
-    /// receipt that is wrong the same way.
-    /// </summary>
+    // the unit is the caller's, never inferred: a wrong guess corrupts money silently and reconciliation cannot catch it
     private static Money? Optional(string? text, MoneyUnit unit, string currency, string field)
     {
         if (BolHtml.MoneyText(text) is not { } number) return null;

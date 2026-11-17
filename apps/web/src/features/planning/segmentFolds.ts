@@ -1,6 +1,6 @@
 import type { PlanSegmentKind } from '@/db/types';
 
-/** which segments of a space's planning are folded on THIS device (user 2026-10-07) */
+/** folded segments are remembered per device, not synced */
 const key = (spaceId: string) => `munni_plan_folds_${spaceId}`;
 
 export function readFolds(spaceId: string): Set<PlanSegmentKind> {

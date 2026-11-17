@@ -5,7 +5,6 @@ import { autoLinks, canCountInBalance, countsInBalance, fitsExactly, fitsLoosely
 const row = (over: Partial<TransactionRow>): TransactionRow =>
   ({ id: 'x', spaceId: 's1', accountId: 'bank', date: '2026-11-10', amountCents: -1250, currency: 'EUR', merchant: 'Lunch', needsReview: 0, deleted: 0, hlc: '', fieldVersions: {}, ...over }) as TransactionRow;
 
-/** #547: a hand-typed entry on a bank account and the bank's own transaction */
 describe('your entry and the bank’s transaction', () => {
   const entry = row({ id: 'e1', merchant: 'Lunch at Bagels' });
 
@@ -34,7 +33,6 @@ describe('your entry and the bank’s transaction', () => {
     const near = row({ id: 'b-near', date: '2026-11-11', merchant: 'SOMETHING ELSE' });
     const far = row({ id: 'b-far', date: '2026-11-12', merchant: 'BAGELS' });
     expect([...autoLinks([entry], [far, near], new Set())]).toEqual([['e1', 'b-near']]);
-    // the same day: the title decides
     const sameDayOther = row({ id: 'b-other', date: '2026-11-11', merchant: 'PARKING' });
     const sameDayBagels = row({ id: 'b-bagels', date: '2026-11-11', merchant: 'BAGELS & BEANS' });
     expect([...autoLinks([entry], [sameDayOther, sameDayBagels], new Set())]).toEqual([['e1', 'b-bagels']]);
@@ -48,7 +46,6 @@ describe('your entry and the bank’s transaction', () => {
     const one = row({ id: 'b-one', date: '2026-11-10', merchant: 'SHOP' });
     const same = [row({ id: 'e1', merchant: 'Shop' }), row({ id: 'e2', merchant: 'Shop' })];
     expect(autoLinks(same, [one], new Set()).size).toBe(0);
-    // a nearer entry takes the row; the other waits for its own
     const nearer = [row({ id: 'e1', merchant: 'Shop' }), row({ id: 'e2', merchant: 'Shop', date: '2026-11-09' })];
     expect([...autoLinks(nearer, [one], new Set())]).toEqual([['e1', 'b-one']]);
   });

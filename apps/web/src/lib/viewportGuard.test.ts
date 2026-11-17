@@ -2,10 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installViewportGuard } from './viewportGuard';
 
-/**
- * The shell must never stay scrolled (iOS keyboard focus-scroll ignores
- * overflow: hidden and can leave the app displaced — "tripped" sheets).
- */
 describe('installViewportGuard', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -28,7 +24,7 @@ describe('installViewportGuard', () => {
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     const uninstall = installViewportGuard();
 
-    window.dispatchEvent(new Event('scroll')); // scrollY is 0 — nothing to fix
+    window.dispatchEvent(new Event('scroll'));
     await raf();
     expect(scrollTo).not.toHaveBeenCalled();
 

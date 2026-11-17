@@ -36,7 +36,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
 
         var create = await client.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest(endpoint, "p256", "auth1"));
         Assert.True(create.IsSuccessStatusCode);
-        // same endpoint again with rotated keys -> updated, not duplicated
         await client.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest(endpoint, "p256-rotated", "auth2"));
 
         using (var scope = _factory.Services.CreateScope())
@@ -68,7 +67,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var client = ClientFor($"push-fcm-{suffix}");
-        var token = $"fcm-device-token-{suffix}"; // raw token, not a URL
+        var token = $"fcm-device-token-{suffix}";
 
         var create = await client.PostAsJsonAsync("/me/push-subscriptions",
             new SubscribeRequest(token, Kind: "fcm"));
@@ -80,7 +79,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal("fcm", row.Kind);
         Assert.Null(row.P256dh);
 
-        // webpush rows still demand their key pair; unknown kinds bounce
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/me/push-subscriptions",
             new SubscribeRequest("https://push.example/nokeys"))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/me/push-subscriptions",
@@ -101,10 +99,9 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal(webRow.UserId, Assert.Single(web.Sent).UserId);
         Assert.Equal(fcmRow.UserId, Assert.Single(fcm.Sent).UserId);
 
-        // no FCM transport configured: the row survives (send "succeeds")
         var partial = new RoutingPushSender(web, null);
         Assert.True(await partial.SendAsync(fcmRow, "{}", CancellationToken.None));
-        Assert.Single(fcm.Sent); // untouched
+        Assert.Single(fcm.Sent);
     }
 
     [Fact]
@@ -118,7 +115,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         client.DefaultRequestHeaders.Add("X-User-Sub", $"push-test-{suffix}");
         client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
 
-        // no device yet: nothing sent, and the row can say so
         var none = await client.PostAsync("/me/push-subscriptions/test", null);
         Assert.True(none.IsSuccessStatusCode);
         Assert.Equal(0, (await none.Content.ReadFromJsonAsync<TestResult>())!.Sent);
@@ -129,7 +125,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal(2, (await both.Content.ReadFromJsonAsync<TestResult>())!.Sent);
         Assert.Equal(2, sender.Sent.Count);
         Assert.All(sender.Sent, s => Assert.Contains("\"type\":\"test\"", s.Payload));
-        // the native text exists in every language the app speaks
         foreach (var lang in new[] { "en", "nl", "tr" })
             Assert.NotNull(FcmTexts.Build(JsonDocument.Parse("{\"type\":\"test\"}").RootElement, lang));
     }
@@ -173,20 +168,17 @@ public class PushTests : IClassFixture<SyncApiFactory>
         await alice.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/alice", "p", "a"));
         await bob.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/bob", "p", "a"));
 
-        // friend request -> Bob is notified
         Assert.True((await alice.PostAsJsonAsync("/friends/requests", new SendFriendRequest(bobId))).IsSuccessStatusCode);
         var sent = Assert.Single(sender.Sent);
         Assert.Equal(bobId, sent.UserId);
         Assert.Contains("\"type\":\"friend-request\"", sent.Payload);
         Assert.Contains("Alice", sent.Payload);
 
-        // acceptance -> the requester (Alice) is notified
         var friends = await bob.GetFromJsonAsync<FriendsResponse>("/friends");
         var requestId = Assert.Single(friends!.ReceivedPending).Id;
         Assert.True((await bob.PostAsync($"/friends/requests/{requestId}/accept", null)).IsSuccessStatusCode);
         Assert.Contains(sender.Sent, s => s.UserId == aliceId && s.Payload.Contains("\"type\":\"friend-accept\"") && s.Payload.Contains("Bob"));
 
-        // space invite -> Bob is notified, and the owner sees it pending
         var spaceId = $"space_soc_{suffix}";
         using (var scope = factory.Services.CreateScope())
         {
@@ -201,7 +193,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         var outgoing = await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites");
         Assert.Equal(bobId, Assert.Single(outgoing!).ToUserId);
 
-        // joining -> the inviter (Alice) is notified
         var invites = await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites");
         var inviteId = Assert.Single(invites!).Id;
         Assert.True((await bob.PostAsync($"/spaces/invites/{inviteId}/accept", null)).IsSuccessStatusCode);
@@ -242,7 +233,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
             await db.SaveChangesAsync();
         }
 
-        // #172: a role change reaches the AFFECTED member with the new role
         Assert.True((await alice.PutAsJsonAsync($"/spaces/{spaceId}/members/{bobId}/role",
             new ChangeRoleRequest("reader", "Mem Space"))).IsSuccessStatusCode);
         Assert.Contains(sender.Sent, s => s.UserId == bobId
@@ -250,7 +240,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
             && s.Payload.Contains("\"role\":\"reader\"")
             && s.Payload.Contains("Mem Space"));
 
-        // #172/#173: a kick reaches the victim, naming the actor
         Assert.True((await alice.DeleteAsync($"/spaces/{spaceId}/members/{bobId}?spaceName=Mem%20Space")).IsSuccessStatusCode);
         Assert.Contains(sender.Sent, s => s.UserId == bobId
             && s.Payload.Contains("\"type\":\"member-removed\"")
@@ -279,12 +268,10 @@ public class PushTests : IClassFixture<SyncApiFactory>
         var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
 
         Assert.True((await alice.PostAsJsonAsync("/friends/requests", new SendFriendRequest(bobId))).IsSuccessStatusCode);
-        // the recipient "removes" the requester -> the pending edge is gone
         Assert.True((await bob.DeleteAsync($"/friends/{aliceId}")).IsSuccessStatusCode);
         var friends = await alice.GetFromJsonAsync<FriendsResponse>("/friends");
         Assert.Empty(friends!.SentPending);
         Assert.Empty(friends.Friends);
-        // removing a non-existent edge stays a harmless 200
         Assert.True((await bob.DeleteAsync($"/friends/{aliceId}")).IsSuccessStatusCode);
     }
 
@@ -343,7 +330,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
             new SendSpaceInvite(bobId, "contributor", "Rev Space"))).IsSuccessStatusCode);
         var inviteId = Assert.Single((await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites"))!).Id;
 
-        // the invited user is not an owner of the space -> may not revoke
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.DeleteAsync($"/spaces/invites/{inviteId}")).StatusCode);
         Assert.True((await alice.DeleteAsync($"/spaces/invites/{inviteId}")).IsSuccessStatusCode);
         Assert.Empty((await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites"))!);
@@ -377,12 +363,11 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal(userA.Id, sent.UserId);
         Assert.Contains("\"count\":3", sent.Payload);
         Assert.Contains(spaceId, sent.Payload);
-        // dead subscription pruned
         Assert.Empty(await db.PushSubscriptions.Where(s => s.UserId == userB.Id).ToListAsync());
     }
 
-    /// <summary>#610: a deleted space keeps its members and its accounts on the server, and its row no longer
-    /// states a name — its pushes arrived untitled, between the ones of the spaces that still exist.</summary>
+    // #610: a deleted space keeps its members and accounts on the server and its row states no name,
+    // so its pushes arrived untitled
     [Fact]
     public async Task Nobody_is_told_about_new_transactions_in_a_space_that_was_deleted()
     {
@@ -413,7 +398,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
     }
 
     private sealed record OffList(List<string> Off);
-    private sealed record ClearedMoment(DateTimeOffset? ClearedAt);
+    private sealed record ClearedMoment(DateTimeOffset? ClearedAt, Dictionary<string, DateTimeOffset>? Scopes = null);
 
     [Fact]
     public async Task Each_member_chooses_a_spaces_notifications_and_the_new_transactions_push_names_the_space()
@@ -454,7 +439,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal(aliceId, sent.UserId);
         Assert.Contains("\"spaceName\":\"Household\"", sent.Payload);
 
-        // switched back on, Bob hears the next one too
         Assert.True((await bob.PutAsJsonAsync($"/me/space-notifications/{spaceId}", new SpaceNotifyRequest(true))).IsSuccessStatusCode);
         using (var scope = factory.Services.CreateScope())
         {
@@ -463,7 +447,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         }
         Assert.Contains(sender.Sent, s => s.UserId == bobId);
 
-        // only one's own memberships: a stranger's space answers 404, a malformed id 400
         Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/me/space-notifications/space_other_{suffix}", new SpaceNotifyRequest(false))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await bob.PutAsJsonAsync("/me/space-notifications/bad%20id", new SpaceNotifyRequest(false))).StatusCode);
     }
@@ -491,7 +474,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         await notifier.NotifyMemberRoleChangedAsync(quiet.Id, spaceId, "Jr Space", "reader", CancellationToken.None);
         Assert.Empty(sender.Sent);
 
-        // the space's id rides along, so a tap opens that space (#551)
         await notifier.NotifySpaceJoinAsync(owner.Id, "Bob", spaceId, "Jr Space", CancellationToken.None);
         await notifier.NotifyMemberRoleChangedAsync(owner.Id, spaceId, "Jr Space", "contributor", CancellationToken.None);
         Assert.Equal(2, sender.Sent.Count);
@@ -524,7 +506,6 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.True((await client.PostAsync($"/me/push-subscriptions/test?spaceId={spaceId}", null)).IsSuccessStatusCode);
         Assert.Contains("\"spaceName\":\"Trip\"", Assert.Single(sender.Sent).Payload);
 
-        // someone else's space is never named
         Assert.True((await client.PostAsync($"/me/push-subscriptions/test?spaceId=space_x_{suffix}", null)).IsSuccessStatusCode);
         Assert.DoesNotContain("space_x_", sender.Sent[1].Payload);
     }
@@ -539,14 +520,46 @@ public class PushTests : IClassFixture<SyncApiFactory>
         var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(first));
         Assert.Equal(first, (await put.Content.ReadFromJsonAsync<ClearedMoment>())!.ClearedAt);
 
-        // a device that cleared earlier, reporting late, changes nothing
         await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(first.AddMinutes(-5)));
         Assert.Equal(first, (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt);
 
-        // a clock running ahead is held to the server's own
         await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(DateTimeOffset.UtcNow.AddDays(2)));
         var held = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt!.Value;
         Assert.True(held <= DateTimeOffset.UtcNow && held > first);
+    }
+
+    [Fact]
+    public async Task Clearing_a_part_of_the_list_moves_that_part_only()
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+        var at = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at, ["general", "space_a"]));
+        var held = (await put.Content.ReadFromJsonAsync<ClearedMoment>())!;
+        // #614: a space the bell did not show keeps its rows, so the whole-list moment stays where it was
+        Assert.Null(held.ClearedAt);
+        Assert.Equal(at, held.Scopes!["general"]);
+        Assert.Equal(at, held.Scopes["space_a"]);
+
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at.AddMinutes(-5), ["space_a"]));
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at.AddMinutes(5), ["space_b"]));
+        var read = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!;
+        Assert.Equal(at, read.Scopes!["space_a"]);
+        Assert.Equal(at.AddMinutes(5), read.Scopes["space_b"]);
+        Assert.False(read.Scopes.ContainsKey("space_c"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("a b")]
+    [InlineData("<script>")]
+    public async Task A_scope_that_is_not_a_name_is_refused(string scope)
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(DateTimeOffset.UtcNow, [scope]));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, put.StatusCode);
     }
 
     [Fact]

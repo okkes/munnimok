@@ -35,11 +35,9 @@ import { TxRow } from '@/ui/TxRow';
 
 const PAYMENT_LABEL = { week: 'debts.perWeek', month: 'debts.perMonth', year: 'debts.perYear' } as const;
 
-/** "{amount} / week|month|year" — the payment line follows the cadence */
 export const paymentLabelKey = (every?: RecurringEvery): (typeof PAYMENT_LABEL)[keyof typeof PAYMENT_LABEL] =>
   PAYMENT_LABEL[every ?? 'month'];
 
-/** the loan's tile: its chosen logo, else the account type's icon */
 export function LoanTile({ account, size }: Readonly<{ account: AccountRow; size?: 36 | 48 }>) {
   if (account.logo) {
     return <Picture src={account.logo} className="h-10 w-10 shrink-0 rounded-xl object-contain" style={size ? { width: size, height: size } : undefined} />;
@@ -47,12 +45,7 @@ export function LoanTile({ account, size }: Readonly<{ account: AccountRow; size
   return <Tile icon={typeDef(account.type).icon} tone="negative" size={size} />;
 }
 
-/**
- * The virtual "Unassigned payments" bucket (arc 3): bare debt-payment
- * rows (no counter account — the arc-2 exit, or imports) summed as a
- * computed card, never stored. Each row assigns to a loan account with
- * one tap — the link files it under that loan's history.
- */
+// a computed bucket of bare debt payments (no counter account), never stored; assigning links the row to a loan
 function UnassignedPaymentsCard({
   bare,
   loans,
@@ -97,8 +90,7 @@ function UnassignedPaymentsCard({
               key={account.id}
               data-testid={`debts-assign-${account.id}`}
               onClick={() => {
-                // the link makes it THIS loan's payment (history + matcher
-                // agree); the locked category already fits, review stands
+                // the link makes it this loan's payment (history and matcher agree); the category already fits, review stands
                 if (assignTx) void transform(assignTx, { linkedAccountId: account.id }, 'txLink');
                 setAssignTx(null);
               }}
@@ -115,7 +107,6 @@ function UnassignedPaymentsCard({
   );
 }
 
-/** All loans: how deep, how fast out. The account row IS the loan (v2). */
 export function DebtsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -125,28 +116,21 @@ export function DebtsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const canEdit = useCanEdit(); // #505
-  // "+" mints a loan like any other account — the chooser opens on the
-  // liability types only (v2: creating the account IS creating the debt)
   const [addOpen, setAddOpen] = useState(false);
-  // right after creating, offer the matching payments from history
   const [matchFor, setMatchFor] = useState<string | null>(null);
-  // the chooser's prefill: the recurring form's Debt kind hands one over
-  // at mount; tracking a detected pattern sets one in place. The chooser
-  // reads prefill only at mount, so every fresh prefill bumps the key.
+  // the chooser reads prefill only at mount: every fresh prefill bumps its key
   const [prefill, setPrefill] = useState<DebtHandoff | null>(() => takeDebtHandoff());
   const [chooserGen, setChooserGen] = useState(0);
   useEffect(() => {
     if (prefill) setAddOpen(true);
   }, [prefill]);
-  // counterparty-less debt payments — the virtual bucket's contents
   const bare = useMemo(
     () => (txs ?? []).filter((tx) => tx.deleted === 0 && tx.txType === 'debtPayment' && !tx.linkedAccountId),
     [txs],
   );
   const today = localToday();
-  // #192 r2 (user): detection runs here and STAYS here — a payment
-  // pattern whose creditor is a known lender is tracked or dismissed on
-  // this screen, no detour through the recurring inbox
+  // #192: a pattern whose creditor is a known lender is tracked or dismissed here,
+  // not via the recurring inbox
   const historyTxs = useSpaceHistoryTransactions();
   const recs = useRecurrings();
   const dismissed = useDismissedKeys();
@@ -172,9 +156,7 @@ export function DebtsScreen() {
     });
   };
 
-  // #286 r2 (user): the just-created loan offers matching payments only
-  // when history actually HOLDS some — deciding once, before opening,
-  // beats an auto-opened sheet whose only content is "nothing found"
+  // #286: offer matches only when history holds some; beats an auto-opened sheet saying "nothing found"
   const offerMatches = async (id: string) => {
     const account = await store.get('account', id);
     if (account && loanMatchCandidates(account, historyTxs ?? []).length > 0) setMatchFor(id);
@@ -188,8 +170,7 @@ export function DebtsScreen() {
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
   const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.account), 0);
-  // the planner's teaser: where the minimums alone land — cheap (one walk), and it
-  // reads as a tool's promise rather than another loan's figure (user 2026-10-08)
+  // planner teaser: where the minimums alone land; one cheap walk, reads as a tool's promise rather than another loan's figure
   const planPreview = useMemo(() => {
     const debts = toPlanDebts(statuses ?? []);
     if (debts.length === 0) return '';
@@ -258,7 +239,6 @@ export function DebtsScreen() {
                 label={t('debts.new')}
                 testId="debts-add"
                 onClick={() => {
-                  // a manual add starts clean — any tracked prefill is spent
                   setPrefill(null);
                   setChooserGen((g) => g + 1);
                   setAddOpen(true);
@@ -273,9 +253,6 @@ export function DebtsScreen() {
       <div ref={(el) => attachScrollMemory(el, 'debts')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
         <ReadOnlyNote className="mb-3" testId="debts-readonly-note" />
-        {/* #192 r2 (user): detected loans live HERE — track or dismiss
-            without leaving the screen; tracking opens the loan chooser
-            in place, prefilled with the pattern as the payment plan */}
         {canEdit && loanSuggestions.length > 0 && (
           <div className="mb-3 flex flex-col gap-2" data-testid="debts-suggestions">
             <div className="m-cap">{t('debts.detectedTitle')}</div>
@@ -327,10 +304,7 @@ export function DebtsScreen() {
             </div>
           </div>
         )}
-        {/* #413: the payoff planner — which debt first, what a little extra does, when each
-            one ends. It is a TOOL, not another loan (user 2026-10-08: "it looks as if its just
-            another debt"): accent-tinted, a Tool badge, no progress bar, and a teaser line
-            from the minimums alone instead of a loan's figures */}
+        {/* #413: the planner is a tool, not another loan: accent tint, Tool badge, no progress bar, teaser from the minimums */}
         {active.length > 0 && (
           <button
             data-testid="debts-plan"

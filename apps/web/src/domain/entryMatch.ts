@@ -1,12 +1,7 @@
 import type { AccountRow, TransactionRow } from '@/db/types';
 
-/**
- * #547 (user 2026-11-09/11): a transaction typed by hand on an account the
- * bank or a statement fills — "your entry". It lives in the space, counts
- * until the bank's own transaction arrives, and is then linked to it: the
- * two read as one. This is the pairing rule and the balance rule; nothing
- * here reads or writes storage.
- */
+// #547: "your entry" is a hand-typed transaction on an account the bank or a statement fills: it counts until the bank's own
+// transaction arrives, then links to it; nothing here reads or writes storage
 
 type Entry = Pick<TransactionRow, 'id' | 'accountId' | 'date' | 'amountCents' | 'merchant' | 'titleOverride' | 'bankTxId' | 'noBankTxIds' | 'deleted'>;
 type BankTx = Pick<TransactionRow, 'id' | 'accountId' | 'date' | 'amountCents' | 'merchant' | 'description' | 'deleted'>;
@@ -30,7 +25,6 @@ const wordsOf = (text: string | undefined): string[] =>
     .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word.length > 1);
 
-/** how alike two titles are, 0..1: the words they share over the shorter title's words */
 export function titleLikeness(a: string | undefined, b: string | undefined): number {
   const left = new Set(wordsOf(a));
   const right = new Set(wordsOf(b));
@@ -45,7 +39,6 @@ const bankTitle = (bank: BankTx): string => `${bank.merchant} ${bank.description
 const sameWay = (a: number, b: number): boolean => a < 0 === b < 0;
 const refused = (entry: Entry, bank: BankTx): boolean => entry.noBankTxIds?.includes(bank.id) === true;
 
-/** same account, same direction, the very same amount, the bank's date within two days of the entry's */
 export const fitsExactly = (entry: Entry, bank: BankTx): boolean =>
   entry.accountId === bank.accountId && entry.amountCents === bank.amountCents && daysApart(entry.date, bank.date) <= AUTO_LINK_DAYS;
 
@@ -65,7 +58,6 @@ interface Claim {
   distance: number;
 }
 
-/** the one bank row an entry fits best; none when two fit equally well */
 function bestFor(entry: Entry, bankRows: readonly BankTx[], taken: ReadonlySet<string>): Claim | null {
   const fits = bankRows
     .filter((bank) => bank.deleted === 0 && !taken.has(bank.id) && !refused(entry, bank) && fitsExactly(entry, bank))
@@ -75,13 +67,8 @@ function bestFor(entry: Entry, bankRows: readonly BankTx[], taken: ReadonlySet<s
   return fits.length > 1 && fits[1].distance === fits[0].distance ? null : fits[0];
 }
 
-/**
- * The links made without asking, entry → bank row: an unlinked entry and
- * the one bank row it fits exactly. Where two rows fit an entry equally
- * well, or two entries the same row, nothing is linked — the person picks.
- * `taken` are the bank rows other entries are linked to already; a pair a
- * person took apart is never made again.
- */
+// where two rows fit an entry equally well, or two entries the same row, nothing is linked: the person picks;
+// `taken` are bank rows already linked; a pair a person took apart is never made again
 export function autoLinks(entries: readonly Entry[], bankRows: readonly BankTx[], taken: ReadonlySet<string>): Map<string, string> {
   const byBank = new Map<string, Claim[]>();
   for (const entry of entries) {
@@ -98,28 +85,18 @@ export function autoLinks(entries: readonly Entry[], bankRows: readonly BankTx[]
   return links;
 }
 
-/** the bank rows a person could link an entry to by hand: the exact fits, then the wider ones, nearest first */
 export function linkCandidates<B extends BankTx>(entry: Entry, bankRows: readonly B[], taken: ReadonlySet<string>): B[] {
   return bankRows
     .filter((bank) => bank.deleted === 0 && !taken.has(bank.id) && (fitsExactly(entry, bank) || fitsLoosely(entry, bank)))
     .sort((a, b) => Number(fitsExactly(entry, b)) - Number(fitsExactly(entry, a)) || distance(entry, a) - distance(entry, b));
 }
 
-/**
- * Whether the form's "count it in the balance" tick starts on (user
- * 2026-11-11): an entry dated on or after the bank's balance may be news
- * to it; one dated before it is in the bank's number already — off, and
- * it stays off.
- */
+// the "count it in the balance" tick starts on for an entry dated on/after the bank's balance;
+// an older one is in the bank's number already
 export const canCountInBalance = (date: string, account: Pick<AccountRow, 'balanceAsOf'>): boolean =>
   !account.balanceAsOf || date >= account.balanceAsOf;
 
-/**
- * Does an entry count on top of the bank's balance right now? While the
- * person lets it, until the bank books it (a reserved amount is not in
- * the bank's balance yet), and until the bank's balance has clearly
- * passed it.
- */
+// counts until the bank books it (a reserved amount is not in the bank's balance yet) or the balance has clearly passed it
 export function countsInBalance(
   entry: Pick<TransactionRow, 'date' | 'inBalance'>,
   account: Pick<AccountRow, 'balanceAsOf'>,
@@ -130,11 +107,7 @@ export function countsInBalance(
   return !account.balanceAsOf || daysAfter(account.balanceAsOf, entry.date) <= PASSED_DAYS;
 }
 
-/**
- * A hand-typed transaction on an account the bank or a statement fills:
- * stored in the space, typed through the form (`enteredAt`), never an
- * imported row.
- */
+/** typed through the form (`enteredAt`) on a bank/statement account, never an imported row */
 export const isEntry = (
   row: Pick<TransactionRow, 'enteredAt' | 'importRef' | 'importBatchId'>,
   account: Pick<AccountRow, 'source'> | undefined,

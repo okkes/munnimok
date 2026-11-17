@@ -3,9 +3,8 @@ dist/
 .vite/
 playwright-report/
 
-# Playwright artifacts: screenshots are committed (visual review),
-# videos/results/gallery HTML are regenerated and cached in CI.
-**/tests/gallery/
+# Playwright artifacts: the screenshots are committed (the user guide is built from them),
+# videos and results are local.
 **/tests/results/
 **/tests/videos/
 

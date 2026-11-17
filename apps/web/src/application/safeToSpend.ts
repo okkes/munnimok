@@ -6,12 +6,7 @@ import type { SpendSetAside } from '@/db/types';
 import { logActivity } from './activity';
 import type { PlanningModel } from './planningModel';
 
-/**
- * Safe to spend's settings (#541): which accounts it sums and which of the
- * plan's set-asides it keeps untouched — space facts under field LWW, so
- * everyone in a shared space reads the same number. The arithmetic lives
- * in domain/safeToSpend.
- */
+// space facts under field LWW, so everyone in a shared space reads the same number (#541)
 
 /** what the plan holds per set-aside — null while the space plans neither this period nor ahead */
 export function planHeld(model: PlanningModel | undefined): Record<SpendSetAside, number> | null {

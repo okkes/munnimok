@@ -9,7 +9,7 @@ import { dataUrlBytes } from './PdfView';
 import { clampZoom } from './ZoomFrame';
 
 // pdf.js is mocked: happy-dom has no canvas, and the viewer's shape is what is under test
-vi.mock('pdfjs-dist', () => ({
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: () => ({
     promise: Promise.resolve({
@@ -22,7 +22,7 @@ vi.mock('pdfjs-dist', () => ({
     }),
   }),
 }));
-vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf.worker.js' }));
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf.worker.js' }));
 
 // happy-dom has no canvas — the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
@@ -49,7 +49,6 @@ async function openFirstTx(): Promise<string> {
   return row.getAttribute('data-testid')!.slice('tx-row-'.length);
 }
 
-/** a photo through the attach sheet's own camera input (the rungs live in the sheet) */
 async function attachPhoto(): Promise<HTMLElement> {
   fireEvent.click(screen.getByTestId('receipt-empty'));
   const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
@@ -57,7 +56,6 @@ async function attachPhoto(): Promise<HTMLElement> {
   return screen.findByTestId('receipt-card', {}, { timeout: 5000 });
 }
 
-/** a second handle on the demo database, the way the app's own writes look to a screen */
 async function demoRepo() {
   const { MunniDB } = await import('@/db/schema');
   const { Repo } = await import('@/db/repo');
@@ -90,8 +88,7 @@ describe('Receipts (demo identity)', () => {
 
   it('the connections door reaches the hub; the demo shows its connections and cannot connect', async () => {
     await openFirstTx();
-    // the rich demo seed stays off under vitest (demo-rich.test.ts covers
-    // it): the two connections it would write are written here
+    // the rich demo seed is off under vitest (demo-rich.test.ts covers it): the two connections are written here
     const { db, repo } = await demoRepo();
     const { storeConnLinkId } = await import('@/domain/feedIds');
     await repo.upsert('storeConn', 'demo_store_feed', 'demo_conn_ah', { store: 'ah', displayName: 'Albert Heijn', connectedAt: '2026-08-01', status: 'ok' });
@@ -100,18 +97,15 @@ describe('Receipts (demo identity)', () => {
     await repo.store.connectorConnPut({ id: 'demo_conn_ah', provider: 'ah', bundle: 'sb_v1.demo', state: 'active', refreshedAt: '2026-09-29T08:00:00Z', lastSyncAt: '2026-09-29T08:00:00Z' });
     await repo.store.connectorConnPut({ id: 'demo_conn_jumbo', provider: 'jumbo', state: 'needs_reauth', refreshedAt: '2026-09-27T08:00:00Z' });
     db.close();
-    // R8: the attach sheet is the one door — the hub links at its bottom
     fireEvent.click(screen.getByTestId('receipt-empty'));
     fireEvent.click(await screen.findByTestId('receipt-connections'));
     await screen.findByTestId('screen-connections');
     expect(screen.getByTestId('conn-privacy')).toBeTruthy();
-    // the seed: Albert Heijn synced on this device, Jumbo asking for a sign-in
     const ah = await screen.findByTestId('conn-card-demo_conn_ah');
     expect(ah.textContent).toContain('Albert Heijn');
     expect((await screen.findByTestId('conn-state-demo_conn_ah')).textContent).toMatch(/Synced/);
     expect((await screen.findByTestId('conn-state-demo_conn_jumbo')).textContent).toMatch(/Reconnect needed/);
     expect(screen.getByTestId('conn-usedin-demo_conn_ah').textContent).toContain('Demo');
-    // demo identity: zero network — no catalogue door, no sync, just the note
     expect(screen.getByTestId('conn-signin-note')).toBeTruthy();
     expect(screen.queryByTestId('conn-add-open')).toBeNull();
     expect(screen.queryByTestId('conn-sync-demo_conn_ah')).toBeNull();
@@ -122,7 +116,6 @@ describe('Receipts (demo identity)', () => {
     await openFirstTx();
     const card = await attachPhoto();
 
-    // the screen must not point back at the transaction it was opened from (user bug)
     fireEvent.click(card);
     await screen.findByTestId('screen-receipt');
     await screen.findByTestId('receipt-view-total');
@@ -157,7 +150,6 @@ describe('Receipts (demo identity)', () => {
       await screen.findByTestId('screen-receipt');
       const door = await screen.findByTestId('receipt-ai-read');
       expect(door.textContent).toBe('Read this receipt');
-      // the old text reading does not stand beside it
       expect(screen.queryByTestId('receipt-read-items')).toBeNull();
 
       fireEvent.click(door);
@@ -225,7 +217,6 @@ describe('Receipts (demo identity)', () => {
     renderApp('/transactions/dm101');
     await screen.findByTestId('receipt-empty');
     await attachPhoto();
-    // a photo nobody read yet has no lines to categorise by
     expect(screen.queryByTestId('receipt-categorise')).toBeNull();
 
     // the lines a reader would hand back: 25.60 printed, 2.50 off, 23.10 paid — the payment's own amount
@@ -252,7 +243,6 @@ describe('Receipts (demo identity)', () => {
     expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Grocery');
     fireEvent.click(screen.getByTestId('receiptcats-apply'));
 
-    // the payment carries the spread: the chocolate apart, the rest still groceries
     await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Sweets & Treats.*7\.22/));
     expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Grocery.*15\.88/);
     await waitFor(async () => {
@@ -320,7 +310,6 @@ describe('Receipts (demo identity)', () => {
       { timeout: 5000 },
     );
     expect(row.textContent).toMatch(/€[0-9]/);
-    // a tap opens the receipt full screen (user request 2026-10-02: the sheet was cramped)
     fireEvent.click(row);
     await screen.findByTestId('screen-receipt');
     expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[0-9]/);
@@ -331,7 +320,6 @@ describe('Receipts (demo identity)', () => {
   it('settings reaches receipts; the connections door reaches the hub', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // v3: receipts live in the SPACE section; connections stay a global door
     fireEvent.click(await screen.findByTestId('settings-receipts-row'));
     await screen.findByTestId('screen-receipts');
     fireEvent.click(screen.getByTestId('receipts-connections'));
@@ -342,7 +330,6 @@ describe('Receipts (demo identity)', () => {
     await openFirstTx();
     await attachPhoto();
 
-    // seed a Jumbo receipt's snapshot (present, not attached) beside the photo one
     const { db, repo } = await demoRepo();
     await repo.upsert('receiptLink', 'demo_space', 'rlink-jumbo-x1', {
       receiptId: 'rcpt:jumbo:demo_conn_jumbo:x1',
@@ -357,20 +344,16 @@ describe('Receipts (demo identity)', () => {
 
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
-    // grouped by source: the Jumbo section and the photo section
     await screen.findByTestId('receipts-group-jumbo');
     await screen.findByTestId('receipts-group-photo');
 
-    // item-name search narrows to the store receipt…
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
     await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
     expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
-    // …and so does an amount query
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '21,99' } });
     await waitFor(() => expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy());
     expect(screen.queryByTestId('receipts-group-photo')).toBeNull();
 
-    // the unlinked filter keeps only the store receipt (the photo is linked)
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '' } });
     fireEvent.click(await screen.findByTestId('receipts-filter-unlinked'));
     await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
@@ -397,7 +380,6 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receipt-document-0'));
     await screen.findByTestId('receipt-invoice-view');
     expect((screen.getByTestId('receipt-invoice-download') as HTMLAnchorElement).getAttribute('download')).toBe('factuur-1.pdf');
-    // user 2026-10-06: drawn page by page at the frame's width, the sheet at full height; the toolbar zooms
     await screen.findByTestId('receipt-pdf-page-2');
     expect(screen.getByTestId('receipt-invoice-view').closest('[data-full]')).toBeTruthy();
     expect(screen.getByTestId('receipt-pdf-zoom').textContent).toBe('100%');
@@ -420,7 +402,6 @@ describe('Receipts (demo identity)', () => {
     expect(zoom()).toBe('100%');
     fireEvent.click(screen.getByTestId('receipt-picture-zoom-zoom-in'));
     expect(zoom()).toBe('125%');
-    // a double tap from a zoomed view goes back to the width; the next one zooms in at the spot
     const tap = () => {
       fireEvent.pointerDown(frame, { pointerId: 1, clientX: 60, clientY: 80 });
       fireEvent.pointerUp(frame, { pointerId: 1, clientX: 60, clientY: 80 });
@@ -431,12 +412,10 @@ describe('Receipts (demo identity)', () => {
     tap();
     tap();
     expect(zoom()).toBe('250%');
-    // ctrl/⌘ + wheel (a trackpad pinch): a preview, committed once the wheel rests
     const wheel = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
     Object.defineProperty(wheel, 'ctrlKey', { value: true }); // happy-dom's WheelEvent drops the modifiers
     fireEvent(frame, wheel);
     await waitFor(() => expect(zoom()).toBe('275%'));
-    // two fingers spreading: a live preview, the zoom committed on lift
     fireEvent.click(screen.getByTestId('receipt-picture-zoom-zoom-fit'));
     fireEvent.pointerDown(frame, { pointerId: 1, clientX: 100, clientY: 100 });
     fireEvent.pointerDown(frame, { pointerId: 2, clientX: 200, clientY: 100 });
@@ -446,7 +425,6 @@ describe('Receipts (demo identity)', () => {
     fireEvent.pointerUp(frame, { pointerId: 1, clientX: 100, clientY: 100 });
     await waitFor(() => expect(zoom()).toBe('200%'));
     expect(screen.getByTestId('receipt-picture-zoom-content').style.transform).toBe('');
-    // a mouse drags the zoomed picture around
     fireEvent.pointerDown(frame, { pointerId: 3, pointerType: 'mouse', button: 0, clientX: 150, clientY: 150 });
     fireEvent.pointerMove(frame, { pointerId: 3, pointerType: 'mouse', clientX: 110, clientY: 120 });
     expect(frame.dataset.dragging).toBe('1');
@@ -457,7 +435,6 @@ describe('Receipts (demo identity)', () => {
 
   it('the sheet’s own capture (#496, #542): a phone takes a photo or uploads one, a desktop uploads; an upload attaches it', async () => {
     const real = window.matchMedia.bind(window);
-    // a phone: the primary pointer is a finger
     const coarse = vi
       .spyOn(window, 'matchMedia')
       .mockImplementation((query: string) => (query === '(pointer: coarse)' ? Object.defineProperty(real(query), 'matches', { value: true }) : real(query)));
@@ -540,7 +517,6 @@ describe('Receipts (demo identity)', () => {
       await repo.upsert('transaction', 'demo_space', id, { accountId: 'demo_main', date: '2026-03-09', amountCents: -cents, currency: 'EUR', merchant: 'WALKSHOP', catId: 'groceries', needsReview: 1 });
       await repo.upsert('receipt', DEMO_STORE_FEED_ID, receiptId, { source: 'ah', instanceId: 'demo_conn_ah', date: '2026-03-09', totalCents: cents, merchant: 'Albert Heijn' });
     }
-    // walk-c: the matcher's question already waits for it
     await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', ASKED_C), {
       receiptId: ASKED_C, source: 'ah', instanceId: 'demo_conn_ah', date: '2026-03-09', totalCents: 3100, merchant: 'Albert Heijn', auto: 0, proposedTxId: 'walk-c',
     });
@@ -554,7 +530,6 @@ describe('Receipts (demo identity)', () => {
     await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
 
-    // the walk names the sibling and how far it is; the receipt its review would have staged wears the check
     const context = await screen.findByTestId('receipt-queue-context', {}, { timeout: 5000 });
     expect(context.textContent).toMatch(/walkshop/i);
     expect(context.textContent).toContain('1/3');
@@ -562,10 +537,8 @@ describe('Receipts (demo identity)', () => {
     await waitFor(() => expect(fit.getAttribute('aria-pressed')).toBe('true'));
     fireEvent.click(fit);
     fireEvent.click(await screen.findByTestId('receipt-queue-peek-attach'));
-    // the next one carries a proposal: its yes attaches it
     await waitFor(() => expect(screen.getByTestId('receipt-queue-context').textContent).toContain('2/3'), { timeout: 5000 });
     fireEvent.click(await screen.findByTestId('receipt-queue-accept', {}, { timeout: 5000 }));
-    // the last one is skipped and stays as it was
     await waitFor(() => expect(screen.getByTestId('receipt-queue-context').textContent).toContain('3/3'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('receipt-queue-skip'));
     await waitFor(() => expect(screen.queryByTestId('receipt-queue-context')).toBeNull(), { timeout: 5000 });
@@ -631,7 +604,6 @@ describe('Receipts (demo identity)', () => {
     await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
     expect(screen.queryByTestId('receipt-proposal')).toBeNull();
 
-    // the receipts screen lists what is left to check — nothing now
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
@@ -656,7 +628,6 @@ describe('Receipts (demo identity)', () => {
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId('receipts-to-check', {}, { timeout: 5000 });
-    // user 2026-10-09: the transaction is a row of the receipt's own shape — its amount on it, a door of its own
     const txDoor = await screen.findByTestId('receipt-proposal-tx-rlink-compare', {}, { timeout: 5000 });
     expect(txDoor.textContent).toMatch(/€[0-9]/);
     expect(screen.getByTestId('receipt-proposal-open-rlink-compare').textContent).toContain('Albert Heijn');
@@ -686,7 +657,6 @@ describe('Receipts (demo identity)', () => {
     });
     db.close();
     const card = await screen.findByTestId('receipt-proposal-rlink-exit', {}, { timeout: 5000 });
-    // the two rows: the receipt (to check, with its items) and the transaction it fits, each with its amount
     expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('Receipt to check');
     expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('1 items');
     // the transaction row waits for the transactions' own live query (a separate subscription that may land a beat later under load)
@@ -698,7 +668,6 @@ describe('Receipts (demo identity)', () => {
     vi.mocked(acceptProposal).mockClear();
     const yes = screen.getByTestId('receipt-proposal-accept-rlink-exit') as HTMLButtonElement;
     fireEvent.click(yes);
-    // the exit: the card wears the leaving state at once, the buttons stand down, a second tap writes nothing
     expect(card.closest('[data-leaving]')).toBeTruthy();
     expect(yes.disabled).toBe(true);
     expect((screen.getByTestId('receipt-proposal-reject-rlink-exit') as HTMLButtonElement).disabled).toBe(true);
@@ -713,7 +682,6 @@ describe('Receipts (demo identity)', () => {
   const AMAZON = 'rcpt:amazon-nl:demo_conn_amz:a1';
   const COOLBLUE = 'rcpt:coolblue:demo_conn_cb:c1';
 
-  /** two shops in the space with an unlinked receipt each (the review's seeding, on the detail's demo handle) */
   async function seedTwoShopReceipts() {
     const { db, repo } = await demoRepo();
     const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
@@ -725,7 +693,6 @@ describe('Receipts (demo identity)', () => {
     });
     await repo.upsert('receipt', DEMO_STORE_FEED_ID, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
     db.close();
-    // the shops' receipts reach the empty state's badge
     await waitFor(() => expect(screen.getByTestId('receipt-candidate-count').textContent).toBe('2'), { timeout: 5000 });
   }
 
@@ -736,18 +703,15 @@ describe('Receipts (demo identity)', () => {
     await screen.findByTestId('receipt-pick-sheet');
     fireEvent.change(screen.getByTestId('receipt-pick-search'), { target: { value: 'amazon' } });
     fireEvent.click(screen.getByTestId(`receipt-pick-all-${AMAZON}`));
-    // the look: the receipt's body in a sheet over the picker, the row it came from lit
     await screen.findByTestId('receipt-pick-peek-items');
     expect(screen.getByTestId('receipt-pick-peek-head').textContent).toContain('Amazon.nl');
     expect(screen.getByTestId('receipt-pick-peek-items').textContent).toContain('USB-C kabel');
     expect(screen.getByTestId('receipt-pick-peek-view-total').textContent).toMatch(/€[1-9]/);
     expect(screen.getByTestId(`receipt-pick-all-${AMAZON}-row`).getAttribute('data-peeked')).toBe('1');
-    // closing (Escape reaches the top sheet alone) clears the light; the search underneath is still there
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId(`receipt-pick-all-${AMAZON}-row`).getAttribute('data-peeked')).toBeNull());
     expect((screen.getByTestId('receipt-pick-search') as HTMLInputElement).value).toBe('amazon');
     expect(screen.queryByTestId(`receipt-pick-all-${COOLBLUE}`)).toBeNull();
-    // a second look, and its Attach attaches it
     fireEvent.click(screen.getByTestId(`receipt-pick-all-${AMAZON}`));
     fireEvent.click(await screen.findByTestId('receipt-pick-peek-attach'));
     const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
@@ -759,13 +723,11 @@ describe('Receipts (demo identity)', () => {
     await seedTwoShopReceipts();
     fireEvent.click(screen.getByTestId('receipt-empty'));
     await screen.findByTestId('receipt-pick-sheet');
-    // nothing attached: no None option; the search leads, then the suggestions, the rungs and the whole list
     expect(screen.queryByTestId('receipt-pick-none')).toBeNull();
     const order = ['receipt-pick-search', 'receipt-pick-parties', 'receipt-pick-list', 'receipt-upload', 'receipt-pick-all-list'].map((id) => screen.getByTestId(id));
     for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId('receipt-pick-list').textContent).toContain('Amazon.nl');
     expect(screen.getByTestId('receipt-pick-all-list').textContent).toContain('Coolblue');
-    // a party narrows everything under the search, the suggestions too
     fireEvent.click(screen.getByTestId('receipt-pick-party-coolblue'));
     expect(screen.queryByTestId(`receipt-pick-all-${AMAZON}`)).toBeNull();
     expect(screen.queryByTestId(`receipt-pick-${AMAZON}`)).toBeNull();
@@ -785,12 +747,10 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-pick-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('Amazon.nl'), { timeout: 5000 });
 
-    // Change: the attached receipt first, marked, and one suggestion beside it; None is on offer now
     fireEvent.click(screen.getByTestId('receipt-change'));
     await waitFor(() => expect(screen.getByTestId(`receipt-pick-${AMAZON}`).getAttribute('aria-pressed')).toBe('true'));
     expect(screen.getByTestId('receipt-pick-list').querySelectorAll('[data-testid$="-row"]')).toHaveLength(2);
     expect(screen.getByTestId('receipt-pick-none')).toBeTruthy();
-    // its own look is a look only
     fireEvent.click(screen.getByTestId(`receipt-pick-${AMAZON}`));
     await waitFor(() => expect(screen.getByTestId('receipt-pick-peek-head').textContent).toContain('Amazon.nl'));
     expect(screen.queryByTestId('receipt-pick-peek-attach')).toBeNull();
@@ -799,7 +759,6 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-pick-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('Coolblue'), { timeout: 5000 });
 
-    // the swap: the Coolblue link holds the transaction; the Amazon one holds nothing and remembers it was taken off
     const { db } = await demoRepo();
     await waitFor(async () => {
       const links = await db.receiptLinks.toArray();
@@ -814,12 +773,10 @@ describe('Receipts (demo identity)', () => {
     expect(screen.queryByTestId(`receipt-pick-${AMAZON}`)).toBeNull();
     expect(screen.getByTestId(`receipt-pick-all-${AMAZON}`)).toBeTruthy();
 
-    // No receipt: the transaction is bare again, and neither receipt is offered back to it
     fireEvent.click(screen.getByTestId('receipt-pick-none'));
     await screen.findByTestId('receipt-empty', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByTestId('receipt-candidate-count')).toBeNull());
 
-    // the Receipts screen lists each of them once
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId(`receipt-row-${AMAZON}`, {}, { timeout: 5000 });
@@ -829,7 +786,6 @@ describe('Receipts (demo identity)', () => {
 
   const BOL = 'rcpt:bol:demo_conn_bol:b1';
 
-  /** one bol.com receipt and the two demo-space payments it covers (user 2026-10-08); the link when asked for */
   async function seedOneReceiptTwoPayments(linked: boolean) {
     const { db, repo } = await demoRepo();
     const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
@@ -856,7 +812,6 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-pick-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('bol.com'), { timeout: 5000 });
 
-    // the second payment: no suggestion any more (it is attached), but in the whole list with the note — still pickable
     cleanup();
     renderApp('/transactions/pay2');
     fireEvent.click(await screen.findByTestId('receipt-empty', {}, { timeout: 5000 }));
@@ -870,7 +825,6 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-pick-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('bol.com'), { timeout: 5000 });
 
-    // ONE link, both payments on it — the first stays the first
     const { db } = await demoRepo();
     await waitFor(async () => {
       const link = (await db.receiptLinks.toArray()).find((l) => l.receiptId === BOL);
@@ -879,7 +833,6 @@ describe('Receipts (demo identity)', () => {
     }, { timeout: 5000 });
     db.close();
 
-    // the Receipts screen counts the holders; the receipt screen lists both payments
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
@@ -898,7 +851,6 @@ describe('Receipts (demo identity)', () => {
     renderApp('/transactions/pay2');
     fireEvent.click(await screen.findByTestId('receipt-card', {}, { timeout: 5000 }));
     await screen.findByTestId('screen-receipt');
-    // the list points at the OTHER payment only; the button names the one hold it lets go of
     await screen.findByTestId('receipt-linked-pay1', {}, { timeout: 5000 });
     expect(screen.queryByTestId('receipt-linked-pay2')).toBeNull();
     expect(screen.getByTestId('receipt-delete').textContent).toBe('Detach from this transaction');

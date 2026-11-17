@@ -5,10 +5,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Munni.Api.Migrations
 {
-    /// <inheritdoc />
     public partial class OpenBankingRetired : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
@@ -35,7 +33,6 @@ namespace Munni.Api.Migrations
                 table: "FeedOwners");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(

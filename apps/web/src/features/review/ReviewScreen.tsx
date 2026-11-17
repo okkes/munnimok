@@ -2,6 +2,7 @@ import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSpaceAccount, useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
+import { useReviewedSettle } from './useReviewedSettle';
 import { requestReviewSuggestions, suggestionFor, useReviewSuggestions } from '@/application/reviewSuggestions';
 import type { ReviewSuggestion, ReviewSuggestions } from '@/application/reviewSuggestions';
 import { fileRememberedCounter, storyBasis } from '@/domain/reviewSuggest';
@@ -69,24 +70,18 @@ import { AUTO_STAGE, cardReceipt, markedReceiptId, receiptSettlement } from './r
 import type { ReceiptStage } from './reviewReceipt';
 import { keepFiledPicks, useReceiptFiled } from './useReceiptFiled';
 
-/** one grouped-context row inside the category editor (counterparty,
- *  type) — the card-row anatomy in the sheet's input skin */
-/** why the shown category was suggested, per prediction source */
 const REASON_KEYS = {
   history: 'review.reasonHistory',
   'history-amount': 'review.reasonAmount',
   keyword: 'review.reasonKeyword',
 } as const;
 
-/** why the card shows its category: its receipt's lines filed it (#567), else the prediction's own reason */
 function cardReason(filedByReceipt: boolean, shown: ReviewSuggestion | undefined, t: ReturnType<typeof useLang>['t']): string | null {
   if (filedByReceipt) return t('receiptcats.autoNote');
   return shown?.source ? t(REASON_KEYS[shown.source], { n: shown.evidence ?? 1 }) : null;
 }
 
-/** #228 feedback: the card Counterparty row's two doors — tap opens the
- *  ask (narrowed by the staged category), detach resets the pick (the
- *  counterparty and the category are one fact). Module-level for S3776. */
+// the card's counterparty row: detach resets the category too, counterparty and category are one fact (#228)
 function buildCounterRowDoors(args: {
   draft: ReviewDraft | null;
   locked: boolean;
@@ -114,7 +109,6 @@ function buildCounterRowDoors(args: {
   return { onEdit, onDetach };
 }
 
-/** render-time reset when the card underneath changes (prev-id ref pattern) */
 function useFreshCardReset(txId: string | undefined, reset: () => void) {
   const lastTxId = useRef(txId);
   if (txId !== lastTxId.current) {
@@ -123,9 +117,7 @@ function useFreshCardReset(txId: string | undefined, reset: () => void) {
   }
 }
 
-/** #565: the card's prepared suggestion, held while the card is up — a pass
- *  finishing meanwhile never reshuffles the card under the person; a row
- *  that changed underneath (another device) is no longer what it spoke for */
+// held while the card is up: a finishing pass must not reshuffle it; a row changed elsewhere no longer matches
 function useCardSuggestion(tx: SpaceTx | undefined, map: ReviewSuggestions | undefined): ReviewSuggestion | undefined {
   const held = useRef<{ txId?: string; value?: ReviewSuggestion }>({});
   const current = held.current;
@@ -134,18 +126,15 @@ function useCardSuggestion(tx: SpaceTx | undefined, map: ReviewSuggestions | und
   return held.current.value;
 }
 
-/** the queued rows no prepared suggestion speaks for, each with the state it stands in */
 const unpreparedStates = (queue: readonly SpaceTx[] | undefined, map: ReviewSuggestions | undefined): string[] =>
   (queue ?? []).filter((item) => !suggestionFor(map, item)).map((item) => `${item.id}:${storyBasis(item)}`);
 
-/** true when one of the states was never asked about — and remembers them all */
 function askOnce(asked: Set<string>, states: readonly string[]): boolean {
   const fresh = states.some((state) => !asked.has(state));
   for (const state of states) asked.add(state);
   return fresh;
 }
 
-/** progress bar + "n / total" sub line — skips count as handled too */
 function progressState(initial: number | null, queueLen: number | undefined, skippedCount: number) {
   const total = initial ?? 1;
   const confirmed = initial === null ? 0 : Math.max(0, initial - (queueLen ?? 0));
@@ -156,16 +145,12 @@ function progressState(initial: number | null, queueLen: number | undefined, ski
   };
 }
 
-/** the draft's value, an explicit null to clear a tx that had one, or nothing */
 function replacing<K extends string, T>(key: K, next: T | undefined, had: boolean): Partial<Record<K, T>> {
   if (next !== undefined) return { [key]: next } as Partial<Record<K, T>>;
   // explicit null clears the synced field (undefined would be dropped)
   return had ? ({ [key]: null } as unknown as Partial<Record<K, T>>) : {};
 }
 
-/** #237 r2: the picked rows' reciprocals land AFTER the confirm write —
- *  the row-level pick and each part's pick pair their existing row
- *  (#133 B, per pick). Module-level for S3776. */
 async function pairReviewPicks(
   deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
   tx: SpaceTx,
@@ -184,10 +169,7 @@ async function pairReviewPicks(
   }
 }
 
-/** #237 r3: the Counter-transaction row's face — the picked leg's
- *  story, or the default (created on confirm / arrives with the feed).
- *  The leg's amount wears the LEG's currency (user ss 2026-10-05: a
- *  $35.88 PayPal leg read as €35.88 next to its €32.63 debit) */
+// the leg's amount wears the LEG's currency: a $35.88 PayPal leg read as €35.88 next to its €32.63 debit
 function counterTxFaceFor(
   peer: SpaceTx | undefined,
   bankFed: boolean,
@@ -199,34 +181,22 @@ function counterTxFaceFor(
   return t(bankFed ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
 }
 
-/** a part's signed money in its container's direction */
-/** #251: a part's quick-created recurring starts from the PART — its
- *  label and amount, not the container's (shared with the detail's
- *  part page, which carries the same doors) */
 export const partRecurringPrefill = (tx: SpaceTx, part: TxSplit | undefined): RecurringFormState => {
   const base = formFromTx({ ...tx, amountCents: part?.amountCents ?? tx.amountCents });
-  // #331 (user): the part's picked category rides into the form too
   const withCat = { ...base, catId: stagedRealCatId(part?.catId) };
   return part?.label ? { ...withCat, name: part.label } : withCat;
 };
 
-/** #331 (user): a quick-created recurring copies the card's picked
- *  category — the uncategorized placeholder stays behind */
 const stagedRealCatId = (catId: string | undefined): string | undefined =>
   catId && catId !== UNCATEGORIZED_ID ? catId : undefined;
 
-/** #324: the review card's notes field grows with its content instead
- *  of scrolling inside the card. #324 r2 (user): the field wears a real
- *  border now (border-box), so the frame's two edges ride on top of the
- *  content-only scrollHeight. */
+// the field has a border (border-box): the frame's two edges ride on top of the content-only scrollHeight
 const autoGrowNotes = (el: HTMLTextAreaElement): void => {
   el.style.height = 'auto';
   el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
 };
 
-/** #326: the honest cadence guess for a quick-created loan — the
- *  merchant's review rows spaced near-monthly (every gap 25–35 days)
- *  mean a monthly payment plan; anything else stays unguessed */
+/** near-monthly = every gap 25–35 days; anything else stays unguessed */
 export function guessCadence(dates: readonly string[]): RecurringEvery | undefined {
   const stamps = [...new Set(dates)].sort((a, b) => a.localeCompare(b)).map((d) => Date.parse(d));
   if (stamps.length < 2) return undefined;
@@ -241,9 +211,7 @@ export function guessCadence(dates: readonly string[]): RecurringEvery | undefin
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
 
-/** #237 r2: pointing at ONE existing row is specific to its card — a
- *  standing bulk offer asks first, then stands down (S3776: out of the
- *  component) */
+// pointing at ONE existing row is specific to its card: a standing bulk offer asks first, then stands down (#237)
 const stageWithBulkWarning = (
   similarCount: number,
   stage: () => void,
@@ -253,23 +221,19 @@ const stageWithBulkWarning = (
   else stage();
 };
 
-/** #268 r2: the deck's shown card — the held snapshot outranks the live
- *  queue head while the counter queue runs (S3776: out of the body) */
 const shownCard = (held: SpaceTx | null, remaining: SpaceTx[] | undefined): SpaceTx | undefined =>
   held ?? remaining?.[0];
 
-/** #324: the note the confirm writes — untouched or unchanged stays
- *  silent, and a container carries no note of its own (S3776) */
+// a container carries no note of its own
 function stagedNoteFor(noteDraft: string | null, container: boolean, current: string | undefined): string | undefined {
   const staged = noteDraft?.trim();
   if (!container || staged === undefined) return undefined;
   return staged === (current ?? '') ? undefined : staged;
 }
 
-/** #565 (user): a row the filing cannot use stays on the card, dimmed and inert */
 const rowOff = (enabled: boolean): string => (enabled ? '' : ' opacity-50');
 
-/** a part's rows by the card's rules; a stamped account's parts name no counterparty (R1) */
+// a stamped account's parts name no counterparty (R1)
 function partRowGates(part: TxSplit, rowType: TxType, counter: { type: AccountType } | undefined, lockedKind: boolean) {
   const gates = cardRowGates(
     { catId: part.catId, txType: part.txType ?? rowType },
@@ -278,10 +242,7 @@ function partRowGates(part: TxSplit, rowType: TxType, counter: { type: AccountTy
   return { ...gates, counter: gates.counter && !lockedKind };
 }
 
-/** #309: the refused row's red ring — flat helpers keep the JSX free of
- *  nested templates/ternaries (S4624/S3358). #316 (user): the ring draws
- *  INSET — the row spans the card's full inner width and the card's
- *  overflow-hidden was clipping a box-edge ring at both sides. */
+// the ring draws INSET: the card's overflow-hidden clipped a box-edge ring at both sides (#316)
 const counterRowRing = (required: boolean | undefined): string =>
   required ? ` rounded-lg${blockerRing(true)} ring-inset` : '';
 
@@ -290,13 +251,9 @@ function counterValueTone(required: boolean | undefined, linkedAccountId: string
   return linkedAccountId ? '' : 'text-ink-4';
 }
 
-/** #268 r2: the held deck's face — the data marker the specs read plus
- *  the inert class that closes the frozen card to edits (S3776) */
 const heldDeckProps = (held: boolean): { marker: '1' | undefined; inertCls: string } =>
   held ? { marker: '1', inertCls: ' pointer-events-none' } : { marker: undefined, inertCls: '' };
 
-/** #268: the per-sibling counter queue a confirmed row-level pick
- *  leaves behind — null when nothing queues (S3776) */
 function queuedCounterBulk(
   pickedPeer: { txId: string; linkedId: string } | null,
   bulk: SpaceTx[],
@@ -318,19 +275,13 @@ function queuedCounterBulk(
   };
 }
 
-/** 2026-10-09 (user: Confirm stalled 3–4 s): the recurring reconcile after
- *  a confirm is best-effort bookkeeping — the other billing cycles of a
- *  linked recurring adopt the link — and it reads the whole space again,
- *  so it runs in an idle moment after the deck has moved on, never on the
- *  tap's own path. Idempotent, so a later run is as good as an early one. */
+// reads the whole space again (Confirm stalled 3–4 s): runs idle, off the tap's path; idempotent
 function runWhenIdle(task: () => void): void {
   const host = globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
   if (typeof host.requestIdleCallback === 'function') host.requestIdleCallback(task, { timeout: 2_000 });
   else setTimeout(task, 600);
 }
 
-/** the confirm's activity line — the bulk count rides along unless a
- *  pick queued the siblings instead (S3776: out of confirm) */
 function logConfirmActivity(
   deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
   tx: SpaceTx,
@@ -341,24 +292,15 @@ function logConfirmActivity(
   void logActivity(deps.store, deps.repo, deps.spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
 }
 
-/** #237 r3: the match sheet's create/await doors — manual counters get
- *  Create, bank-fed ones Wait; both just reset the pick (S3776) */
 const resetPickDoor = (bankFed: boolean, wantBank: boolean, clear: () => void): (() => void) | undefined =>
   bankFed === wantBank ? clear : undefined;
 
-/** #161/#324: does the card hold work a split would reset? #330 r2
- *  (user): the check reads the card's VISIBLE story, not who staged it
- *  — a row's imported/predicted category (the user's ATM card wore
- *  "Cash Withdraw · Transfer" with nothing user-staged) counts exactly
- *  like a hand-picked one, because the split's Done drops both the
- *  same way. (S3776: out of the component) */
+// the split's Done drops imported/predicted categories like hand-picked ones: read the visible story (#330)
 const splitWouldReset = (args: {
   draft: ReviewDraft | null;
   staged: ReviewDraft | null;
-  /** the recurring the confirm would link (auto-match or manual) */
   recurringId: string | undefined;
   eventPick: string | null;
-  /** the notes field's shown value (staged draft or the row's own) */
   note: string;
 }): boolean =>
   args.staged !== null ||
@@ -370,12 +312,7 @@ const splitWouldReset = (args: {
   !!args.draft?.linkedAccountId ||
   (!!args.draft?.catId && args.draft.catId !== UNCATEGORIZED_ID);
 
-/** #237 r3: the card's Counter-transaction row descriptor — undefined
- *  hides the row (no counterparty, or a funding pot: nothing ever
- *  shows there). A STORED pair is the person's to change too (user ss
- *  2026-10-05: a remembered pair sat on the card with no way to touch
- *  it) — the tap re-points or releases it on confirm (S3776: out of
- *  the component) */
+// a STORED pair is the person's to change: the tap re-points or releases it on confirm; none on a funding pot
 function counterTxDescriptor(
   tx: SpaceTx | undefined,
   counterAcct: { type: AccountType } | undefined,
@@ -390,7 +327,6 @@ function counterTxDescriptor(
   return { face, onEdit };
 }
 
-/** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
 async function writeConfirmation(args: {
   tx: SpaceTx;
   draft: ReviewDraft;
@@ -400,22 +336,18 @@ async function writeConfirmation(args: {
   note?: string;
   bulk: SpaceTx[];
   transform: ReturnType<typeof useTxTransform>;
-  /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
   pairPeerId?: string;
-  /** 2026-10-05: a STORED pair the person released on the card — the row forgets its peer (the peer leg was released beforehand) */
+  /** a stored pair released on the card: the row forgets its peer; the peer leg was released beforehand */
   releasePeer?: boolean;
 }): Promise<void> {
   const { draft } = args;
-  // draft-cleared fields on a tx that HAD them need an explicit null —
-  // and a landed SPLIT always writes cats null: the explicit field
-  // version-stamps the container so its parts never read as legacy
-  // slices on a fresh device (#211)
+  // cleared fields on a tx that had them need an explicit null; a landed split always writes cats null so the
+  // container is version-stamped and its parts never read as legacy slices on a fresh device (#211)
   const splitsField = replacing('splits', draft.splits?.length ? draft.splits : undefined, !!args.tx.splits?.length);
   const draftCatEntries = draft.cats?.length ? draft.cats : undefined;
   const catsField = draft.splits?.length
     ? { cats: null as never }
     : replacing('cats', draftCatEntries, !!args.tx.cats?.length);
-  // #309: no default fallback — the gate upstream made the link explicit
   const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
@@ -423,13 +355,10 @@ async function writeConfirmation(args: {
     ...splitsField,
     ...catsField,
     ...linkField,
-    // #237 r2: a pick-existing peer rides the SAME write — the choke
-    // sees the incoming peer and mints nothing
+    // a pick-existing peer rides the SAME write: the choke sees the incoming peer and mints nothing (#237)
     ...peerWriteFor(args.pairPeerId, args.releasePeer),
-    // #525/#565: a link the person removed (or the filing no longer takes) clears on the row
     ...replacing('recurringId', args.recurringId, !!args.tx.recurringId),
     ...replacing('eventId', args.eventId, !!args.tx.eventId),
-    // #324 (user): the staged note lands with the same write ('' clears)
     ...(args.note !== undefined ? { notes: args.note } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
@@ -437,18 +366,13 @@ async function writeConfirmation(args: {
   }
 }
 
-/** the row's own peer pointer in the confirm write: a pick-existing peer, a released stored pair, or nothing */
 function peerWriteFor(pairPeerId: string | undefined, releasePeer: boolean | undefined): { transferPeerId?: string } {
   if (pairPeerId) return { transferPeerId: pairPeerId };
   // an explicit null clears the stored pointer (the transform's write shape, as the detail screen does it)
   return releasePeer ? { transferPeerId: null as never } : {};
 }
 
-/**
- * 2026-10-05 (user ss): what a confirm does with a STORED pair — re-pointed
- * by a pick, released through the create/wait door, or orphaned by a dropped
- * counterparty, the old peer leg is let go first (S3776: out of the handler)
- */
+/** a stored pair re-pointed, released or orphaned lets its old peer leg go first */
 function pairReleasePlan(
   tx: Pick<SpaceTx, 'transferPeerId'>,
   draft: Pick<ReviewDraft, 'linkedAccountId'>,
@@ -457,13 +381,10 @@ function pairReleasePlan(
 ): { releasePeer: boolean; pairNew: string | undefined } {
   const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
   const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
-  // a pick that is new to the row pairs on confirm; a pick that IS the stored pair needs no second write
   const pairNew = pickedPeer && (repointed || !tx.transferPeerId) ? pickedPeer.txId : undefined;
   return { releasePeer, pairNew };
 }
 
-/** user ss 2026-10-05: the card's Receipt row. #496 (user): the row opens the receipts sheet; the eye looks at the
- *  receipt it names in a sheet straight away — never the full screen any more */
 function ReviewReceiptRow({ row, onLook, onAsk }: Readonly<{ row: ReturnType<typeof receiptRowFor>; onLook: (receipt: ReceiptRow) => void; onAsk: () => void }>) {
   const { t } = useLang();
   const { receipt } = row;
@@ -493,9 +414,7 @@ function ReviewReceiptRow({ row, onLook, onAsk }: Readonly<{ row: ReturnType<typ
   );
 }
 
-/** the card's Receipt row: what the confirm leaves on the transaction — the person's pick, None, the attached
- *  receipt, the proposal (a question) or the best match (suggested). #542: the row stands on every card, so a photo
- *  can always be added; `receipt` is what the eye looks at (#496) */
+/** #542: the row stands on every card so a photo can always be added; `receipt` is what the eye looks at (#496) */
 function receiptRowFor(
   state: {
     attached: ReceiptRow | null | undefined;
@@ -520,9 +439,7 @@ function receiptRowFor(
   return auto ? { face: `${name(auto)} · ${t('review.receiptAuto')}`, receipt: auto, asks: true } : none;
 }
 
-/** #211: the sibling's copy of a category spread — % entries rescale to
- *  its amount, exact euros only travel when the sum still fits (the
- *  similar-rule pre-filters exact twins; this guards drift) */
+/** % entries rescale to the sibling's amount; exact euros travel only when the sum still fits */
 function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | undefined {
   if (entries.every((e) => e.pct != null)) {
     const resolved = resolveSplitsFor(item.amountCents, entries.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
@@ -532,15 +449,9 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
   return sum === Math.abs(item.amountCents) ? entries.map((e) => ({ catId: e.catId, amountCents: e.amountCents })) : undefined;
 }
 
-/** the WHOLE decision rides to every selected sibling (user rule):
- *  category, counterparty, recurring, event. Absolute splits fit exact
- *  twins by the similar-rule, pct splits rescale per item. A partition
- *  travels whole: parts clear a sibling's spread and vice versa (#211 —
- *  the two never mix on one row). */
+/** the whole decision rides to every sibling; a partition travels whole: parts clear a spread and vice versa (#211) */
 function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, note?: string) {
-  // #237 r2: a pointed-at EXISTING row is specific to ONE part — a
-  // sibling's copy must never point at the same row (bulk is disabled
-  // while a pick stands; this guards every other path)
+  // a sibling's copy must never point at the same existing row (#237)
   const splits = draft.splits?.length
     ? resolveSplitsFor(item.amountCents, draft.splits).map((s) => ({ ...s, transferPeerId: undefined }))
     : undefined;
@@ -554,35 +465,19 @@ function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | 
     ...(linkedId ? { linkedAccountId: linkedId } : {}),
     ...(recurringId ? { recurringId } : {}),
     ...(eventId ? { eventId } : {}),
-    // #324 (user): the typed note travels to every selected sibling —
-    // an untouched or emptied field never blanks a sibling's own note
+    // an untouched or emptied note never blanks a sibling's own note
     ...(note ? { notes: note } : {}),
   };
 }
 
-/** "also apply to n similar": a compact summary row on the card; the full
- *  list lives in a Sheet so long histories never squeeze the card
- *  (user request), with per-row read-only detail expansion */
-/** an incoming settlement is money from a PERSON, not one of your
- *  accounts — R2 makes transfer strictly account-to-account, and the
- *  old ruling already said outside money is standard. The app's own
- *  concept for money-back-from-people is the received reimbursement. */
+/** an incoming settlement is money from a person, not an account: transfer is strictly account-to-account (R2) */
 function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCategories>): ReviewDraft {
   return withCategory(withType({ ...draft, linkedAccountId: undefined }, 'income', cats), RECEIVED_REIMBURSE_ID, cats);
 }
 
-// CardCounterRow retired (#219, user): the counterparty is a CATEGORY
-// fact now — the card's category rows carry "→ account"; the raw bank
-// counterparty is transaction metadata, shown on the detail's Details
-// block. No transaction-level counter row, no transaction-level editing.
-
-/** the part a numbered picker/sheet is aimed at (S3776: out of the deck) */
 const partAt = (parts: readonly TxSplit[], index: number | null): TxSplit | undefined =>
   index === null ? undefined : parts[index];
 
-/** #237 r3: the part's Counter-transaction face — none while no
- *  counterparty stands, or a funding pot holds it (S3776/S3358: out of
- *  the deck) */
 function partCounterTxFaceOf(
   part: TxSplit,
   counterAcct: { type: AccountType; source?: string } | undefined,
@@ -596,17 +491,11 @@ function partCounterTxFaceOf(
   return counterTxFaceFor(peer, (counterAcct.source ?? 'manual') !== 'manual', currency, lang, t);
 }
 
-/** #228: a part's counter door pins a default and narrows the account
- *  types only under a special category (S3776: out of the deck) */
 function partCounterAsk(part: TxSplit | undefined): { defaultFamily?: DefaultFamily; counterTypes?: readonly AccountType[] } {
   if (!part || !specialCatType(part.catId)) return {};
   return { defaultFamily: defaultFamilyFor(part.catId) ?? undefined, counterTypes: counterTypesFor(part.catId) };
 }
 
-/** r8: the tapped card GROWS out of its slot to the front while the old
- *  active SHRINKS back into its own slot — FLIP on the real elements,
- *  nothing reorders. Module-level for S3776; animate/rects are optional
- *  (jsdom has neither). */
 function playDeckFlip(
   flip: { tappedRect: DOMRect; activeRect: DOMRect },
   card: HTMLElement | null,
@@ -633,17 +522,9 @@ function playDeckFlip(
   travel(oldStrip, flip.activeRect);
 }
 
-/** does this draft stage a REAL split (2+ parts beyond the settled slice)? */
 const multiPartSplits = (draft: ReviewDraft | null): boolean =>
   (draft?.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
 
-// deckActiveFaces retired (#217/#220): the expanded part renders one
-// row PER category entry now — the summary faces and the part-level
-// counter/kind sub have no reader left.
-
-/** one slice's story lines (#126): the typed part's label/own type and
- *  a spread part's category list — shared by the card summary region
- *  and the stacked part cards */
 function sliceStory(
   slice: TxSplit,
   index: number,
@@ -652,7 +533,6 @@ function sliceStory(
   cats: ReturnType<typeof useCategories>,
   t: ReturnType<typeof useLang>['t'],
 ): { label?: string; type?: TxType; spread?: string } {
-  // #211: splits mean parts, full stop — every real split wears labels
   const typed = (splits?.length ?? 0) > 1;
   return {
     label: typed ? (slice.label ?? t('split.partN', { n: index + 1 })) : undefined,
@@ -661,12 +541,7 @@ function sliceStory(
   };
 }
 
-/** the card's category region (#126 redesign): a single category row
- *  when the draft is whole; a compact "Split transaction · N parts"
- *  summary when it's split — the parts themselves stand as stacked
- *  cards UNDER the main card. The settled Reimbursed slice is not a
- *  part and keeps its own row either way. A visible "Split" row ends
- *  the old hide-out under the category pencil. */
+/** the settled Reimbursed slice is not a part and keeps its own row either way */
 function CardCategoryRows({
   draft,
   fallbackCat,
@@ -681,16 +556,9 @@ function CardCategoryRows({
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
   fallbackColor: string | undefined;
   currency: string;
-  /** the classic per-slice category editor (the chip's door) */
   onOpenCategories: () => void;
-  /** #228 feedback: the card's own Counterparty row — counter-first
-   *  stages the special category; absent = the row stands disabled (#565) */
   onEditCounter?: () => void;
-  /** #309 (user): a refused bare-movement Confirm paints this row red */
   counterRequired?: boolean;
-  /** #237 r3 (user): the card's own Counter-transaction row — live once
-   *  a counterparty stands; face = the picked row or the default (create /
-   *  await the feed). Absent = disabled until a counterparty stands. */
   counterTx?: { face: string; onEdit?: () => void };
 }>) {
   const { t, lang } = useLang();
@@ -698,8 +566,6 @@ function CardCategoryRows({
   const accounts = useSpaceAccounts();
   const slices = draft?.splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
-  // #211: the row's own category spread — several categories, ONE
-  // transaction; the settled `reimbursed` entry renders wherever it lives
   const spreadEntries = (draft?.cats ?? []).filter((e) => e.catId !== REIMBURSED_ID);
   const settled = [...slices, ...(draft?.cats ?? [])].filter((s) => s.catId === REIMBURSED_ID);
   const multi = parts.length > 1;
@@ -728,9 +594,7 @@ function CardCategoryRows({
   );
   return (
     <>
-      {/* multi-part (#126 r3): the main card says nothing the parts
-          already say — the deck under it carries every story. #228: a
-          spread's rows are regular categories — no counter sublines */}
+      {/* multi-part: the deck under the card carries every story; a spread's rows are regular categories (#126, #228) */}
       {!multi &&
         spreadEntries.length > 1 &&
         spreadEntries.map((entry, i) => catRow(entry.catId, entry.amountCents, `${entry.catId}-${i}`))}
@@ -745,7 +609,6 @@ function CardCategoryRows({
             {single || draft?.catId ? (
               <>
                 {catName(singleCat, t)}
-                {/* the parent gives the sub its context (user request) */}
                 {singleCat.parentId && (
                   <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
                 )}
@@ -759,11 +622,7 @@ function CardCategoryRows({
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
       )}
-      {/* #228 feedback (user ss): the counterparty is the card's own
-          row — counter-first picks the special category automatically,
-          removal resets the category (same doors as the detail screen).
-          #565 (user): it stands on every card; an ordinary filing has no
-          counterparty, so there it is disabled */}
+      {/* the row stands on every card; an ordinary filing has no counterparty, so it is disabled (#565) */}
       {!multi && (
         <>
           <button
@@ -780,15 +639,9 @@ function CardCategoryRows({
             <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
             {onEditCounter && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
-          {/* #309: the honest reason the Confirm refused, under the field */}
           <FormBlockerNote show={!!counterRequired} text={t('review.counterRequired')} testId="review-counter-required" className="px-4 pb-2" />
         </>
       )}
-      {/* #237 r3 (user): the counter TRANSACTION is the card's own row —
-          the fork sheet after the counterparty pick is gone; this row
-          opens the match sheet (pick an existing leg, or reset to the
-          create/await default). #565: without a counterparty it stands
-          disabled */}
       {!multi && (
         <button
           data-testid="review-countertx-row"
@@ -808,12 +661,7 @@ function CardCategoryRows({
   );
 }
 
-/** the split, made physical (#126 v2, wallet-deck design from the
- *  user's reference): each part is a card in a deck — ONE stands
- *  expanded with every fact editable in place (label, kind +
- *  counterparty, category, event; the amount opens the values editor,
- *  since amounts are a partition), the rest collapse to slim headers a
- *  tap re-expands. A ghost card grows the split. */
+/** the parts as a deck: one expanded, the rest slim; the amount opens the values editor (amounts are a partition) */
 export function ReviewPartDeck({
   splits,
   rowType,
@@ -827,7 +675,6 @@ export function ReviewPartDeck({
   onSplits,
   onPickExisting,
 }: Readonly<{
-  /** the split being told — a staged draft's or a stored row's */
   splits: readonly TxSplit[] | undefined;
   /** the container's type: what untyped parts inherit */
   rowType: TxType;
@@ -836,14 +683,11 @@ export function ReviewPartDeck({
   allowedCatIds?: readonly string[];
   /** R1: a stamped account types every row — parts included */
   lockedKind?: boolean;
-  /** r7: parts link recurring costs like whole transactions do */
   recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
-  /** r7: a refused Confirm/Apply marks the parts that still need work */
   attention?: boolean;
   onOpenValues: () => void;
   onSplits: (next: TxSplit[]) => void;
-  /** #237 r2 (review): a part pointed at an EXISTING row — the screen
-   *  may warn (bulk update turns off) before `stage` runs */
+  /** a part pointed at an existing row: the screen may warn (bulk turns off) before `stage` runs (#237) */
   onPickExisting?: (stage: () => void) => void;
 }>) {
   const { t, lang } = useLang();
@@ -851,24 +695,13 @@ export function ReviewPartDeck({
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
   const [expanded, setExpanded] = useState(0);
-  // #228 feedback: the part card's own Counterparty row — which part's
-  // counter door is open (counter-first picks its category)
   const [counterForIdx, setCounterForIdx] = useState<number | null>(null);
-  // #237 r3: which part's Counter-transaction row is picking its leg
   const [counterTxForIdx, setCounterTxForIdx] = useState<number | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
-  // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
-  // #251: quick creation, parts edition — the same doors the whole-card
-  // pickers carry (create a recurring/event right from the picker)
   const [recCreateFor, setRecCreateFor] = useState<number | null>(null);
   const [eventCreateFor, setEventCreateFor] = useState<number | null>(null);
-  // r6/r7: which part is editing its categories (THE category door —
-  // the same amounts/percentages editor whole transactions use)
   const [spreadFor, setSpreadFor] = useState<number | null>(null);
-  // r8 (user request): the WHOLE card travels — the tapped one rises out
-  // of its slot to the front while the old active shrinks back into its
-  // own slot; nothing else reorders. Classic FLIP on the real elements.
   const cardRef = useRef<HTMLDivElement | null>(null);
   const stripRefs = useRef(new Map<number, HTMLElement>());
   const flipRef = useRef<{ tappedRect: DOMRect; activeRect: DOMRect; prevIdx: number } | null>(null);
@@ -883,8 +716,7 @@ export function ReviewPartDeck({
   }, [openIdx]);
   if (parts.length <= 1) return null;
 
-  // r7 (user rule): NO restriction on a split beyond the amounts — every
-  // patch lands; incompleteness is the attention badges' job
+  // no restriction on a split beyond the amounts; incompleteness is the attention badges' job
   const patchPart = (index: number, patch: Partial<TxSplit>) => {
     const target = parts[index];
     onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
@@ -907,11 +739,10 @@ export function ReviewPartDeck({
   };
 
   const active = parts[openIdx];
-  // #228: settled bookkeeping is not an editable category row here
   const activeRealCats = (active.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const activeEventFace = activeEvents.find((event) => event.id === active.eventId)?.name ?? t('events.linkNone');
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
-  // #565: the part's rows follow the card's rules — a stamped account owns its parts' story
+  // a stamped account owns its parts' story (#565)
   const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
   const partGates = partRowGates(active, rowType, partCounterAcct, lockedKind);
   const partCounterTxFace = partCounterTxFaceOf(active, partCounterAcct, allTxs, tx.currency, lang, t);
@@ -921,7 +752,6 @@ export function ReviewPartDeck({
 
   return (
     <div className="mt-3" data-testid="review-part-deck">
-      {/* r5 (user illustration): the section header owns the manage door */}
       <div className="flex items-center justify-between px-1">
         <span className="flex items-center gap-2 text-[14px] font-semibold text-ink">
           <Icon name="call-split" size={17} color="var(--m-accent-deep)" />
@@ -941,8 +771,6 @@ export function ReviewPartDeck({
         {t('review.splitsCount', { n: parts.length })}
       </div>
 
-      {/* the deck: the other parts peek from behind — tap one to bring
-          it on top; the active card carries every fact */}
       <div className="mt-2">
         {peeking.map(({ slice, i }) => {
           const sliceCat = cats.byId(slice.catId);
@@ -999,8 +827,7 @@ export function ReviewPartDeck({
               value={active.label ?? ''}
               placeholder={partLabel(active, openIdx)}
               onChange={(e) => patchPart(openIdx, { label: e.target.value || undefined })}
-              // r8 (user rule): a label must SAY something — whitespace-only
-              // settles back to the derived default on blur
+              // a whitespace-only label settles back to the derived default on blur
               onBlur={(e) => {
                 const trimmed = e.target.value.trim();
                 if (trimmed !== e.target.value) patchPart(openIdx, { label: trimmed || undefined });
@@ -1011,10 +838,6 @@ export function ReviewPartDeck({
               {fmtCents(active.amountCents, tx.currency, lang)}
             </span>
           </div>
-          {/* #217 (user): a spread part shows EACH category as its own
-              row — same face as the unsplit card, value included; every
-              row doors into the same editor. #228 feedback: no counter
-              subline — the part's Counterparty row below owns it */}
           {(activeRealCats.length ? activeRealCats : [null]).map((entry, entryIdx) => {
             const rowCat = cats.byId(entry?.catId ?? active.catId);
             const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
@@ -1041,10 +864,6 @@ export function ReviewPartDeck({
               </button>
             );
           })}
-          {/* #228 feedback: the part's own Counterparty row — the same
-              counter-first door the card and the detail screen carry.
-              #565 (user): every row stands on the part as on the card,
-              disabled where the part's filing cannot use it */}
           <button
             data-testid={`deck-counter-${openIdx}`}
             onClick={() => setCounterForIdx(openIdx)}
@@ -1059,9 +878,6 @@ export function ReviewPartDeck({
             <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
             {partGates.counter && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
-          {/* #237 r3: the part's Counter-transaction row — same story as
-              the card's (pick the existing leg, or the create/await
-              default), sized to the PART's money */}
           <button
             data-testid={`deck-countertx-${openIdx}`}
             onClick={() => setCounterTxForIdx(openIdx)}
@@ -1074,7 +890,6 @@ export function ReviewPartDeck({
             <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
             {partCounterTxFace && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
-          {/* r7: parts link recurring costs, exactly like the card does */}
           <button
             data-testid={`deck-rec-${openIdx}`}
             onClick={() => setRecFor(openIdx)}
@@ -1102,16 +917,12 @@ export function ReviewPartDeck({
         </div>
       </div>
 
-      {/* r7: a refused Confirm points at the parts that hold it back */}
       {attention && parts.some((slice) => slice.catId === UNCATEGORIZED_ID) && (
         <p className="mt-2 rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="deck-attention">
           {t('split.attentionNote')}
         </p>
       )}
 
-      {/* #228 feedback: the part card's counterparty door — pick refiles
-          the part's category by the account's kind (counter-first),
-          remove resets it; settled bookkeeping always survives */}
       <CounterpartySheet
         open={counterForIdx !== null}
         onOpenChange={(next) => {
@@ -1122,8 +933,6 @@ export function ReviewPartDeck({
         amountCents={counterPart ? partSignedCents(tx.amountCents, Math.abs(counterPart.amountCents)) : undefined}
         defaultFamily={counterAsk.defaultFamily}
         counterTypes={counterAsk.counterTypes}
-        // #237 r3 (user): no fork after the counterparty pick — the
-        // part's Counter-transaction row below owns the leg question
         onChoose={(account) => {
           if (counterForIdx === null) return;
           const index = counterForIdx;
@@ -1133,8 +942,7 @@ export function ReviewPartDeck({
             catId: derived,
             txType: specialCatType(derived),
             linkedAccountId: account.id,
-            // a (re-)pick resets any standing leg pick — it was bound
-            // to the previous counter account
+            // a (re-)pick resets any standing leg pick: it was bound to the previous counter account
             transferPeerId: undefined,
             cats: catsAroundSingle(part, derived),
           });
@@ -1155,8 +963,6 @@ export function ReviewPartDeck({
             : undefined
         }
       />
-      {/* #237 r3: the part's counter-transaction match sheet — suggested
-          legs first, the rest scrollable; create/await resets the pick */}
       {(() => {
         const matchPart = counterTxForIdx === null ? undefined : parts[counterTxForIdx];
         const matchAcct = accounts?.find((a) => a.id === matchPart?.linkedAccountId);
@@ -1189,7 +995,6 @@ export function ReviewPartDeck({
           />
         );
       })()}
-      {/* the expanded part's event — per-part membership (v2 model) */}
       <Sheet
         open={eventFor !== null}
         onOpenChange={(next) => {
@@ -1211,7 +1016,6 @@ export function ReviewPartDeck({
             <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
             <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
           </button>
-          {/* #537: the shared picker rows — archived labelled, each one peekable */}
           <EventPickList
             events={activeEvents}
             selectedId={eventFor === null ? null : parts[eventFor]?.eventId}
@@ -1221,7 +1025,6 @@ export function ReviewPartDeck({
               setEventFor(null);
             }}
           />
-          {/* #251: the quick-create door the whole-card picker has */}
           <button
             data-testid="deck-event-create"
             onClick={() => {
@@ -1235,7 +1038,6 @@ export function ReviewPartDeck({
           </button>
         </div>
       </Sheet>
-      {/* r7: the part's recurring link — the manual pick, parts edition */}
       <Sheet
         open={recFor !== null}
         onOpenChange={(next) => {
@@ -1267,7 +1069,6 @@ export function ReviewPartDeck({
               }}
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
             >
-              {/* #258 (user): the cost's own face, not a generic icon */}
               <RecurringVisual rec={rec} size={18} />
               <span className="min-w-0 flex-1 truncate">{rec.name}</span>
               {recFor !== null && parts[recFor]?.recurringId === rec.id && (
@@ -1275,7 +1076,6 @@ export function ReviewPartDeck({
               )}
             </button>
           ))}
-          {/* #251: the quick-create door the whole-card picker has */}
           <button
             data-testid="deck-rec-create"
             onClick={() => {
@@ -1289,8 +1089,6 @@ export function ReviewPartDeck({
           </button>
         </div>
       </Sheet>
-      {/* #251: create-and-link, parts edition — the form lands prefilled
-          from the PART and the created id files onto that part alone */}
       {recCreateFor !== null && (
         <RecurringFormSheet
           initial={partRecurringPrefill(tx, parts[recCreateFor])}
@@ -1305,10 +1103,6 @@ export function ReviewPartDeck({
           onClose={() => setEventCreateFor(null)}
         />
       )}
-      {/* the part's categories (r6/r7) — the whole-transaction editor,
-          scoped to the part's amount. #228: a lone ◆ pick asks the
-          PART's counterparty inside the editor; a spread offers regular
-          categories only */}
       <CatsSheet
         open={spreadFor !== null}
         onOpenChange={(next) => {
@@ -1319,7 +1113,6 @@ export function ReviewPartDeck({
         direction={deckDirection}
         txType={rowType}
         allowedCatIds={allowedCatIds}
-        // #216 (user): part spreads keep their %/€ shape too
         includePct
         excludeAccountId={tx.accountId}
         askDisabled={lockedKind}
@@ -1331,17 +1124,11 @@ export function ReviewPartDeck({
   );
 }
 
-// the prediction chain (own-account counter, named transfer, remembered
-// counter, the loan, the spread) lives in domain/reviewSuggest.ts — #565
-// prepares it when the row lands, the card only reads it
+// the prediction chain lives in domain/reviewSuggest.ts; #565 prepares it when the row lands, the card only reads it
 
-/** the bulk sheet's read-only transaction peek: (almost) the detail
- * screen's facts — amount, date, category, type, account, counterparty,
- * bank text — without any of its edit affordances (user request) */
 function BulkTxPeek({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
-  // #545: the name this space gave the account
   const account = useSpaceAccount(tx.accountId);
   const cat = cats.byId(tx.catId);
   const catColor = cat.color ?? cats.byId(cat.parentId ?? '').color;
@@ -1393,14 +1180,12 @@ function BulkConfirmSection({
     else next.add(id);
     onChange(next);
   };
-  // #325 (user): "Also apply to 0 similar" read odd — an emptied
-  // selection gets its own short line instead of the zero count
+  // an emptied selection gets its own line: "Also apply to 0 similar" read odd (#325)
   const countLine = selected.size === 0 ? t('review.bulkNoneSelected') : t('review.alsoApply', { n: selected.size });
 
   return (
     <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="review-bulk">
-      {/* the WHOLE bar opens the sheet (user request); the checkbox is
-          the one carve-out — two sibling buttons, no nesting */}
+      {/* the whole bar opens the sheet; the checkbox is the one carve-out: two sibling buttons, no nesting */}
       <div className="flex items-center gap-3 px-4 py-3">
         <button
           data-testid="review-bulk-toggle"
@@ -1425,11 +1210,7 @@ function BulkConfirmSection({
         </button>
       </div>
 
-      {/* near-max-height sheet styled like the transactions list (user
-          redesign): TxRow rows with a checkbox rail, select/unselect all,
-          and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
       <Sheet open={open} onOpenChange={setOpen} title={countLine} height={760} dragHandle>
-        {/* #378: the one select-all row every transaction list wears */}
         <SelectAllRow
           total={similar.length}
           selected={similar.filter((s) => selected.has(s.id)).length}
@@ -1458,8 +1239,6 @@ function BulkConfirmSection({
                     {/* every row here is unreviewed by definition — the badge is noise */}
                     <TxRow tx={item} showDate hideUnreviewed onClick={() => setDetailId(item.id)} />
                   </div>
-                  {/* #328 r2 (user): the row opens the read-only peek —
-                      it wears the opener chevron (checkboxes don't) */}
                   <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </div>
               </div>
@@ -1468,9 +1247,7 @@ function BulkConfirmSection({
         </div>
       </Sheet>
 
-      {/* read-only peek — taller now (user request), still clearly SHORTER
-          than the list sheet so its top edge stays visible against the
-          parent behind it (the stacked-sheet cue) */}
+      {/* shorter than the list sheet so its top edge stays visible against the parent (the stacked-sheet cue) */}
       <Sheet
         open={detailId !== null}
         onOpenChange={(next) => !next && setDetailId(null)}
@@ -1483,12 +1260,7 @@ function BulkConfirmSection({
   );
 }
 
-/**
- * The card's recurring row with its price-delta warning. #565 (user): it
- * stands on every card — disabled where the filing takes no recurring
- * cost: a debt payment (the Counterparty row names the loan — #236; a
- * payoff is not a recurring cost, user 2026-07-29) or an adjustment.
- */
+/** disabled where the filing takes no recurring cost: a debt payment (the counter row names the loan, #236) */
 function DebtOrRecurringRow({
   enabled,
   recMatch,
@@ -1508,9 +1280,6 @@ function DebtOrRecurringRow({
 }>) {
   const { t, lang } = useLang();
   const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
-  // #333 (user): once a recurring is picked, the row leads with ITS OWN
-  // face (logo or kind icon) — the generic circle-arrow only means
-  // "nothing linked yet". Mirrors the label's chosen-rec derivation.
   const linked = recMatch && linkRecurring ? recMatch : manualRec;
   const chosen = enabled && chosenRecurringId(recMatch, linkRecurring, manualRec?.id ?? null) ? linked : undefined;
   return (
@@ -1545,7 +1314,6 @@ function DebtOrRecurringRow({
   );
 }
 
-/** the recurring row's display label: linked name or "None" */
 function recurringRowLabel(
   recMatch: RecurringRow | undefined,
   linkRecurring: boolean,
@@ -1557,16 +1325,11 @@ function recurringRowLabel(
   return linked?.name ?? t('recurring.linkTitle');
 }
 
-/** which recurring the confirm links: the auto-match wins (unless the
- *  user un-ticked it); otherwise whatever was picked by hand */
 function chosenRecurringId(recMatch: RecurringRow | undefined, linkRecurring: boolean, manualRecId: string | null): string | undefined {
   if (recMatch) return linkRecurring ? recMatch.id : undefined;
   return manualRecId ?? undefined;
 }
 
-/** stacked picker for the manual recurring link: every active recurring
- *  plus an explicit "no link" row (user request — auto-detection alone
- *  missed renamed merchants) */
 function RecurringPickSheet({
   open,
   onOpenChange,
@@ -1582,7 +1345,6 @@ function RecurringPickSheet({
   selectedId: string | null;
   currency: string;
   onPick: (id: string | null) => void;
-  /** create-and-return door: opens the recurring form, auto-attaches */
   onCreate: () => void;
 }>) {
   const { t, lang } = useLang();
@@ -1627,27 +1389,16 @@ function RecurringPickSheet({
   );
 }
 
-/** v2: the loan/mortgage counterparty IS the debt being paid (S3776:
- *  the branch lives out of the component) */
 const loanCounterOf = (counter: { type: string; name: string } | undefined): { name: string } | undefined =>
   counter && ['loan', 'mortgage'].includes(counter.type) ? { name: counter.name } : undefined;
 
-/** #133 r5/#221: the card ask derives from the PICKED category, out of
- *  the component (S3776) — every ask pins its default (the ATM pair
- *  pins the cash wallet, not the default bank account) and narrows to
- *  the account types the category can mean (the bijection) */
+/** every ask pins its default (the ATM pair pins the cash wallet, not the default bank account) and narrows to the
+ *  account types the category can mean (#133, #221) */
 const askDefaultFamily = (catId: string | null): DefaultFamily | undefined =>
   catId ? (defaultFamilyFor(catId) ?? undefined) : undefined;
 const askCounterTypes = (catId: string | null): readonly AccountType[] | undefined =>
   (catId ? counterTypesFor(catId) : undefined) ?? undefined;
 
-/**
- * Review queue, rebuilt around the legacy mechanics with a calmer face:
- * one card at a time, the prediction pre-applied WITH its reason, bulk
- * confirm for similar transactions (same merchant; same amount too once
- * split), type/counter-account and splits via the shared sheets, a
- * recurring-cost link offer, and a skip pile at the end.
- */
 export function ReviewScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -1661,26 +1412,17 @@ export function ReviewScreen() {
   const readOnlyRegion = canEdit ? undefined : true;
 
   const [splitOpen, setSplitOpen] = useState(false);
-  // #211: two different features, two different sheets — the category
-  // chip opens the SPLIT-CATEGORIES editor (the row's own spread); the
-  // split doors open the split-TRANSACTION values editor (parts)
+  // the category chip opens the split-categories editor (the row's own spread); the split doors open the parts editor (#211)
   const [catsOpen, setCatsOpen] = useState(false);
-  // r7: a refused Confirm marks the parts that still need a category
   const [partsAttention, setPartsAttention] = useState(false);
-  // #309 (user): a refused Confirm marks the REQUIRED counterparty red
   const [counterRequired, setCounterRequired] = useState(false);
-  // #410 (user): a refused Confirm names the missing category under its
-  // row instead of greying the button out
   const [catRequired, setCatRequired] = useState(false);
-  // r7 (user rule): splitting RESETS the card's own decisions — staged
-  // edits get a conscious warning before the split flow opens. #330
-  // (user): the reset itself now waits for the split editor's DONE —
-  // continue only ARMS it, and cancelling the editor keeps everything.
+  // splitting resets the card's own decisions, so staged edits get a warning first; continue only ARMS the reset,
+  // the split editor's Done lands it and cancelling keeps everything (#330)
   const [splitResetOpen, setSplitResetOpen] = useState(false);
   const splitResetArmed = useRef(false);
   const requestSplit = () => {
-    // #330 r2 (user): warn on the FIRST press — the card's shown story
-    // (row/prediction fills included) is what the split will reset
+    // warn on the FIRST press: the card's shown story (row/prediction fills included) is what the split resets (#330)
     const wouldReset = splitWouldReset({
       draft,
       staged: stagedDraft,
@@ -1699,25 +1441,17 @@ export function ReviewScreen() {
     setSplitResetOpen(false);
     setSplitOpen(true);
   };
-  // kind + counterparty rows live ON the card now (user simplification);
-  // a user-picked transfer REQUIRES a counterparty, so dismissing the
-  // picker without choosing rolls the kind back to what it was
-  // #133 C/#221: the ask is keyed by the PICKED category — its default
-  // pin and its account types both derive from the bijection (the ATM
-  // pair asks among cash wallets and pins the space's own)
+  // a user-picked transfer requires a counterparty: dismissing the picker without a choice rolls the kind back
+  // the ask is keyed by the picked category: its default pin and account types derive from the bijection (#133, #221)
   const [counterAskCat, setCounterAskCat] = useState<string | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
-  // #237 r2: a pick pointed at an EXISTING row — specific to this card,
-  // so the bulk offer stands down while it does. The warning asks first
-  // when similar transactions were about to ride along.
+  // a pick of an existing row is specific to this card: the bulk offer stands down, the warning asks first (#237)
   const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
-  // 2026-10-05: the create/wait door on a STORED pair means "release it" — the card shows the default again until confirm
+  // the create/wait door on a STORED pair means release it: the card shows the default again until confirm
   const [releaseStored, setReleaseStored] = useState(false);
   const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
-  // #268 (user): the per-sibling counter-match queue a confirmed
-  // row-level pick leaves behind (draft snapshot at confirm time)
   const [counterBulk, setCounterBulk] = useState<{
     items: SpaceTx[];
     draft: ReviewDraft;
@@ -1726,39 +1460,24 @@ export function ReviewScreen() {
     note?: string;
     target: { id: string; name: string };
   } | null>(null);
-  // #495 (user): the bulk siblings' receipts walk in turn too — after the
-  // counter queue when both run (only the siblings it settled), else at once
+  // the bulk siblings' receipts walk after the counter queue (only the siblings it settled), else at once (#495)
   const [receiptBulk, setReceiptBulk] = useState<SpaceTx[] | null>(null);
   const pendingReceiptBulk = useRef<SpaceTx[] | null>(null);
   const counterSettled = useRef(new Set<string>());
-  // #268 r2 (user): while that queue walks the siblings, the deck must
-  // not advance behind it — the just-confirmed card stays frozen (a
-  // stale snapshot, edits closed) until the queue is done
+  // the deck must not advance behind the counter queue: the just-confirmed card stays frozen until it is done (#268)
   const [heldTx, setHeldTx] = useState<SpaceTx | null>(null);
-  // #237 r3: the card's Counter-transaction row opens the match sheet
-  // directly — the fork after the counterparty pick is gone
   const [counterTxOpen, setCounterTxOpen] = useState(false);
-  // per-visit only (user ruling): mid-review side steps happen in sheets
-  // that keep the screen mounted, so state survives those — but leaving
-  // review and coming back later starts the deck from the top again.
-  // #275: the ONE exception is the create-category detour — its stash
-  // restores the skipped set so the deck resumes on the same card.
+  // per-visit only: leaving review and coming back starts the deck from the top; the exception is the
+  // create-category detour, whose stash restores the skipped set (#275)
   const returnState = useRef(takeReviewReturn());
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => new Set(returnState.current?.skippedIds ?? []));
-  // the card's STAGED decision (review redesign): user edits live here,
-  // only Confirm writes; null = untouched, follow tx + prediction live
+  // user edits live here, only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
-  // #324 (user): the card's staged note — null = untouched (the field
-  // shows the row's own note); written with the confirm, bulk included
+  // null = untouched: the field shows the row's own note (#324)
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
-  // deck animation (user request): keep the outgoing card's markup as a
-  // ghost that flies out left while the next card slides in from the right.
-  // 2026-10-06 (user ss, phone): the ghost used to fly the moment Confirm
-  // was pressed while the card itself stood until the writes had landed,
-  // then slid away under the next one - two flights. The snapshot is only
-  // ARMED here; the flight starts with the swap (the effect below the deck).
+  // only ARMED on Confirm; the flight starts with the swap, else the ghost and the card flew in two flights
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [leavingHtml, setLeavingHtml] = useState<string | null>(null);
   const armedLeaving = useRef<{ html: string; fromId: string } | null>(null);
@@ -1772,32 +1491,26 @@ export function ReviewScreen() {
   // a second tap while the confirm's writes run must not re-enter (it re-armed the ghost and wrote twice)
   const confirming = useRef(false);
   const [linkRecurring, setLinkRecurring] = useState(true);
-  // no auto-match? the user can still link a recurring by hand (user request)
   const [manualRecId, setManualRecId] = useState<string | null>(null);
   const [recPickOpen, setRecPickOpen] = useState(false);
-  // events join the review card (user redesign): staged, written on confirm
   const [eventPick, setEventPick] = useState<string | null>(null);
   const [eventPickOpen, setEventPickOpen] = useState(false);
   // #161: the user's own event gesture outranks the memory's offer
   const eventTouched = useRef(false);
-  // create-and-return doors: snapshot ids, diff on close, auto-attach
   const [recCreating, setRecCreating] = useState(false);
   const [eventCreating, setEventCreating] = useState(false);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
-  // #565 (user): what munni worked out about each row was prepared the
-  // moment it landed (application/reviewSuggestions) — the card only reads
-  // it, and the deck waits for the map so nothing pops in afterwards
+  // prepared when the row lands (application/reviewSuggestions); the deck waits for the map so nothing pops in later (#565)
   const suggestions = useReviewSuggestions();
   const suggestionsReady = suggestions !== undefined;
 
   const queue = useMemo(
-    // oldest first (user request): work through the backlog chronologically
     () => (suggestionsReady ? allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)) : undefined),
     [allTxs, suggestionsReady],
   );
-  // a row nobody prepared yet, or one that changed since (sent back to the
-  // review by a heal, say), asks the pass — never the card; once per state
+  useReviewedSettle(queue?.length);
+  // a row nobody prepared, or one changed since (e.g. sent back by a heal), asks the pass, never the card; once per state
   const askedFor = useRef(new Set<string>());
   useEffect(() => {
     if (askOnce(askedFor.current, unpreparedStates(queue, suggestions))) requestReviewSuggestions(spaceId);
@@ -1807,12 +1520,9 @@ export function ReviewScreen() {
   }, [queue, initialCount]);
 
   const remaining = useMemo(() => queue?.filter((item) => !skipped.has(item.id)), [queue, skipped]);
-  // #268 r2 (user): the deck keeps showing the confirmed card (the held
-  // snapshot) while the counter queue runs
   const tx = shownCard(heldTx, remaining);
   const heldDeck = heldDeckProps(!!counterBulk || !!receiptBulk);
-  // the armed ghost takes off the moment another card is up - the same
-  // render that slides the new card in - and never before
+  // the armed ghost takes off only when another card is up
   const shownId = tx?.id;
   useEffect(() => {
     const armed = armedLeaving.current;
@@ -1828,9 +1538,6 @@ export function ReviewScreen() {
     },
     [],
   );
-  // #275: back from the create-category detour — the same card is up
-  // (skipped restored above); reopen the category editor once so the
-  // fresh category is one tap away
   useEffect(() => {
     const back = returnState.current;
     if (!back || tx?.id !== back.txId) return;
@@ -1839,41 +1546,29 @@ export function ReviewScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tx?.id]);
 
-  // the card's prepared suggestion — the prediction with its reason, the own-
-  // account or named counterparty, the loan, the spread, the event and the
-  // recurring cost — held while the card is up
   const suggestion = useCardSuggestion(tx, suggestions);
 
-  // the funding account, named on the card (user request)
-  // #545: as this space names (and types) it
   const cardAccount = useSpaceAccount(tx?.accountId);
-  // R1: the row's own account stamps its type — the kind row locks and
-  // a counterparty pick keeps the stamp with the forced movement sub
+  // the row's account stamps its type: the kind row locks and a counterparty pick keeps the stamp (R1)
   const ownStamp = accountStamp(cardAccount?.type);
   const spaceAccounts = useSpaceAccounts();
-  // untouched cards show the suggestion; a row nobody prepared shows its own
-  // facts (a remembered counterparty still files the category its kind means)
+  // a row nobody prepared shows its own facts; a remembered counterparty still files the category its kind means
   const spreadDraft = useMemo(
     () => (tx ? (suggestion?.draft ?? fileRememberedCounter(initDraft(tx, undefined, cats), spaceAccounts, cats, tx.amountCents, ownStamp)) : null),
     [tx, suggestion, cats, spaceAccounts, ownStamp],
   );
-  // user ss 2026-10-05: the receipt is part of the review — a fetched
-  // receipt that fits this card asks HERE (yes / no / pick another); what
-  // the person decides here is decided on the Receipts screen as well
   const receiptEntry = useTxReceiptEntry(tx?.id);
   const receiptProposals = useProposedMatches();
   const attachableReceipts = useAttachableReceipts();
-  // one attached elsewhere says so under its row and stays pickable (user 2026-10-08: several payments, one receipt)
+  // one attached elsewhere says so under its row and stays pickable: several payments can share one receipt
   const receiptElsewhere = useMemo(() => attachedElsewhere(attachableReceipts?.attachedTo, tx?.id ?? ''), [attachableReceipts, tx?.id]);
   const describeReceiptTx = useMemo(() => describeTxFor(allTxs, lang, tx?.currency ?? 'EUR'), [allTxs, lang, tx?.currency]);
   const receiptOps = useReceiptOps();
   const [receiptPickOpen, setReceiptPickOpen] = useState(false);
-  // #496: the row's eye looks at the receipt it names in a sheet over the card (the receipt outlives the close flag)
+  // the eye's receipt is kept apart from the open flag: it outlives the close (#496)
   const [receiptLook, setReceiptLook] = useState<ReceiptRow | null>(null);
   const [receiptLookOpen, setReceiptLookOpen] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
-  // user 2026-10-06: the receipt the card attaches on confirm — the best
-  // match by itself (like the predicted category), one the person picked, or none
   const [receiptStage, setReceiptStage] = useState<ReceiptStage>(AUTO_STAGE);
   const attachedReceipt = receiptEntry?.data ?? null;
   const receiptProposal = useMemo(
@@ -1885,8 +1580,7 @@ export function ReviewScreen() {
     () => (tx ? candidatesFor(tx, attachableReceipts, receiptProposal?.receiptId) : []),
     [tx, attachableReceipts, receiptProposal?.receiptId],
   );
-  // #565: the best fit was prepared with the row — the card only checks it is
-  // still free (a receipt that lands while the card is up joins it: the live map)
+  // a receipt that lands while the card is up joins it: the card only checks the prepared best fit is still free (#565)
   const preparedReceiptId = suggestionFor(suggestions, tx)?.receiptId ?? suggestion?.receiptId;
   const autoReceipt = useMemo(
     () =>
@@ -1895,8 +1589,6 @@ export function ReviewScreen() {
         : null,
     [tx, receiptProposal, attachedReceipt, receiptCandidates, preparedReceiptId],
   );
-  // #567 (user): a receipt that says the card's own amount files it by its lines — the card shows that filing and
-  // Confirm writes it; a category staged by hand outranks it, and so does "no receipt"
   const filingReceipt = useMemo(
     () => cardReceipt(receiptStage, attachedReceipt, receiptProposal, autoReceipt),
     [receiptStage, attachedReceipt, receiptProposal, autoReceipt],
@@ -1908,8 +1600,7 @@ export function ReviewScreen() {
     setReceiptLook(receipt);
     setReceiptLookOpen(true);
   };
-  /** #542: a photo taken or uploaded on the card attaches at once (Skip must not throw away what the person
-   *  captured), in the attached receipt's place — the staged pick has nothing left to say */
+  /** #542: a photo captured on the card attaches at once (Skip must not throw it away), in the attached receipt's place */
   const attachReceiptPhoto = async (file: File) => {
     if (!tx) return;
     setReceiptBusy(true);
@@ -1923,15 +1614,9 @@ export function ReviewScreen() {
     }
   };
   const draftCounter = useSpaceAccount(draft?.linkedAccountId);
-  // a loan/mortgage counterparty makes this a DEBT payment: the account
-  // IS the loan (v2), so the card names the counterparty itself and
-  // retires the recurring row — a payoff transfer is not a recurring
-  // cost (user request 2026-07-29)
+  // a loan/mortgage counterparty makes it a DEBT payment: the account IS the loan, so the recurring row retires —
+  // a payoff transfer is not a recurring cost
   const isLoanCounter = loanCounterOf(draftCounter) !== undefined;
-  // #237 r3: the Counter-transaction row's ingredients — the SPACE's
-  // view of the counter account, and the face of whatever leg stands
-  // (a stored pair reads first and locks the row; review never
-  // re-points a stored pair)
   const counterAcct = spaceAccounts?.find((a) => a.id === draft?.linkedAccountId);
   const counterBankFed = (counterAcct?.source ?? 'manual') !== 'manual';
   const peerFaceRow = useMemo(
@@ -1945,10 +1630,8 @@ export function ReviewScreen() {
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = (events ?? []).find((e) => e.id === eventPick);
-  // #161: the memory's event offer — only an ACTIVE event of THIS space
-  // qualifies, and only until the user touches the event row themselves
-  // the row's own event stands (archived or not); else the memory's offer —
-  // an ACTIVE event of this space only
+  // the row's own event stands (archived or not); else the memory's offer, an ACTIVE event of this space only,
+  // until the user touches the event row (#161)
   const predictedEventId = useMemo(() => {
     if (tx?.eventId) return tx.eventId;
     const offered = suggestion?.eventId;
@@ -1960,12 +1643,9 @@ export function ReviewScreen() {
   }, [predictedEventId, tx?.id]);
   const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
-  // #126 r3: with a real split the parts carry the stories — the main
-  // card drops its kind/recurring/event rows and shows just the money
   const multiPart = (draft?.splits?.filter((s) => s.catId !== REIMBURSED_ID).length ?? 0) > 1;
 
-  // the recurring the row is linked to already (the auto-linker's, kept even
-  // while paused), else the one prepared for it (#565: merchant + amount)
+  // the recurring the row is linked to (the auto-linker's, kept while paused), else the one prepared for it (#565)
   const recMatch = useMemo(() => {
     const stored = tx?.recurringId || undefined;
     const id = stored ?? suggestion?.recurringId;
@@ -1974,8 +1654,7 @@ export function ReviewScreen() {
   const activeRecs = useMemo(() => (recurrings ?? []).filter((r) => r.active === 1), [recurrings]);
   const manualRec = activeRecs.find((r) => r.id === manualRecId);
 
-  // SP5: an incoming amount that exactly matches an open split settlement
-  // to me is very likely that person paying me back — suggest transfer
+  // SP5: an incoming amount exactly matching an open split settlement to me is likely that person paying back
   const identity = useSession((s) => s.identity);
   const [settlements, setSettlements] = useState<SettlementCandidate[]>([]);
   useEffect(() => {
@@ -1987,10 +1666,7 @@ export function ReviewScreen() {
     [tx, settlements],
   );
 
-  // bulk rule: plain confirm reaches every same-merchant item; absolute
-  // partitions (parts or a category spread, #211) only fit exact twins
-  // (same amount), percentage ones scale to any amount so the whole
-  // merchant group stays eligible
+  // absolute partitions only fit exact twins (same amount); percentage ones scale to any amount (#211)
   const draftSplits = draft?.splits;
   const draftCats = draft?.cats;
   const similar = useMemo(() => {
@@ -2000,30 +1676,21 @@ export function ReviewScreen() {
     const mustMatchAmount =
       (!!draftSplits?.length && !splitsArePct(draftSplits)) ||
       (!!draftCats?.length && !draftCats.every((e) => e.pct != null));
-    // skipped cards left the deck on purpose — bulk must not drag them
-    // back in (user request: the count follows the visible queue)
+    // skipped cards left the deck on purpose: bulk must not drag them back in
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
         !skipped.has(item.id) &&
-        // #268 r2 (user rule): forward only — the deck walks oldest to
-        // newest, so the offer reaches same-day-or-newer rows; an older
-        // row syncing in mid-card never joins a decision it was not
-        // visible for
+        // forward only (#268): the deck walks oldest to newest, so an older row syncing in mid-card never joins a decision
         item.date >= tx.date &&
-        // decisions are sign-bound (income vs expense, reimbursement
-        // side): a -€1000 sibling must never inherit a "received
-        // reimbursement" decision made on +€1000 (user ss 2026-07-28)
+        // decisions are sign-bound: a -€1000 sibling must never inherit a "received reimbursement" decision made on +€1000
         Math.sign(item.amountCents) === Math.sign(tx.amountCents) &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
   }, [tx, queue, draftSplits, draftCats, skipped, receiptFiled]);
 
-  // fresh card: reset the staged draft and offer the link. This runs
-  // DURING render (previous-id ref pattern), not in an effect — a late
-  // effect flush could undo user input that landed right after the card
-  // swap (a real race under coverage instrumentation)
+  // runs during render (prev-id ref), not in an effect: a late flush could undo input that landed right after the card swap
   useFreshCardReset(tx?.id, () => {
     setStagedDraft(null);
     setReceiptStage(AUTO_STAGE);
@@ -2045,23 +1712,16 @@ export function ReviewScreen() {
     setCounterTxOpen(false);
     eventTouched.current = false;
   });
-  // the pick is bound to ITS counter account — re-picking or detaching
-  // the counterparty (or the editor clearing the link) drops it
+  // the pick is bound to ITS counter account: re-picking or detaching the counterparty drops it
   useEffect(() => {
     if (pickedPeer && draft?.linkedAccountId !== pickedPeer.linkedId) setPickedPeer(null);
   }, [draft?.linkedAccountId, pickedPeer]);
-  // #309: answering the counterparty clears the red field on the spot
   useEffect(() => {
     if (draft?.linkedAccountId) setCounterRequired(false);
   }, [draft?.linkedAccountId]);
-  // select every similar item by default. Keyed on MEMBERSHIP, not array
-  // identity: the native SQL backend re-emits unchanged rows every sync
-  // cycle, and an identity-keyed reset kept re-arming boxes the user had
-  // just cleared (iOS ss 2026-07-28). When a sync genuinely changes the
-  // list mid-card, new arrivals join checked and the user's unchecks
-  // survive — but ONLY within the same card: a NEW card always starts
-  // at select-all (#340 — overlapping sibling sets carried unchecks
-  // from the previous card into the next).
+  // keyed on MEMBERSHIP, not array identity: the native SQL backend re-emits unchanged rows every sync cycle and
+  // an identity reset re-armed boxes the user had cleared; new arrivals join checked, unchecks survive only within
+  // the same card: a NEW card starts at select-all (#340)
   const similarKey = useMemo(() => similar.map((s) => s.id).sort((a, b) => a.localeCompare(b)).join(','), [similar]);
   const prevSimilar = useRef<{ cardId: string | null; ids: ReadonlySet<string> }>({ cardId: null, ids: new Set() });
   useEffect(() => {
@@ -2073,11 +1733,7 @@ export function ReviewScreen() {
     setBulkSelected((sel) => new Set(ids.filter((id) => (sameCard && prev.ids.has(id) ? sel.has(id) : true))));
   }, [similarKey, tx?.id]);
 
-  // #326 (user): quick-creating the counterparty account mid-review —
-  // the ask's Create door mounts the chooser itself, so the card stages
-  // its facts here while it is up: title, currency, the amount as the
-  // loan's payment, the date's day as the due day, and a monthly plan
-  // when the merchant's similar rows keep a near-monthly rhythm.
+  // quick-creating the counterparty mid-review: the card stages title, currency, payment, due day and a monthly plan (#326)
   useEffect(() => {
     if (!tx) return undefined;
     setChooserLoanPrefill({
@@ -2092,9 +1748,7 @@ export function ReviewScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tx?.id, similarKey]);
 
-  // the recurring OWNS the category (user rule 2026-07-28): linking one
-  // stages its category once, and the editor then only offers that
-  // category or expected reimbursement (the one allowed override)
+  // the recurring owns the category: linking one stages it, and the editor then only offers it or expected reimbursement
   const debtFiled = isLoanCounter || specialCatType(draft?.catId) === 'debtPayment';
   const chosenRec = useMemo(() => {
     if (debtFiled) return undefined; // debt payments never carry a recurring link
@@ -2103,11 +1757,10 @@ export function ReviewScreen() {
   }, [recMatch, linkRecurring, manualRecId, recurrings, debtFiled]);
   useEffect(() => {
     if (!chosenRec?.catId || !draft) return;
-    // r7: a split container never takes the recurring's category — the
-    // parts own their categories (and their own recurring links)
+    // a split container never takes the recurring's category: the parts own theirs
     if (multiPartSplits(draft)) return;
     if (draft.catId === chosenRec.catId || draft.catId === EXPECTED_REIMBURSE_ID) return;
-    // the recurring owns ONE category — a staged spread steps aside too
+    // the recurring owns ONE category: a staged spread steps aside too
     setStagedDraft(withCategory(withSplits({ ...draft, cats: undefined }, undefined), chosenRec.catId, cats));
     // once per selection — the pick itself is the trigger, not the draft
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2115,7 +1768,6 @@ export function ReviewScreen() {
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
   const catChosen = !!draft?.catId && draft.catId !== UNCATEGORIZED_ID;
-  // #565 (user): the rows stand on every card; what the filing cannot use is disabled
   const gates = cardRowGates(draft, { recurringOwnsCategory: !!recurringAllowedCats, loanCounter: isLoanCounter });
   const counterRowDoors = buildCounterRowDoors({
     draft,
@@ -2132,13 +1784,11 @@ export function ReviewScreen() {
   const showReason = !!tx && !stagedDraft && !!suggestion?.source && suggestion.predictedCatId === draft?.catId;
   const reasonLine = cardReason(!!receiptFiled, showReason ? suggestion : undefined, t);
 
-  // #211: the cats editor spreads the NET money — a settled `reimbursed`
-  // entry is bookkeeping, held aside and re-attached on stage
+  // the cats editor spreads the NET money: a settled `reimbursed` entry is held aside, re-attached on stage (#211)
   const spreadRowCount = draft?.cats?.filter((e) => e.catId !== REIMBURSED_ID).length ?? 0;
   const settledCatEntry = draft?.cats?.find((e) => e.catId === REIMBURSED_ID);
   const settledCatsCents = settledCatEntry?.amountCents ?? 0;
 
-  /** the settled row's gross partition, rewritten around a single pick */
   const settledCatsFor = (catId: string) =>
     settledCatEntry
       ? [
@@ -2149,10 +1799,7 @@ export function ReviewScreen() {
         ]
       : undefined;
 
-  /** #330 (user): the armed split-reset lands HERE, at the editor's
-   *  Done — consumes the warning's arm, drops the staged event/
-   *  recurring/note picks and hands back the card's untouched baseline
-   *  to apply onto; a cancelled editor never reaches this */
+  /** the armed split reset lands at the editor's Done: drops staged event/recurring/note picks, returns the baseline (#330) */
   const takeSplitResetBase = (): ReviewDraft | null => {
     if (!splitResetArmed.current) return null;
     splitResetArmed.current = false;
@@ -2163,17 +1810,12 @@ export function ReviewScreen() {
     return spreadDraft;
   };
 
-  /** ONE category decides the card — the VALUES-collapse path (catId
-   *  only): stages it with the ◆ machinery — Transfer stages nothing
-   *  until its mandatory counterparty answers; families ask right away.
-   *  #330: `from` applies onto the reset baseline instead of the draft. */
   const stageSingleCategory = (catId: string, from?: ReviewDraft | null) => {
     const src = from ?? draft;
     if (!src) return;
     const family = specialCatType(catId);
-    // #133 E: the ◆ Transfer pick stages NOTHING yet — the mandatory
-    // counterparty answers it (dismiss = rollback, an unlinked transfer
-    // is unrepresentable)
+    // a Transfer pick stages NOTHING yet: the mandatory counterparty answers it (dismiss = rollback); an unlinked transfer
+    // is unrepresentable (#133)
     if (family === 'transfer' && !ownStamp) {
       counterFallback.current = src;
       setCounterAskCat(catId);
@@ -2181,13 +1823,10 @@ export function ReviewScreen() {
       return;
     }
     const next = { ...withCategory(withSplits(src, undefined), catId, cats), cats: settledCatsFor(catId) };
-    // #228: a REGULAR pick ends any movement story — the counterparty
-    // clears with it (category and counter are one fact)
+    // a REGULAR pick ends any movement story: the counterparty clears with it (#228)
     setStagedDraft(family || ownStamp ? next : { ...next, linkedAccountId: undefined });
-    // #133 C: a ◆ family pick unfolds the counterparty question right
-    // away — the pinned Default, a real account, or dismiss (bare is
-    // legal; Confirm links the default, #221). #152 r2/#221: the
-    // Funding pick asks WHICH funding account, its shared pot pinned.
+    // a family pick asks the counterparty right away (bare is legal; Confirm links the default, #221); Funding asks
+    // WHICH funding account, its shared pot pinned (#152)
     if (family && family !== 'transfer' && !next.linkedAccountId && !ownStamp) {
       setCounterAskCat(catId);
       counterFallback.current = null;
@@ -2195,29 +1834,19 @@ export function ReviewScreen() {
     }
   };
 
-  /** the cats EDITOR's single entry — its counterparty was already
-   *  answered inside the editor (or deliberately left bare), so nothing
-   *  asks afterwards; the entry's link IS the (split) transaction's one
-   *  counterparty (#228) and stages at the row level. #218: a BARE
-   *  entry CLEARS the row link too — the editor owns the whole story. */
+  /** the editor answered its counterparty already; a BARE entry clears the row link too (#218, #228) */
   const stageSingleEntry = (entry: CatsApplyEntry) => {
     if (!draft) return;
     const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
     setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
   };
 
-  // r7: a blocked Confirm POINTS at what holds it back — the deck badges
-  // the parts that still need a category; #410 (user): a single card
-  // names the missing category under its row, and a transfer that has
-  // one names its missing counterparty
   const pointAtBlocker = (blocked: ReviewDraft) => {
     if (multiPartSplits(blocked)) setPartsAttention(true);
     else if (!catChosen) setCatRequired(true);
     else setCounterRequired(true);
   };
 
-  // user 2026-10-06: the receipt the card showed is settled with the
-  // confirm (the rules: receiptSettlement — #496 an attached one changes too)
   const settleReceipt = async () => {
     if (!tx || multiPart) return;
     const plan = receiptSettlement(receiptStage, attachedReceipt, receiptProposal, autoReceipt);
@@ -2230,8 +1859,7 @@ export function ReviewScreen() {
     await keepFiledPicks(receiptOps, spaceId, tx.id, receiptFiled, { receiptId: attachedReceipt?.id, linkId: receiptEntry?.linkId });
   };
 
-  /** what a bulk confirm leaves to walk (#268, #495): the counter queue first — the receipt walk then takes the
-   *  siblings it settled — else the receipt walk at once */
+  /** the counter queue first: the receipt walk then takes the siblings it settled (#268, #495) */
   const startBulkWalks = (queued: ReturnType<typeof queuedCounterBulk>, receiptWalk: SpaceTx[]) => {
     if (queued) {
       counterSettled.current = new Set();
@@ -2240,56 +1868,40 @@ export function ReviewScreen() {
     } else if (receiptWalk.length > 0) setReceiptBulk(receiptWalk);
   };
 
-  // the tap the user feels (2026-10-09): one 'review.confirm' span carries every write below, so a slow
-  // Confirm shows up in GlitchTip's Performance view with its waterfall instead of being guessed at
+  // one 'review.confirm' span carries every write, so a slow Confirm shows in GlitchTip's Performance view with its waterfall
   const runConfirm = async () => {
-    // #268 r2 (user): a held deck accepts no further confirms; #505: nor a space read-only to this identity
+    // a held deck accepts no further confirms (#268), nor a space read-only to this identity (#505)
     if (!tx || !draft || counterBulk || receiptBulk || confirming.current || !canEdit) return;
     if (!draftReady(draft)) {
       pointAtBlocker(draft);
       return;
     }
-    // #309 (user): a movement category REQUIRES its counterparty — no
-    // more silently settling onto a default at Confirm; the refused click
-    // marks the field red. #555 (user): a debt payment too — it names its
-    // loan, never a default loan in the background.
+    // a movement category REQUIRES its counterparty, a debt payment its loan: no silent default (#309, #555)
     if (isMovementCat(draft.catId) && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length) {
       setCounterRequired(true);
       return;
     }
-    // r7: a split container carries no recurring/event of its own — the
-    // parts do (their links ride inside draft.splits)
+    // a split container carries no recurring/event of its own: the parts do
     const container = !multiPartSplits(draft);
-    // #237 r2: a pick on any PART is specific to this transaction — the
-    // bulk apply stands down. #268 (user): a ROW-level pick keeps bulk
-    // alive instead — the siblings walk a per-transaction match queue.
+    // a pick on any PART is specific to this transaction: bulk stands down; a ROW-level pick keeps bulk (#237, #268)
     const partPeers = (draft.splits ?? []).filter((s) => s.transferPeerId && s.catId !== REIMBURSED_ID);
     const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
-    // #565: a disabled row writes nothing — what the filing cannot use never lands
+    // a disabled row writes nothing (#565)
     const recurringId = container && gates.recurring ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
     const eventId = container && gates.event ? (eventPick ?? undefined) : undefined;
-    // #324 (user): untouched or unchanged notes write nothing
     const note = stagedNoteFor(noteDraft, container, tx.notes);
     const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId, note);
-    // #495 (user): the siblings whose receipt wants a look — read now, while their review flag still stands
+    // read now, while the siblings' review flag still stands (#495)
     const receiptWalk = container ? receiptsToVerify(bulk, attachableReceipts, receiptProposals) : [];
-    // #268 r2 (user): "wait with animating until we are done with the
-    // bulk update" — a coming queue freezes the deck on this card; the
-    // exit flight plays when the queue finishes instead of now
+    // a coming queue freezes the deck on this card; the exit flight plays when it finishes (#268)
     if (queued || receiptWalk.length > 0) setHeldTx(tx);
     else captureLeaving();
     confirming.current = true;
     try {
-      // #221→#309: the bare-movement default fallback is GONE — the gate
-      // above guarantees every movement confirm carries its picked link
-      // (which may well BE the family default, chosen in the ask).
-      // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
-      // whose counterparty was dropped lets its peer leg go first — a stale
-      // peer would keep collapsing the pair in the list
+      // the gate above guarantees every movement confirm carries its picked link (#309); a stored pair re-pointed,
+      // released or orphaned lets its peer leg go first, else a stale peer keeps collapsing the pair in the list
       const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
-      // 2026-10-09 (user: Confirm took 3–4 s): the confirm's writes — the
-      // peer release, the card and its siblings, the picks, the receipt —
-      // are one burst: the screens refresh once when all of it has landed
+      // the confirm's writes are one burst, so the screens refresh once when all has landed (Confirm took 3–4 s)
       await repo.batch(async () => {
         if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
         await writeConfirmation({
@@ -2307,22 +1919,18 @@ export function ReviewScreen() {
         await settleReceipt();
       });
       startBulkWalks(queued, receiptWalk);
-      // other billing cycles of a linked recurring pick up their link here —
-      // in an idle moment, off the tap's path (2026-10-09); a confirm that
-      // linked none leaves nothing to adopt (#554: it re-read the space after every card)
+      // other billing cycles of a linked recurring adopt the link in an idle moment, off the tap's path (#554)
       if (recurringId || draft.splits?.some((s) => !!s.recurringId)) runWhenIdle(() => void recurringOps.reconcile().catch(() => undefined));
       // what this card taught reaches the cards still waiting: no stored input shows that the memory moved
       if ((queue?.length ?? 0) > 1) requestReviewSuggestions(spaceId);
       logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
-      hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+      hapticNotify('SUCCESS');
     } finally {
       confirming.current = false;
     }
   };
   const confirm = () => measure('review.confirm', runConfirm);
 
-  // #268: one queue step — the sibling gets the whole decision through
-  // the same sibling-field mapper bulk uses, plus its OWN peer on a pick
   const resolveCounterBulk = async (item: SpaceTx, peerId: string | null) => {
     if (!counterBulk) return;
     await transform(
@@ -2341,12 +1949,10 @@ export function ReviewScreen() {
 
   const emptyBecauseSkipped = queue && queue.length > 0 && remaining?.length === 0;
 
-  // desktop affordances (D5): Enter confirms, ←/→ skips to the next card —
-  // never while a sheet is open or the focus sits in an input
+  // desktop: Enter confirms, ←/→ skips — never while a sheet is open or the focus sits in an input
   useEffect(() => {
     if (!tx) return;
     const onKey = (e: KeyboardEvent) => {
-      // #268 r2 (user): the held deck ignores the keyboard too
       if (counterBulk || receiptBulk) return;
       if (document.querySelector('dialog[open], [role="dialog"]')) return;
       const el = e.target as HTMLElement | null;
@@ -2376,15 +1982,12 @@ export function ReviewScreen() {
         }
         trailing={<HelpButton tourId="review" />}
       />
-      {/* quiet progress line under the bar */}
       <div className="h-0.5 shrink-0 bg-bg-2">
         <div className="h-full bg-accent transition-[width]" style={{ width: `${progress * 100}%` }} />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
-        {/* the first-time nudge must come BEFORE the user works the deck,
-            not after it (user bug report) — it's one dismissible line and
-            never returns once seen */}
+        {/* the first-time nudge comes BEFORE the user works the deck; one dismissible line, never returns */}
         <IntroCard tourId="review" />
         <ReadOnlyNote className="mt-3" testId="review-readonly-note" />
         {!tx && queue && !emptyBecauseSkipped && (
@@ -2404,17 +2007,10 @@ export function ReviewScreen() {
           </div>
         )}
         {tx && (
-          /* D3 focus layout: the deck becomes a fixed 520px column,
-             horizontally centered; #151 (user): TOP-anchored — vertical
-             centering made the card float mid-screen. The pickers slide
-             in as dimmed right-hand panels, so the card stays visible
-             while editing. Skip/Confirm attach under the card instead
-             of the far bottom. #151 r2: "desktop" starts where the
-             SIDEBAR does (md), not at lg — a 900px window kept the
-             mobile bottom-pinned buttons. */
+          /* desktop starts where the SIDEBAR does (md), not lg: 900px kept the mobile bottom-pinned buttons;
+          TOP-anchored, since vertical centering floated the card mid-screen (#151) */
           <div
-            /* #268 r2 (user): a held deck is inert — the queue sheet owns
-               the screen; no edit or skip reaches the frozen card */
+            /* a held deck is inert: the queue sheet owns the screen (#268) */
             className={`relative flex min-h-0 flex-1 flex-col md:mx-auto md:w-[520px] md:flex-none md:pb-10${heldDeck.inertCls}`}
           >
             {leavingHtml && (
@@ -2426,26 +2022,20 @@ export function ReviewScreen() {
               />
             )}
             <div key={`card-${tx.id}`} ref={cardRef} data-card-id={tx.id} className="m-card-in">
-            {/* #268 r2 (user): data-held marks the frozen face while the
-                counter queue covers the screen — the deck sits still */}
             <div
               className="mt-4 overflow-hidden rounded-card border border-line bg-surface"
               data-testid="review-card"
               data-held={heldDeck.marker}
             >
-              {/* compact header (user: title + amount were too huge once
-                  the card carries every editable row) */}
               <div className="px-4 pt-3 pb-2.5">
                 <div className="text-[11px] text-ink-4" data-testid="review-card-meta">
                   {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
                   {cardAccount && <span> · {cardAccount.name}</span>}
                 </div>
-                {/* #339 (user): the title WRAPS instead of truncating —
-                    the amount stays aligned to the first line */}
+                {/* the title wraps instead of truncating; the amount stays aligned to the first line (#339) */}
                 <div className="mt-0.5 flex items-start justify-between gap-3">
                   <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink">
                     {txTitle(tx)}
-                    {/* #506 (user): a vague title is one tap from a web search */}
                     <TitleSearchButton query={txTitle(tx)} testId="review-search-web" />
                   </span>
                   <span className="m-num shrink-0 text-[18px] leading-snug text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
@@ -2467,17 +2057,8 @@ export function ReviewScreen() {
               </div>
               <div className="mx-4 h-px bg-line-2" />
 
-              {/* categories first (#219), and — #228 feedback — the
-                  counterparty back as the card's OWN row: counter-first
-                  stages the special category, removal resets it. The
-                  recurring-owned card keeps its category, so no counter
-                  door there; adjustments carry no counterparty at all.
-                  Multi-part (#126 r3): these rows vanish — each PART
-                  carries its own story on the deck. #505: inert where the
-                  space is read-only to this identity */}
+              {/* multi-part: these rows vanish, each part carries its own story (#126); inert where the space is read-only (#505) */}
               <div data-testid="review-cats" inert={readOnlyRegion}>
-                {/* #339 (user re-ruling over #249): the split door leads
-                    now — first question: one story or several? */}
                 {!multiPart && (
                   <button
                     data-testid="review-split-row"
@@ -2500,13 +2081,9 @@ export function ReviewScreen() {
                   counterRequired={counterRequired}
                   counterTx={counterTxRow}
                 />
-                {/* #410: the honest reason the Confirm refused, under the category row */}
                 <FormBlockerNote show={catRequired && !catChosen} text={t('review.catRequired')} testId="review-cat-required" className="px-4 pb-2" />
 
-                {/* #565 (user): the recurring and event rows stand on every
-                    card — disabled where the filing cannot use them. #525:
-                    before any category the recurring row is open, and
-                    linking one files its category at once */}
+                {/* rows stand on every card, disabled where the filing cannot use them (#565); recurring is open pre-category (#525) */}
                 {!multiPart && (
                   <DebtOrRecurringRow
                     enabled={gates.recurring}
@@ -2534,8 +2111,6 @@ export function ReviewScreen() {
                   </button>
                 )}
 
-                {/* user ss 2026-10-05: the receipt row — #496: the row opens
-                    the receipts sheet, its eye the receipt it names */}
                 {!multiPart && receiptRow && (
                   <ReviewReceiptRow
                     row={receiptRow}
@@ -2543,18 +2118,11 @@ export function ReviewScreen() {
                     onAsk={() => setReceiptPickOpen(true)}
                   />
                 )}
-                {/* #547: this bank row was linked to something typed by hand — said here, and undone here */}
                 <EntryReviewRow tx={tx} />
 
-                {/* #324 (user): the note joins the review card — staged
-                    like every other field, written on Confirm, and the
-                    bulk update carries it to the selected siblings */}
                 {!multiPart && (
                   <div className="flex w-full items-start gap-2.5 px-4 py-2.5">
                     <Icon name="note-text-outline" size={18} color="var(--m-ink-3)" style={{ marginTop: 8 }} />
-                    {/* #324 r2 (user): a real white FIELD, not bare text in
-                        the card — the standard input skin; the #327 inset
-                        focus ring draws cleanly on the bg-surface box */}
                     <textarea
                       data-testid="review-notes"
                       value={noteDraft ?? tx.notes ?? ''}
@@ -2572,10 +2140,7 @@ export function ReviewScreen() {
 
               </div>
 
-              {/* contextual offers keep their chip shape under the rows.
-                  #219: the green "between your own accounts" chip is gone
-                  — the category row already names the link, and detaching
-                  lives in the category editor's ask (#218) */}
+              {/* no "between your own accounts" chip: the category row names the link, detaching lives in the ask (#219, #218) */}
               {settleMatch && draft && (
                 <div className="px-4 pb-3" inert={readOnlyRegion}>
                   <Chip
@@ -2594,7 +2159,6 @@ export function ReviewScreen() {
             </div>
 
             <div inert={readOnlyRegion}>
-            {/* #126: the split stands as stacked cards under the main one */}
             {draft && (
               <ReviewPartDeck
                 key={tx.id}
@@ -2602,8 +2166,7 @@ export function ReviewScreen() {
                 rowType={draft.txType}
                 tx={tx}
                 activeEvents={events ?? []}
-                // #289 (user): parts pick freely — a split confirm never
-                // carries the recurring link anyway (container-only)
+                // parts pick freely: a split confirm never carries the recurring link (container-only) (#289)
                 allowedCatIds={undefined}
                 lockedKind={!!ownStamp}
                 recurrings={activeRecs}
@@ -2614,9 +2177,7 @@ export function ReviewScreen() {
               />
             )}
 
-            {/* #237 r2: a PART-level pick silences the bulk offer.
-                #268 (user): a row-level pick keeps it — confirm walks the
-                siblings through their own counter-match queue. */}
+            {/* a PART-level pick silences the bulk offer; a row-level pick keeps it (#237, #268) */}
             {!(draft?.splits ?? []).some((s) => s.transferPeerId) && (
               <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
             )}
@@ -2640,15 +2201,11 @@ export function ReviewScreen() {
                 variant="primary"
                 className="min-w-0 flex-1"
                 data-testid="review-confirm-btn"
-                // r7 + #410 (user): the button stays TAPPABLE — the tap
-                // marks the parts needing attention, or names the missing
-                // category / counterparty under its row. #505: never where
-                // the space is read-only to this identity (the note above says why)
+                // stays TAPPABLE: the tap marks what blocks (#410); never where the space is read-only (#505)
                 disabled={!draft || !canEdit}
                 onClick={() => void confirm()}
               >
                 <span className="truncate">
-                  {/* multi-category: the list above already says it all */}
                   {draft?.catId && !draft.splits?.length && spreadRowCount <= 1
                     ? t('review.confirmAs', { name: catName(cat, t) })
                     : t('review.confirm')}
@@ -2659,37 +2216,26 @@ export function ReviewScreen() {
         )}
       </div>
 
-      {/* #211: the split-TRANSACTION editor — pure money partition; the
-          parts complete their stories on the deck below the card */}
       {tx && draft && (
         <SplitEditorSheet
           open={splitOpen}
-          // #330 (user): closing without Done stands the armed reset down
-          // — the staged decisions survive a cancelled split editor
+          // closing without Done stands the armed reset down (#330)
           onOpenChange={(next) => {
             setSplitOpen(next);
             if (!next) splitResetArmed.current = false;
           }}
           tx={tx}
-          // empty value: the editor itself seeds "current category owns the
-          // full amount + one fresh row" — exactly the add-part start
+          // empty value: the editor seeds the current category with the full amount plus one fresh row
           value={draft.splits}
           seedSingle
           seedCatId={draft.catId}
-          // #330 (user): Done is where the warned reset finally lands —
-          // the split applies onto the untouched baseline, not the draft
           onApply={(splits) => {
             setStagedDraft(withSplits(takeSplitResetBase() ?? draft, splits ?? undefined));
           }}
           onApplySingle={(catId) => stageSingleCategory(catId, takeSplitResetBase())}
         />
       )}
-      {/* #211: the split-CATEGORIES editor — the chip's door. One entry
-          is a plain category pick (a lone ◆ pick asks its counterparty
-          inside the editor — the transaction-level answer, #228); a
-          spread stages regular categories and drops the row-level link
-          (a spread means no movement story). A settled `reimbursed`
-          entry is bookkeeping: held aside here, re-attached on stage. */}
+      {/* a spread drops the row-level link; a lone ◆ pick asks its counterparty inside the editor (#211, #228) */}
       {tx && draft && (
         <CatsSheet
           open={catsOpen}
@@ -2698,8 +2244,7 @@ export function ReviewScreen() {
             id: tx.id,
             label: txTitle(tx),
             catId: draft.catId,
-            // #228 feedback: the FULL partition rides in — the sheet
-            // pins settled bookkeeping read-only and nets the gross
+            // the FULL partition rides in: the sheet pins settled bookkeeping read-only and nets the gross (#228)
             cats: draft.cats?.length ? draft.cats : undefined,
             amountCents: Math.abs(tx.amountCents),
             linkedAccountId: draft.linkedAccountId,
@@ -2714,11 +2259,9 @@ export function ReviewScreen() {
           includePct
           excludeAccountId={tx.accountId}
           askDisabled={!!ownStamp}
-          // #275: the create-category door stashes the deck's place —
-          // the detour returns to THIS card with the editor reopened
+          // the create-category detour stashes the deck's place and returns to this card with the editor reopened (#275)
           onCreateCustomNav={() => setReviewReturn({ skippedIds: [...skipped], txId: tx.id, reopenCats: true })}
-          // #339 (user): pick-by-counter — "I know where the money went,
-          // not what to call it": counter-able accounts as filter chips
+          // pick-by-counter: counter-able accounts as filter chips (#339)
           counterPickAccounts={(spaceAccounts ?? [])
             .filter((a) => a.id !== tx.accountId && !a.archived && COUNTERABLE_ACCOUNT_TYPES.has(a.type))
             .map((a) => ({ id: a.id, name: a.name, type: a.type }))}
@@ -2733,8 +2276,7 @@ export function ReviewScreen() {
           }}
         />
       )}
-      {/* r7 (user rule): splitting resets the card's own decisions — a
-          conscious continue, never a silent drop */}
+      {/* splitting resets the card's own decisions: a conscious continue, never a silent drop */}
       <Sheet open={splitResetOpen} onOpenChange={setSplitResetOpen} title={t('split.resetWarnTitle')} size="compact">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] leading-relaxed text-ink-2">{t('split.resetWarnBody')}</p>
@@ -2746,10 +2288,7 @@ export function ReviewScreen() {
           </Button>
         </div>
       </Sheet>
-      {/* #237 r2 (user): pointing at an EXISTING counter transaction
-          turns the pending bulk update off — the other siblings'
-          counterparts can't be predicted; creating new legs bulk-applies
-          fine. The sheet asks before the pick lands. */}
+      {/* pointing at an EXISTING counter transaction turns bulk off: the siblings' counterparts can't be predicted (#237) */}
       <Sheet
         open={pickWarn !== null}
         onOpenChange={(next) => {
@@ -2795,20 +2334,16 @@ export function ReviewScreen() {
           amountCents={tx.amountCents}
           defaultFamily={askDefaultFamily(counterAskCat)}
           counterTypes={askCounterTypes(counterAskCat)}
-          // #237 r3 (user): ONE tap — no fork sheet after the pick; the
-          // card's Counter-transaction row owns the leg question now
+          // ONE tap, no fork sheet after the pick: the Counter-transaction row owns the leg question (#237)
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
           }}
-          // #228 feedback: the card row's remove door — the counterparty
-          // and the category are one fact, so removal resets the pick
+          // removal resets the pick: the counterparty and the category are one fact (#228)
           onDetach={counterRowDoors.onDetach}
         />
       )}
-      {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one
-          (user 2026-10-07: the picker is shared with the transaction detail; a pick here stages it for the confirm;
-          #542: the capture rungs too — a photo attaches at once) */}
+      {/* picker shared with the transaction detail; a pick stages it for the confirm; a photo attaches at once (#542) */}
       {tx && (
         <ReceiptPickSheet
           open={receiptPickOpen}
@@ -2831,7 +2366,6 @@ export function ReviewScreen() {
           <ReceiptCaptureRungs testIdPrefix="review-receipt" busy={receiptBusy} onFile={(file) => void attachReceiptPhoto(file)} />
         </ReceiptPickSheet>
       )}
-      {/* #496: the row's eye — the receipt it names, straight away, read-only */}
       <ReceiptPeekSheet
         open={receiptLookOpen}
         onOpenChange={setReceiptLookOpen}
@@ -2839,12 +2373,7 @@ export function ReviewScreen() {
         currency={tx?.currency ?? 'EUR'}
         testIdPrefix="review-receipt-look"
       />
-      {/* #237 r3: the card row's counter-transaction match sheet —
-          suggestions first, the rest scrollable; create/await resets
-          the pick; a pick with a standing bulk offer warns first.
-          (counterAcct non-null already means the draft carries a link)
-          #268 r2 (user): a held deck folds it away — the queue's own
-          match sheet is the only one on screen */}
+      {/* a held deck folds it away: the queue's own match sheet is the only one on screen (#268) */}
       {tx && counterAcct && !counterBulk && (
         <CounterMatchSheet
           open={counterTxOpen}
@@ -2855,16 +2384,11 @@ export function ReviewScreen() {
           onCreate={resetPickDoor(counterBankFed, false, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
           onWait={resetPickDoor(counterBankFed, true, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
           onPick={(pickedId) => {
-            // #268 (user): a row-level pick no longer stands bulk down —
-            // confirm walks the siblings through their own match queue
             setReleaseStored(false);
             setPickedPeer({ txId: pickedId, linkedId: counterAcct.id });
           }}
         />
       )}
-      {/* #268 (user): the per-sibling counter-match queue a confirmed
-          pick-existing leaves behind — each selected sibling picks its
-          own counter row or links and waits */}
       {counterBulk && (
         <BulkCounterQueue
           queue={counterBulk.items}
@@ -2874,21 +2398,19 @@ export function ReviewScreen() {
           onDone={(resolved) => {
             if (resolved > 0) void logActivity(store, repo, spaceId, 'review', `+${resolved}`);
             setCounterBulk(null);
-            // #495: the receipt walk follows, over the siblings the queue settled — the hold stays
+            // the receipt walk follows over the siblings the queue settled; the hold stays (#495)
             const walk = (pendingReceiptBulk.current ?? []).filter((item) => counterSettled.current.has(item.id));
             pendingReceiptBulk.current = null;
             if (walk.length > 0) {
               setReceiptBulk(walk);
               return;
             }
-            // #268 r2 (user): release the hold — the deferred exit
-            // flight plays now and the deck advances to the next card
+            // release the hold: the deferred exit flight plays now and the deck advances (#268)
             captureLeaving();
             setHeldTx(null);
           }}
         />
       )}
-      {/* #495 (user): the per-sibling receipt walk a bulk confirm leaves behind */}
       {receiptBulk && (
         <BulkReceiptQueue
           queue={receiptBulk}
@@ -2907,8 +2429,7 @@ export function ReviewScreen() {
           selectedId={chosenRecurringId(recMatch, linkRecurring, manualRecId) ?? null}
           currency={tx.currency}
           onPick={(id) => {
-            // the auto-match keeps its toggle semantics: picking it re-arms
-            // the link, "no link" disarms; anything else is a manual pick
+            // the auto-match keeps toggle semantics: picking it re-arms the link, "no link" disarms; anything else is a manual pick
             if (id !== null && id === recMatch?.id) {
               setLinkRecurring(true);
               setManualRecId(null);
@@ -2924,13 +2445,9 @@ export function ReviewScreen() {
           }}
         />
       )}
-      {/* create-and-return: a fresh recurring auto-attaches to this card,
-          prefilled from the transaction itself (user request). onSaved
-          carries the id — sniffing the live-query list after close was a
-          lost race, which is why "create" never actually attached */}
+      {/* onSaved carries the new id: sniffing the live-query list after close was a lost race, so "create" never attached */}
       {recCreating && tx && (
         <RecurringFormSheet
-          // #331 (user): a category picked upfront rides into the form
           initial={{ ...formFromTx(tx), catId: stagedRealCatId(draft?.catId) }}
           onSaved={(id) => {
             if (recMatch) setLinkRecurring(false);
@@ -2955,7 +2472,6 @@ export function ReviewScreen() {
               <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
               {!eventPick && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
-            {/* #537: every event, archived ones labelled after the active, each one peekable */}
             <EventPickList
               events={events ?? []}
               selectedId={eventPick}

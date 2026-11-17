@@ -3,14 +3,7 @@ import type { BuiltinCategory, CatDirection } from './categories';
 import type { Lang } from '@/i18n';
 import type { TxType } from '@/db/types';
 
-/**
- * The operator-published catalog document (admin-catalog design):
- * builtin categories + prediction keywords as versioned CONTENT. The
- * bundled arrays are the baseline every client carries; a fetched
- * document overlays them — renames, additions and tombstones — without
- * an app update. Offline profiles never fetch and keep the baseline of
- * the version they installed (approved ruling #1).
- */
+/** operator-published overlay on the bundled catalog, no app update needed; offline profiles keep their baseline */
 
 export interface CatalogDocCategory {
   id: string;
@@ -33,8 +26,7 @@ export interface CatalogKeywordRule {
   keywords: string[];
 }
 
-/** operator-curated merchant patterns per store (receipts v3 R9): the
- *  auto-matcher's fingerprint improves without an app release */
+/** operator-curated merchant patterns per store (receipts v3 R9): the auto-matcher improves without an app release */
 export interface CatalogStoreRule {
   /** ReceiptSource id, e.g. 'ah' */
   id: string;
@@ -48,15 +40,9 @@ export interface CatalogDoc {
   stores?: CatalogStoreRule[];
 }
 
-/** a builtin whose display name may come from the document */
 export type MergedBuiltin = BuiltinCategory & { names?: Record<Lang, string> };
 
-/**
- * Overlay the document on the bundled baseline:
- * - matching ids override names/icon/color/hidden;
- * - tombstones turn the entry hidden (kept so history still renders);
- * - unknown ids append as new builtin-like categories.
- */
+// tombstones hide rather than remove, so history still renders
 export function mergedBuiltins(doc: CatalogDoc | null | undefined): MergedBuiltin[] {
   if (!doc?.categories?.length) return BUILTIN_CATEGORIES;
   const byId = new Map(doc.categories.map((c) => [c.id, c]));

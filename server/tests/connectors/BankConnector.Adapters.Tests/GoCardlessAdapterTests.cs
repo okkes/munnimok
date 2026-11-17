@@ -13,13 +13,6 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// GoCardless as a party (#414): the institution list the person picks
-/// from, the consent as a redirect answered by the bank's return, the
-/// accounts and transactions over the consent with the identities the
-/// consumer's ingest already keys on, the budget read back, the revoke,
-/// and the operator's inventory of the aggregator account.
-/// </summary>
 public sealed class GoCardlessAdapterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
@@ -34,7 +27,6 @@ public sealed class GoCardlessAdapterTests
          {"id":"ABNAMRO_ABNANL2A","name":"ABN AMRO","transaction_total_days":"90","logo":null}]
         """;
 
-    /// <summary>The aggregator's wire, scripted by path; every answer is the happy one unless a test overrides it.</summary>
     private static StubHttpHandler Wire(Func<RecordedRequest, HttpResponseMessage?>? override_ = null) => new((req, _) =>
     {
         if (override_?.Invoke(req) is { } answer) return answer;
@@ -137,7 +129,7 @@ public sealed class GoCardlessAdapterTests
 
         var some = await adapter.LookupAsync(http, "institution", new LookupQuery { Text = "ing" }, CancellationToken.None);
         Assert.Equal(["ING"], some.Select(o => o.Label));
-        Assert.Equal(1, wire.Count("GET", "/institutions/"));   // the list is cached for the day
+        Assert.Equal(1, wire.Count("GET", "/institutions/"));
 
         var logo = await adapter.LookupLogoAsync(http, "institution", "ING_INGBNL2A", CancellationToken.None);
         Assert.NotNull(logo);
@@ -156,7 +148,6 @@ public sealed class GoCardlessAdapterTests
 
         var result = await Adapter().LoginAsync(ctx, CancellationToken.None);
 
-        // the requisition carries the consumer's return page and an agreement for the institution's full history
         var requisition = wire.Requests.Single(r => r.Method == HttpMethod.Post && r.Path.EndsWith("/requisitions/", StringComparison.Ordinal));
         using var body = JsonDocument.Parse(requisition.Body!);
         Assert.Equal(ReturnUrl, body.RootElement.GetProperty("redirect").GetString());
@@ -169,7 +160,6 @@ public sealed class GoCardlessAdapterTests
         // and for the half year of access the bank grants (#491), not GoCardless's default 90 days
         Assert.Equal(180, agreement.RootElement.GetProperty("access_valid_for_days").GetInt32());
 
-        // the challenge names where to go, where the bank comes back and what to look for
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal(ChallengeType.Redirect, challenge.Type);
         Assert.Equal("https://gc.test/psd2/start/req1/ING", challenge.Url);
@@ -177,7 +167,6 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(reference, challenge.Code);
         Assert.Equal(Now.AddMinutes(20), challenge.ExpiresAt);
 
-        // the consent is the requisition; the material holds it and the accounts with their details, never a secret
         Assert.Equal("ING", result.Account?.DisplayName);
         Assert.Equal("req1", result.Account?.ExternalId);
         Assert.Equal(Now.AddDays(180), result.ExpiresAt);
@@ -189,7 +178,7 @@ public sealed class GoCardlessAdapterTests
         Assert.Contains("NL91ABNA0417164300", result.Material.Extra["accounts"]);
         Assert.Contains("\"detailed\":true", result.Material.Extra["accounts"]);
         Assert.Contains(JobStep.AwaitingHuman, ctx.Steps);
-        Assert.Equal(1, wire.Count("POST", "/token/new/"));   // one token for the whole login
+        Assert.Equal(1, wire.Count("POST", "/token/new/"));
     }
 
     [Fact]
@@ -245,15 +234,13 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal("Betaalrekening", account.DisplayName);
         Assert.Equal("ING_INGBNL2A", account.Institution);    // the lookup's own id: the app fetches the same logo
         Assert.Equal(1000, account.Balance?.Amount.Value);   // closingBooked wins over interimBooked
-        Assert.NotNull(accounts.RefreshedMaterial);            // the details were learned: the session keeps them
+        Assert.NotNull(accounts.RefreshedMaterial);
         Assert.Contains("\"detailed\":true", accounts.RefreshedMaterial.Extra["accounts"]);
         Assert.Equal("api", accounts.Via);
 
-        // the platform re-seals what a fetch learned into the session; the next job carries it
         using var next = new FakeJobContext(wire) { Material = accounts.RefreshedMaterial };
         var since = new DateOnly(2026, 9, 1);
         var transactions = await adapter.FetchAsync(next, new ResourceRequest { ResourceId = "transactions", Since = since }, CancellationToken.None);
-        // the window widens by the settlement lag; the aggregator gets it as date_from
         Assert.Contains("date_from=2026-08-29", wire.Requests.Single(r => r.Path.EndsWith("/accounts/acc1/transactions/", StringComparison.Ordinal)).Query);
         Assert.Equal(["int2", "txid1", "pending:p1"], transactions.Transactions.Select(t => t.ExternalId));
         var outgoing = transactions.Transactions.Single(t => t.ExternalId == "txid1");
@@ -269,9 +256,9 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(new DateOnly(2026, 9, 30), pending.BookedAt);
         Assert.True(transactions.Complete);
         Assert.Contains(next.Notes, n => n.Contains("1 row(s)", StringComparison.Ordinal));
-        Assert.Null(transactions.RefreshedMaterial);            // nothing new learned this time
-        Assert.Equal(1, wire.Count("GET", "/accounts/acc1/details/"));   // details once, over both fetches
-        Assert.Equal(2, wire.Count("GET", "/accounts/acc1/balances/"));  // balances every time
+        Assert.Null(transactions.RefreshedMaterial);
+        Assert.Equal(1, wire.Count("GET", "/accounts/acc1/details/"));
+        Assert.Equal(2, wire.Count("GET", "/accounts/acc1/balances/"));
 
         var quota = Assert.Single(next.Quotas);
         Assert.Equal(4, quota.Limit);
@@ -280,7 +267,6 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(Now, quota.SeenAt);
     }
 
-    /// <summary>#460: a pass over older history names its end as date_to, and today's pending rows - outside its window - stay out of it.</summary>
     [Fact]
     public async Task A_backfill_pass_names_its_end_and_leaves_todays_pending_rows_out()
     {
@@ -322,14 +308,8 @@ public sealed class GoCardlessAdapterTests
         Assert.Null(partial.RefreshedMaterial);
     }
 
-    /// <summary>
-    /// Prod 2026-10-08: ING allows a handful of balance reads per account a
-    /// day, and the second accounts pass of one minute hit the budget. The
-    /// refusal is a fact about the day, not about the consent: the account
-    /// comes back without a balance (the consumer keeps the last one it had),
-    /// the pass goes on, and the transactions — a budget of their own — are
-    /// fetched as ever.
-    /// </summary>
+    /// ING budgets balance reads per account per day (prod 2026-10-08): a refusal is about the day, not the consent,
+    /// so the account comes back without a balance and the pass goes on.
     [Fact]
     public async Task A_balances_budget_refusal_keeps_the_account_without_a_fresh_balance_and_the_transactions_still_come()
     {
@@ -349,7 +329,7 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(["int2", "txid1", "pending:p1"], transactions.Transactions.Select(t => t.ExternalId));
         Assert.Null(Assert.Single(transactions.Accounts).Balance);
         Assert.True(transactions.Complete);
-        Assert.Equal(2, limited.Count("GET", "/accounts/acc1/balances/"));   // asked each time; refused each time, and never fatal
+        Assert.Equal(2, limited.Count("GET", "/accounts/acc1/balances/"));
     }
 
     [Fact]

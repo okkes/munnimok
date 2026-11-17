@@ -5,13 +5,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// What an aggregator session is made of: the consent's id at the party, the
-/// institution it was given for, and the accounts it reaches — with the
-/// details learned about them, so the daily budget is not spent on details
-/// twice. No credential: the operator's key stays in configuration, and a
-/// consent id opens nothing without it.
-/// </summary>
+// no credential: the operator's key stays in configuration and a consent id opens nothing without it
+// account details are kept so the daily budget is not spent on them twice
 internal sealed record ConsentMaterial
 {
     public required string ConsentId { get; init; }
@@ -64,7 +59,6 @@ internal sealed record ConsentMaterial
     }
 }
 
-/// <summary>One account a consent reaches, as the party identifies it, plus what its details said.</summary>
 internal sealed record ConsentAccount
 {
     [JsonPropertyName("id")]

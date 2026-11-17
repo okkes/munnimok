@@ -6,24 +6,9 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The redaction mask, against a real browser, because the defect it exists to
-/// prevent is a fact about how Playwright PAINTS and cannot be reproduced
-/// against a fake.
-///
-/// Observed on a live Albert Heijn login: the relayed hCaptcha arrived with a
-/// black bar across "Klik op de kortste lijn", and the account's owner could
-/// not tell what they were being asked. The cause is not z-order. Playwright
-/// paints each mask into an <c>x-pw-glass</c> element declared
-/// <c>popover: manual</c> - the browser's top layer - from the target's
-/// <c>getBoundingClientRect()</c>. Nothing on the page can be stacked above it,
-/// so the mask for the password field UNDERNEATH a captcha overlay lands
-/// squarely on the question.
-///
-/// These tests pin the way out: conceal the element ourselves so it paints
-/// nothing, and drop only the mask for what we concealed. Revert
-/// <c>ConcealAsync</c> and the first test fails on a black picture.
-/// </summary>
+// Playwright paints each mask in a top-layer x-pw-glass popover, so the mask of a password field under a captcha
+// overlay blacked out the question (seen on an Albert Heijn hCaptcha). The way out: conceal the element ourselves
+// and drop only the mask for what we concealed; reverting ConcealAsync fails the first test
 public sealed class RedactionOverlayTests : IAsyncLifetime
 {
     /// <summary>Distinctive on purpose: any pixel of it proves the overlay was photographed.</summary>
@@ -44,14 +29,8 @@ public sealed class RedactionOverlayTests : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    /// <summary>
-    /// A password field under an overlay must not black out the overlay.
-    ///
-    /// Asserted by comparing against the same page WITHOUT the field: if no
-    /// mask was painted, the two pictures are the same pixels. Both elements
-    /// are absolutely positioned so the concealed input - which keeps its box,
-    /// deliberately, so nothing reflows - cannot move the overlay either way.
-    /// </summary>
+    /// compared with the same page without the field: no mask means identical pixels; both are absolutely positioned
+    /// so the concealed input, which keeps its box so nothing reflows, cannot move the overlay
     [Fact]
     public async Task An_overlay_covering_a_password_field_is_photographed_intact()
     {
@@ -63,15 +42,10 @@ public sealed class RedactionOverlayTests : IAsyncLifetime
         Assert.NotEmpty(withField);
         Assert.NotEmpty(withoutField);
 
-        // Byte-equal, not merely similar: a mask would paint a solid black
-        // rectangle across the middle of one of them.
+        // byte-equal: a mask would paint a solid black rectangle across one of them
         Assert.Equal(withoutField, withField);
     }
 
-    /// <summary>
-    /// The property the mask existed to provide, unchanged: a page still
-    /// holding a secret is not photographed at all, concealment or no.
-    /// </summary>
     [Fact]
     public async Task A_page_still_holding_a_secret_is_refused()
     {
@@ -82,11 +56,7 @@ public sealed class RedactionOverlayTests : IAsyncLifetime
         Assert.Empty(await redactor.CaptureAsync(page, null, CancellationToken.None));
     }
 
-    /// <summary>
-    /// The page is handed back as it was found. An adapter goes on to type
-    /// into this form, so a field left invisible would strand the login in a
-    /// way no error message would explain.
-    /// </summary>
+    /// an adapter goes on to type into this form: a field left invisible would strand the login with no error to explain it
     [Fact]
     public async Task The_field_is_visible_again_afterwards()
     {
@@ -124,10 +94,7 @@ public sealed class RedactionOverlayTests : IAsyncLifetime
         return page;
     }
 
-    /// <summary>
-    /// A password box at a fixed spot, and an opaque panel over it - the shape
-    /// of every login a provider fronts with a captcha.
-    /// </summary>
+    /// the shape of every login a provider fronts with a captcha
     private static string Markup(bool withPassword, string value = "")
     {
         var field = withPassword
@@ -142,11 +109,7 @@ public sealed class RedactionOverlayTests : IAsyncLifetime
             + "</body></html>";
     }
 
-    /// <summary>
-    /// The shared rig's manifest already declares a secret field keyed
-    /// <c>password</c>, which is what the fixture's input is named. Reused
-    /// rather than rebuilt so this test cannot quietly drift from the shape
-    /// every other agent test redacts against.
-    /// </summary>
+    /// the shared rig's manifest already declares a secret keyed password;
+    /// reused so this cannot drift from the other agent tests
     private static ProviderManifest ManifestWithSecret() => TestRig.Manifest;
 }

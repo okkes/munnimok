@@ -3,16 +3,8 @@ using Connector.Kit.AgentProtocol;
 
 namespace Connector.Kit.Hosting.Agents;
 
-/// <summary>
-/// Whether an agent runs the adapter catalogue this control plane runs.
-///
-/// Both sides compute the same digest over the manifests they registered,
-/// so equal digests mean the same adapter code configured the same way -
-/// the same login forms, selectors and record shapes the catalogue
-/// documents. An agent that differs is alive and enrolled and is leased
-/// nothing; one that made no claim is not checked, and every agent this
-/// repository builds makes the claim.
-/// </summary>
+/// equal digests mean the same adapter code configured the same way; a differing agent is leased nothing
+/// an agent that made no claim is not checked
 public static class AgentCatalogue
 {
     public static bool IsStale(AgentCapabilities capabilities, IProviderRegistry registry)

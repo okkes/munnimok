@@ -19,13 +19,11 @@ let db: MunniDB;
 let store: DexieBackend;
 let repo: Repo;
 
-/** a feed row as the ingest writes it */
 const feedRow = (id: string, date: string, amountCents: number, merchant: string, pending = false) =>
   repo.upsert('transaction', FEED, id, {
     accountId: ACCOUNT, date, amountCents, currency: 'EUR', merchant, needsReview: 1, ...(pending ? { pending: 1 as const } : {}),
   });
 
-/** what a person typed on the bank account, in the space */
 const entry = (id: string, date: string, amountCents: number, merchant: string, more: Record<string, unknown> = {}) =>
   repo.upsert('transaction', SPACE, id, {
     accountId: ACCOUNT, date, amountCents, currency: 'EUR', merchant, needsReview: 0, enteredAt: `${date}T09:00:00.000Z`, inBalance: 1, ...more,
@@ -36,7 +34,6 @@ const metaOf = async (txId: string) => store.get('txMeta', txMetaId(SPACE, txId)
 const viewed = async () => (await visibleTransactions(store, SPACE)).sort((a, b) => a.id.localeCompare(b.id));
 const bankRef = async (id: string) => ({ raw: await rowOf(id), feedSpaceId: FEED });
 
-/** #547: a hand-typed entry on a bank account, and the bank's own transaction */
 describe('your entry and the bank’s transaction read as one', () => {
   beforeEach(async () => {
     db = new MunniDB(`munni_entry_link_${++counter}`);
@@ -58,15 +55,12 @@ describe('your entry and the bank’s transaction read as one', () => {
     await feedRow('b1', '2026-11-11', -1250, 'BAGELS & BEANS AMSTERDAM');
     expect(await linkEntries(store, repo)).toBe(1);
 
-    // one transaction: the bank's facts, the entry's story, and what was typed on the side
     const [only, ...rest] = await viewed();
     expect(rest).toEqual([]);
     expect(only).toMatchObject({ id: 'b1', date: '2026-11-11', merchant: 'BAGELS & BEANS AMSTERDAM', catId: 'restaurants', notes: 'with Sam', needsReview: 1 });
     expect(only.entry).toEqual({ id: 'e1', amountCents: -1250, date: '2026-11-10', title: 'Lunch at Bagels' });
     expect(await rowOf('e1')).toMatchObject({ bankTxId: 'b1', deleted: 0 });
-    // a second pass, or another device, links nothing again
     expect(await linkEntries(store, repo)).toBe(0);
-    // the other space of this account never hears of the entry
     expect((await visibleTransactions(store, OTHER)).map((tx) => [tx.id, tx.catId, tx.entry])).toEqual([['b1', undefined, undefined]]);
   });
 
@@ -78,7 +72,6 @@ describe('your entry and the bank’s transaction read as one', () => {
     await linkEntry(store, repo, SPACE, await rowOf('e1'), await bankRef('b1'), false);
     // linked by hand: the row keeps its place outside the review
     expect(await metaOf('b1')).toMatchObject({ catId: 'restaurants', needsReview: 0 });
-    // the person changes their mind about the category while the two are one
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'b1'), { catId: 'coffee', notes: 'on the way' } as never);
 
     await unlinkEntry(store, repo, SPACE, await rowOf('e1'), await bankRef('b1'));
@@ -170,7 +163,6 @@ describe('your entry and the bank’s transaction read as one', () => {
     await entry('old', '2026-11-08', -900, 'Old', { inBalance: 0 });
     expect(await balances(SPACE)).toEqual([103_750, 100_000, 3750]);
     expect(await balances(OTHER)).toEqual([100_000, undefined, undefined]);
-    // the stored balance is the bank's and stays it
     expect((await store.get('account', ACCOUNT))?.balanceCents).toBe(100_000);
 
     // booked by the bank: that entry stops counting; a reserved amount is not in the bank's balance yet
@@ -179,7 +171,6 @@ describe('your entry and the bank’s transaction read as one', () => {
     expect(await linkEntries(store, repo)).toBe(2);
     expect(await balances(SPACE)).toEqual([105_000, 100_000, 5000]);
 
-    // going offline folds what still counts into the balance: the account is hand-kept from then on
     expect(await entriesOnTopOf(store, (await store.get('account', ACCOUNT))!)).toBe(5000);
 
     // the bank's balance moved on three days past the entry: it has clearly passed it

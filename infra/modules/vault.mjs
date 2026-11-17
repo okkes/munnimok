@@ -1,23 +1,8 @@
 import { createCipheriv, createDecipheriv, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { insecureFetch } from './insecure-fetch.mjs';
 
-/**
- * Vaultwarden (Bitwarden-compatible) as code: register the account,
- * purge + import the family's sign-ins as real login items — all the
- * client-side crypto the Bitwarden apps normally do, in node:crypto.
- * User ruling 2026-08-28: the master password is generated and KEPT in
- * the local secret store (readable under Reveal) instead of living only
- * in the operator's head.
- *
- * Crypto shapes (Bitwarden protocol):
- * - master key = PBKDF2-SHA256(password, lower(email), 600k, 32)
- * - master password hash = PBKDF2-SHA256(masterKey, password, 1, 32) b64
- * - stretched master key = HKDF-EXPAND(masterKey, "enc"/"mac") (expand
- *   ONLY — the master key IS the PRK; node's hkdfSync would re-extract)
- * - user symmetric key = 64 random bytes (enc: first 32, mac: last 32),
- *   stored as EncString type 2 under the stretched key
- * - EncString type 2 = "2.iv|ct|mac" (AES-256-CBC + HMAC-SHA256 over iv+ct)
- */
+// the master password is generated and KEPT in the local secret store (readable under Reveal)
+// stretched key = HKDF-EXPAND only: the master key IS the PRK, node's hkdfSync would re-extract
 
 export const KDF_ITERATIONS = 600000;
 
@@ -27,7 +12,6 @@ export const masterKey = (email, password) =>
 export const masterPasswordHash = (key, password) =>
   pbkdf2Sync(key, password, 1, 32, 'sha256').toString('base64');
 
-/** single-block HKDF-EXPAND (L=32): HMAC(prk, info || 0x01) */
 const hkdfExpand = (prk, info) =>
   createHmac('sha256', prk).update(Buffer.concat([Buffer.from(info, 'utf8'), Buffer.from([1])])).digest();
 
@@ -44,7 +28,6 @@ export function encString(keys, plaintext) {
   return `2.${iv.toString('base64')}|${ct.toString('base64')}|${mac.toString('base64')}`;
 }
 
-/** test/verification helper: decrypt an EncString type 2 with the keys */
 export function decString(keys, enc) {
   const [type, rest] = [enc.slice(0, 2), enc.slice(2)];
   if (type !== '2.') throw new Error('unexpected EncString type (only type 2 — AES-CBC + HMAC — is written here)');
@@ -55,7 +38,6 @@ export function decString(keys, enc) {
   return Buffer.concat([decipher.update(ct), decipher.final()]);
 }
 
-/** everything the register endpoint needs, plus the user key for imports */
 export function buildAccount(email, password) {
   const key = masterKey(email, password);
   const hash = masterPasswordHash(key, password);
@@ -80,14 +62,8 @@ export function buildAccount(email, password) {
   return { hash, userKeys, register };
 }
 
-/** {name, username, password, uri, notes} → encrypted Bitwarden cipher */
-/**
- * a login item (type 1) — or, for kind 'note', a secure note (type 2) whose whole text sits in notes.
- * `encryptedFor` is the account's user id: Vaultwarden 1.37+ REQUIRES it on every cipher (serde refuses
- * the body without it, "Invalid user cipher" refuses another id — both a bare 422) and older servers
- * ignore it. Without it every item create failed since the shared stack pulled the newer image, and
- * the platform vault's environment folders were left empty (prod + dev, found 2026-10-09).
- */
+// Vaultwarden 1.37+ REQUIRES `encryptedFor` (the account's user id) on every cipher (a bare 422 otherwise)
+// older servers ignore it
 export const buildCipher = (userKeys, item, { encryptedFor = null } = {}) => ({
   ...(encryptedFor ? { encryptedFor } : {}),
   ...(item.kind === 'note'
@@ -121,7 +97,6 @@ export async function refusalText(res) {
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
 
-/** password-grant login; returns the access token or null on bad creds */
 export async function vaultLogin(base, email, hash, fetchImpl = insecureFetch) {
   const res = await fetchImpl(`${base}/identity/connect/token`, {
     method: 'POST',
@@ -161,7 +136,6 @@ export const vaultPurge = (base, token, hash, fetchImpl = insecureFetch) =>
   });
 
 export const vaultImport = (base, token, payload, fetchImpl = insecureFetch) => {
-  // accepts either a bare cipher array or {ciphers, folders, folderRelationships}
   const body = Array.isArray(payload) ? { ciphers: payload, folders: [], folderRelationships: [] } : payload;
   return fetchImpl(`${base}/api/ciphers/import`, {
     method: 'POST',
@@ -170,7 +144,6 @@ export const vaultImport = (base, token, payload, fetchImpl = insecureFetch) => 
   });
 };
 
-/** GET /api/sync — the account's profile (with its encrypted user key), folders and ciphers */
 export async function vaultSync(base, token, fetchImpl = insecureFetch) {
   const res = await fetchImpl(`${base}/api/sync?excludeDomains=true`, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`vault sync ${res.status}`);
@@ -185,7 +158,6 @@ export function userKeysOf(email, password, profileKey) {
 export const vaultDeleteCipher = (base, token, id, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/ciphers/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
 
-/** POST /api/folders — a folder by its (encrypted) name; the answer carries the folder's id */
 export const vaultCreateFolder = (base, token, encName, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/folders`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: encName }) });
 
@@ -193,15 +165,8 @@ export const vaultCreateFolder = (base, token, encName, fetchImpl = insecureFetc
 export const vaultCreateCipher = (base, token, cipher, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/ciphers`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(cipher) });
 
-/**
- * ONE folder of the vault as code (part 4 of Logto OOBE on the NAS): sign
- * in — register the account when it does not exist yet (signups must be
- * open then) — and replace every item of the named folder with `items`
- * ({name, username, password, uri, notes}); other folders are the
- * operator's and stay untouched. Encrypts with the account's real user
- * key (the profile's, decrypted), so an account made earlier by hand or by
- * the helper reads the items too. Returns {registered, folder, replaced, imported}.
- */
+// other folders are the operator's and stay untouched; items are encrypted with the profile's real user key,
+// so a hand-made account reads them too; registering needs signups open
 export async function vaultReplaceFolder(base, { email, password, folder, items }, fetchImpl = insecureFetch) {
   const account = buildAccount(email, password);
   let token = await vaultLogin(base, email, account.hash, fetchImpl);
@@ -222,9 +187,8 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
   const existing = folders.find((f) => nameOf(f) === folder);
   let folderId = existing ? (existing.id ?? existing.Id) : null;
   if (!folderId) {
-    // Vaultwarden's import endpoint files ciphers only through the folderRelationships of folders it creates in the SAME
-    // call and ignores a cipher's own folderId — a second run through it left every item unfiled (found 2026-09-18).
-    // So: the folder first, then every item on its own with its folderId, which the create endpoint honours.
+    // the import endpoint files ciphers only through folderRelationships of folders it creates in the SAME call
+    // and ignores a cipher's folderId: so the folder first, then every item on its own, which the create endpoint honours
     const made = await vaultCreateFolder(base, token, encString(keys, folder), fetchImpl);
     if (!made.ok) throw new Error(`vault: creating folder ${folder} failed (${made.status})`);
     const body = await made.json().catch(() => ({}));
@@ -237,11 +201,8 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
     if (!folderId) throw new Error(`vault: folder ${folder} has no id after creation`);
   }
   const names = new Set(items.map((it) => it.name));
-  // The NEW items go in first and the old ones go only once their replacement exists: the earlier
-  // delete-then-create order wiped a folder whenever the server refused a create (Vaultwarden 1.37's
-  // required `encryptedFor`, 2026-10-09 — "Logto infra M2M" gone from prod's and dev's folders, the
-  // wizard's Access tab empty). A refused item never throws mid-way either: every other item is still
-  // filed, and the refusals are named at the end, with the server's message.
+  // NEW items go in first, old ones go only once replaced: delete-then-create wiped a folder when a create was refused
+  // a refused item never throws mid-way: the rest are filed, the refusals named at the end
   const userId = syncUserId(sync);
   let imported = 0;
   const refused = [];
@@ -271,13 +232,6 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
   return { registered, folder, replaced, unfiled, imported };
 }
 
-/**
- * Read one folder of the vault back (the wizard's Access tab needs the
- * environment's Logto machine credential the CI bootstrap kept there):
- * sign in, decrypt the folder's items with the account's real user key.
- * Returns [{name, username, password, uri, notes}] — an unknown folder
- * or account yields [].
- */
 export async function vaultReadFolder(base, { email, password, folder }, fetchImpl = insecureFetch) {
   const account = buildAccount(email, password);
   const token = await vaultLogin(base, email, account.hash, fetchImpl);
@@ -310,7 +264,6 @@ export function platformValuesFromItems(items) {
   return out;
 }
 
-/** read the shared stack's folder (creds.folder) and map its items to secret names — what an environment added after the shared stack pulls for itself */
 export async function vaultPlatformValues(base, creds, fetchImpl = insecureFetch) {
   return platformValuesFromItems(await vaultReadFolder(base, creds, fetchImpl));
 }

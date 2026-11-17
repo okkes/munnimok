@@ -1,10 +1,7 @@
 import type { ProviderKind } from './types';
 
-/**
- * A party's picture: the catalogue only HINTS a logo (`logoRef`); the app
- * resolves it against the brand assets it ships and falls back to an icon
- * per kind. The user's own pick (BrandIconPicker) always wins over both.
- */
+// the catalogue only HINTS a logo (logoRef): resolved against shipped brand assets, else a kind icon;
+// the user's own pick wins over both
 const BRAND_ASSETS: Record<string, string> = {
   lidl: 'brands/lidl.svg',
   mediamarkt: 'brands/mediamarkt.svg',
@@ -26,12 +23,8 @@ const SPELLED_NAMES: Record<string, string> = {
   enablebanking: 'Enable Banking',
 };
 
-/**
- * A party's name where no catalogue is at hand (a receipt row's `source`
- * on a demo device, an account row's source line, a group header): the
- * receipt's own merchant when it carries one, else the id spelled out —
- * brand names are not translated.
- */
+// a party's name where no catalogue is at hand (demo receipt source, account source line, group header);
+// brand names are not translated
 export const partyName = (providerId: string): string =>
   SPELLED_NAMES[providerId] ??
   providerId

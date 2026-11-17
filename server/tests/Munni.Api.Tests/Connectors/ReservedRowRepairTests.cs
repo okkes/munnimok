@@ -7,12 +7,7 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// #508: reserved rows nobody tracks any more stood beside their booked twins
-/// for good. Once, every such row goes to a live connection of its account -
-/// whose next complete pass settles it against the bank - or is tombstoned
-/// when no connection reaches the account any more.
-/// </summary>
+// #508: reserved rows nobody tracks any more stood beside their booked twins for good
 public class ReservedRowRepairTests
 {
     private static AppDbContext Db() =>
@@ -58,16 +53,13 @@ public class ReservedRowRepairTests
 
         Assert.Equal(1, await ReservedRowRepair.RunOnceAsync(db, NullLogger.Instance, ct));
 
-        // the live connection now tracks both reserved rows of its account; the booked row is nobody's business
         var tracked = await db.ConnectorPendingTxs.Where(p => p.AccountRefId == "acc_live").Select(p => p.EntityId).OrderBy(id => id).ToListAsync(ct);
         Assert.Equal(["orphan", "tracked"], tracked);
         Assert.False((await db.EntityRows.SingleAsync(r => r.EntityId == "orphan", ct)).Deleted);
         Assert.False((await db.EntityRows.SingleAsync(r => r.EntityId == "booked", ct)).Deleted);
-        // nothing reaches the other account: its reserved row goes, as a tombstone every device pulls
         Assert.True((await db.EntityRows.SingleAsync(r => r.EntityId == "stranded", ct)).Deleted);
         Assert.True(await db.SyncOps.AnyAsync(o => o.SpaceId == "feed-gone" && o.EntityId == "stranded" && o.Deleted, ct));
 
-        // once per database
         await RowAsync(db, "feed-gone", "acct-gone", "later", pending: true);
         Assert.Equal(0, await ReservedRowRepair.RunOnceAsync(db, NullLogger.Instance, ct));
         Assert.False((await db.EntityRows.SingleAsync(r => r.EntityId == "later", ct)).Deleted);

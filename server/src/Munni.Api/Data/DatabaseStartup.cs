@@ -5,12 +5,8 @@ using Npgsql;
 
 namespace Munni.Api.Data;
 
-/// <summary>
-/// Waits for the database server before the start-up migration. Docker brings
-/// a stack back after a daemon or NAS restart without compose's depends_on
-/// order, so the api can start before postgres resolves (#573); crashing on
-/// that left a restart loop that read as a broken deploy.
-/// </summary>
+// Docker restarts a stack without compose's depends_on order, so the api can start before postgres resolves (#573).
+// crashing on that left a restart loop that read as a broken deploy
 public static class DatabaseStartup
 {
     public static async Task WaitForServerAsync(

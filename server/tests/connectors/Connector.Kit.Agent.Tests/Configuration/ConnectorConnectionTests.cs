@@ -1,11 +1,7 @@
 namespace Connector.Kit.Agent.Tests.Configuration;
 
-/// <summary>
-/// One connection is one connector this agent serves. Its name becomes a
-/// directory under the profile root and its base address is where every
-/// call goes, so both are checked before the agent starts rather than
-/// discovered as a crash halfway through an enrollment.
-/// </summary>
+/// the name becomes a directory under the profile root and the base address is where every call goes:
+/// both are checked before the agent starts
 public sealed class ConnectorConnectionTests
 {
     [Fact]

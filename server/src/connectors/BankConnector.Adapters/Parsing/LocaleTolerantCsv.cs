@@ -6,25 +6,13 @@ using Connector.Kit.Normalization;
 
 namespace BankConnector.Adapters.Parsing;
 
-/// <summary>
-/// One logical column and every header text known to mean it.
-/// </summary>
 public sealed record CsvColumnSpec
 {
-    /// <summary>How the reader refers to the column. Never shown to a user.</summary>
     public required string Key { get; init; }
 
-    /// <summary>
-    /// Header texts, in any language. Written as humans write them; the
-    /// reader normalises both sides before comparing, so
-    /// <c>"Af/Bij"</c>, <c>"AF BIJ"</c> and <c>"af-bij"</c> are one alias.
-    /// </summary>
+    // both sides are normalised before comparing: "Af/Bij", "AF BIJ" and "af-bij" are one alias
     public required IReadOnlyList<string> Aliases { get; init; }
 
-    /// <summary>
-    /// When true, the file is unusable without this column and an
-    /// unresolved header is <see cref="ErrorCode.ProviderChanged"/>.
-    /// </summary>
     public bool Required { get; init; } = true;
 }
 
@@ -42,36 +30,16 @@ public sealed record CsvSchema
 
     public required IReadOnlyList<CsvColumnSpec> Columns { get; init; }
 
-    /// <summary>
-    /// <c>03-04-2026</c> is a real date under both readings and they mean
-    /// different months. There is no signal in the file that resolves it, so
-    /// the schema declares the order and the reader never infers it.
-    /// </summary>
+    // 03-04-2026 is a real date under both readings and nothing in the file resolves it:
+    // the schema declares the order, the reader never infers it
     public CsvDateOrder DateOrder { get; init; } = CsvDateOrder.DayFirst;
 }
 
-/// <summary>
-/// A CSV reader for bank exports, which vary in almost everything.
-///
-/// Dutch bank exports differ in column headers (Dutch or English depending
-/// on the user's interface language), in delimiter, in decimal separator
-/// and in date format - sometimes between two exports from the same bank.
-/// So columns are resolved by matching known ALIASES, never by position:
-/// position-based mapping keeps working after a bank inserts a column and
-/// starts writing the wrong data into the right field, which is the
-/// silent-corruption failure this whole codebase is arranged to avoid.
-///
-/// When a required column cannot be resolved the reader fails with
-/// <see cref="ErrorCode.ProviderChanged"/> and NAMES the column, so the fix
-/// is one alias in a list rather than an afternoon with a hex editor.
-/// </summary>
+// columns resolve by ALIAS, never by position: after a bank inserts a column, positions silently write wrong data into the
+// right field; a missing required column fails ProviderChanged naming it
 public static class LocaleTolerantCsv
 {
-    /// <summary>
-    /// Tried in order of how much they distinguish. Semicolon first because
-    /// a Dutch export uses it precisely so that its comma decimal separator
-    /// does not collide.
-    /// </summary>
+    // semicolon first: a Dutch export uses it so its comma decimal separator does not collide
     private static readonly char[] CandidateDelimiters = [';', ',', '\t', '|'];
 
     public static CsvTable Read(string text, CsvSchema schema)
@@ -95,10 +63,8 @@ public static class LocaleTolerantCsv
         {
             var fields = SplitFields(lines[i], delimiter);
 
-            // A short row is a bank omitting trailing empties; a long one is
-            // a quoting bug or a column we have never seen, and guessing
-            // which field moved is exactly the mistake alias matching exists
-            // to prevent.
+            // a short row is a bank omitting trailing empties; a long one is a quoting bug or an unseen column, and guessing which field
+            // moved is what alias matching prevents
             if (fields.Count > headers.Count && fields.Skip(headers.Count).Any(f => !string.IsNullOrWhiteSpace(f)))
             {
                 throw ConnectorException.ProviderChanged(
@@ -114,13 +80,7 @@ public static class LocaleTolerantCsv
     public static CsvTable ReadFile(string path, CsvSchema schema) =>
         Read(File.ReadAllText(path), schema);
 
-    /// <summary>
-    /// Picks the delimiter that resolves the most known columns, then
-    /// resolves the rest against it. Scoring by "how many headers do I
-    /// recognise" rather than "how many fields do I get" is what makes a
-    /// quoted description containing a comma harmless in a
-    /// semicolon-delimited file.
-    /// </summary>
+    // scoring by recognised headers rather than field count keeps a quoted comma harmless in a semicolon-delimited file
     private static (char Delimiter, IReadOnlyList<string> Headers, Dictionary<string, int> Resolved) ResolveHeaders(
         string headerLine, CsvSchema schema)
     {
@@ -154,13 +114,8 @@ public static class LocaleTolerantCsv
         return (bestDelimiter, bestHeaders, bestResolved);
     }
 
-    /// <summary>
-    /// Two passes. Exact normalised equality first, for every column, so a
-    /// short alias can never steal a header a longer one owns - <c>rekening</c>
-    /// must not claim <c>tegenrekening</c>. Only then containment, and only
-    /// where it is unambiguous, which is what lets <c>bedrag</c> resolve
-    /// <c>"Bedrag (EUR)"</c> without a new alias.
-    /// </summary>
+    // exact pass first for every column, so a short alias cannot steal a longer one's header (rekening vs tegenrekening).
+    // containment only after, and only where unambiguous
     private static Dictionary<string, int> Match(List<string> headers, CsvSchema schema)
     {
         var normalized = headers.Select(Normalize).ToList();
@@ -182,7 +137,6 @@ public static class LocaleTolerantCsv
         return resolved;
     }
 
-    /// <summary>Records a header as a column's, unless the search came back empty-handed.</summary>
     private static void Claim(Dictionary<string, int> resolved, bool[] claimed, string key, int index)
     {
         if (index < 0) return;
@@ -191,10 +145,6 @@ public static class LocaleTolerantCsv
         claimed[index] = true;
     }
 
-    /// <summary>
-    /// The first unclaimed header equal to one of the column's aliases, tried
-    /// in the column's order, or -1.
-    /// </summary>
     private static int ExactMatch(List<string> normalized, bool[] claimed, CsvColumnSpec column)
     {
         foreach (var alias in column.Aliases)
@@ -207,10 +157,6 @@ public static class LocaleTolerantCsv
         return -1;
     }
 
-    /// <summary>
-    /// The one unclaimed header containing one of the column's aliases, or -1
-    /// where no alias is contained by exactly one header.
-    /// </summary>
     private static int ContainedMatch(List<string> normalized, bool[] claimed, CsvColumnSpec column)
     {
         foreach (var alias in column.Aliases)
@@ -233,10 +179,7 @@ public static class LocaleTolerantCsv
         return -1;
     }
 
-    /// <summary>
-    /// Case, accents, spacing and punctuation all vary between exports and
-    /// none of them carry meaning, so they are all removed before comparing.
-    /// </summary>
+    // case, accents, spacing and punctuation vary between exports and carry no meaning
     internal static string Normalize(string? header)
     {
         if (string.IsNullOrWhiteSpace(header)) return string.Empty;
@@ -252,12 +195,7 @@ public static class LocaleTolerantCsv
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Splits records, not lines: a quoted description may legitimately
-    /// contain a newline, and treating that as a row boundary shifts every
-    /// subsequent field by one column. Quoting is preserved here and
-    /// resolved by <see cref="SplitFields"/>.
-    /// </summary>
+    // splits records, not lines: a quoted description may contain a newline, and a row break there shifts every later field
     private static List<string> SplitLines(string text)
     {
         var lines = new List<string>();
@@ -299,10 +237,8 @@ public static class LocaleTolerantCsv
         return lines;
     }
 
-    /// <summary>Whether the character after <paramref name="at"/> is this one.</summary>
     private static bool NextIs(string text, int at, char ch) => at + 1 < text.Length && text[at + 1] == ch;
 
-    /// <summary>How many characters the line break at <paramref name="at"/> takes: two for CRLF, one otherwise.</summary>
     private static int LineBreakLength(string text, int at) => text[at] == '\r' && NextIs(text, at, '\n') ? 2 : 1;
 
     private static void AddLine(List<string> lines, StringBuilder record)
@@ -314,11 +250,7 @@ public static class LocaleTolerantCsv
         if (!string.IsNullOrWhiteSpace(line)) lines.Add(line);
     }
 
-    /// <summary>
-    /// RFC 4180 with the tolerances real exports need: text after a closing
-    /// quote is appended rather than rejected, and a doubled quote inside a
-    /// quoted field is one quote.
-    /// </summary>
+    // RFC 4180 with tolerance: text after a closing quote is appended, not rejected
     internal static List<string> SplitFields(string line, char delimiter)
     {
         var fields = new List<string>();
@@ -352,11 +284,6 @@ public static class LocaleTolerantCsv
         return fields;
     }
 
-    /// <summary>
-    /// Appends a quoted run, starting just after its opening quote, with a
-    /// doubled quote read as one - and answers where the line goes on: just
-    /// past the closing quote, or the end of the line when it never closed.
-    /// </summary>
     private static int Quoted(string line, int from, StringBuilder current)
     {
         var i = from;
@@ -399,7 +326,6 @@ public sealed class CsvTable : IReadOnlyList<CsvRow>
 
     public IReadOnlyList<string> Headers { get; }
 
-    /// <summary>Whether an optional column was present in this particular export.</summary>
     public bool HasColumn(string key) => _resolved.ContainsKey(key);
 
     public int Count => _rows.Count;
@@ -411,11 +337,6 @@ public sealed class CsvTable : IReadOnlyList<CsvRow>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
-/// <summary>
-/// One row, addressed by logical column key. Every accessor that cannot
-/// produce a value raises <see cref="ErrorCode.ProviderChanged"/> naming the
-/// column, the row and the offending text.
-/// </summary>
 public sealed class CsvRow
 {
     private static readonly string[] DayFirstFormats =
@@ -452,24 +373,16 @@ public sealed class CsvRow
         Text(key) ?? throw ConnectorException.ProviderChanged(
             $"{_schema.Name}: row {LineNumber} has no value for required column '{key}'");
 
-    /// <summary>
-    /// Amounts go through the kit's parser, which accepts both decimal
-    /// separators but refuses anything genuinely ambiguous. The unit is
-    /// declared, never inferred from the value's shape.
-    /// </summary>
+    // the kit's parser accepts both decimal separators and refuses the ambiguous.
+    // the unit is declared, never inferred from the value's shape
     public long MinorUnits(string key, MoneyUnit unit = MoneyUnit.MajorString) =>
         MoneyParser.ToMinor(Require(key), unit, $"{_schema.Name}: row {LineNumber} column '{key}'");
 
     public long? MinorUnitsOrNull(string key, MoneyUnit unit = MoneyUnit.MajorString) =>
         Text(key) is null ? null : MinorUnits(key, unit);
 
-    /// <summary>
-    /// Some exports sign the amount; others keep the magnitude positive and
-    /// put the direction in a separate <c>Af/Bij</c> column. This reads the
-    /// second shape - and refuses an unrecognised indicator rather than
-    /// defaulting to credit, because a silently inverted sign is the single
-    /// most damaging thing a bank parser can do.
-    /// </summary>
+    // reads the separate Af/Bij shape; an unrecognised indicator is refused, never defaulted to credit: a silently inverted sign
+    // is the most damaging thing a bank parser can do
     public long SignedMinorUnits(string amountKey, string indicatorKey, MoneyUnit unit = MoneyUnit.MajorString)
     {
         var magnitude = Math.Abs(MinorUnits(amountKey, unit));

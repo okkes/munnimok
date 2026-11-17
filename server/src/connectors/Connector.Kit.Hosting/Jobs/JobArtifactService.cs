@@ -7,24 +7,9 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// What a failed run leaves behind, and who may look at it (#441 L1).
-///
-/// An agent that fails a job sends the last picture of the page and a digest
-/// of its shape - the two things that make a broken adapter fixable without
-/// spending somebody's real sign-in on each guess. Until now they went to a
-/// temp directory outside production and nowhere inside it, which is where
-/// the failures worth reading happen.
-///
-/// Whose picture it is decides what happens to it. The operator's own runs -
-/// the lab's, a canary's - are retained at once: there is nobody to ask. A
-/// person's run is held PENDING, readable by nobody, until that person says
-/// the operator may see it: the app asks "report this failure?" beside the
-/// error. Yes retains it for a month; no deletes it on the spot; no answer
-/// inside the consent window deletes it too. A pending picture is served by
-/// no route, so the operator sees exactly the failures people chose to report
-/// and nothing else.
-/// </summary>
+// failure pictures (#441 L1): operator runs (lab, canary) are retained at once.
+// a person's is PENDING, served by no route, until they consent
+// yes retains for the retention period; no, or no answer inside the consent window, deletes it
 public sealed class JobArtifactService(
     ConnectorDbContext db,
     IOptions<ConnectorOptions> options,
@@ -33,19 +18,13 @@ public sealed class JobArtifactService(
 {
     private readonly ConnectorOptions _options = options.Value;
 
-    /// <summary>Whether a job's trigger makes its pictures the operator's own rather than a person's.</summary>
     public static bool IsOperatorRun(JobRow job)
     {
         ArgumentNullException.ThrowIfNull(job);
         return job.Trigger is JobRow.LabTrigger or JobRow.CanaryTrigger;
     }
 
-    /// <summary>
-    /// Keeps what the agent sent: retained for the operator's own run, pending
-    /// the person's answer otherwise. Never fatal - this is diagnostics, and a
-    /// picture that cannot be kept must not turn a job that already failed
-    /// into a request that also fails.
-    /// </summary>
+    // never fatal: diagnostics must not turn an already failed job into a failing request
     public async Task KeepAsync(JobRow job, FailureArtifacts artifacts, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -93,18 +72,10 @@ public sealed class JobArtifactService(
             job.Id, job.ProviderId, row.Status, LogSafe.Line(row.DomDigest ?? "-"), row.Screenshot?.Length ?? 0);
     }
 
-    /// <summary>
-    /// The job whose picture waits on this person's answer, if any, newest
-    /// first - what a view carries so the consumer knows to ask.
-    /// </summary>
     public Task<bool> IsPendingAsync(string jobId, CancellationToken ct) =>
         db.JobArtifacts.AsNoTracking().AnyAsync(a => a.JobId == jobId && a.Status == ArtifactStatus.Pending, ct);
 
-    /// <summary>
-    /// The person said yes: readable by the operator from now until the
-    /// retention runs out. Saying yes twice is one yes; null when the job left
-    /// nothing to share.
-    /// </summary>
+    // saying yes twice is one yes; null when the job left nothing to share
     public async Task<JobArtifactRow?> ShareAsync(string jobId, CancellationToken ct)
     {
         var row = await db.JobArtifacts.FirstOrDefaultAsync(a => a.JobId == jobId, ct);
@@ -122,11 +93,10 @@ public sealed class JobArtifactService(
         return row;
     }
 
-    /// <summary>The person said no - or changed their mind about a yes: gone now, whatever its status.</summary>
+    // no, or a changed mind about a yes: gone now, whatever its status
     public async Task<bool> DeclineAsync(string jobId, CancellationToken ct) =>
         await db.JobArtifacts.Where(a => a.JobId == jobId).ExecuteDeleteAsync(ct) > 0;
 
-    /// <summary>A question nobody answered inside its window, or a report past its month.</summary>
     public async Task<int> SweepAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -138,12 +108,7 @@ public sealed class JobArtifactService(
         db.JobArtifacts.AsNoTracking()
             .FirstOrDefaultAsync(a => a.JobId == jobId && a.Status == ArtifactStatus.Retained, ct);
 
-    /// <summary>
-    /// The screenshot as bytes, within the cap. A page photographed at a
-    /// browser's full size weighs a few hundred kilobytes; a picture past the
-    /// cap is dropped and the digest kept, so a runaway capture cannot make a
-    /// diagnostics table the biggest thing in the database.
-    /// </summary>
+    // a picture past the cap is dropped and the digest kept, so a runaway capture cannot make this the biggest table
     private byte[]? Decode(string jobId, string? encoded)
     {
         if (string.IsNullOrWhiteSpace(encoded)) return null;

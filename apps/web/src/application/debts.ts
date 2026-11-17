@@ -6,12 +6,8 @@ import { isRetiredDefault } from '@/domain/defaultAccounts';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 
-/**
- * #536 (user): the debts some live space HOLDS without an interest rate —
- * each space's own reading of the account (an attachment's type and name),
- * one entry per account. A global account is no loan until a space attaches
- * it as one, so it never asks.
- */
+// #536: each space's own reading of the account (attachment type and name), one entry per account
+// a global account is no loan until a space attaches it as one
 export async function debtsMissingRate(store: StorageBackend): Promise<AccountRow[]> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
   const found = new Map<string, AccountRow>();
@@ -32,8 +28,6 @@ export interface LoanStatus {
   progress: number;
 }
 
-/** the space's tracked liability accounts joined with their live story —
- *  active first, archived (paid off) trailing */
 export function useLoanStatuses(): LoanStatus[] | undefined {
   const accounts = useSpaceAccounts();
   return useMemo(() => {

@@ -9,18 +9,13 @@ import type { ReviewDraft } from '@/domain/reviewDraft';
 import type { ReceiptPick, ReceiptRow } from '@/db/types';
 import type { Catalog } from '@/features/categories/useCategories';
 
-/** the card filed by its receipt's lines: the draft it shows, and the lines it came from */
 export interface ReceiptFiled {
   draft: ReviewDraft;
   picks: ReceiptPick[];
   receiptId: string;
 }
 
-/**
- * #567 (user): a receipt that says the card's own amount files it by its
- * lines — the card shows that filing and Confirm writes it. A category
- * staged by hand outranks it, and so does "no receipt" (no receipt handed).
- */
+/** #567: a receipt saying the card's own amount files it by its lines; a hand-staged category and "no receipt" outrank it */
 export function useReceiptFiled(
   tx: { amountCents: number } | undefined,
   base: ReviewDraft | null,
@@ -37,7 +32,7 @@ export function useReceiptFiled(
   }, [tx, base, staged, receipt, memory, cats]);
 }
 
-/** the lines the confirmed categories came from stay with the receipt: the sheet reopens on them and the next receipt learns from them */
+/** the lines the categories came from stay with the receipt: the sheet reopens on them, the next receipt learns from them */
 export async function keepFiledPicks(
   ops: Pick<ReceiptOps, 'setPicks'>,
   spaceId: string,

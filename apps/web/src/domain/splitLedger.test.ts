@@ -7,9 +7,7 @@ describe('split ledger (SP1)', () => {
   it('paid minus own shares — the books always balance to zero', () => {
     const nets = netPositions(
       [
-        // Anna pays €30 tapas, equal thirds
         { paidByUserId: 'anna', amountCents: 3000, shares: [{ userId: 'anna', cents: 1000 }, { userId: 'ben', cents: 1000 }, { userId: 'carol', cents: 1000 }] },
-        // Ben pays €12 metro for Ben+Carol only
         { paidByUserId: 'ben', amountCents: 1200, shares: [{ userId: 'ben', cents: 600 }, { userId: 'carol', cents: 600 }] },
       ],
       MEMBERS,
@@ -24,7 +22,6 @@ describe('split ledger (SP1)', () => {
     const nets = netPositions(
       [
         { paidByUserId: 'anna', amountCents: 3000, shares: [{ userId: 'anna', cents: 1500 }, { userId: 'ben', cents: 1500 }] },
-        // Ben settles: pays Anna €15
         { paidByUserId: 'ben', amountCents: 1500, shares: [{ userId: 'anna', cents: 1500 }] },
       ],
       ['anna', 'ben'],

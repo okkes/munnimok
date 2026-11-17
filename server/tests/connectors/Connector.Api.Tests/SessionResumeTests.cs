@@ -4,14 +4,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §2.3 and §8 step 4: a stored bundle becomes a short-lived ticket.
-///
-/// The replay defence is the point of the whole custody design. The bundle
-/// lives on the user's device, so it is the one credential an attacker can
-/// realistically obtain - and it has to be useless to anyone but the subject it
-/// was minted for.
-/// </summary>
+// api-spec §2.3 and §8 step 4: the bundle lives on the user's device, so it must be useless to anyone but its subject
 [Collection(ShopApiCollection.Name)]
 public sealed class SessionResumeTests(ShopApiFactory factory)
 {
@@ -40,8 +33,7 @@ public sealed class SessionResumeTests(ShopApiFactory factory)
         Assert.Equal(connection.SessionId, body.Text("session_id"));
         Assert.Equal("active", body.Text("state"));
 
-        // Short on purpose: a ticket is a bearer capability over one connection,
-        // and it never leaves the consuming server.
+        // short on purpose: a ticket is a bearer capability over one connection and never leaves the consuming server
         Assert.InRange(body.GetProperty("expires_in").GetInt32(), 1, 3600);
     }
 
@@ -55,14 +47,9 @@ public sealed class SessionResumeTests(ShopApiFactory factory)
         using var request = Wire.Post($"/v1/{Provider}/sessions/resume",
             new { Subject = thief, Bundle = connection.Bundle });
 
-        // A relay acting for the thief names the thief, in the header as in
-        // the body; the bundle it holds is still the owner's.
         using var response = await http.ActAs(thief).SendAsync(request);
 
-        // The subject is authenticated data on the ciphertext, so the bundle
-        // does not decrypt at all. Every rejection reason - wrong subject, wrong
-        // provider, stale manifest version, expired - is the same answer, so a
-        // caller probing bundles learns nothing from the difference.
+        // the subject is authenticated data on the ciphertext, so every rejection reason gives the same answer
         await ErrorEnvelope.AssertAsync(response, HttpStatusCode.Unauthorized, "session_expired");
     }
 

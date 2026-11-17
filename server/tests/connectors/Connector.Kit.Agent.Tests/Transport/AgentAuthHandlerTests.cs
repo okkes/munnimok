@@ -4,12 +4,7 @@ using Connector.Kit.Agent.Transport;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-/// <summary>
-/// The handler that signs an agent's calls to the control plane: the
-/// enrollment token once the agent has one, nothing before, and never over
-/// an authorization a caller chose itself (the enrollment call carries its
-/// one-time code that way).
-/// </summary>
+// never over an authorization the caller chose itself: the enrollment call carries its one-time code that way
 public sealed class AgentAuthHandlerTests
 {
     private sealed class Capture : HttpMessageHandler

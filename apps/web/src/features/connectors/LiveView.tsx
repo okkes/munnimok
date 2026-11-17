@@ -9,27 +9,9 @@ import { fitFrame, isTap, keyboardInset, nearestScroller } from './liveLayout';
 import { readLiveStream } from './liveStream';
 import type { LiveFrame, LiveInputEvent } from './types';
 
-/**
- * The `live_view` challenge (§10.2): the party's own page, streamed as
- * JPEG frames from the agent's browser, with the human's taps, keys and
- * text relayed back — the clipped page rectangle, never a full viewport.
- * Frames arrive pushed on one stream from the munni API (#429), reopened
- * past the last picture when it drops; where it cannot be held (an API
- * without it, a proxy that buffers it, another viewer of the same login)
- * they are long-polled past the last sequence instead. Input is batched.
- *
- * The frame takes every pixel the sheet leaves it (user request
- * 2026-10-01): the host opens the sheet at full height, the frame is
- * sized to the room that is left after the lines above it and the bar
- * below it, and an open keyboard takes its height off the frame instead
- * of pushing the frame off the screen — so the bar stays reachable and a
- * tap lands where the finger is. See liveLayout.ts.
- *
- * The stream ENDS on the platform's say-so: a poll answered "this live
- * view is over" (the adapter's success signal, or the challenge's expiry)
- * tells the host, which reads the session afresh — nobody is left watching
- * a finished page (the DUO sign-in that went nowhere, user ss 2026-10-01).
- */
+// live_view challenge (§10.2): frames are pushed on one stream (#429), reopened past the last picture; where it cannot
+// be held (API without it, buffering proxy, another viewer of the login) they are long-polled. Layout: liveLayout.ts
+// the view ends on the platform's say-so (a poll answered "over"): the host then reads the session afresh
 const FRAME_IDLE_MS = 400;
 const FRAME_RETRY_MS = 1_500;
 /** opens of the stream that may fail outright before the poll takes over */
@@ -54,21 +36,13 @@ export const liveViewOver = (err: unknown): boolean => {
   return e.status === 410 || e.status === 404 || e.envelope?.code === 'challenge_expired' || e.envelope?.code === 'unsupported_resource';
 };
 
-/** what one poll came back with, and therefore how long to wait before the next */
 type Poll = 'idle' | 'advanced' | 'repeat' | 'retry' | 'over';
 
-/**
- * What one stream came back with: the view is over; it worked and dropped
- * (reopen it); it failed to open (try again a few times); or it cannot be
- * held here at all (the poll from now on).
- */
+/** over; dropped after working (reopen); failed to open (retry a few times); unavailable here (poll from now on) */
 type Stream = 'over' | 'dropped' | 'failed' | 'unavailable';
 
-/**
- * A stream refused before its first byte. Only "over" ends the view here:
- * a 404 is as likely an API without the stream as a session that went, and
- * the poll that takes over tells the two apart.
- */
+// only "over" ends the view on a refused stream: a 404 is as likely an API without the stream as a gone session;
+// the poll that takes over tells them apart
 const streamRefusal = (err: unknown): Stream => {
   const e = err as { status?: number; envelope?: { code?: string } } | null;
   if (e?.status === 410 || e?.envelope?.code === 'challenge_expired') return 'over';
@@ -76,7 +50,6 @@ const streamRefusal = (err: unknown): Stream => {
   return 'failed';
 };
 
-/** what follows one stream that did not end the view: reopen it after a pause, or hand the view to the poll */
 const afterStream = (outcome: Exclude<Stream, 'over'>, failures: number): { streaming: boolean; failures: number; pauseMs: number } => {
   if (outcome === 'dropped') return { streaming: true, failures: 0, pauseMs: STREAM_REOPEN_MS };
   if (outcome === 'failed' && failures + 1 < STREAM_ATTEMPTS) {
@@ -85,11 +58,7 @@ const afterStream = (outcome: Exclude<Stream, 'over'>, failures: number): { stre
   return { streaming: false, failures, pauseMs: 0 };
 };
 
-/**
- * The pause after a poll. A picture already shown (a relay that lost the
- * sequence header) is kept at the idle pace: re-asking at once is the
- * storm that drained the whole API into 429s (user ss 2026-10-01).
- */
+// a picture already shown is kept at the idle pace: re-asking at once was the storm that drained the API into 429s
 const pauseAfter = (outcome: Poll, elapsedMs: number): number => {
   if (outcome === 'advanced') return Math.max(0, MIN_POLL_GAP_MS - elapsedMs);
   if (outcome === 'retry') return FRAME_RETRY_MS;
@@ -113,7 +82,6 @@ export function LiveView({
   prompt?: string;
   /** the close affordance: a full-height sheet leaves no backdrop to tap and no handle to drag */
   onClose?: () => void;
-  /** the platform ended the stream — the host reads the session again */
   onEnded?: () => void;
   /** the page's own size, so the host can give a landscape page a wider dialog */
   onFrame?: (size: { width: number; height: number }) => void;
@@ -147,7 +115,6 @@ export function LiveView({
     ended.current?.();
   }, []);
 
-  /** a newer picture on screen; false when it is the one already shown */
   const showFrame = useCallback((frame: LiveFrame): boolean => {
     const advanced = frame.sequence > sequence.current;
     sequence.current = Math.max(sequence.current, frame.sequence);
@@ -161,8 +128,6 @@ export function LiveView({
     return advanced;
   }, []);
 
-  // frames: pushed on one stream while one can be held, each reopen asking
-  // past the last sequence; otherwise one long-poll after another
   useEffect(() => {
     let alive = true;
     const opened = new AbortController();
@@ -194,7 +159,6 @@ export function LiveView({
     };
     let streaming = true;
     let failures = 0;
-    /** one stream, then what follows it; false once the view is over or gone */
     const streamStep = async (): Promise<boolean> => {
       const outcome = await streamOnce();
       if (!alive) return false;
@@ -233,7 +197,6 @@ export function LiveView({
     };
   }, [provider, sessionId, challengeId, showFrame, finish]);
 
-  // input: whatever gathered since the last flush goes as one batch
   useEffect(() => {
     const timer = setInterval(() => {
       if (queue.current.length === 0 || over.current) return;
@@ -245,8 +208,6 @@ export function LiveView({
     return () => clearInterval(timer);
   }, [provider, sessionId, challengeId, finish]);
 
-  // the frame's box: the room the scroller has, minus the head, the bar,
-  // the gaps and the keyboard — remeasured whenever any of those move
   const measure = useCallback(() => {
     const el = root.current;
     if (!el) return;

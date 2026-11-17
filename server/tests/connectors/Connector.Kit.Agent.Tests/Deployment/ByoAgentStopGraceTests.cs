@@ -3,20 +3,8 @@ using System.Text.RegularExpressions;
 
 namespace Connector.Kit.Agent.Tests.Deployment;
 
-/// <summary>
-/// The BYO container is given long enough to stop the way the agent stops.
-///
-/// <para>
-/// <c>AgentHost.StopAsync</c> drains in-flight jobs for
-/// <c>ShutdownDrainTimeout</c> and then gives aborted ones
-/// <c>ShutdownAbortGrace</c> to report upstream - twenty-eight seconds on
-/// the defaults. Docker's own grace is ten, after which it SIGKILLs the
-/// process: for this container that is a Chromium killed with the profile
-/// open, and the profile is the bank session the whole file exists to keep.
-/// The compose file says 45s; this is what stops somebody trimming it back
-/// to a number that looks tidier and is eighteen seconds too short.
-/// </para>
-/// </summary>
+/// StopAsync takes 28 s on defaults (drain plus abort grace); Docker's 10 s SIGKILLs a Chromium with the profile
+/// open, which is the bank session the file exists to keep: the compose file's 45s must not be trimmed
 public sealed partial class ByoAgentStopGraceTests
 {
     [Fact]
@@ -35,23 +23,8 @@ public sealed partial class ByoAgentStopGraceTests
             + $"{Needed.TotalSeconds}s; Docker would SIGKILL a Chromium mid-drain with the profile open");
     }
 
-    /// <summary>
-    /// And no service quietly takes it back.
-    /// </summary>
-    /// <remarks>
-    /// The check above reads the FILE: it passes on a 45s written anywhere,
-    /// including one in a comment or on a service that is not the one running.
-    /// This reads what each live service ends up with, which is the number
-    /// Docker actually uses - a <c>stop_grace_period</c> written inside a
-    /// service beats a shared one, and the file's own footer tells people how
-    /// to copy the service block for a second account at one provider, which
-    /// is the copy that arrives without it.
-    /// <para>
-    /// One window is enough for every connector, and that is a property of the
-    /// change rather than luck: the machine runs one job in total rather than
-    /// one per connector, so there is never more than one browser to drain.
-    /// </para>
-    /// </remarks>
+    /// the file check passes on a 45s written anywhere; this reads what each live service ends up with, and a service-level
+    /// stop_grace_period beats a shared one. One window suffices: the machine runs one job in total, so one browser to drain
     [Fact]
     public void No_service_shortens_the_grace_it_inherits()
     {
@@ -76,10 +49,7 @@ public sealed partial class ByoAgentStopGraceTests
         }
     }
 
-    /// <summary>
-    /// Read off the options rather than restated: the numbers are the agent's,
-    /// and a test carrying its own copy would pass when they moved.
-    /// </summary>
+    /// read off the options: a test with its own copy would pass when they moved
     private static TimeSpan Needed
     {
         get
@@ -93,7 +63,6 @@ public sealed partial class ByoAgentStopGraceTests
     [GeneratedRegex(@"^\s*stop_grace_period:\s*(?<seconds>[0-9]+)s\s*$", RegexOptions.Multiline)]
     private static partial Regex StopGrace();
 
-    /// <summary>The value on its own - <c>45s</c> - as a merged service carries it.</summary>
     [GeneratedRegex(@"^(?<seconds>[0-9]+)s$")]
     private static partial Regex WholeSeconds();
 }

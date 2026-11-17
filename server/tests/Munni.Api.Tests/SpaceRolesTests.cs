@@ -61,7 +61,6 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
         var head = (await pull.Content.ReadFromJsonAsync<PullResponse>())!.LatestSeq;
         var push = await reader.PostAsJsonAsync($"/sync/{spaceId}/push", Push(spaceId, "devR"));
         Assert.Equal(HttpStatusCode.Forbidden, push.StatusCode);
-        // #505: the refusal names why, and nothing landed
         Assert.Equal(SpaceRoles.ReadOnlyError, await ErrorOf(push));
         Assert.Equal(head, (await owner.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0"))!.LatestSeq);
     }
@@ -73,7 +72,6 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
         return g[..14] + '5' + g[15..];
     }
 
-    /// <summary>an owner's space with a reader in it</summary>
     private async Task<(HttpClient Owner, HttpClient Reader, string SpaceId)> SpaceWithReader(string tag)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
@@ -213,15 +211,12 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
         await Befriend(owner, friend, friendId);
         await InviteAndAccept(owner, friend, spaceId, friendId, "contributor");
 
-        // sole owner cannot demote themself
         var selfDemote = await owner.PutAsJsonAsync($"/spaces/{spaceId}/members/{ownerId}/role", new ChangeRoleRequest("reader"));
         Assert.Equal(HttpStatusCode.BadRequest, selfDemote.StatusCode);
 
-        // non-owner cannot change roles
         Assert.Equal(HttpStatusCode.Forbidden,
             (await friend.PutAsJsonAsync($"/spaces/{spaceId}/members/{friendId}/role", new ChangeRoleRequest("owner"))).StatusCode);
 
-        // transfer: promote friend to owner, then the original owner may step down
         Assert.True((await owner.PutAsJsonAsync($"/spaces/{spaceId}/members/{friendId}/role", new ChangeRoleRequest("owner"))).IsSuccessStatusCode);
         Assert.True((await owner.PutAsJsonAsync($"/spaces/{spaceId}/members/{ownerId}/role", new ChangeRoleRequest("reader"))).IsSuccessStatusCode);
 
@@ -230,7 +225,6 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
         Assert.Equal("owner", roles[friendId]);
         Assert.Equal("reader", roles[ownerId]);
 
-        // invalid role rejected by validation
         Assert.Equal(HttpStatusCode.BadRequest,
             (await friend.PutAsJsonAsync($"/spaces/{spaceId}/members/{ownerId}/role", new ChangeRoleRequest("admin"))).StatusCode);
     }
@@ -249,7 +243,6 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
         await Befriend(owner, friend, friendId);
         await InviteAndAccept(owner, friend, spaceId, friendId, "contributor");
 
-        // owner leaves -> the remaining contributor becomes owner
         Assert.True((await owner.DeleteAsync($"/spaces/{spaceId}/members/{ownerId}")).IsSuccessStatusCode);
         var members = await friend.GetFromJsonAsync<List<MemberDto>>($"/spaces/{spaceId}/members");
         var only = Assert.Single(members!);

@@ -41,18 +41,11 @@ const daysSince = (date?: string | null): number =>
 
 /** #227 r2: matches the m-row-flash animation in styles.css */
 const FLASH_MS = 1600;
-/** #227 r3: settle-watch cadence — the rect holding still for two
- *  consecutive checks reads as "the scroll stopped" */
 const SETTLE_POLL_MS = 100;
 const SETTLE_QUIET_CHECKS = 2;
-/** …and a hard cap so a tap that needs no scroll still pulses promptly */
 const SETTLE_MAX_MS = 1500;
-/** whatever is pending per row — a settle watch or a running pulse —
- *  so a re-tap mid-flight cancels cleanly (WeakMap: removed rows drop) */
 const flashCleanups = new WeakMap<HTMLElement, () => void>();
 
-/** nearest overflow ancestor that actually scrolls (the screen's list
- *  column here, but resolved generically — isClippedFromView-style walk) */
 function scrollAncestorOf(el: HTMLElement): HTMLElement | null {
   for (let node = el.parentElement; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node);
@@ -61,8 +54,7 @@ function scrollAncestorOf(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/** the pulse itself — reflow first, so a re-tap after settle RESTARTS
- *  the CSS animation instead of dying on the already-set attribute */
+/** reflow first, so a re-tap after settle restarts the CSS animation */
 function startFlashPulse(target: HTMLElement): void {
   delete target.dataset.flash;
   void target.offsetWidth;
@@ -74,11 +66,8 @@ function startFlashPulse(target: HTMLElement): void {
   flashCleanups.set(target, () => window.clearTimeout(timer));
 }
 
-/** #227 r3 (user): the pulse waits for the smooth scroll to SETTLE —
- *  started together, the highlight was nearly gone by the time the row
- *  arrived. 'scrollend' answers precisely where supported; the
- *  rect-stability poll covers the rest, including the tap that needs no
- *  scroll at all (which never fires 'scrollend'). */
+// #227: the pulse waits for the smooth scroll to settle, else it is nearly gone on arrival; a tap needing no scroll
+// never fires 'scrollend', so a rect-stability poll covers it
 function watchScrollSettle(target: HTMLElement, onSettled: () => void): void {
   const scroller = scrollAncestorOf(target);
   let lastTop = target.getBoundingClientRect().top;
@@ -107,13 +96,9 @@ function watchScrollSettle(target: HTMLElement, onSettled: () => void): void {
   flashCleanups.set(target, teardown);
 }
 
-/** #227 r2: the echo's jump scrolls to the real row AND pulses it —
- *  on a long list the smooth scroll alone left the eye searching */
 function flashJumpTarget(accountId: string): void {
   const target = document.getElementById(`acct-row-${accountId}`);
   if (!target) return;
-  // cancel whatever is in flight: a mid-scroll re-tap restarts the
-  // watch, a post-settle one restarts the pulse (reflow in startFlashPulse)
   flashCleanups.get(target)?.();
   flashCleanups.delete(target);
   delete target.dataset.flash;
@@ -129,20 +114,17 @@ function AccountRowButton({
 }: {
   entry: GlobalAccount;
   lang: ReturnType<typeof useLang>['lang'];
-  /** #212 r2: only SPACE-owned rows name a type — a global account is
-   *  just an account; each space gives it its own reading at attach */
+  /** #212: only space-owned rows name a type; a global account gets its reading per space at attach */
   showType?: boolean;
   onOpen: (entry: GlobalAccount) => void;
 }) {
   const { t } = useLang();
   const { fmtSensitive } = useDisplayMoney();
   const { account, feedSpaceId, sharedVia } = entry;
-  // the user's own pick wins over the institution logo (user request)
   const bankLogo = account.logo ?? institutionLogoUrl(account);
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
-  // #248 (user): no auto-attach nag — the unattached state is a quiet
-  // per-row badge instead (rendered below)
+  // #248: no auto-attach nag: the unattached state is a quiet per-row badge
   const unattached = sharedVia.length === 0;
   return (
     <button
@@ -150,8 +132,6 @@ function AccountRowButton({
       onClick={() => onOpen(entry)}
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
     >
-      {/* #212: the TYPE icon rides as a corner badge when a bank logo
-          owns the tile — space-owned rows only (r2) */}
       <span className="relative shrink-0">
         {bankLogo ? (
           <Picture
@@ -189,8 +169,6 @@ function AccountRowButton({
             {t(typeDef(account.type).labelKey)}
           </span>
         )}
-        {/* #227: the "via space x, y" story moved into each space's own
-            section (echo rows) — the top rows say the IBAN instead */}
         {feedSpaceId && unattached && (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
             <span
@@ -214,21 +192,18 @@ function AccountRowButton({
         {!feedSpaceId && account.iban && (
           <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
         )}
-        {/* when the account last heard from its bank/statement (user request) */}
         {account.lastSyncedAt && (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-synced-${account.id}`}>
             {t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) })}
           </span>
         )}
-        {/* export-vs-upload insight (user request): a recent import of an
-            OLD export leaves a silent hole — say where the data ends */}
+        {/* a recent import of an OLD export leaves a silent hole: say where the data ends */}
         {!fetchesItself(account) && daysSince(account.dataThroughDate) > 14 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-datathrough-${account.id}`}>
             {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
-        {/* #240 r3: "synced fine, zero rows" must say so — an empty
-            answer from the bank is a fact, not a healthy silence */}
+        {/* #240: an empty answer from the bank is a fact: "synced, zero rows" must say so */}
         {fetchesItself(account) && account.lastFetchReceived === 0 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-syncempty-${account.id}`}>
             {t('acct.syncEmpty')}
@@ -278,14 +253,11 @@ function AccountSection({
   );
 }
 
-/** one echo per attachment: the entry plus THIS space's link (#305) */
 interface EchoEntry {
   entry: GlobalAccount;
   via: SharedVia;
 }
 
-/** #314 (user): the space's own face leads its subsection — picture
- *  wins, else icon + color circle (the SpaceSwitcher recipe, compact) */
 function SpaceAvatar({ space }: Readonly<{ space?: SpaceRow }>) {
   if (space?.picture) {
     return <SpacePicture space={space} className="h-6 w-6" />;
@@ -303,10 +275,7 @@ function SpaceAvatar({ space }: Readonly<{ space?: SpaceRow }>) {
   );
 }
 
-/** #305 (user): the read-only story of an account someone else shares
- *  into a space — same facts the owner reads (IBAN, type, balance,
- *  freshness, who shared it), none of the levers (no rename, no detach,
- *  no delete: it is not the consumer's account to manage) */
+/** #305: read-only story of an account shared into a space: no rename, detach or delete (not the consumer's to manage) */
 function SharedAccountSheet({
   info,
   onClose,
@@ -359,12 +328,8 @@ function SharedAccountSheet({
   );
 }
 
-/** #227: an inert mirror of a bank-fed account inside the space that
- *  sees it — tapping jumps up to the REAL row, which lives in the top
- *  section (the screen's scroller owns the smooth scroll). #305: for an
- *  account shared WITH me there is no real row anymore — the echo IS
- *  the account's face here: it wears the shared badge, keeps the synced
- *  logo, carries the Archived pill and opens the read-only info sheet. */
+// #227: inert mirror of a bank-fed account, tap jumps to the real row.
+// #305: for a shared account the echo is its only face
 function EchoRow({
   spaceId,
   echo,
@@ -380,12 +345,9 @@ function EchoRow({
   const { t } = useLang();
   const { fmtSensitive } = useDisplayMoney();
   const { account } = echo.entry;
-  // #305 (user): the owner's icon pick lives on the SYNCED account row —
-  // the echo used to draw a hardcoded bank tile, so consumers never saw it
+  // #305: the owner's icon pick lives on the synced account row
   const bankLogo = account.logo ?? institutionLogoUrl(account);
-  // #314 (user): an archived share says WHY — its sharer stopped sharing
-  // (left the space / removed the account); the link's frozen
-  // attachedByName is the one name the data can truthfully speak
+  // #314: an archived share says why: its sharer stopped sharing; the link's frozen attachedByName is the only name known
   let archivedReason: string | null = null;
   if (shared && echo.via.archived) {
     archivedReason = echo.via.attachedByName
@@ -432,8 +394,6 @@ function EchoRow({
           <span className="block truncate text-[11px] text-ink-4">{t(shared ? 'acct.sharedEchoHint' : 'acct.echoHint')}</span>
         )}
       </span>
-      {/* #305: the sharer left — the frozen state lands on the echo now
-          (the retired "Shared with me" section used to carry this pill) */}
       {echo.via.archived && (
         <span
           className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
@@ -449,11 +409,7 @@ function EchoRow({
   );
 }
 
-/** #227: one space's cluster — real rows first, bank-fed echoes next.
- *  #314 r2 (user): every space is its OWN card again, stacked with no
- *  captions in between — and COLLAPSED to just its face by default: the
- *  header row (avatar + name + chevron) is the toggle. Nothing persists;
- *  every mount starts closed. */
+/** #314: each space is its own card, collapsed on every mount (not persisted); real rows first, bank-fed echoes next */
 function SpaceSection({
   segment,
   space,
@@ -465,7 +421,6 @@ function SpaceSection({
   onOpenShared,
 }: {
   segment: SpaceScopedAccounts;
-  /** the synced space row — the avatar + creator facts (#314) */
   space?: SpaceRow;
   /** the user's own profile name — "created by" only names OTHERS */
   ownName?: string;
@@ -533,7 +488,6 @@ function SpaceSection({
   );
 }
 
-/** #311 r4: one reconcile/merge banner's identity + what its tap opens */
 interface ReconcileOffer {
   name: string;
   imported: number;
@@ -542,8 +496,6 @@ interface ReconcileOffer {
 }
 type ReconcileOfferState = Pick<ReconcileOffer, 'accountIds' | 'merge'>;
 
-/** #314: does a space cluster have anything to show — a live account or
- *  any echo row (archived included) (S2004: out of the component) */
 const sectionHasContent = (
   segment: { spaceId: string; accounts: { account: { archived?: unknown } }[] },
   echoPool: { sharedVia: { spaceId: string }[] }[],
@@ -558,14 +510,10 @@ export function AccountsScreen() {
   // #527: the bank picker of the bank connections below — a Connect door elsewhere arrives with it open
   const [bankPick, setBankPick] = useState(() => takeCatalogueIntent());
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  // the whole import journey lives in StatementImportFlow (extracted
-  // 2026-08-01); this screen only opens its format-pick sheet
   const [importOpen, setImportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
 
-  // party-fed accounts arrive via sync, so there is no local "account
-  // created" moment to hook — reconcile whenever this screen opens
-  // instead (idempotent; rows with links are skipped)
+  // party-fed accounts arrive via sync (no local "created" moment): reconcile whenever this screen opens (idempotent)
   const canEditActive = useCanEdit();
   useEffect(() => {
     // #505: upkeep — a space this identity only reads is reconciled by its writers
@@ -579,38 +527,23 @@ export function AccountsScreen() {
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
-    // ownership source of truth for the global overview (offline: the
-    // undefined set classifies every local feed as mine, which is right
-    // for a single-user device until the fetch lands)
+    // ownership source of truth; offline, the undefined set counts every local feed as mine, right for a single-user device
     void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
   }, [identity?.kind]);
 
-  // GLOBAL overview (user decision): every account I own across all my
-  // spaces and feeds, plus what others share with me via shared spaces
   const global = useGlobalAccounts(myFeedIds);
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
-  // #288 (user): a deleted feed can leave a ghost — an attachment echo
-  // from a member space re-asserts the mirror row after /me/feeds has
-  // disowned it, and the row lingered under "Shared with me" answering
-  // no tap and naming no sharer. The bar is a LIVE account row —
-  // archived-only stays (the sharer left; the Archived pill and the
-  // rejoin flow own that state, sync-a6), a tombstoned account drops.
+  // #288: a deleted feed can leave a ghost echo from a member space; only a LIVE account row counts
+  // (archived-only stays: the sharer left)
   const sharedWithMe = useMemo(
-    // a live account row is the bar — archived-only is a DESIGNED state
-    // (the sharer left; the row wears the Archived pill until rejoin)
     () => (global?.sharedWithMe ?? []).filter((e) => e.account.deleted === 0),
     [global],
   );
-  // #227: bank-fed accounts echo (inert) inside each space they feed.
-  // #305: shared-with-me accounts live ONLY here now — the echo is their
-  // face, so the pool keeps carrying them after the section's retirement
+  // #305: shared-with-me accounts live only as echoes, so the pool carries them
   const echoPool = useMemo(() => [...mine, ...sharedWithMe], [mine, sharedWithMe]);
   const sharedIds = useMemo(() => new Set(sharedWithMe.map((e) => e.account.id)), [sharedWithMe]);
-  // #305: the consumer's tap-through — read-only facts, zero levers
   const [sharedInfo, setSharedInfo] = useState<{ entry: GlobalAccount; via: SharedVia } | null>(null);
-  // #305: a space whose only accounts are OTHERS' attachments still owns
-  // a section — the shared echo must always have a home, even while the
-  // space's own (default) account rows are still syncing in
+  // #305: a space holding only others' attachments still owns a section: the shared echo needs a home
   const sections = useMemo(() => {
     const out = [...(global?.spaceScoped ?? [])];
     const known = new Set(out.map((s) => s.spaceId));
@@ -623,21 +556,15 @@ export function AccountsScreen() {
     }
     return out.sort((a, b) => a.spaceName.localeCompare(b.spaceName));
   }, [global, echoPool]);
-  // every attachment of the space, archived included — the frozen state
-  // (the sharer left) surfaces as a pill on the echo row (#305)
   const echoesFor = (spaceId: string): { entry: GlobalAccount; via: SharedVia }[] =>
     echoPool.flatMap((entry) => {
       const via = entry.sharedVia.find((v) => v.spaceId === spaceId);
       return via ? [{ entry, via }] : [];
     });
-  // #314 (user): the subsections come pre-filtered, so an empty cluster
-  // never leaves a bare space header inside the shared segment card
   const renderableSections = useMemo(
     () => sections.filter((segment) => sectionHasContent(segment, echoPool)),
     [sections, echoPool],
   );
-  // …and the space rows carry each subsection's face (#314): the
-  // icon/picture + color, the shared kind and the creator's name
   const spaceRows = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const spacesById = useMemo(() => new Map((spaceRows ?? []).map((s) => [s.id, s])), [spaceRows]);
   // "created by {name}" must stay quiet for the user's own spaces
@@ -649,9 +576,8 @@ export function AccountsScreen() {
     [mine, global],
   );
 
-  // master plan (answer 3, auto-suggest): an account fed by BOTH a bank
-  // connection and statement uploads — or a same-IBAN pair of a linked
-  // and an imported account — offers a reconcile pass (linked = truth)
+  // an account fed by both a bank connection and statement uploads, or a same-IBAN linked+imported pair,
+  // offers reconcile (linked = truth)
   const sourcesByAccount = useQuery(store, async () => {
     const { isImportedRow, isLinkedRow } = await import('@/domain/reconcile');
     const byAccount = new Map<string, { linked: boolean; imported: number }>();
@@ -676,9 +602,7 @@ export function AccountsScreen() {
         claimed.add(entry.account.id);
         continue;
       }
-      // same-IBAN pair: this imported account has a linked twin. #311 r4
-      // (user): the pair stays TWO accounts — the offer is an explicit
-      // MERGE (the reconcile runs inside it), never a silent adoption
+      // #311: a same-IBAN pair stays TWO accounts: the offer is an explicit merge, never a silent adoption
       if (!own?.imported || !entry.account.iban || claimed.has(entry.account.id)) continue;
       const iban = normalizeIban(entry.account.iban);
       const twin = suggestionPool.find(
@@ -703,19 +627,16 @@ export function AccountsScreen() {
   }, [suggestionPool, sourcesByAccount]);
 
   const openEntry = (entry: GlobalAccount) => {
-    // #305: not mine to manage — the read-only story opens instead
-    // (reached via the goto-global handoff; shared rows have no top row)
+    // #305: not mine to manage: the read-only sheet opens (shared rows have no top row)
     if (sharedIds.has(entry.account.id)) {
       const via = entry.sharedVia.find((v) => !v.archived) ?? entry.sharedVia[0];
       if (via) setSharedInfo({ entry, via });
       return;
     }
-    if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
-    else setEditing(entry.account); // the space's own manual row: EditAccountSheet
+    if (entry.feedSpaceId) setAttaching(entry);
+    else setEditing(entry.account);
   };
 
-  // #239 r2 (user): arriving from a space's info sheet with a target —
-  // open that account's sheet the moment the list knows it
   const [openTarget, setOpenTarget] = useState<string | null>(() => takeAccountOpenHandoff());
   useEffect(() => {
     if (!openTarget || !global) return;
@@ -741,8 +662,6 @@ export function AccountsScreen() {
         trailing={
           <>
             <HelpButton tourId="accounts" />
-            {/* #317 (user): the upload icon is gone — the + chooser
-                embeds the statement-import door */}
             <IconButton label={t('acct.addAccount')} testId="accounts-add" onClick={() => setAddOpen(true)}>
               <Icon name="plus" size={22} />
             </IconButton>
@@ -750,16 +669,13 @@ export function AccountsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* #248 (user): the green auto-attach offer is gone — each
-            unattached account wears its own quiet badge instead */}
         {global && mine.length === 0 && sharedWithMe.length === 0 && global.spaceScoped.length === 0 ? (
           <EmptyState
             testId="accounts-empty"
             icon="bank-outline"
             text={t('acct.emptyList')}
             action={
-              // stacked (user ss 2026-08-01): side by side the two
-              // wrapped into ragged two-line pills
+              // stacked: side by side they wrapped into ragged two-line pills
               <div className="flex w-full max-w-[280px] flex-col gap-2">
                 <Button size="sm" onClick={() => setAddOpen(true)}>
                   <Icon name="plus" size={16} />
@@ -794,17 +710,8 @@ export function AccountsScreen() {
                 <Icon name="chevron-right" size={16} />
               </button>
             ))}
-            {/* GLOBAL first (user ruling 2026-07-28): bank connections
-                and statement imports are user-level; manual accounts
-                live inside their space and list under it below.
-                #212 r2: one plain section — a global account has no
-                type of its own, so no assets/liabilities split here */}
+            {/* global first: bank connections and statement imports are user-level, manual accounts live in their space (#212) */}
             <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
-            {/* #305: the global "Shared with me" section retired — a
-                shared account's one face is its echo inside the space
-                that sees it (tap-through info sheet below).
-                #314 r2 (user): one caption, then each space as its OWN
-                collapsed card — a tight stack with nothing in between */}
             {renderableSections.length > 0 && (
               <>
                 <div className="m-cap mt-5 mb-1 px-1">{t('acct.inSpacesCap')}</div>
@@ -833,7 +740,6 @@ export function AccountsScreen() {
         </div>
       </div>
 
-      {/* attach one of my feed accounts to/from my spaces */}
       <AttachSheet
         open={!!attaching}
         onOpenChange={(open) => !open && setAttaching(null)}
@@ -841,17 +747,13 @@ export function AccountsScreen() {
         canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
       />
 
-      {/* the extracted import journey: format pick → preview → result */}
       <StatementImportFlow
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={() => void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined)}
       />
 
-      {/* AE1: the ONE Add-account chooser (intent-routed). Manual is a
-          DOOR here: this screen is the global overview, and manual
-          accounts live inside a space (user ruling 2026-07-28); Connect
-          opens the bank picker of this screen's own bank connections (#527) */}
+      {/* manual is a door here: manual accounts live inside a space; Connect opens this screen's bank picker (#527) */}
       <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} hideManual onImport={() => setImportOpen(true)} onConnect={() => setBankPick(true)} />
 
       <ReconcileSheet
@@ -863,8 +765,6 @@ export function AccountsScreen() {
 
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 
-      {/* #305: consumer's read-only view of an account shared with me —
-          a SIBLING sheet like every other overlay on this screen */}
       <SharedAccountSheet info={sharedInfo} onClose={() => setSharedInfo(null)} lang={lang} />
     </div>
   );

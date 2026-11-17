@@ -35,7 +35,7 @@ async function fixture() {
 const tx = (repo: Repo, id: string, date: string, amountCents: number, catId: string) =>
   repo.upsert('transaction', SPACE, id, { accountId: 'main', date, amountCents, currency: 'EUR', merchant: 'x', catId, needsReview: 0 });
 
-/** the user's own example (2026-10-08): a €1,500 balance, €1,000 of it spent this period on nothing planned */
+/** fixture: a €1,500 balance, €1,000 of it spent this period on nothing planned */
 async function bareFixture() {
   const store = new DexieBackend(new MunniDB(`munni_plan_${Math.random().toString(36).slice(2)}`));
   const repo = new Repo(store, new HlcClock('plan'), { trackOutbox: false });
@@ -72,7 +72,6 @@ describe('planning model (#128)', () => {
     // 110k of it, so 1k (the groceries overspend) is still money to assign, and April's 50k is held elsewhere
     expect(model.startedWithOf(model.plan!)).toBe(205_000 + 11_000 + 100_000);
     expect(model.toAllocateOf(model.plan!)).toBe(205_000 + 1_000 - 50_000);
-    // a period ahead has spent nothing: the pool minus its own funding, never counted twice
     expect(model.startedWithOf(model.ahead[0].plan)).toBe(205_000);
     expect(model.toAllocateOf(model.ahead[0].plan)).toBe(205_000 - 50_000);
     expect(model.ahead).toHaveLength(1);
@@ -85,7 +84,6 @@ describe('planning model (#128)', () => {
     expect(groceries.realizedCents).toBe(11_000);
     expect(groceries.status).toBe('overspent');
     expect(model.attention.map((v) => v.subject.name)).toEqual(['Groceries']);
-    // held for later: nothing left unspent in March (10k funded, 11k spent; rent paid) — April's 50k is funded ahead
     expect(model.heldBySegment.get('expenses')).toBe(0);
     expect(model.heldBySegment.get('recurring')).toBe(0);
     expect(model.aheadFundedCents).toBe(50_000);
@@ -105,7 +103,6 @@ describe('planning model (#128)', () => {
     expect(model.goalPurchasesOf(model.plan!).map((p) => [p.goal.name, p.cents])).toEqual([['Bike', 100_000]]);
     expect(model.startedWithOf(model.plan!)).toBe(150_000);
     expect(model.toAllocateOf(model.plan!)).toBe(150_000);
-    // undone, the purchase is plain category spending again
     await repo.upsert('goal', SPACE, 'bike', { archived: 0, cashOut: null });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.goalPurchasesOf(model.plan!)).toEqual([]);
@@ -115,18 +112,14 @@ describe('planning model (#128)', () => {
   it('the pool reads as what the period started with (user 2026-10-08): the balance plus what already left, assigned by hand', async () => {
     const { store, repo } = await bareFixture();
     stores.push(store);
-    // a €1,500 balance after €1,000 went out this period on nothing planned
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
     let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.poolCents).toBe(150_000);
     expect(model.unplannedOf(model.plan!).map((m) => m.cents)).toEqual([100_000]);
     expect(model.startedWithOf(model.plan!)).toBe(250_000);
     expect(model.toAllocateOf(model.plan!)).toBe(250_000);
-    // Home's safe-to-spend reads funded-and-not-yet-spent per segment: nothing is
     expect([...model.heldBySegment.values()].every((cents) => cents === 0)).toBe(true);
 
-    // groceries went out too (the balance dropped by it): a subject funded 100 over 150 spent hands the
-    // 50 overspend back as money still to assign — what the period started with does not move
     await repo.upsert('account', SPACE, 'main', { balanceCents: 135_000 });
     await tx(repo, 'g1', '2026-03-06', -15_000, 'groceries');
     await repo.upsert('planSubject', SPACE, 'gro', { planId: march, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 10_000 });
@@ -134,18 +127,15 @@ describe('planning model (#128)', () => {
     expect(model.startedWithOf(model.plan!)).toBe(250_000);
     expect(model.toAllocateOf(model.plan!)).toBe(240_000);
     expect(model.viewsOf(model.plan!)[0].status).toBe('overspent');
-    // funding it for what it spent brings the number back down
     await repo.upsert('planSubject', SPACE, 'gro', { fundedCents: 15_000 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.toAllocateOf(model.plan!)).toBe(235_000);
-    // the sandbox of the same period reads the same way over its own copy
     const sandbox = planId(SPACE, 'sandbox', '2026-03-01');
     await repo.upsert('plan', SPACE, sandbox, { kind: 'sandbox', periodStart: '2026-03-01' });
     await repo.upsert('planSubject', SPACE, 'gro-sb', { planId: sandbox, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 15_000 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.toAllocateOf(model.sandbox!)).toBe(235_000);
 
-    // the periods ahead still take their funding off, and read the plain pool themselves
     await repo.upsert('plan', SPACE, april, { kind: 'actual', periodStart: '2026-04-01' });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(april, 'recurring', 'rent'), { planId: april, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 50_000 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
@@ -168,7 +158,6 @@ describe('planning model (#128)', () => {
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
 
     let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
-    // the plan holds nothing: every payment sits under Unplanned, the sources first, in the plan's order
     expect(model.unplannedOf(model.plan!).map((r) => [r.kind, r.cents])).toEqual([
       ['recurring', 100_000],
       ['debt', 25_000],
@@ -179,7 +168,6 @@ describe('planning model (#128)', () => {
     expect(model.startedWithOf(model.plan!)).toBe(started);
     expect(model.toAllocateOf(model.plan!)).toBe(started);
 
-    // the rent becomes a subject, born unfunded: its payment moves from Unplanned into its spending
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'recurring', 'rent'), { planId: march, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 0 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.unplannedOf(model.plan!).map((r) => r.kind)).toEqual(['debt', 'category', 'goal']);
@@ -187,13 +175,11 @@ describe('planning model (#128)', () => {
     expect(model.startedWithOf(model.plan!)).toBe(started);
     expect(model.toAllocateOf(model.plan!)).toBe(started);
 
-    // the loan and the goal too
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'debts', 'loan'), { planId: march, segment: 'debts', order: 0, name: 'Car loan', sourceId: 'loan', fundedCents: 0 });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'goals', 'trip'), { planId: march, segment: 'goals', order: 0, name: 'Trip', sourceId: 'trip', fundedCents: 0 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.unplannedOf(model.plan!).map((r) => r.kind)).toEqual(['category']);
     expect(model.startedWithOf(model.plan!)).toBe(started);
-    // funding the rent for what it paid is the only thing that brings the head down
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'recurring', 'rent'), { fundedCents: 100_000 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.startedWithOf(model.plan!)).toBe(started);
@@ -203,7 +189,7 @@ describe('planning model (#128)', () => {
   it('“already spent” reads the same with or without subjects: an archived loan’s payment counts either way (user 2026-10-23, #557)', async () => {
     const { store, repo } = await fixture();
     stores.push(store);
-    // the user's ING Loan 1: archived, yet its payment left the checking account this period
+    // an archived loan whose payment left the checking account this period
     await repo.upsert('account', SPACE, 'loan1', { name: 'ING Loan 1', type: 'loan', currency: 'EUR', balanceCents: -300_000, source: 'manual', archived: 1, paymentCents: 44_194, paymentEvery: 'month', paymentDay: 10 });
     await repo.upsert('transaction', SPACE, 'p1', { accountId: 'main', date: '2026-03-10', amountCents: -44_194, currency: 'EUR', merchant: 'ING', linkedAccountId: 'loan1', needsReview: 0 });
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
@@ -214,7 +200,6 @@ describe('planning model (#128)', () => {
     const withSubject = model.startedWithOf(model.plan!);
     expect(withSubject).toBe(205_000 + 11_000 + 100_000 + 44_194);
 
-    // funded, then every subject taken back, then gone: the payment moves under Unplanned and the head stays
     await repo.upsert('planSubject', SPACE, subjectId, { fundedCents: 0 });
     await repo.remove('planSubject', SPACE, subjectId);
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
@@ -234,7 +219,6 @@ describe('planning model (#128)', () => {
     expect(views.get('Consumption')).toMatchObject({ realizedCents: 11_000, overlaps: [] });
     expect(views.get('Food')?.realizedCents).toBe(0);
     expect(views.get('Food')?.overlaps).toEqual([{ holder: expect.objectContaining({ subjectId: 'cons', name: 'Consumption' }), catIds: ['groceries'] }]);
-    // the groceries count once in what the period started with — no longer twice
     expect(model.startedWithOf(model.plan!)).toBe(205_000 + 11_000 + 100_000);
     expect(availabilityByCat(model).get('groceries')?.subjectName).toBe('Consumption');
   });
@@ -270,7 +254,6 @@ describe('planning model (#128)', () => {
     await repo.upsert('goalContribution', SPACE, 'c1', { goalId: 'car', amountCents: 30_000, date: '2026-03-10' });
     const model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.viewsOf(model.plan!)[0]).toMatchObject({ targetCents: 30_000, fundedCents: 30_000, realizedCents: 30_000, status: 'funded' });
-    // the period after reads what March left to do: €900 over three periods
     await repo.upsert('plan', SPACE, april, { kind: 'actual', periodStart: '2026-04-01' });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(april, 'goals', 'car'), { planId: april, segment: 'goals', order: 0, name: 'Car', sourceId: 'car', fundedCents: 0 });
     const ahead = buildPlanning(await loadPlanningData(store, SPACE), TODAY).ahead[0];
@@ -309,7 +292,6 @@ describe('planning model (#128)', () => {
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     const rows = model.unplannedOf(model.plan!);
     expect(rows[0]).toMatchObject({ kind: 'category', cents: 100_000, fundedCents: 100_000 });
-    // the rent was not paid yet: its row stands on the money given to it
     expect(rows[1]).toMatchObject({ kind: 'recurring', sourceId: 'rent', name: 'Rent', cents: 0, fundedCents: 5_000 });
     expect(model.startedWithOf(model.plan!)).toBe(250_000);
     expect(model.toAllocateOf(model.plan!)).toBe(250_000 - 105_000);
@@ -325,10 +307,8 @@ describe('planning model (#128)', () => {
     await repo.upsert('transaction', SPACE, 'swipe', { accountId: 'card', date: '2026-03-04', amountCents: -2_000, currency: 'EUR', merchant: 'Shop', catId: 'groceries', needsReview: 0 });
     await repo.upsert('transaction', SPACE, 'bill', { accountId: 'main', date: '2026-03-05', amountCents: -5_000, currency: 'EUR', merchant: 'Card', linkedAccountId: 'card', needsReview: 0 });
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
-    // outside the pool the card is a debt: the bill is money that left
     let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.unplannedOf(model.plan!).find((r) => r.kind === 'debt')).toMatchObject({ sourceId: 'card', cents: 5_000 });
-    // ticked into the pool: its balance counts, its spending counts, its bill is a move inside the pool
     await repo.upsert('space', SPACE, SPACE, { planPoolAccountIds: ['main', 'cash', 'card'] });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.poolCents).toBe(200_000 + 5_000 - 20_000);
@@ -344,7 +324,6 @@ describe('planning model (#128)', () => {
     let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.plan).toBeNull();
     expect(model.continuable).toBe(true);
-    // started over this period: the tombstone keeps the start screen
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
     await repo.remove('plan', SPACE, march);
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
@@ -357,7 +336,6 @@ describe('planning model (#128)', () => {
     stores.push(store);
     await repo.upsert('plan', SPACE, february, { kind: 'actual', periodStart: '2026-02-01' });
     await repo.upsert('planSubject', SPACE, 'gro', { planId: february, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 0 });
-    // March went by without a plan; in April February's is still the last one
     const model = buildPlanning(await loadPlanningData(store, SPACE), '2026-04-15');
     expect(model.plan).toBeNull();
     expect(model.pastPlans.map((p) => p.id)).toEqual([february]);
@@ -367,7 +345,6 @@ describe('planning model (#128)', () => {
   it('#557 (user 2026-11-11): what a period leaves unspent stays with a long-cadence cost as funding; a bill due every period hands it back to the pool', async () => {
     const { store, repo } = await fixture();
     stores.push(store);
-    // a yearly insurance due in September, next to the monthly rent
     await repo.upsert('recurring', SPACE, 'ins', { name: 'Insurance', kind: 'fixed', amountCents: 120_000, every: 'year', dueDay: 15, dueMonth: 9, active: 1 });
     const insuranceIn = (plan: string) => mirroredSubjectId(plan, 'recurring', 'ins');
     // February funded the rent twice over and paid it once, and set 10k aside for the insurance
@@ -380,17 +357,14 @@ describe('planning model (#128)', () => {
 
     let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     const [rent, insurance] = model.viewsOf(model.plan!);
-    // the rent is due every month: February's spare 100k is back in the pool, March needs its own
     expect(rent).toMatchObject({ carriedCents: 0, fundedCents: 0, targetCents: 100_000 });
     // the insurance keeps its 10k: it reads as funding, and the target is what it should hold by the end of
     // March — the 10k and a seventh of the 110k still to find before September
     expect(insurance).toMatchObject({ carriedCents: 10_000, fundedCents: 15_000, targetCents: 10_000 + 15_714, status: 'underfunded' });
-    // the rolled-over money is spoken for: March started with 205k + the 111k it spent, and holds 15k
     expect(model.startedWithOf(model.plan!)).toBe(205_000 + 111_000);
     expect(model.toAllocateOf(model.plan!)).toBe(205_000 + 111_000 - 15_000);
     expect(model.heldBySegment.get('recurring')).toBe(15_000);
 
-    // April, planned ahead: what March holds rolls on — its own 3k comes on top, and only that counts as funded ahead
     await repo.upsert('plan', SPACE, april, { kind: 'actual', periodStart: '2026-04-01' });
     await repo.upsert('planSubject', SPACE, insuranceIn(april), { planId: april, segment: 'recurring', order: 0, name: 'Insurance', sourceId: 'ins', fundedCents: 3_000 });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
@@ -398,7 +372,6 @@ describe('planning model (#128)', () => {
     expect(model.ahead[0].fundedCents).toBe(3_000);
     expect(model.toAllocateOf(model.plan!)).toBe(205_000 + 111_000 - 15_000 - 3_000);
 
-    // paid in March after all: the money is used up, nothing rolls into April
     await repo.upsert('transaction', SPACE, 'ins1', { accountId: 'main', date: '2026-03-12', amountCents: -15_000, currency: 'EUR', merchant: 'x', catId: 'housingRent', needsReview: 0, recurringId: 'ins' });
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.ahead[0].views[0]).toMatchObject({ carriedCents: 0, fundedCents: 3_000 });
@@ -419,7 +392,6 @@ describe('planning model (#128)', () => {
       repo.upsert('planSubject', SPACE, mirroredSubjectId(plan, segment, sourceId), { planId: plan, segment, order: 0, name: sourceId, sourceId, fundedCents });
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
     await repo.upsert('plan', SPACE, april, { kind: 'actual', periodStart: '2026-04-01' });
-    // March funds the loan in full, the goal's last 200 and the whole trip; April holds the same subjects, unfunded
     await subjectIn(march, 'debts', 'loan', 15_000);
     await subjectIn(march, 'goals', 'bike', 20_000);
     await subjectIn(march, 'events', 'trip', 30_000);
@@ -433,21 +405,16 @@ describe('planning model (#128)', () => {
     expect(ahead.loan).toMatchObject({ settledAhead: true, status: 'settled', targetCents: 0, fundedCents: 0 });
     expect(ahead.bike).toMatchObject({ settledAhead: true, status: 'settled', carriedCents: 20_000, fundedCents: 20_000, targetCents: 20_000 });
     expect(ahead.trip).toMatchObject({ settledAhead: true, status: 'settled', carriedCents: 30_000, fundedCents: 30_000, targetCents: 30_000 });
-    // nothing of it is April's own funding, and the circle counts none of it
     expect(model.ahead[0].fundedCents).toBe(0);
     expect(model.ahead[0].fraction).toBe(0);
-    // in March itself they read as any funded subject
     const now = byName(model.viewsOf(model.plan!));
     expect([now.loan, now.bike, now.trip].map((v) => [v.settledAhead, v.status])).toEqual([[false, 'funded'], [false, 'funded'], [false, 'funded']]);
 
-    // funding that pays only part of the loan leaves the rest to the period ahead
     await subjectIn(march, 'debts', 'loan', 10_000);
     model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     ahead = byName(model.ahead[0].views);
     expect(ahead.loan).toMatchObject({ settledAhead: false, status: 'underfunded', targetCents: 5_000 });
 
-    // April has started and none of the money went out: the loan asks for its payment again, the goal still
-    // holds what was set aside for it — and reads on what really happened
     const inApril = buildPlanning(await loadPlanningData(store, SPACE), '2026-04-10');
     const then = byName(inApril.viewsOf(inApril.plan!));
     expect(then.loan).toMatchObject({ settledAhead: false, status: 'underfunded', targetCents: 10_000, fundedCents: 0 });

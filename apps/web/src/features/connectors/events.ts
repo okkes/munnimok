@@ -1,12 +1,6 @@
 import type { ConnectorFrame } from './types';
 
-/**
- * The connector frames of `/sync/events`, republished in-process: the
- * sync engine hands every `{ kind: "connector" }` frame here, and a
- * connect flow or a sync in flight subscribes to its own session or job.
- * A frame is the view without its secrets — never a bundle, never data —
- * so a subscriber that needs the bundle still reads the view itself.
- */
+// a frame is the view without secrets (never a bundle): a subscriber that needs the bundle still reads the view itself
 
 type Listener = (frame: ConnectorFrame) => void;
 
@@ -18,7 +12,6 @@ export function publishConnectorFrame(frame: unknown): void {
   for (const listener of listeners) listener(f);
 }
 
-/** frames of one session (or one job, when `jobId` is given); returns unsubscribe */
 export function subscribeConnectorFrames(sessionId: string, listener: Listener, jobId?: string): () => void {
   const scoped: Listener = (frame) => {
     if (frame.sessionId !== sessionId) return;

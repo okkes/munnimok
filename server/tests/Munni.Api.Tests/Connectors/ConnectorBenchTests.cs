@@ -5,12 +5,6 @@ using Munni.Api.Connectors;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The lab's test bench (#441 L2): the operator signs in under the lab
-/// subject, answers what the party asks, fetches a resource and reads the
-/// records back without anything being ingested, keeps the session, flips
-/// it into the party's canary, and disconnects. Behind the admin scope.
-/// </summary>
 public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Admin = "openid profile admin";
@@ -48,7 +42,6 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
         var settled = await AwaitStateAsync(operatorClient, Simple, sessionId, "active");
         Assert.Null(settled["bundle"]);
 
-        // listed as the operator's lab session, with the bundle kept here
         var sessions = await operatorClient.GetFromJsonAsync<JsonArray>("/lab/bench/sessions");
         var mine = sessions!.Single(s => s!["sessionId"]!.GetValue<string>() == sessionId)!;
         Assert.Equal(Simple, mine["provider"]!.GetValue<string>());
@@ -63,7 +56,6 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
         var subject = factory.Read(db => db.LabSessions.Single(s => s.Id == sessionId));
         Assert.StartsWith("sb_v1.", subject.Bundle, StringComparison.Ordinal);
 
-        // a fetch reads the records back; nothing lands in a feed
         using var fetch = await operatorClient.PostAsJsonAsync($"/lab/bench/sessions/{sessionId}/fetch", new { resource = "receipts", @params = new { since = "2026-01-01" } });
         var page = await fetch.Content.ReadFromJsonAsync<JsonObject>();
         Assert.True(fetch.StatusCode == HttpStatusCode.OK, page!.ToJsonString());
@@ -74,16 +66,13 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.DoesNotContain("sb_v1.", page.ToJsonString(), StringComparison.Ordinal);
         Assert.Equal(rowsBefore, factory.Read(db => db.EntityRows.Count()));
 
-        // the job it ran is the lab's own in the history
         var history = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/jobs?provider=mock-store-simple&trigger=lab&kind=fetch");
         Assert.Contains(history!["jobs"]!.AsArray(), j => j!["sessionId"]!.GetValue<string>() == sessionId);
 
-        // a resource the party does not have is the connector's refusal, and the session stays usable
         using var typo = await operatorClient.PostAsJsonAsync($"/lab/bench/sessions/{sessionId}/fetch", new { resource = "reciepts" });
         Assert.Equal(HttpStatusCode.BadRequest, typo.StatusCode);
         Assert.True(factory.Read(db => db.LabSessions.Single(s => s.Id == sessionId).Bundle != null));
 
-        // disconnect signs out at the party and forgets the session here
         using var gone = await operatorClient.DeleteAsync($"/lab/bench/sessions/{sessionId}");
         Assert.True(gone.IsSuccessStatusCode, await gone.Content.ReadAsStringAsync());
         Assert.Empty(factory.Read(db => db.LabSessions.Where(s => s.Id == sessionId).ToList()));
@@ -113,7 +102,6 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
 
         try
         {
-            // the session becomes the canary: the control plane holds the bundle now, the lab row goes
             using var flipped = await operatorClient.PostAsJsonAsync($"/lab/bench/sessions/{sessionId}/canary", new { resource = "receipts", intervalMinutes = 60 });
             var canary = await flipped.Content.ReadFromJsonAsync<JsonObject>();
             Assert.True(flipped.StatusCode == HttpStatusCode.OK, canary!.ToJsonString());

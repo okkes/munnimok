@@ -44,13 +44,11 @@ describe('Periods (demo identity)', () => {
     renderApp('/periods');
     await screen.findByTestId('screen-periods');
     await waitFor(() => expect(screen.getByTestId('periods-value-expense').textContent).toMatch(/€[1-9]/));
-    // the solid series (0) owns every closed period's dot; its first one is the oldest on record
     fireEvent.click(screen.getByTestId('periods-chart-expense-dot-0-0'));
     expect(screen.getByTestId('periods-caption').textContent).not.toBe('This period');
     expect(screen.getByTestId('periods-delta-income').textContent).toBe('the first period on record');
     expect(screen.getByTestId('periods-delta-expense').textContent).toBe('the first period on record');
     expect((screen.getByTestId('periods-older') as HTMLButtonElement).disabled).toBe(true);
-    // one step forward has a period before it to compare with
     fireEvent.click(screen.getByTestId('periods-newer'));
     expect(screen.getByTestId('periods-delta-expense').textContent).not.toBe('the first period on record');
 

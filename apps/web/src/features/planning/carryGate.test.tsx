@@ -58,11 +58,9 @@ describe('when the carry-over may run (#557)', () => {
     await act(async () => {
       await carry.mock.results[0].value;
     });
-    // the plan arrived: nothing left to wait for
     rerender({ ...own, continuable: false });
     expect(result.current).toBe(false);
 
-    // the same screen, now on a shared space this identity only reads, whose plan nobody carried over yet
     rerender({ ...own, canEdit: false, carryKey: 'shared:2026-03-01' });
     expect(result.current).toBe(false);
     expect(carry).toHaveBeenCalledTimes(1);

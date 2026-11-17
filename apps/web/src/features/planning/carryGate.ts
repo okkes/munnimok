@@ -27,7 +27,6 @@ export function useCarryGate(engine: GateEngine | null, unreachable: boolean): b
   return !waiting || gaveUp;
 }
 
-/** runs the carry-over once per space and period, and says whether the screen is still waiting for its plan */
 export function useCarryOver({
   canEdit,
   continuable,

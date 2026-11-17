@@ -10,9 +10,7 @@ namespace Munni.Api.Accounts;
 
 public sealed record RegisterFeedRequest(string FeedSpaceId, string AccountRef);
 public sealed record RegisterFeedResponse(string FeedSpaceId, bool Owned);
-/// <summary>HistoryFrom is the attachment's gate (required — never silently
-/// unlimited); Type is the space's pick for the account, the account row's
-/// own type when absent (AccountTypes)</summary>
+/// HistoryFrom is required, never silently unlimited; Type is the space's pick, else the account row's own type
 public sealed record AttachAccountRequest(string FeedSpaceId, string AccountId, string HistoryFrom, string? Type = null);
 public sealed record AccountLinkDto(
     Guid Id,
@@ -26,12 +24,8 @@ public sealed record AccountLinkDto(
     string? AttachedByName = null);
 public sealed record MyFeedDto(string FeedSpaceId, string AccountRef);
 
-/// <summary>
-/// Shared-accounts P2: feed registration (the ONLY way a feed space is
-/// born — closes the deterministic-id squatting hole, security S1) and
-/// server-authoritative account attachments that derive members' read
-/// access to feeds.
-/// </summary>
+/// the ONLY way a feed space is born (closes deterministic-id squatting, security S1);
+/// attachments derive members' read access
 public static class AccountEndpoints
 {
     public static void MapAccounts(this IEndpointRouteBuilder app)
@@ -61,15 +55,10 @@ public static class AccountEndpoints
         if (existing is not null)
         {
             if (existing.OwnerUserId == me)
-                return Results.Ok(new RegisterFeedResponse(existing.Id, true)); // idempotent reconnect
+                return Results.Ok(new RegisterFeedResponse(existing.Id, true));
 
-            // an ORPHANED feed (its owner row is gone — account deletion /
-            // go-offline left it behind for other readers, or a pre-fix
-            // wipe leaked it) is claimable: without this, the same person
-            // re-importing after a wipe 409s forever on their own IBAN
-            // (staging 2026-07-24). A feed with a LIVING other owner stays
-            // a conflict — the caller falls back to a personal feed id, so
-            // a squatter can never observe another user's data.
+            // an ORPHANED feed (owner row gone) is claimable, else re-importing after a wipe 409s forever on one's own IBAN.
+            // a feed with a LIVING other owner stays a conflict, so a squatter never observes another user's data
             var ownerAlive = await db.Users.AnyAsync(u => u.Id == existing.OwnerUserId);
             if (ownerAlive)
                 return Results.Conflict(new { error = "feed registered by another user" });
@@ -125,15 +114,11 @@ public static class AccountEndpoints
         var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
         if (myRole is null) return Results.Forbid();
         if (!SpaceRoles.CanWrite(myRole)) return SpaceRoles.ReadOnly();
-        // you can only attach accounts you actually have: your own feed
         if (!await FeedAccess.IsFeedOwner(db, me, request.FeedSpaceId))
             return Results.Forbid();
 
-        // #212 r2: the link's type is the SPACE's fact about the account —
-        // the caller's pick when it sends one, else the account row's own
-        // type. Decided here, once, so every copy of this link (the row,
-        // the mirrors the server writes, the DTO a device reconciles from)
-        // carries it from the start.
+        // #212: the link's type is the SPACE's fact about the account: the caller's pick, else the row's own,
+        // decided once so every copy of the link carries it
         var type = request.Type ?? await AccountTypeAsync(db, request.FeedSpaceId, request.AccountId);
 
         var link = await db.SpaceAccountLinks.FirstOrDefaultAsync(l =>
@@ -168,9 +153,7 @@ public static class AccountEndpoints
         }
         catch (DbUpdateException)
         {
-            // two attaches raced the check-then-insert (double-tapped
-            // import, 23505 on the unique link index) — adopt the row the
-            // winner created instead of answering 500 (staging 2026-07-25)
+            // two attaches raced the check-then-insert (double-tapped import, 23505): adopt the winner's row instead of a 500
             db.Entry(link).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
             link = await db.SpaceAccountLinks.FirstAsync(l =>
                 l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
@@ -181,8 +164,6 @@ public static class AccountEndpoints
     private static AccountLinkDto ToDto(SpaceAccountLink link, string? attachedByName = null) =>
         new(link.Id, link.SpaceId, link.FeedSpaceId, link.AccountId, link.AttachedBy, link.HistoryFrom, link.Type, link.Archived, attachedByName);
 
-    /// <summary>the account row's own type as its feed holds it (the global
-    /// fallback every device reads) — the default when the row has none</summary>
     private static async Task<string> AccountTypeAsync(AppDbContext db, string feedSpaceId, string accountId)
     {
         var row = await db.EntityRows.FirstOrDefaultAsync(r =>
@@ -213,7 +194,6 @@ public static class AccountEndpoints
         return Results.Ok();
     }
 
-    /// <summary>Archive the leaver's attachments in a space (member removal / leave).</summary>
     public static async Task ArchiveLinksOnLeaveAsync(AppDbContext db, string spaceId, Guid leavingUserId)
     {
         var links = await db.SpaceAccountLinks
@@ -228,12 +208,10 @@ public static class AccountEndpoints
             link.Archived = true;
             link.ArchivedAtSeq = cursors.GetValueOrDefault(link.FeedSpaceId);
         }
-        // the remaining members' devices learn the state through the synced
-        // mirror row — without this op the archived badge would never render
+        // remaining members' devices learn the state through the synced mirror row; without this op the archived badge never renders
         await WriteMirrorOpsAsync(db, spaceId, links, archived: true);
     }
 
-    /// <summary>Un-archive on rejoin: a returning member's still-owned feeds reconnect automatically.</summary>
     public static async Task ReviveLinksOnJoinAsync(AppDbContext db, string spaceId, Guid joiningUserId)
     {
         var ownedFeeds = db.FeedSpaces.Where(f => f.OwnerUserId == joiningUserId).Select(f => f.Id);
@@ -249,14 +227,8 @@ public static class AccountEndpoints
         await WriteMirrorOpsAsync(db, spaceId, links, archived: false);
     }
 
-    /// <summary>
-    /// The server's own accountLink mirror ops (archive / revive). They
-    /// flip the flag — and complete the row: a mirror that lacks the gate
-    /// or the type gets the link's, so the server never leaves a device
-    /// with a gateless or untyped link. A fact the mirror already holds is
-    /// never re-asserted (#305: a re-minted historyFrom out-HLC'd the real
-    /// one and ratcheted the gate forward, hiding shared history).
-    /// </summary>
+    /// completes the mirror with the link's gate and type when it lacks them, but never re-asserts a held fact
+    /// (#305: a re-minted historyFrom out-HLC'd the real one and ratcheted the gate forward, hiding shared history)
     private static async Task WriteMirrorOpsAsync(AppDbContext db, string spaceId, List<SpaceAccountLink> links, bool archived)
     {
         var space = await db.Spaces.FindAsync(spaceId);
@@ -290,7 +262,6 @@ public static class AccountEndpoints
         await new SyncWriter(db).ApplyAsync(space, null, ops);
     }
 
-    /// <summary>the facts a live mirror row carries — none for a missing or tombstoned row</summary>
     private static HashSet<string> MirrorFields(EntityRow? mirror)
     {
         if (mirror is null || mirror.Deleted) return [];

@@ -13,16 +13,8 @@ import { txTitle } from '@/lib/text';
 
 export type { Insight, InsightInputs, InsightKind, InsightParam, InsightSeverity, InsightTopic } from './insightModel';
 
-/**
- * Insights engine (approved insights design N1, #516) — pure detectors
- * over local data. Quality bar: computable from what we have, a concrete
- * number, one obvious action. A detector below its threshold stays
- * silent; ids encode the subject so a dismissed insight only resurfaces
- * when the situation actually changes. Findings of one kind give the same
- * advice, so they share one card (groupInsights).
- */
-
-// ── leaks ───────────────────────────────────────────────────────────────
+// #516: a detector below its threshold stays silent
+// ids encode the subject so a dismissed insight returns only when the situation changes
 
 /** a subscription that SUSTAINABLY charges more than it used to (min €0.50/mo); fixed costs answer to billChanged */
 export function priceCreep(inputs: InsightInputs): Insight[] {
@@ -58,7 +50,6 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-/** two or more active subscriptions filed under the same category (two streaming services, two gyms) */
 export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
   const groups = new Map<string, RecurringRow[]>();
   for (const rec of inputs.recurrings) {
@@ -91,7 +82,6 @@ export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-/** a repeated small purchase at the same merchant (≥8× in the period) */
 export function smallHabit(inputs: InsightInputs): Insight[] {
   const period = inputs.periods.at(-1);
   if (!period) return [];
@@ -130,16 +120,12 @@ export function smallHabit(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-// ── patterns ────────────────────────────────────────────────────────────
-
-/** a budget's cycles in a year — a weekly budget overshoots 52 times */
 const budgetCyclesPerYear = (budget: BudgetRow, inputs: InsightInputs): number => {
   if (budget.every === 'week') return 52;
   if (budget.every === '2weeks') return 26;
   return budget.every === 'period' ? PERIODS_PER_YEAR[inputs.space?.periodType ?? 'month'] : 12;
 };
 
-/** a budget that overshot three periods in a row wants a realistic limit */
 export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const budget of inputs.budgets) {
@@ -170,9 +156,6 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-// ── debts ───────────────────────────────────────────────────────────────
-
-/** the tracked debts that still owe, as the payoff planner reads them */
 const owingDebts = (inputs: InsightInputs) =>
   inputs.loans
     .filter((a) => a.deleted === 0 && a.archived !== 1)
@@ -186,13 +169,8 @@ export const extraFor = (minMonthlyCents: number): number => Math.max(EXTRA_STEP
 
 const moneyOf = (cents: number, account: AccountRow) => ({ money: cents, ...(account.currency ? { currency: account.currency } : {}) });
 
-/**
- * What a round extra per month buys (user: "€50 extra could save €2,581 —
- * your DUO debt would be repaid ~14 months earlier"): each debt with a
- * known rate walked alone by the payoff planner's engine, with and without
- * the extra; the debt where it saves the most interest speaks. Any cadence
- * — the planner counts the payment per month.
- */
+// each debt with a known rate is walked alone by the payoff planner's engine, with and without the extra
+// the biggest interest saving speaks; any payment cadence: the planner counts the payment per month
 export function debtAcceleration(inputs: InsightInputs): Insight[] {
   let best: Insight | null = null;
   for (const entry of owingDebts(inputs)) {
@@ -224,12 +202,6 @@ export function debtAcceleration(inputs: InsightInputs): Insight[] {
   return best ? [best] : [];
 }
 
-/**
- * The quick win (user: "one of your smaller debts could disappear quickly —
- * €340 would fully clear X"): among two debts or more, the smallest when it
- * is small — €500 or three of its own payments — and a minor part of the
- * whole; one that its next payment ends anyway needs no nudge.
- */
 export function debtClear(inputs: InsightInputs): Insight[] {
   const debts = owingDebts(inputs);
   if (debts.length < 2) return [];
@@ -263,8 +235,6 @@ export function debtClear(inputs: InsightInputs): Insight[] {
   ];
 }
 
-// ── the engine ──────────────────────────────────────────────────────────
-
 const DETECTORS = [
   missedCharge,
   salaryLate,
@@ -291,29 +261,20 @@ const TIER: Record<InsightSeverity, number> = { alert: 0, leak: 1, pattern: 2, w
 const byRank = (a: Pick<Insight, 'severity' | 'impactCents' | 'id'>, b: Pick<Insight, 'severity' | 'impactCents' | 'id'>): number =>
   TIER[a.severity] - TIER[b.severity] || b.impactCents - a.impactCents || a.id.localeCompare(b.id);
 
-/** every detector's findings, ranked: tier, then the money at stake */
 export function collectInsights(inputs: InsightInputs): Insight[] {
   return DETECTORS.flatMap((detect) => detect(inputs)).sort(byRank);
 }
 
-/** one card: a finding alone, or every finding that gives the same advice */
 export interface InsightGroup {
   /** the finding's own id when alone; `group:<kind>` for several */
   id: string;
   kind: InsightKind;
   severity: InsightSeverity;
-  /** the members' summed impact — a card's rank */
   impactCents: number;
-  /** ranked, the strongest first */
   members: Insight[];
 }
 
-/**
- * #516 (user: "three different advices that give the same advice — group
- * them as one"): findings of one kind share a card, ranked by the card's
- * summed impact; the wins are capped. Dismissal stays per finding, so a
- * new member joins the card while the dismissed ones stay away.
- */
+// #516: findings of one kind share a card; dismissal stays per finding, so a new member joins while dismissed ones stay away
 export function groupInsights(findings: readonly Insight[], maxWins = MAX_WINS): InsightGroup[] {
   const byKind = new Map<InsightKind, Insight[]>();
   for (const finding of [...findings].sort(byRank)) byKind.set(finding.kind, [...(byKind.get(finding.kind) ?? []), finding]);

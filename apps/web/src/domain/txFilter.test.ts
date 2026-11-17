@@ -47,12 +47,10 @@ describe('filterTxs', () => {
     expect(filterTxs(priced, { query: '10,99' }).map((t) => t.id)).toEqual(['p1']);
     expect(filterTxs(priced, { query: '10.99' }).map((t) => t.id)).toEqual(['p1']);
     expect(filterTxs(priced, { query: '5,25' }).map((t) => t.id)).toEqual(['p3']);
-    // pure text queries never trip the amount branch
     expect(filterTxs(priced, { query: 'bakery' }).map((t) => t.id)).toEqual(['p3']);
   });
 
   it('query sees through bank <br> noise', () => {
-    // raw text contains "Incasso<br>ING"; users search the cleaned form
     expect(filterTxs(rows, { query: 'incasso · ing' }).map((t) => t.id)).toEqual(['3']);
     expect(filterTxs(rows, { query: 'rente' }).map((t) => t.id)).toEqual(['3']);
   });
@@ -64,7 +62,6 @@ describe('filterTxs', () => {
       filterTxs(rows, { accountIds: new Set(['a1']), onlyNeedsReview: true, query: 'rente' }).map((t) => t.id),
     ).toEqual(['3']);
     expect(filterTxs(rows, { accountIds: new Set(['a2']), onlyNeedsReview: true })).toHaveLength(0);
-    // multi-account: union
     expect(filterTxs(rows, { accountIds: new Set(['a1', 'a2']) })).toHaveLength(3);
   });
 
@@ -77,7 +74,6 @@ describe('filterTxs', () => {
     expect(filterTxs(typed, { txTypes: new Set(['saving']) }).map((t) => t.id)).toEqual(['t2']);
     expect(filterTxs(typed, { catIds: new Set(['groceries']) }).map((t) => t.id)).toEqual(['t1']);
     expect(filterTxs(typed, { from: '2026-07-06', to: '2026-07-31' }).map((t) => t.id)).toEqual(['t2']);
-    // empty sets mean "no restriction"
     expect(filterTxs(typed, { txTypes: new Set(), catIds: new Set(), accountIds: new Set() })).toHaveLength(3);
   });
 
@@ -93,18 +89,13 @@ describe('filterTxs', () => {
         { id: 'p3', catId: 'gifts', amountCents: 200, cats: [{ catId: 'gifts', amountCents: 150 }, { catId: 'coffee', amountCents: 50 }] },
       ],
     });
-    // no partitioning filter → every part shows (the full band)
     expect(matchingPartIndexes(split, {})).toEqual([0, 1, 2, 3]);
     expect(matchingPartIndexes(split, { catIds: new Set() })).toEqual([0, 1, 2, 3]);
-    // category filters pick the matching parts — spreads match per entry
     expect(matchingPartIndexes(split, { catIds: new Set(['groceries']) })).toEqual([0]);
     expect(matchingPartIndexes(split, { catIds: new Set(['coffee']) })).toEqual([3]);
-    // type filters read the part's own type, inheriting the row's
     expect(matchingPartIndexes(split, { txTypes: new Set(['saving']) })).toEqual([1]);
     expect(matchingPartIndexes(split, { txTypes: new Set(['expense']) })).toEqual([0, 2, 3]);
-    // the uncategorized quick filter finds the unfinished part
     expect(matchingPartIndexes(split, { onlyUncategorized: true })).toEqual([2]);
-    // the settled Reimbursed slice is bookkeeping, never a part
     const settled = tx({ id: 's2', txType: 'expense', splits: [{ catId: 'groceries', amountCents: 100 }, { catId: 'reimbursed', amountCents: 50 }] });
     expect(matchingPartIndexes(settled, { catIds: new Set(['groceries']) })).toEqual([0]);
   });
@@ -118,7 +109,6 @@ describe('filterTxs', () => {
     ];
     expect(filterTxs(signed, { query: '+13,91' }).map((r) => r.id)).toEqual(['in1', 'in2']);
     expect(filterTxs(signed, { query: '-13,91' }).map((r) => r.id)).toEqual(['out1', 'out2']);
-    // unsigned keeps matching both directions
     expect(filterTxs(signed, { query: '13,91' })).toHaveLength(4);
   });
 

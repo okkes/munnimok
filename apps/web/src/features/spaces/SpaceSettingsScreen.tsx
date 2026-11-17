@@ -26,19 +26,13 @@ import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
 import { SpaceIconGrid } from './SpaceIconGrid';
 
-/** one downscale path for all three photo doors (input, native, webcam) */
 export const applySpacePhoto = (file: File, onPicture: (dataUrl: string) => void): void => {
-  // 384px (was 128): the picture can be zoomed up to 3× into a circle drawn
-  // at up to 44px on a 3× screen, and must still be sharp there
+  // 384px: the picture zooms up to 3× into a circle drawn at up to 44px on a 3× screen and must stay sharp
   void downscaleImage(file, 384).then(onPicture).catch(() => undefined);
 };
 
-/**
- * #301: the space-image tiles (upload/clear + optional webcam door),
- * shared by the settings form AND the create form — the strip owns the
- * hidden file input and the native chooser; the WEBCAM SHEET stays with
- * the host (sheets are siblings, never nested).
- */
+// shared by the settings and create forms (#301); the webcam sheet stays with the host:
+// sheets are siblings, never nested
 export function SpacePhotoStrip({
   picture,
   onPicture,
@@ -74,7 +68,6 @@ export function SpacePhotoStrip({
         }}
       />
       <ScrollRow>
-        {/* own image: shown first, wins over the icon everywhere */}
         {picture ? (
           <button
             data-testid={`${testIdPrefix}-clear`}
@@ -96,11 +89,10 @@ export function SpacePhotoStrip({
             title={t('profile.photoUpload')}
             className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {/* #146 r2: upload ≠ webcam — two camera icons read as one */}
+            {/* #146: upload ≠ webcam: two camera icons read as one */}
             <Icon name="upload-outline" size={17} />
           </button>
         )}
-        {/* #160: desktop webcam snapshot — mirrors the upload tile */}
         {onWebcam && (
           <button
             data-testid={`${testIdPrefix}-webcam`}
@@ -117,13 +109,8 @@ export function SpacePhotoStrip({
   );
 }
 
-/**
- * A space's settings, slimmed to its IDENTITY: name, image/icon, color —
- * plus leaving/deleting the space (user request: the screen tried to do
- * everything). Period, currency and history start are separate settings
- * on the Settings tab; members and financial accounts have their own
- * screens. Browser back = route back.
- */
+// a space's identity only (name, image/icon, color) plus leave/delete;
+// period, currency and history start live on the Settings tab
 export function SpaceSettingsScreen() {
   const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
@@ -131,8 +118,7 @@ export function SpaceSettingsScreen() {
   const identity = useSession((s) => s.identity);
   const syncing = identity?.kind === 'user';
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
-  // router-aware back: window.history only drives the real hash history,
-  // not the memory history used by tests
+  // router-aware back: window.history only drives the real hash history, not the memory history of tests
   const router = useRouter();
   const goBack = () => router.history.back();
 
@@ -140,8 +126,6 @@ export function SpaceSettingsScreen() {
 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
-  // #285 (user): the curated set opens into the whole self-hosted font
-  // through a search — the same door the category form has
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
   const [picture, setPicture] = useState('');
@@ -149,21 +133,16 @@ export function SpaceSettingsScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  // leaving needs someone to stay behind — mirror the members screen rule
   const [memberCount, setMemberCount] = useState(0);
-  // #160: desktop-only webcam door beside the upload tile
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
   // role in this space; local-only identities are always owner
   const myRole = useMyRole(spaceId, syncing);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
-  // #195: the save button stays enabled — an invalid click says why
   const [attempted, setAttempted] = useState(false);
 
-  // initialize the form once per space DURING render (not an effect): the
-  // inputs must never be interactable before initialization, or a fast
-  // keystroke would be clobbered — and live-query refreshes must not
-  // overwrite what the user is typing afterwards
+  // initialized once per space DURING render, not in an effect: inputs must never be interactable before it,
+  // and live-query refreshes must not overwrite what the user types afterwards
   if (space && loadedFor !== space.id) {
     setLoadedFor(space.id);
     setName(space.name);
@@ -176,8 +155,6 @@ export function SpaceSettingsScreen() {
 
   const readOnly = myRole === 'reader';
 
-  // #164: dirty vs a freshly derived seed (EditAccountSheet pattern) —
-  // tapping back with edits pending asks instead of dropping them
   const seedNow = space
     ? { name: space.name, icon: space.icon ?? SPACE_ICONS[0], color: space.color ?? SPACE_COLORS[0], picture: space.picture ?? '', focus: JSON.stringify(space.pictureFocus ?? null) }
     : null;
@@ -192,7 +169,7 @@ export function SpaceSettingsScreen() {
       setAttempted(true);
       return;
     }
-    // private names stay unique (user rule) — renaming counts too
+    // private names stay unique, renaming included
     if (space.kind !== 'shared') {
       const clash = (await store.allRows('space')).some(
         (s) => s.deleted === 0 && s.id !== space.id && s.kind !== 'shared' && s.name.trim().toLowerCase() === name.trim().toLowerCase(),
@@ -207,7 +184,7 @@ export function SpaceSettingsScreen() {
       name: name.trim(),
       icon,
       color,
-      picture, // '' clears a previously set image
+      picture,
       // the focus belongs to an own picture; null syncs a clearing (the events rule)
       pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null,
     });
@@ -223,8 +200,6 @@ export function SpaceSettingsScreen() {
       .catch(() => setMemberCount(0));
   }, [spaceId, syncing]);
 
-  // #304 (user): leaving confirms like removing a member — the standard
-  // countdown danger sheet, on this surface too
   const leave = async () => {
     if (await leaveSpace({ store, engine, setActiveSpace, activeSpaceId }, spaceId)) {
       void navigate({ to: '/spaces' });
@@ -237,14 +212,13 @@ export function SpaceSettingsScreen() {
       setDeleteError(t('space.cannotDeleteActive'));
       return;
     }
-    // counted on demand — a liveQuery would read undefined (= "only
-    // space") for a tap that lands before its first emission
+    // counted on demand: a liveQuery reads undefined (= "only space") for a tap before its first emission
     const count = (await store.allRows('space')).filter((s) => s.deleted === 0).length;
     if (count <= 1) {
       setDeleteError(t('space.cannotDeleteOnly'));
       return;
     }
-    setConfirmDelete(true); // the shared danger sheet takes it from here
+    setConfirmDelete(true);
   };
 
   const deleteSpace = async () => {
@@ -263,8 +237,7 @@ export function SpaceSettingsScreen() {
           </IconButton>
         }
       />
-      {/* overflow-x-hidden: wide chip rows must swipe inside their own
-          containers, never pan the whole screen sideways */}
+      {/* overflow-x-hidden: wide chip rows must swipe inside their own containers, never pan the screen */}
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-8">
         {space && (
           <div className="flex flex-col gap-3 pt-1 pb-4">
@@ -277,11 +250,9 @@ export function SpaceSettingsScreen() {
               aria-invalid={attempted && !name.trim()}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-60${blockerRing(attempted && !name.trim())}`}
             />
-            {/* #195 r2 (user): the blocker sits AT the field */}
             <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-edit-blocker" />
 
             <div className="m-cap px-1">{t('space.icon')}</div>
-            {/* #301: the strip is shared with the create form now */}
             <SpacePhotoStrip
               picture={picture}
               onPicture={(url) => {
@@ -292,8 +263,7 @@ export function SpaceSettingsScreen() {
               onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
               testIdPrefix="space-photo"
             />
-            {/* user 2026-10-06: the circle the lists keep, dragged and zoomed
-                into place — own pictures only, a bundled one has no frame */}
+            {/* own pictures only: a bundled one has no frame */}
             {picture.startsWith('data:') && !readOnly && (
               <ImageFocusFrame
                 src={picture}
@@ -306,10 +276,7 @@ export function SpaceSettingsScreen() {
                 testId="space-photo-focus"
               />
             )}
-            {/* #285: the shared grid — the whole font behind the search, glyphs
-                in the picked color. #146 (user): a picture wins over symbol+color
-                everywhere, so while one is set the grid sleeps (r2: nothing is
-                "selected" then) — and #444: it LOOKS asleep */}
+            {/* #146: a picture wins over symbol+color everywhere, so the grid sleeps and looks asleep (#444) */}
             <SpaceIconGrid
               icon={icon}
               onIcon={setIcon}
@@ -320,7 +287,6 @@ export function SpaceSettingsScreen() {
               sleeping={picture !== ''}
               testIdPrefix="space-icon"
             />
-            {/* #146: say WHY the pickers sleep, not just gray them out */}
             {picture !== '' && (
               <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-icon-picture-note">
                 {t('space.picStompsIcon')}
@@ -343,11 +309,6 @@ export function SpaceSettingsScreen() {
               </Button>
             )}
 
-            {/* the private lock moved to the Settings tab (#162) — this
-                screen keeps only the space's identity */}
-
-            {/* danger zone last: deleting is the one action that must never sit
-                between things people actually come here for */}
             {syncing && memberCount > 1 && (
               <div className="mt-4 flex flex-col gap-2">
                 <Button variant="outline" data-testid="space-edit-leave" onClick={() => setConfirmLeave(true)}>
@@ -370,14 +331,8 @@ export function SpaceSettingsScreen() {
           </div>
         )}
       </div>
-      {/* #164: the back button's "discard changes?" ask */}
       {discardSheet}
-      {/* #160: snapshot feeds the same downscale path as the file input */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => applySpacePhoto(file, setPicture)} />
-      {/* aligned destructive confirm (user request): sheet + cooldown,
-          same shape as account/store/user deletion */}
-      {/* #304: the leave confirm — countdown-armed like every other
-          destructive door */}
       <DangerConfirmSheet
         open={confirmLeave}
         onOpenChange={setConfirmLeave}

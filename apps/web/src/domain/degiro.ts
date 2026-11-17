@@ -1,12 +1,6 @@
 import type { AssetClass } from '@/db/types';
 
-/**
- * DEGIRO export parsing (approved investments design I3) — the OFFICIAL
- * stable route into the portfolio: Portfolio.csv (positions) and
- * Transactions.csv (buys/sells with fees). Parsed entirely on-device,
- * deterministic ids so a re-import is a no-op. Other Dutch brokers
- * become sibling parsers behind the same import door.
- */
+// DEGIRO export parsing (I3): Portfolio.csv + Transactions.csv, on-device; deterministic ids make a re-import a no-op
 
 export interface ParsedHolding {
   /** deterministic: hold:{isin || name-slug} scoped by the caller */
@@ -27,7 +21,6 @@ export interface ParsedLot {
   totalCents: number;
 }
 
-/** minimal RFC-ish CSV: quoted fields, comma separator, CRLF tolerant */
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -68,7 +61,6 @@ export function parseCsv(text: string): string[][] {
 const slug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 const holdingKeyOf = (isin: string | undefined, name: string): string => `hold:${isin || slug(name)}`;
 
-/** dd-mm-yyyy → yyyy-mm-dd */
 const toIsoDate = (dmy: string): string | null => {
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dmy.trim());
   return match ? `${match[3]}-${match[2]}-${match[1]}` : null;
@@ -95,11 +87,7 @@ function headerIndex(header: readonly string[], ...names: string[]): number {
   return header.findIndex((h) => names.includes(h.trim().toLowerCase()));
 }
 
-/**
- * Portfolio.csv: one row per position — Product, Symbool/ISIN, Aantal,
- * … , Waarde in EUR. Cash rows (EUR, CASH & CASH FUND…) are skipped;
- * they belong to the brokerage account balance, not to holdings.
- */
+/** cash rows (EUR, CASH & CASH FUND…) are skipped: they belong to the brokerage account balance, not to holdings */
 export function parseDegiroPortfolio(text: string): ParsedHolding[] {
   const rows = parseCsv(text);
   if (rows.length < 2) return [];
@@ -127,11 +115,7 @@ export function parseDegiroPortfolio(text: string): ParsedHolding[] {
   return holdings;
 }
 
-/**
- * Transactions.csv: Datum, Tijd, Product, ISIN, …, Aantal, …, Waarde,
- * …, Transactiekosten…, Order ID. Positive Aantal = buy, negative =
- * sell; the fee column becomes its own lot so costs stay honest.
- */
+/** positive Aantal = buy, negative = sell; the fee column becomes its own lot so costs stay honest */
 interface TxColumns {
   date: number;
   product: number;

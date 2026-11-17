@@ -6,42 +6,9 @@ using Connector.Kit.Normalization;
 
 namespace RegistryConnector.Adapters.Bkr;
 
-/// <summary>
-/// Every credit BKR has registered against you, read out of one page.
-///
-/// CONFIRMED live on 2026-08-04. The portal is server-rendered ASP.NET MVC and
-/// its only JSON endpoint (<c>POST /home/inquirecki</c>) answers the literal
-/// <c>True</c> - it is a trigger, not data. So this is HTML parsing, and the
-/// question was which HTML.
-///
-/// The visible list gives four columns per credit and a link to a detail page
-/// each. Walking those would be six requests for five credits, keyed on
-/// positional classes like <c>col-sm-6 col-md-2 font14 pt-3</c>, and it would
-/// still not carry the dates.
-///
-/// The page also contains a hidden print block - <c>#pdf-export</c>, pushed
-/// off-screen by CSS but fully in the DOM - holding one page per credit plus
-/// one for the consumer, as label/value pairs:
-/// <code>
-///   &lt;div class="info-item"&gt;
-///     &lt;div class="label"&gt;Overeenkomstnummer&lt;/div&gt;
-///     &lt;div class="value"&gt;R1234567&lt;/div&gt;
-///   &lt;/div&gt;
-/// </code>
-/// That is one request for everything, keyed on the label text a human reads
-/// rather than on a grid class that changes when somebody adjusts a column.
-/// So it is what this reads.
-///
-/// Two hazards the capture made visible, both of which would produce wrong
-/// data quietly:
-///
-///   * The visible rows appear TWICE - the "Alles" and "Lopend" tabs are both
-///     server-rendered into the page - so anything counting li.contract sees
-///     ten credits where there are five.
-///   * The captured account has no ended credits, so nobody has ever seen an
-///     ended row. Status is therefore read from the section the print block
-///     states, never from a guessed CSS class.
-/// </summary>
+// the hidden #pdf-export print block holds every credit's detail, keyed on label text (confirmed live 2026-08-04)
+// the visible rows appear TWICE (Alles and Lopend tabs), so counting li.contract doubles
+// status comes from the print block, never a CSS class
 internal static partial class BkrCreditParser
 {
     private const string ProviderId = BkrAdapter.ProviderId;
@@ -60,9 +27,6 @@ internal static partial class BkrCreditParser
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace { get; }
 
-    /// <summary>
-    /// The credits, in the order the register lists them.
-    /// </summary>
     public static IReadOnlyList<CreditRegistration> Parse(string? html, BkrOptions options, string sessionId)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -85,8 +49,7 @@ internal static partial class BkrCreditParser
         {
             var fields = Fields(page.Groups["page"].Value);
 
-            // The consumer's own page carries a birth date and no credit
-            // reference. Skipped here; ProfileOf reads it.
+            // the consumer's own page has a birth date and no credit reference; ProfileOf reads it
             if (!fields.TryGetValue(options.ReferenceLabel, out var reference)) continue;
             if (string.IsNullOrWhiteSpace(reference)) continue;
 
@@ -95,10 +58,7 @@ internal static partial class BkrCreditParser
 
         if (credits.Count == 0 && !html.Contains(options.EmptyRegisterMarker, StringComparison.OrdinalIgnoreCase))
         {
-            // An account with nothing registered is a real answer and a
-            // valuable one - "BKR has nothing on you" is what most people hope
-            // to read. But it is only allowed when the page says so itself,
-            // never as the result of a parser that stopped matching.
+            // an empty register is a real answer, but only when the page says so, never because the parser stopped matching
             throw ConnectorException.ProviderChanged(
                 $"{ProviderId}: the print block yielded no credits and the page does not say the register is empty");
         }
@@ -106,10 +66,6 @@ internal static partial class BkrCreditParser
         return credits;
     }
 
-    /// <summary>
-    /// The consumer, as the register knows them. The first print page states
-    /// it and carries no credit reference.
-    /// </summary>
     public static string? ProfileOf(string? html, BkrOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -152,28 +108,19 @@ internal static partial class BkrCreditParser
 
             Amount = Money(fields.GetValueOrDefault(options.AmountLabel), options),
 
-            // The register's own words, not a date comparison. A credit whose
-            // expected end has passed is not thereby ended - that is exactly
-            // what "Werkelijke einddatum" exists to state, and inferring it
-            // would report somebody's live debt as settled.
+            // the register's own words, not a date comparison: a passed expected end is not an ended credit,
+            // and inferring it would report live debt as settled
             Status = ended is not null ? CreditStatus.Ended : CreditStatus.Running,
 
             StartedOn = Date(fields.GetValueOrDefault(options.RegisteredLabel), options),
             EndsOn = ended ?? Date(fields.GetValueOrDefault(options.ExpectedEndLabel), options),
 
-            // Never interpreted, never summarised, and null rather than "none"
-            // when the register reports nothing: what an arrears code means for
-            // somebody's mortgage application is not a connector's judgement.
+            // never interpreted, null when nothing is reported: what an arrears code means is not the connector's judgement
             ArrearsCode = Arrears(fields, options),
         };
     }
 
-    /// <summary>
-    /// Dutch credit types, mapped. The register's own words ride along on
-    /// <see cref="CreditRegistration.KindLabel"/>, so a type this does not
-    /// know still reaches the user intact instead of arriving as "other" and
-    /// nothing else.
-    /// </summary>
+    /// KindLabel carries the register's own words, so a type this does not know still reaches the user
     private static CreditKind Kind(string? label, BkrOptions options)
     {
         if (string.IsNullOrWhiteSpace(label)) return CreditKind.Other;
@@ -186,19 +133,7 @@ internal static partial class BkrCreditParser
         return CreditKind.Other;
     }
 
-    /// <summary>
-    /// "&#8364; 2.000" is two thousand euros.
-    ///
-    /// The dot is a THOUSANDS separator here, which is the single most
-    /// dangerous character on this page: read as a decimal point it turns a
-    /// two-thousand-euro debt into two euros, and the result looks perfectly
-    /// reasonable on screen.
-    /// </summary>
-    /// <remarks>
-    /// The credit's reference used to be a parameter, purely so the refusals
-    /// below could name it. It is gone rather than unused: a contract number
-    /// cannot be interpolated into a diagnostic that is not holding one.
-    /// </remarks>
+    /// the dot is a thousands separator ("2.000" is two thousand): read as a decimal it turns the debt into two euros
     private static Money Money(string? raw, BkrOptions options)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -215,12 +150,8 @@ internal static partial class BkrCreditParser
 
         if (!decimal.TryParse(cleaned, NumberStyles.Number, Dutch, out var amount))
         {
-            // THE FIELD AND THE SHAPE, never the value and never the contract
-            // number. This detail is not a private diagnostic: adapters
-            // interpolate it into notes, and notes are logged, written to the
-            // job row and returned to the caller. What it used to carry was a
-            // sum somebody owes and the credit agreement it sits under - a
-            // registry record is the most sensitive thing this platform reads.
+            // field and shape only, never the value or contract number:
+            // notes are logged, stored on the job row and returned to the caller
             throw ConnectorException.ProviderChanged(
                 $"{ProviderId}: a credit states a '{options.AmountLabel}' of " +
                 $"{raw!.Length} character(s) that is not a number");
@@ -241,11 +172,7 @@ internal static partial class BkrCreditParser
             : null;
     }
 
-    /// <summary>
-    /// The "Bijzonderheden" section. The register prints a sentence meaning
-    /// "nothing to report" when there is nothing, and that is not an arrears
-    /// code - it is the absence of one.
-    /// </summary>
+    /// the register prints a "nothing to report" sentence when there is nothing: that is no arrears code, so null
     private static string? Arrears(IReadOnlyDictionary<string, string> fields, BkrOptions options)
     {
         foreach (var label in options.ArrearsLabels)
@@ -261,11 +188,7 @@ internal static partial class BkrCreditParser
         return null;
     }
 
-    /// <summary>
-    /// One print page's label/value pairs. Keyed by the label text a human
-    /// reads, because the labels are the stable part - the grid classes
-    /// around them are Bootstrap column widths and change with the layout.
-    /// </summary>
+    /// keyed by label text: the labels are stable, the Bootstrap grid classes around them are not
     private static Dictionary<string, string> Fields(string page)
     {
         var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

@@ -25,7 +25,6 @@ import { TxRow } from '@/ui/TxRow';
 import { GoalFormSheet } from './GoalsScreen';
 import { DecimalInput } from '@/ui/DecimalInput';
 
-/** the line under the bar: when the goal was cashed out, that it is reached, or the pace that reaches it by its date; null without a date to pace for */
 function paceLineOf(
   goal: GoalRow,
   state: { reached: boolean; pace: number | null; periods: number | null; periodType: SpaceRow['periodType'] | undefined },
@@ -42,7 +41,6 @@ function paceLineOf(
     : t('goals.paceLongOnce', { amount: format.money(state.pace), unit, date });
 }
 
-/** the rows a cash-out names — what paid for the goal, what it bought — each opening its transaction; nothing without rows */
 function CashOutRows({ rows, title, testId, onOpen }: Readonly<{ rows: readonly SpaceTx[]; title?: string; testId: string; onOpen: (txId: string) => void }>) {
   if (rows.length === 0) return null;
   return (
@@ -57,7 +55,6 @@ function CashOutRows({ rows, title, testId, onOpen }: Readonly<{ rows: readonly 
   );
 }
 
-/** what an open goal offers: fund and withdraw, and cashing out — a card once it is reached, a quieter row before */
 function GoalActions({ reached, onCashOut, onFund, onWithdraw }: Readonly<{ reached: boolean; onCashOut: () => void; onFund: () => void; onWithdraw: () => void }>) {
   const { t } = useLang();
   return (
@@ -78,7 +75,7 @@ function GoalActions({ reached, onCashOut, onFund, onWithdraw }: Readonly<{ reac
           {t('goals.withdraw')}
         </Button>
       </div>
-      {/* user 2026-11-12: "cash out whenever you want" — a quieter door until the goal is reached */}
+      {/* "cash out whenever you want": a quieter door until the goal is reached */}
       {!reached && (
         <button
           type="button"
@@ -98,7 +95,6 @@ function GoalActions({ reached, onCashOut, onFund, onWithdraw }: Readonly<{ reac
   );
 }
 
-/** #455: the goal was spent — what paid for it, what it bought, where the rest went, and the way back */
 function CashedOutCard({
   goal,
   cashOut,
@@ -121,7 +117,6 @@ function CashedOutCard({
   onOpenTx: (txId: string) => void;
 }>) {
   const { t } = useLang();
-  // the rows still visible to the space, and the money they took out of savings
   const live = txs.filter((tx) => tx.deleted === 0);
   const cashedTxs = live.filter((tx) => cashOut.txIds.includes(tx.id));
   const boughtTxs = live.filter((tx) => cashOut.purchaseTxIds?.includes(tx.id));
@@ -157,7 +152,6 @@ function CashedOutCard({
   );
 }
 
-/** One goal: progress, pace, and the funding audit trail. */
 export function GoalDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -197,16 +191,14 @@ export function GoalDetailScreen() {
   // #530: what the goal holds, what is still to go and the free savings hide with the sensitive figures
   const balance = (cents: number) => fmtSensitive(cents, currency);
   const progress = goalProgress(goal);
-  // the pace counts the space's own periods, and says how many (user 2026-10-04)
+  // the pace counts the space's own periods and says how many
   const pace = paceCentsPerPeriod(goal, space, localToday());
   const periods = periodsLeft(space, goal.targetDate, localToday());
   const reached = goal.allocatedCents >= goal.targetCents;
 
   const fundCents = parseCents(amount);
   const fundBad = fundCents === null || fundCents <= 0;
-  // #368 (user): funding draws from the savings pool — never more than is
-  // still unallocated; a pool already negative funds nothing until it is
-  // back at zero (withdraw from a goal first)
+  // #368: funding draws from the unallocated savings pool; a negative pool funds nothing until back at zero
   const available = goalOverview(goals ?? [], accounts ?? [], space).unallocatedCents;
   const fundOverPool = fundOpen === 'fund' && fundCents !== null && fundCents > available;
 
@@ -222,12 +214,10 @@ export function GoalDetailScreen() {
 
   const fmtDate = (iso: string) => parseLocalDate(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
-  // #455: what paid for the goal — the rows still visible to the space, the money they took out of savings
   const cashOut = goal.cashOut ?? null;
   const openCashOut = () => void navigate({ to: '/goals/$goalId/cashout', params: { goalId: goal.id } });
   const openTx = (txId: string) => void navigate({ to: '/transactions/$txId', params: { txId } });
 
-  // #449 (user): the amount still to add, on the page itself - the bar alone said nothing
   const toGoLine = t('goals.toGo', { amount: balance(goal.targetCents - goal.allocatedCents) });
   const paceLine = paceLineOf(goal, { reached, pace, periods, periodType: space?.periodType }, { t, lang, money, date: fmtDate });
 
@@ -315,7 +305,6 @@ export function GoalDetailScreen() {
         )}
       </div>
 
-      {/* fund / withdraw */}
       <Sheet
         open={fundOpen !== null}
         onOpenChange={(open) => {
@@ -335,7 +324,6 @@ export function GoalDetailScreen() {
             aria-invalid={attempted && fundBad}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && fundBad)}`}
           />
-          {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={attempted && fundBad} text={t('form.needAmount')} testId="goalfund-save-blocker" />
           {fundOpen === 'fund' && (
             <p className="px-1 text-[12px] text-ink-3" data-testid="goalfund-pool">

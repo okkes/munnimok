@@ -17,21 +17,13 @@ import { mirrorTxId } from '@/domain/feedIds';
 import type { Op } from '@/sync/merge';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
-// deterministic regardless of the developer's .env.local — with Logto
-// "configured", the real TokenBridge would overwrite the test's
-// setOidcSignIn spy and auth-ready would wait on a live provider
+// logto stays unconfigured whatever .env.local says: the real TokenBridge would overwrite the setOidcSignIn spy
 vi.mock('@/app/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/config')>()),
   logtoConfigured: false,
 }));
 
-/**
- * Local-first startup: a RETURNING device (local spaces exist) must render
- * from its database immediately — a hanging server/OIDC endpoint may not
- * hold users on the connecting screen (field bug: app stuck on
- * "Connecting to your account" until the NAS came back, despite months of
- * local data).
- */
+/** a returning device renders from its database; a hanging server/OIDC endpoint must not hold it on the connecting screen */
 describe('DataProvider startup (local-first)', () => {
   beforeEach(() => {
     connectTuning.patienceMs = 20_000;
@@ -42,7 +34,6 @@ describe('DataProvider startup (local-first)', () => {
   });
 
   it('renders the app from local data while every server request hangs forever', async () => {
-    // returning device: the identity db already holds a space
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('space', 's-local', 's-local', {
@@ -54,7 +45,7 @@ describe('DataProvider startup (local-first)', () => {
     });
     db.close();
 
-    const hang = () => new Promise<never>(() => undefined); // never settles
+    const hang = () => new Promise<never>(() => undefined);
     renderAppAsUser('/', {
       api: {
         'GET /health': hang,
@@ -63,7 +54,6 @@ describe('DataProvider startup (local-first)', () => {
       },
     });
 
-    // the Home screen appears despite zero completed requests
     expect(await screen.findByTestId('screen-home', {}, { timeout: 4000 })).toBeTruthy();
     expect(screen.queryByTestId('data-loading')).toBeNull();
   });
@@ -93,7 +83,6 @@ describe('DataProvider startup (local-first)', () => {
       },
     });
 
-    // the steps of a first start, the one under way marked
     const steps = await screen.findByTestId('connect-steps', {}, { timeout: 4000 });
     expect(steps.querySelector('[data-step="server"]')?.getAttribute('data-state')).toBe('now');
     expect(steps.querySelector('[data-step="signin"]')?.getAttribute('data-state')).toBe('done');
@@ -106,8 +95,7 @@ describe('DataProvider startup (local-first)', () => {
     const report = await screen.findByTestId('connect-diagnose-report', {}, { timeout: 4000 });
     expect((report as HTMLTextAreaElement).value).toContain('waitingAt: server');
 
-    // one large space keeps the count of spaces at 0 for a long while: the changes fetched so far say that it
-    // moves — on the screen and in the report, where two copies a minute apart tell a standstill from a slow start
+    // one large space keeps the space count at 0 a long while: the changes fetched so far show it moves (screen and report)
     act(() => useBootStep.getState().set({ step: 'spaces', done: 0, total: 24, changes: 12_000 }));
     await waitFor(() => expect(steps.querySelector('[data-step="spaces"]')?.textContent).toContain('0 of 24 · 12000 changes'));
     fireEvent.click(screen.getByTestId('connect-diagnose'));
@@ -119,8 +107,7 @@ describe('DataProvider startup (local-first)', () => {
   it(
     'repeated failures surface Diagnose, whose report includes the auth probes',
     async () => {
-      // a REFUSING server (vs the hang above): bootstrap rounds fail fast,
-      // failedAttempts climbs, and the screen names the problem
+      // a refusing server (vs the hang above): rounds fail fast and failedAttempts climbs
       const refuse = () => Promise.reject(new Error('connection refused'));
       renderAppAsUser('/', {
         api: {
@@ -130,16 +117,14 @@ describe('DataProvider startup (local-first)', () => {
         },
       });
 
-      // round 1 fails instantly, round 2 after the 2s base backoff — from
-      // then on the Diagnose button is offered alongside Sign out
+      // round 1 fails instantly, round 2 after the 2s base backoff, then Diagnose is offered
       fireEvent.click(await screen.findByTestId('connect-diagnose', {}, { timeout: 9000 }));
 
       const report = await screen.findByTestId('connect-diagnose-report', {}, { timeout: 4000 });
       const text = (report as HTMLTextAreaElement).value;
       expect(text).toContain('logtoKeys: 0');
       expect(text).toContain('accessToken: ABSENT'); // no OIDC getter registered in tests
-      expect(text).toContain('GET /me threw'); // the refusing server, verbatim
-      // the 2026-07-29 probes: session kind, storage write, wipe breadcrumb
+      expect(text).toContain('GET /me threw');
       expect(text).toContain('session: user');
       expect(text).toContain('lsWrite: true');
       expect(text).toContain('lastLogtoWipe: -');
@@ -147,7 +132,6 @@ describe('DataProvider startup (local-first)', () => {
     15_000,
   );
 
-  /** a browser that holds this device's push subscription */
   function installSubscription() {
     const unsubscribe = vi.fn().mockResolvedValue(true);
     const subscription = { endpoint: 'https://push.example/held', toJSON: () => ({}), unsubscribe };
@@ -163,7 +147,6 @@ describe('DataProvider startup (local-first)', () => {
     return { unsubscribe, remove };
   }
 
-  /** whether the server was asked to drop a push registration */
   const askedToForget = (fetchMock: { mock: { calls: unknown[][] } }) =>
     fetchMock.mock.calls.some(
       ([input, init]) => String(input).includes('/me/push-subscriptions') && (init as RequestInit | undefined)?.method === 'DELETE',
@@ -221,9 +204,7 @@ describe('DataProvider startup (local-first)', () => {
         const req = indexedDB.deleteDatabase('munni_user_heal-user');
         req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
       });
-      // a NON-testAuth user: the self-heal only fires for real OIDC
-      // sessions whose client-side keys are gone (evicted/wiped) while
-      // the server keeps saying 401 to tokenless requests
+      // a non-testAuth user: the self-heal only fires for real OIDC sessions whose client keys are gone while the server 401s
       renderApp('/', { identity: { kind: 'user', sub: 'heal-user' } });
 
       await waitFor(() => expect(calls.length).toBeGreaterThan(0), { timeout: 8000 });

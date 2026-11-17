@@ -5,11 +5,6 @@ using System.Text.RegularExpressions;
 
 namespace ShopConnector.Adapters.Amazon;
 
-/// <summary>
-/// The three kinds of node this parser keeps. Comments, doctypes and
-/// processing instructions are dropped: nothing downstream reads them, and
-/// keeping them would only widen the surface a malformed page can break.
-/// </summary>
 internal enum HtmlNodeKind
 {
     Document,
@@ -17,24 +12,13 @@ internal enum HtmlNodeKind
     Text,
 }
 
-/// <summary>
-/// One node of a parsed page.
-///
-/// Amazon is the only provider in this service with no API at all - there is
-/// no JSON anywhere, because there is no JSON endpoint anywhere - so the
-/// order history has to be read out of rendered HTML. That could be done by
-/// evaluating JavaScript inside Playwright, and it is tempting because the
-/// browser already has a real DOM. It is rejected here for one reason: a
-/// parser that only exists inside a live browser can only be tested against a
-/// live account, which is exactly the thing this platform cannot spend. A
-/// small tree in C# means every selector, every Dutch label and every euro
-/// amount is exercised offline against a recorded page.
-/// </summary>
+/// Amazon has no API, so order history is read from rendered HTML. Evaluating JavaScript in Playwright is rejected:
+/// a parser living only in a live browser can only be tested against a live account, which this platform cannot spend;
+/// a C# tree is tested offline on recorded pages.
 internal sealed class HtmlNode
 {
     public HtmlNodeKind Kind { get; init; }
 
-    /// <summary>Lowercased tag name. Empty for text.</summary>
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Raw (still encoded) text for a text node.</summary>
@@ -48,7 +32,6 @@ internal sealed class HtmlNode
 
     public string? Attribute(string name) => Attributes.TryGetValue(name, out var value) ? value : null;
 
-    /// <summary>Every element below this node, in document order.</summary>
     public IEnumerable<HtmlNode> Elements()
     {
         foreach (var child in Children)
@@ -59,11 +42,7 @@ internal sealed class HtmlNode
         }
     }
 
-    /// <summary>
-    /// The visible text of this subtree: entity-decoded, whitespace
-    /// collapsed, and with script and style contents left out so a page's own
-    /// JavaScript cannot be mistaken for a label or an amount.
-    /// </summary>
+    /// entity-decoded, whitespace collapsed, script and style left out so a page's JavaScript cannot pass as a label or amount
     public string Text()
     {
         var builder = new StringBuilder();
@@ -85,9 +64,7 @@ internal sealed class HtmlNode
         {
             Append(child, builder);
 
-            // A block boundary is a space. Without this "Totaal:</span><span>€ 5,00"
-            // reads as "Totaal:€ 5,00" and a label match that expects a
-            // separator quietly stops matching.
+            // a block boundary is a space: otherwise "Totaal:</span><span>€ 5,00" reads "Totaal:€ 5,00" and label matches stop matching
             if (child.Kind == HtmlNodeKind.Element) builder.Append(' ');
         }
     }
@@ -101,40 +78,21 @@ internal static partial class HtmlText
     [GeneratedRegex(@"[\u200B\u200C\u200D\uFEFF]")]
     private static partial Regex ZeroWidth { get; }
 
-    /// <summary>
-    /// Decode, then flatten every kind of space a rendered page uses, then
-    /// collapse. The order matters: <c>&amp;nbsp;</c> only becomes a
-    /// non-breaking space after decoding, and an amount written
-    /// <c>"€&amp;nbsp;12,50"</c> is otherwise not the same string as
-    /// <c>"€ 12,50"</c>.
-    /// </summary>
+    /// the order matters: an entity only becomes a non-breaking space after decoding
     public static string Normalize(string? raw)
     {
         if (string.IsNullOrEmpty(raw)) return string.Empty;
 
-        // The Replace chain a naive version would use needs literal
-        // non-breaking and thin spaces in the source, which survive a
-        // round trip through an editor only by luck. .NET's \s already
-        // matches every Unicode space separator, so collapsing does the
-        // job; only the zero-width characters need naming, because they
-        // are not whitespace to the regex and not visible to a human -
-        // and one sitting inside "€ 1.234,56" would fail the parse.
+        // .NET's \s already matches every Unicode space separator; only zero-width characters need naming:
+        // not whitespace to the regex, and one inside "€ 1.234,56" fails the parse
         var decoded = ZeroWidth.Replace(WebUtility.HtmlDecode(raw), string.Empty);
 
         return Whitespace.Replace(decoded, " ").Trim();
     }
 }
 
-/// <summary>
-/// A forgiving HTML tokenizer.
-///
-/// Deliberately not a spec-compliant parser: it handles the shapes a
-/// server-rendered retail page actually contains - unclosed table cells and
-/// list items, unquoted attributes, self-closing tags, raw script bodies -
-/// and ignores everything else. A missing element is never guessed at; it
-/// surfaces upstream as <c>ProviderChanged</c> naming the selector that found
-/// nothing.
-/// </summary>
+/// deliberately not spec-compliant: only the shapes of a server-rendered retail page (unclosed cells, unquoted attributes,
+/// raw script bodies); a missing element is never guessed, it surfaces as ProviderChanged naming the selector
 internal static class HtmlParser
 {
     private static readonly HashSet<string> VoidElements = new(StringComparer.Ordinal)
@@ -143,23 +101,17 @@ internal static class HtmlParser
         "link", "meta", "param", "source", "track", "wbr",
     };
 
-    /// <summary>Elements whose content is text, not markup.</summary>
     private static readonly HashSet<string> RawTextElements = new(StringComparer.Ordinal)
     {
         "script", "style", "textarea", "title",
     };
 
-    /// <summary>Elements whose text is never part of the page's visible content.</summary>
     private static readonly HashSet<string> HiddenTextElements = new(StringComparer.Ordinal)
     {
         "script", "style", "head", "noscript", "template",
     };
 
-    /// <summary>
-    /// Which open elements a newly opened one implicitly closes. Amazon's
-    /// order pages are table-heavy and generated, and generated table markup
-    /// routinely omits <c>&lt;/td&gt;</c>.
-    /// </summary>
+    /// Amazon's order pages are generated table markup, which routinely omits closing td tags
     private static readonly Dictionary<string, string[]> ClosesOpen = new(StringComparer.Ordinal)
     {
         ["li"] = ["li"],
@@ -202,14 +154,8 @@ internal static class HtmlParser
         return document;
     }
 
-    /// <summary>
-    /// Reads whatever the <c>&lt;</c> at <paramref name="lt"/> begins - a
-    /// comment, a doctype, a close tag or an element - into the tree, and
-    /// says where the next read starts.
-    /// </summary>
     private static int ReadMarkup(string html, int lt, List<HtmlNode> open)
     {
-        // <!-- comment -->, <!doctype>, <?pi?> - all skipped whole.
         if (Starts(html, lt, "<!--"))
         {
             return AfterOrEnd(html, html.IndexOf("-->", lt + 4, StringComparison.Ordinal), 3);
@@ -224,7 +170,6 @@ internal static class HtmlParser
         {
             var end = html.IndexOf('>', lt);
 
-            // A close tag that never closes is the end of anything readable.
             if (end < 0) return html.Length;
 
             Close(open, html[(lt + 2)..end].Trim().ToLowerInvariant());
@@ -234,11 +179,6 @@ internal static class HtmlParser
         return ReadElement(html, lt, open);
     }
 
-    /// <summary>
-    /// Reads the element whose open tag starts at <paramref name="lt"/>:
-    /// attached under the innermost open element, and left open itself unless
-    /// it is void, self-closed or raw text. Says where the next read starts.
-    /// </summary>
     private static int ReadElement(string html, int lt, List<HtmlNode> open)
     {
         var tag = ReadTag(html, lt);
@@ -257,11 +197,6 @@ internal static class HtmlParser
         return tag.Next;
     }
 
-    /// <summary>
-    /// The body of a raw-text element - a script, a style, a textarea, a
-    /// title - taken as one text node up to its own close tag, however much
-    /// markup it looks like it contains. Says where the next read starts.
-    /// </summary>
     private static int ReadRawText(string html, HtmlNode element, int from)
     {
         var close = IndexOfClose(html, element.Name, from);
@@ -272,11 +207,7 @@ internal static class HtmlParser
         return AfterOrEnd(html, html.IndexOf('>', close), 1);
     }
 
-    /// <summary>
-    /// The index just past a delimiter found at <paramref name="at"/>, or the
-    /// end of the page when it was not found: an unterminated construct runs
-    /// to the end rather than failing the parse.
-    /// </summary>
+    /// an unterminated construct runs to the end of the page rather than failing the parse
     private static int AfterOrEnd(string html, int at, int length) => at < 0 ? html.Length : at + length;
 
     private static bool Starts(string html, int at, string token) =>
@@ -304,8 +235,7 @@ internal static class HtmlParser
             return;
         }
 
-        // A close tag with nothing open to match is stray markup, not a
-        // reason to abandon the page.
+        // a close tag with nothing open is stray markup, not a reason to abandon the page
     }
 
     private static void AutoClose(List<HtmlNode> open, string name)
@@ -371,7 +301,6 @@ internal static class HtmlParser
         return new TagRead(name, attributes, selfClosing, i);
     }
 
-    /// <summary>The index just past the tag name that starts at <paramref name="i"/>.</summary>
     private static int EndOfTagName(string html, int i)
     {
         while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '>' && html[i] != '/') i++;
@@ -384,11 +313,6 @@ internal static class HtmlParser
         return i;
     }
 
-    /// <summary>
-    /// One attribute - bare, or with a quoted or unquoted value - read into
-    /// <paramref name="attributes"/> with its value decoded. Says where the
-    /// next read starts.
-    /// </summary>
     private static int ReadAttribute(string html, int i, List<KeyValuePair<string, string>> attributes)
     {
         var nameStart = i;
@@ -396,8 +320,7 @@ internal static class HtmlParser
 
         var attributeName = html[nameStart..i];
 
-        // A character that starts no name - a stray equals sign - is stepped
-        // over rather than read as one.
+        // a character that starts no name (a stray equals sign) is stepped over
         if (attributeName.Length == 0) return i + 1;
 
         i = SkipWhitespace(html, i);
@@ -412,11 +335,6 @@ internal static class HtmlParser
         return i;
     }
 
-    /// <summary>
-    /// An attribute's value starting at <paramref name="i"/>: up to the
-    /// matching quote, or for a bare one up to the next space or <c>&gt;</c>.
-    /// Says where the next read starts.
-    /// </summary>
     private static (string Value, int Next) ReadAttributeValue(string html, int i)
     {
         if (i < html.Length && (html[i] == '"' || html[i] == '\''))
@@ -436,16 +354,8 @@ internal static class HtmlParser
     }
 }
 
-/// <summary>
-/// The subset of CSS this service needs, and not one selector more.
-///
-/// Tag, <c>#id</c>, <c>.class</c>, <c>[attr]</c> with <c>=</c>, <c>*=</c>,
-/// <c>^=</c>, <c>$=</c> and <c>~=</c>, an optional <c>i</c> flag, the
-/// descendant and child combinators, and comma alternatives. That covers
-/// every selector an operator will realistically need to correct in
-/// <see cref="AmazonOptions"/>, and each unsupported construct is one fewer
-/// way for a hand-edited selector to mean something other than it looks like.
-/// </summary>
+/// the subset of CSS needed and no more: each unsupported construct is one fewer way for a hand-edited selector
+/// to mean something other than it looks like
 internal static class HtmlQuery
 {
     private static readonly ConcurrentDictionary<string, Alternative[]> Cache = new(StringComparer.Ordinal);
@@ -480,12 +390,7 @@ internal static class HtmlQuery
         return hits.Count > 0 ? hits[0] : null;
     }
 
-    /// <summary>
-    /// The first candidate that matches anything, mirroring
-    /// <see cref="Support.PageOps"/>' most-specific-first contract so an
-    /// options list behaves the same whether it is resolved against a live
-    /// page or a recorded one.
-    /// </summary>
+    /// mirrors PageOps' most-specific-first contract, so an options list behaves the same against a live or a recorded page
     public static HtmlNode? First(HtmlNode root, IReadOnlyList<string> selectors)
     {
         foreach (var selector in selectors)
@@ -537,7 +442,6 @@ internal static class HtmlQuery
         return step.Attributes.All(test => MatchesAttribute(node, test));
     }
 
-    /// <summary>Whether the element carries every class the step names.</summary>
     private static bool HasClasses(HtmlNode node, string[] wanted)
     {
         var classAttribute = node.Attribute("class");
@@ -547,10 +451,6 @@ internal static class HtmlQuery
         return wanted.All(name => classes.Contains(name, StringComparer.Ordinal));
     }
 
-    /// <summary>
-    /// Whether the element passes one attribute test: present, and where the
-    /// test states a value, related to it the way its operator says.
-    /// </summary>
     private static bool MatchesAttribute(HtmlNode node, AttributeTest test)
     {
         if (node.Attribute(test.Name) is not { } actual) return false;
@@ -617,12 +517,7 @@ internal static class HtmlQuery
         return [.. steps];
     }
 
-    /// <summary>
-    /// The index just past the compound selector starting at
-    /// <paramref name="i"/>: up to the next whitespace or child combinator,
-    /// with every bracketed attribute test skipped whole so a combinator
-    /// quoted inside one does not end it early.
-    /// </summary>
+    /// bracketed tests are skipped whole so a combinator quoted inside one does not end the compound early
     private static int EndOfCompound(string selector, int i)
     {
         while (i < selector.Length && !char.IsWhiteSpace(selector[i]) && selector[i] != '>')
@@ -639,11 +534,7 @@ internal static class HtmlQuery
         return i;
     }
 
-    /// <summary>
-    /// The index just past the attribute test whose <c>[</c> is at
-    /// <paramref name="i"/>. Brackets nest and a quoted value is skipped
-    /// whole, so a <c>]</c> inside one does not close the test.
-    /// </summary>
+    /// brackets nest and a quoted value is skipped whole, so a closing bracket inside one does not close the test
     private static int EndOfBracket(string selector, int i)
     {
         var depth = 1;
@@ -665,10 +556,6 @@ internal static class HtmlQuery
         return i;
     }
 
-    /// <summary>
-    /// The index just past the quoted run whose opening quote is at
-    /// <paramref name="i"/> - or one past the end when it never closes.
-    /// </summary>
     private static int AfterQuoted(string selector, int i)
     {
         var quote = selector[i++];
@@ -715,21 +602,14 @@ internal static class HtmlQuery
         return new Step(tag, id, [.. classes], [.. attributes], child);
     }
 
-    /// <summary>Whether <paramref name="c"/> begins an id, a class or an attribute test.</summary>
     private static bool IsMarker(char c) => c is '#' or '.' or '[';
 
-    /// <summary>The index of the next marker at or after <paramref name="i"/>, or the end.</summary>
     private static int EndOfToken(string compound, int i)
     {
         while (i < compound.Length && !IsMarker(compound[i])) i++;
         return i;
     }
 
-    /// <summary>
-    /// Compiles the attribute test whose <c>[</c> sits just before
-    /// <paramref name="i"/> into <paramref name="attributes"/>, and says where
-    /// the next read starts. A test that never closes runs to the end.
-    /// </summary>
     private static int ReadAttributeTest(string compound, int i, List<AttributeTest> attributes)
     {
         var close = compound.IndexOf(']', i);
@@ -783,7 +663,7 @@ internal static class HtmlQuery
             else if (c == ']') depth--;
             else if (c is '"' or '\'')
             {
-                // A quoted run is one unit: a separator inside it splits nothing.
+                // a quoted run is one unit: a separator inside it splits nothing
                 i = AfterQuoted(selector, i);
                 continue;
             }

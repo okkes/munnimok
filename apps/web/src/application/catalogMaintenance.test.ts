@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, normalizeReimbursements } from './catalogMaintenance';
+import { applyCatalogTombstones, normalizeReimbursements, settleSpaceReimbursements } from './catalogMaintenance';
 
 const SPACE = 's1';
 
@@ -19,15 +19,12 @@ describe('catalog tombstone pass (AC3)', () => {
     const store = new DexieBackend(new MunniDB(`munni_ac3_${Math.random().toString(36).slice(2)}`));
     stores.push(store);
     const repo = new Repo(store, new HlcClock('ac3'), { trackOutbox: false });
-    // a custom sub the user created under the soon-retired builtin 'gift'
     await repo.upsert('category', SPACE, 'sub1', {
       parentId: 'gift', name: 'Wrapping', icon: 'gift', color: '', txType: 'expense', sortOrder: 1, builtin: 0,
     });
-    // transactions on the retired builtin, on the custom sub, and elsewhere
     await repo.upsert('transaction', SPACE, 't-gift', { accountId: 'a', date: '2026-01-01', amountCents: -100, currency: 'EUR', merchant: 'X', catId: 'gift', needsReview: 0 });
     await repo.upsert('transaction', SPACE, 't-sub', { accountId: 'a', date: '2026-01-02', amountCents: -200, currency: 'EUR', merchant: 'Y', catId: 'sub1', needsReview: 0 });
     await repo.upsert('transaction', SPACE, 't-keep', { accountId: 'a', date: '2026-01-03', amountCents: -300, currency: 'EUR', merchant: 'Z', catId: 'groceries', needsReview: 0 });
-    // a feed overlay pointing at the retired id
     await repo.upsert('txMeta', SPACE, 'm1', { txId: 'raw1', catId: 'gift', needsReview: 0 });
     await store.metaPut('catalog', {
       version: 4,
@@ -42,7 +39,7 @@ describe('catalog tombstone pass (AC3)', () => {
     const touched = await applyCatalogTombstones(store, repo);
     expect(touched).toBe(4); // sub cascade + 2 transactions + 1 overlay
 
-    expect((await store.get('category', 'sub1'))?.deleted).toBe(1); // cascaded
+    expect((await store.get('category', 'sub1'))?.deleted).toBe(1);
     expect(await store.get('transaction', 't-gift')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(await store.get('transaction', 't-sub')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(await store.get('transaction', 't-keep')).toMatchObject({ catId: 'groceries', needsReview: 0 });
@@ -52,12 +49,12 @@ describe('catalog tombstone pass (AC3)', () => {
   it('runs once per version (marker), and not at all without a document', async () => {
     const { store, repo } = await seeded();
     await applyCatalogTombstones(store, repo);
-    expect(await applyCatalogTombstones(store, repo)).toBe(0); // marker gates the rerun
+    expect(await applyCatalogTombstones(store, repo)).toBe(0);
 
     const fresh = new DexieBackend(new MunniDB(`munni_ac3_${Math.random().toString(36).slice(2)}`));
     stores.push(fresh);
     const freshRepo = new Repo(fresh, new HlcClock('ac3b'), { trackOutbox: false });
-    expect(await applyCatalogTombstones(fresh, freshRepo)).toBe(0); // no doc, no work
+    expect(await applyCatalogTombstones(fresh, freshRepo)).toBe(0);
   });
 });
 
@@ -87,7 +84,6 @@ describe('#228: the every-boot reimbursement normalizer', () => {
       catId: 'eatingOut', needsReview: 0,
       reimbursements: [{ txId: 'salary', amountCents: 420 }],
     });
-    // untouched: no links anywhere near it
     await repo.upsert('transaction', SPACE, 'plain', {
       accountId: 'a', date: '2026-01-03', amountCents: -500, currency: 'EUR', merchant: 'Z',
       catId: 'coffee', needsReview: 0,
@@ -95,16 +91,13 @@ describe('#228: the every-boot reimbursement normalizer', () => {
 
     expect(await normalizeReimbursements(store, repo)).toBeGreaterThan(0);
 
-    // the link now names the largest open credit part deterministically
     const koffie = await store.get('transaction', 'koffie');
     expect(koffie?.reimbursements?.[0]?.creditPartId).toBe('p1');
-    // …and the koffie expense settled in its own cats
     expect(koffie?.cats).toMatchObject([{ catId: 'reimbursed', amountCents: 420 }]);
 
     const salary = await store.get('transaction', 'salary');
     const parts = salary?.splits ?? [];
     expect(parts.map((p) => p.amountCents)).toEqual([120_000, 120_000]);
-    // the named part carries the settle inside its OWN cats
     expect(parts[0].cats).toMatchObject([
       { catId: 'salary', amountCents: 119_580 },
       { catId: 'reimbursed', amountCents: 420 },
@@ -112,7 +105,56 @@ describe('#228: the every-boot reimbursement normalizer', () => {
     expect(parts[1].cats ?? undefined).toBeFalsy();
     expect((await store.get('transaction', 'plain'))?.cats).toBeUndefined();
 
-    // every boot, no marker — a second run rewrites nothing
     expect(await normalizeReimbursements(store, repo)).toBe(0);
+  });
+
+  /** a 12.00 lunch that a 800.00 payment paid 1.00 back for, settled on both sides the way the link screen leaves them */
+  async function linkedPair(repo: Repo) {
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('transaction', SPACE, 'lunch', {
+      accountId: 'a', date: '2026-11-10', amountCents: -1_200, currency: 'EUR', merchant: 'Lunch', catId: 'eatingOut', needsReview: 0,
+      reimbursements: [{ txId: 'payback', amountCents: 100 }],
+      cats: [{ catId: 'eatingOut', amountCents: 1_100 }, { catId: 'reimbursed', amountCents: 100 }],
+    });
+    await repo.upsert('transaction', SPACE, 'payback', {
+      accountId: 'a', date: '2026-11-12', amountCents: 80_000, currency: 'EUR', merchant: 'A friend', catId: 'uncategorized', needsReview: 0,
+      cats: [{ catId: 'uncategorized', amountCents: 79_900 }, { catId: 'reimbursed', amountCents: 100 }],
+    });
+  }
+
+  it('#617: the expense of a pair is deleted — the money that paid it back no longer reads Reimbursed', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_rbd_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rbd'), { trackOutbox: false });
+    await linkedPair(repo);
+    expect(await settleSpaceReimbursements(store, repo, SPACE)).toBe(0);
+
+    await repo.remove('transaction', SPACE, 'lunch');
+    expect(await settleSpaceReimbursements(store, repo, SPACE)).toBe(1);
+    const payback = await store.get('transaction', 'payback');
+    expect(payback?.cats ?? null).toBeNull();
+    expect(payback?.catId).toBe('uncategorized');
+  });
+
+  it('#617: the money of a pair is deleted — the expense lets go of the link and of its Reimbursed part', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_rbd_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rbd'), { trackOutbox: false });
+    await linkedPair(repo);
+    // a link to a transaction this device does not hold stays: it may simply not have arrived yet
+    await repo.upsert('transaction', SPACE, 'taxi', {
+      accountId: 'a', date: '2026-11-11', amountCents: -2_000, currency: 'EUR', merchant: 'Taxi', catId: 'transport', needsReview: 0,
+      reimbursements: [{ txId: 'not-here', amountCents: 500 }],
+      cats: [{ catId: 'transport', amountCents: 1_500 }, { catId: 'reimbursed', amountCents: 500 }],
+    });
+
+    await repo.remove('transaction', SPACE, 'payback');
+    expect(await settleSpaceReimbursements(store, repo, SPACE)).toBeGreaterThan(0);
+    const lunch = await store.get('transaction', 'lunch');
+    expect(lunch?.reimbursements).toEqual([]);
+    // what was settled comes back as uncategorized (the rule of every unlink), the rest keeps its category
+    expect(lunch?.cats).toMatchObject([{ catId: 'eatingOut', amountCents: 1_100 }, { catId: 'uncategorized', amountCents: 100 }]);
+    expect((await store.get('transaction', 'taxi'))?.reimbursements).toEqual([{ txId: 'not-here', amountCents: 500 }]);
+    expect(await settleSpaceReimbursements(store, repo, SPACE)).toBe(0);
   });
 });

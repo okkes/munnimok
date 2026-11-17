@@ -34,7 +34,7 @@ describe('iOS scroll-jail guard (#134)', () => {
     scroller.scrollTop = 5;
     fireEvent.focusIn(screen.getByTestId('field'));
     await waitFor(() => expect(chrome.scrollTop).toBe(0));
-    expect(scroller.scrollTop).toBe(5); // the legit scroller is untouched
+    expect(scroller.scrollTop).toBe(5);
   });
 
   it('ignores focus that lands outside editables', async () => {

@@ -6,7 +6,6 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Bol;
 
-/// <summary>One order, in the only shape this adapter cares about.</summary>
 internal sealed record BolOrder
 {
     public required string Id { get; init; }
@@ -16,103 +15,44 @@ internal sealed record BolOrder
 
     public required Money Total { get; init; }
 
-    /// <summary>
-    /// bol is a marketplace, so the seller is genuinely useful information
-    /// and lands in the receipt's <c>store_name</c>. Null when the order page
-    /// does not name one - bol itself ships a large share of its own orders.
-    /// </summary>
+    /// <summary>Lands in the receipt's store_name; null when the order page names none (bol ships many itself).</summary>
     public string? SellerName { get; init; }
 
     public ReceiptPayment Payment { get; init; } = ReceiptFactory.Payment();
 
     public IReadOnlyList<ReceiptItem> Items { get; init; } = [];
 
-    /// <summary>
-    /// This order exactly as bol sent it, or null when the caller did not ask.
-    /// </summary>
-    /// <remarks>
-    /// Null unless requested, rather than captured and dropped later: it is a
-    /// verbatim copy of somebody's purchase and the cheapest way not to leak it
-    /// is not to hold it.
-    /// </remarks>
+    /// <summary>Verbatim payload, null unless requested: a purchase not held cannot leak</summary>
     public string? Raw { get; init; }
 }
 
-/// <summary>
-/// The seam.
-///
-/// The one thing about bol.com that cannot be settled without an account is
-/// whether <c>/nl/nl/rnwy/account/bestellingen</c> is server-rendered HTML or
-/// a shell around a JSON endpoint. Guessing would produce an adapter that is
-/// either right or entirely useless, discovered at 3am by a job that fails
-/// with a parser error. So both are built, an option chooses, and everything
-/// either one cannot do is reported with the shape's name in the message.
-///
-/// Implementations are pure: URL in, orders out. No transport, no cookies, no
-/// clock - which is what makes both of them fully testable against a recorded
-/// payload, and what will make the losing one cheap to delete.
-/// </summary>
+/// Pure seam, URL in, orders out (no transport, cookies, clock). Whether the orders page is HTML or a JSON shell is
+/// unknowable without an account, so both are built, an option chooses, and failures name the shape.
 internal interface IBolOrdersShape
 {
     /// <summary><c>html</c> or <c>json</c>. Appears in every failure and in <c>FetchResult.Via</c>.</summary>
     string Name { get; }
 
-    /// <summary>What an operator would have to change if this shape is the wrong one.</summary>
     string ConfigHint { get; }
 
     string Url(BolOptions options, int page);
 
-    /// <summary>The <c>Accept</c> this shape asks for.</summary>
     string Accept { get; }
 
-    /// <summary>
-    /// The request body, or null to send none.
-    /// </summary>
-    /// <remarks>
-    /// GraphQL is a POST with an operation in it, and the two page shapes are
-    /// plain GETs. The seam carries the difference rather than the adapter
-    /// branching on which shape it happens to be holding - that branch is
-    /// exactly what this interface exists to avoid.
-    /// </remarks>
+    /// <summary>The request body, null for none: GraphQL is a POST, the page shapes are GETs; the seam carries that so the
+    /// adapter does not branch.</summary>
     string? Body(BolOptions options, int page) => null;
 
-    /// <summary>
-    /// Headers this shape needs beyond the ones every bol request carries.
-    /// </summary>
-    /// <remarks>
-    /// Kept on the shape rather than in the adapter because it is the shape
-    /// that knows what it is asking for: bol's edge wants the GraphQL operation
-    /// named in a header, and the two page shapes have no operation to name.
-    /// </remarks>
+    /// <summary>Headers beyond the common ones: bol's edge wants the GraphQL operation named in a header.</summary>
     IReadOnlyList<KeyValuePair<string, string>> Headers(BolOptions options) => [];
 
-    /// <summary>
-    /// True where this shape's orders carry no stated total and the one on the
-    /// receipt is therefore our own sum of its lines.
-    /// </summary>
-    /// <remarks>
-    /// A property of the SHAPE rather than of the adapter, because it is a
-    /// property of what the payload states: the page markup shows an order
-    /// total and the GraphQL payload does not.
-    /// </remarks>
+    /// <summary>True where the order states no total and the receipt's is our sum of its lines: page markup shows a total,
+    /// GraphQL does not.</summary>
     bool TotalIsDerived => false;
 
-    /// <summary>
-    /// Orders out of one page's body. Returns an empty list only where the
-    /// body says so itself - an unrecognisable body is
-    /// <see cref="ErrorCode.ProviderChanged"/> naming what was missing, never
-    /// a quiet zero.
-    /// </summary>
-    /// <param name="keepRaw">
-    /// Whether to carry each order's verbatim payload out on
-    /// <see cref="BolOrder.Raw"/>. Off by default: the caller has to ask for
-    /// somebody's purchase in full, and a shape that cannot produce one simply
-    /// leaves it null.
-    /// </param>
-    /// <param name="warn">
-    /// Where a shape's remarks go that are NOT a failure - a field error bol
-    /// reports beside orders it did deliver (2026-10-07, prod). Null drops them.
-    /// </param>
+    /// <summary>Empty only where the body says so; an unrecognisable body is ProviderChanged, never a quiet zero.</summary>
+    /// <param name="keepRaw">carry each order's verbatim payload on Raw; off by default</param>
+    /// <param name="warn">field errors bol reports beside orders it did deliver (prod, 2026-10-07); null drops them</param>
     IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false, Action<string>? warn = null);
 }
 
@@ -127,18 +67,9 @@ internal static class BolShapes
     };
 }
 
-/// <summary>
-/// Dutch dates, with a real offset on the end.
-///
-/// <see cref="ReceiptTime"/> does the offset arithmetic and is the only place
-/// allowed to; what it cannot do is read "14 juni 2026", because it parses
-/// with the invariant culture - and a Dutch month name coming back unparsed
-/// is how a near-midnight order lands on the wrong day, or on no day at all.
-/// The month table is written out rather than pulled from a culture: an agent
-/// image with globalization trimmed would still date every receipt correctly,
-/// and failing to date a receipt is not an acceptable outcome of a packaging
-/// choice.
-/// </summary>
+/// Dutch dates with a real offset. ReceiptTime parses with the invariant culture and cannot read "14 juni 2026"; an
+/// unparsed month puts a near-midnight order on the wrong day. The month table is written out, not taken from a
+/// culture: an agent image with trimmed globalization must still date every receipt.
 internal static partial class BolDate
 {
     private const string ProviderId = BolAdapter.ProviderId;
@@ -159,26 +90,18 @@ internal static partial class BolDate
         ["december"] = 12, ["dec"] = 12,
     };
 
-    /// <summary>Anything already machine-readable goes straight through.</summary>
     [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}")]
     private static partial Regex Iso { get; }
 
-    /// <summary>"14 juni 2026", "14 jun. 2026", "vrijdag 14 juni 2026".</summary>
     [GeneratedRegex(@"(?<day>\d{1,2})\s+(?<month>[A-Za-z]+)\.?\s+(?<year>\d{4})")]
     private static partial Regex Spelled { get; }
 
-    /// <summary>"14-06-2026" and "14/06/2026", which bol also uses in places.</summary>
     [GeneratedRegex(@"(?<day>\d{1,2})[-/](?<month>\d{1,2})[-/](?<year>\d{4})")]
     private static partial Regex Numeric { get; }
 
-    /// <summary>A time of day riding along with any of the above.</summary>
     [GeneratedRegex(@"(?<hour>\d{1,2})[:.](?<minute>\d{2})(?::(?<second>\d{2}))?")]
     private static partial Regex Clock { get; }
 
-    /// <summary>
-    /// <paramref name="raw"/> in whichever of the shapes bol writes, resolved
-    /// in <paramref name="zone"/> when it carries no offset of its own.
-    /// </summary>
     public static DateTimeOffset Parse(string? raw, TimeZoneInfo zone, string field)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -188,8 +111,6 @@ internal static partial class BolDate
 
         var text = raw.Trim();
 
-        // An ISO timestamp is bol telling us exactly what it means, including
-        // its offset when it states one. Nothing here improves on that.
         if (Iso.IsMatch(text)) return ReceiptTime.Parse(text, zone, ProviderId, field);
 
         if (Spelled.Match(text) is { Success: true } spelled)
@@ -214,20 +135,10 @@ internal static partial class BolDate
                 text, zone, field);
         }
 
-        // Not a shape we recognise. Named rather than guessed at: a receipt
-        // dated wrongly is worse than a run that stops and says why.
         throw ConnectorException.ProviderChanged($"{ProviderId}: cannot parse {field} from '{raw}'");
     }
 
-    /// <summary>
-    /// Builds an invariant timestamp and hands the offset question to
-    /// <see cref="ReceiptTime"/>, so there is exactly one implementation of
-    /// "what does a wall clock in Amsterdam mean".
-    ///
-    /// A date with no time becomes local midnight, which still carries a real
-    /// offset - the provider simply did not tell us the hour, and inventing
-    /// one would be worse than admitting the resolution we have.
-    /// </summary>
+    /// A date with no time becomes local midnight: the hour is not given, and inventing one would be worse.
     private static DateTimeOffset Compose(
         int year, int month, int day, string text, TimeZoneInfo zone, string field)
     {
@@ -246,9 +157,6 @@ internal static partial class BolDate
 
     private static (int Hour, int Minute, int Second) TimeOfDay(string text)
     {
-        // A time needs a ':' or a '.' between its halves, which is why no
-        // date this method is given can be mistaken for one: the spelled form
-        // separates with spaces and the numeric form with '-' or '/'.
         var match = Clock.Match(text);
         if (!match.Success) return (0, 0, 0);
 

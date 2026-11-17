@@ -8,11 +8,7 @@ import type { NavFeatureId } from './navFeatures';
 import { onMainNav } from './NavBars';
 import { useSideNavShown } from './useNavTabs';
 
-/**
- * #577: the features whose only door was the bar (transactions, planning,
- * portfolio) that this space took out of it — Home keeps a door to each.
- * None where the side panel lists everything.
- */
+/** #577: Home keeps a door to each bar-only feature taken out of the bar; none where the side panel lists all */
 export function useHomeShortcuts(space: SpaceRow | undefined): NavFeatureId[] {
   const identity = useSession((s) => s.identity);
   const sideNav = useSideNavShown();
@@ -20,7 +16,6 @@ export function useHomeShortcuts(space: SpaceRow | undefined): NavFeatureId[] {
   return homeShortcuts(resolveNavTabs(space.navTabs, navUsableFor(identity?.kind)));
 }
 
-/** Home's Shortcuts block: one tile per door, side by side */
 export function NavShortcutsBlock({ ids }: Readonly<{ ids: readonly NavFeatureId[] }>) {
   const { t } = useLang();
   const navigate = useNavigate();

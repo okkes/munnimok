@@ -5,37 +5,15 @@ using RegistryConnector.Adapters.Mock;
 
 namespace RegistryConnector.Adapters;
 
-/// <summary>
-/// Everything the registry connector knows how to talk to, bound in one place
-/// from one settings object.
-///
-/// A registry is somewhere that holds an official record ABOUT you rather than
-/// a stream of things you did. BKR is the first one being built; a pension
-/// overview or a student-debt balance is the same shape and belongs here
-/// rather than in a fourth service.
-///
-/// Providers are code, not rows - the registry is built at startup from this
-/// and only a provider's health is ever state.
-/// </summary>
+// a registry holds an official record ABOUT you; a pension or student-debt balance belongs here, not in a new service
+// providers are code, not rows: only a provider's health is state
 public static class RegistryAdapters
 {
-    /// <summary>
-    /// Real providers plus the mock set. The mocks are registered in every
-    /// environment on purpose: they are the only providers that can be
-    /// exercised end to end without an account, and an environment that
-    /// cannot demonstrate its own protocol is one nobody can debug.
-    /// </summary>
+    // the mocks are registered in every environment: the only providers exercisable end to end without an account
     public static IReadOnlyList<IProviderAdapter> All(
         RegistryAdapterOptions? options = null, TimeProvider? time = null) =>
         [.. Real(options, time), .. MockRegistryAdapters.All(time)];
 
-    /// <summary>
-    /// BKR, the Dutch credit register, and DUO, which holds student debt.
-    ///
-    /// Both were built against live captures rather than guesses about their
-    /// markup - which is why each took a sign-in to write and not an afternoon
-    /// of plausible selectors.
-    /// </summary>
     public static IReadOnlyList<IProviderAdapter> Real(
         RegistryAdapterOptions? options = null, TimeProvider? time = null)
     {
@@ -45,11 +23,7 @@ public static class RegistryAdapters
     }
 }
 
-/// <summary>
-/// Every provider fact that might need correcting after a registry moves,
-/// in one bindable object - so an operator edit is a deploy rather than a
-/// release.
-/// </summary>
+// every provider fact that may need correcting, bindable: an operator edit is a deploy, not a release
 public sealed class RegistryAdapterOptions
 {
     public BkrOptions? Bkr { get; set; }

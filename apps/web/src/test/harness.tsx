@@ -25,7 +25,6 @@ const preloadScreens = (route: AnyRoute): Promise<unknown> =>
   Promise.all([route.options.component?.preload?.(), ...((route.children as AnyRoute[] | undefined) ?? []).map(preloadScreens)]);
 await preloadScreens(routeTree);
 
-/** static providers only (i18n + theme) */
 export function renderWithProviders(ui: ReactElement) {
   return render(ui, {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -36,11 +35,7 @@ export function renderWithProviders(ui: ReactElement) {
   });
 }
 
-/**
- * Full data harness: demo identity + seeded Dexie (fake-indexeddb).
- * Await findBy* queries — DataProvider renders children only once the
- * seed is in place.
- */
+/** await findBy*: DataProvider renders children only once the seed is in place */
 export function renderWithData(ui: ReactElement) {
   localStorage.setItem('munni_lang', 'en');
   clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)
@@ -56,15 +51,9 @@ export function renderWithData(ui: ReactElement) {
   });
 }
 
-/**
- * Renders the real route tree at `path` with a memory history, signed in
- * as the demo identity (AppLayout provides DataProvider). Await the
- * screen's `screen-*` testid before asserting.
- */
 export function renderApp(path: string, { signedIn = true, identity }: { signedIn?: boolean; identity?: Identity } = {}) {
   localStorage.setItem('munni_lang', 'en');
-  // #361: specs re-seed fresh databases under the same space id — the
-  // remount cache must not carry rows across renders
+  // #361: specs re-seed fresh databases under the same space id; the remount cache must not carry rows across
   clearQueryCache();
   if (identity) useSession.getState().login(identity);
   else if (signedIn) useSession.getState().login({ kind: 'demo' });
@@ -81,10 +70,7 @@ export function renderApp(path: string, { signedIn = true, identity }: { signedI
   );
 }
 
-// ── user-identity harness ────────────────────────────────────────────────
-
 export const USER_TEST_SUB = 'test-user';
-/** the identity database renderAppAsUser uses — delete it in beforeEach */
 export const USER_TEST_DB = `munni_user_${USER_TEST_SUB}`;
 
 export interface UserAppOptions {
@@ -99,14 +85,6 @@ export interface UserAppOptions {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-/**
- * Renders the app signed in as a TEST-AUTH USER against a scripted
- * server: global fetch is stubbed with a router that answers the sync
- * protocol (bootstrap pull delivers the given spaces) plus whatever REST
- * handlers the test supplies. This is how user-only UI — members,
- * friends, invites, bank connect — gets exercised without a server.
- */
-/** the bootstrap pull's one space op (S3776: out of the fetch mock) */
 const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) => ({
   opId: `srv-${space.id}`,
   spaceId: space.id,
@@ -123,7 +101,7 @@ const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) 
   hlc: '000000100-0000-server',
 });
 
-/** #569: the heads round's answer, every listed space's head as moved (S3776: out of the fetch mock) */
+/** #569: the heads round's answer: every listed space's head reads as moved */
 async function syncHeads(
   api: NonNullable<UserAppOptions['api']>,
   spaces: NonNullable<UserAppOptions['spaces']>,
@@ -140,7 +118,6 @@ async function syncHeads(
   );
 }
 
-/** one space's pull: its bootstrap op from zero, nothing after (S3776: out of the fetch mock) */
 function pullResponse(spaces: NonNullable<UserAppOptions['spaces']>, url: URL, encodedSpaceId: string): Response {
   const space = spaces.find((s) => s.id === decodeURIComponent(encodedSpaceId));
   const since = Number(url.searchParams.get('since') ?? 0);
@@ -148,13 +125,7 @@ function pullResponse(spaces: NonNullable<UserAppOptions['spaces']>, url: URL, e
   return json({ ops: [], latestSeq: since });
 }
 
-/**
- * The signed-in test user against the scripted server, without a render:
- * the session is logged in and global fetch answers the sync protocol plus
- * the given REST handlers. renderAppAsUser builds on it; a screen that
- * lives outside the route tree (the party return page) mounts its own
- * providers on top.
- */
+/** the test user against the scripted server, without a render — for screens outside the route tree */
 export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], roles = {}, api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
   clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)

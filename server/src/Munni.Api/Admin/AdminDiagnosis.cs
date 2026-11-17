@@ -4,16 +4,13 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Admin;
 
-/// <summary>A space the user is in: its name where the space's own row is readable, the user's role, and whether it is really a bank feed.</summary>
 public sealed record AdminSpaceDto(string Id, string? Name, string Role, bool Feed);
 
-/// <summary>A space by id and name — where a feed's accounts are shown.</summary>
 public sealed record AdminSpaceRefDto(string Id, string? Name);
 
-/// <summary>An owned feed: the op high-water mark, when data last landed, and the spaces its accounts are attached to.</summary>
 public sealed record AdminFeedDto(string FeedSpaceId, long MaxSeq, DateTimeOffset? LastOpAt = null, List<AdminSpaceRefDto>? AttachedTo = null);
 
-/// <summary>An attachment, read for a human: the account's name and the tail of its IBAN (never the whole), the space's name, who attached it.</summary>
+/// <summary>The IBAN as its tail only, never the whole.</summary>
 public sealed record AdminAttachmentDto(
     string SpaceId,
     string FeedSpaceId,
@@ -24,26 +21,17 @@ public sealed record AdminAttachmentDto(
     string? AttachedByName = null,
     bool Archived = false);
 
-/// <summary>The whole account→app chain of one user (user 2026-10-09: "hard to understand" as bare ids — named and grouped now).</summary>
 public sealed record AdminUserDiagnosisDto(
     Guid UserId,
     List<string> MemberSpaces,
     List<AdminFeedDto> OwnedFeeds,
     List<AdminAttachmentDto> Attachments,
-    /// <summary>#367: the user's connector sessions as the relay binds them — ids and state, never a bundle;
-    /// a bank's consent is one of them (§15)</summary>
+    /// <summary>#367: ids and state, never a bundle.</summary>
     List<AdminConnectorSessionDetailDto>? ConnectorSessions = null,
-    /// <summary>the member spaces, named and with the user's role — the ids above stay for anything that reads them</summary>
     List<AdminSpaceDto>? Spaces = null);
 
-/// <summary>
-/// The per-user sync-chain diagnosis: memberships, owned feeds (+ op
-/// high-water mark and the spaces they reach), attachments, connector
-/// sessions — diagnosing "the consent linked but the app shows nothing".
-/// The server never interprets the app's entities, but it may READ a name
-/// off a materialized row to label a line for the operator (user
-/// 2026-10-09); a row it cannot read leaves the label null.
-/// </summary>
+// the server never interprets the app's entities, but may READ a name off a materialized row to label a line.
+// an unreadable row leaves the label null
 public static class AdminDiagnosis
 {
     private const string SpaceEntity = "space";
@@ -126,7 +114,6 @@ public static class AdminDiagnosis
             .ToList();
     }
 
-    /// <summary>The names off the spaces' own materialized rows; null for a space whose row is not readable (a feed, an empty one).</summary>
     private static async Task<Dictionary<string, string?>> SpaceNamesAsync(AppDbContext db, List<string> spaceIds)
     {
         if (spaceIds.Count == 0) return [];
@@ -137,7 +124,6 @@ public static class AdminDiagnosis
         return rows.ToDictionary(r => r.SpaceId, r => Text(r.DataJson, "name"));
     }
 
-    /// <summary>A string field off a materialized row's JSON, or null — a row that does not parse labels nothing and breaks nothing.</summary>
     private static string? Text(string? dataJson, string field)
     {
         if (string.IsNullOrEmpty(dataJson)) return null;

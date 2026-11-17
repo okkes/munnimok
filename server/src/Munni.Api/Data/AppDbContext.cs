@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceMember> SpaceMembers => Set<SpaceMember>();
     public DbSet<SyncOpRow> SyncOps => Set<SyncOpRow>();
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
+    public DbSet<ErasedSpace> ErasedSpaces => Set<ErasedSpace>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
@@ -34,7 +35,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
     public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
     public DbSet<ConnectorPendingTx> ConnectorPendingTxs => Set<ConnectorPendingTx>();
-    /// <summary>The operator's own connections from the lab's test bench (#441 L2). See <see cref="Munni.Api.Lab.LabSession"/>.</summary>
     public DbSet<Munni.Api.Lab.LabSession> LabSessions => Set<Munni.Api.Lab.LabSession>();
 
     public DbSet<Munni.Api.Lab.LabRetentionRun> LabRetentionRuns => Set<Munni.Api.Lab.LabRetentionRun>();
@@ -83,6 +83,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
         modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        modelBuilder.Entity<ErasedSpace>(e => e.HasKey(x => x.SpaceId));
         modelBuilder.Entity<UserDevice>(e =>
         {
             // the same physical device can serve several accounts
@@ -171,23 +172,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     }
 }
 
-/// <summary>
-/// A split session (settleup-splits design): Splitwise-style group
-/// ledger with membership INDEPENDENT of spaces. Server-resident and
-/// online-only by design — guests must never touch space scopes.
-/// </summary>
+// Splitwise-style group ledger, membership independent of spaces; server-resident and online-only:
+// guests must never touch space scopes
 public class Split
 {
-    /// <summary>client-generated id (uuidv7)</summary>
     public required string Id { get; set; }
     public required string Name { get; set; }
-    /// <summary>fixed at creation (user decision Q2)</summary>
+    // fixed at creation
     public required string Currency { get; set; }
     /// <summary>open: running · settled: the plan of payments stands and is being paid · archived: closed for good</summary>
     public string Status { get; set; } = "open";
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    /// <summary>#538: the event's cover, as a regular event has one — one of the app's own (a path) or an uploaded one (a downscaled data URL)</summary>
+    // #538: one of the app's own (a path) or an uploaded one (a downscaled data URL)
     public string? Picture { get; set; }
     /// <summary>yyyy-mm-dd, both optional: an event that has not started is planned, one that ended is over</summary>
     public string? StartDate { get; set; }
@@ -204,22 +201,18 @@ public class SplitMember
     public required string SplitId { get; set; }
     public Guid UserId { get; set; }
     public required string Role { get; set; } // owner | contributor
-    /// <summary>active · left · removed — someone who went stays in the arithmetic of what they took part in,
-    /// and still reads the event: they may owe or be owed</summary>
+    // someone who went stays in the arithmetic of what they took part in and still reads the event
     public string State { get; set; } = "active";
     public DateTimeOffset? LeftAt { get; set; }
-    /// <summary>the member's OWN space this split is wired to (per-member
-    /// attachment, user clarification) — personal, only ever shown to them</summary>
+    // the member's OWN space; personal, only ever shown to them
     public string? AttachedSpaceId { get; set; }
-    /// <summary>the member's OWN event (in their attached space) — SP5;
-    /// personal wiring like the space, never shown to other members</summary>
+    // the member's OWN event in their attached space; personal, never shown to other members
     public string? AttachedEventId { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class SplitEntry
 {
-    /// <summary>client-generated id (uuidv7)</summary>
     public required string Id { get; set; }
     public required string SplitId { get; set; }
     public string Kind { get; set; } = "expense"; // expense | settlement
@@ -227,15 +220,12 @@ public class SplitEntry
     public required string Description { get; set; }
     /// <summary>positive cents in the split's currency</summary>
     public long AmountCents { get; set; }
-    /// <summary>yyyy-mm-dd</summary>
     public required string Date { get; set; }
-    /// <summary>JSON [{userId,cents}] — ALWAYS materialized at entry
-    /// creation (an equal split is computed over the member set of that
-    /// moment and stored), so later joins never rewrite history</summary>
+    // JSON [{userId,cents}], always materialized at entry creation so later joins never rewrite history
     public required string SharesJson { get; set; }
-    /// <summary>backlink to the adder's space transaction (SP2) — only ever shown to the adder</summary>
+    // backlink to the adder's space transaction; only ever shown to the adder
     public string? SourceTxId { get; set; }
-    /// <summary>#538: the space that transaction lives in — the adder's, and shown to nobody else</summary>
+    // #538: the space that transaction lives in; shown to nobody else
     public string? SourceSpaceId { get; set; }
     /// <summary>how the shares were given: equal | exact | percent — the cents are stored either way</summary>
     public string ShareMode { get; set; } = "equal";
@@ -248,12 +238,7 @@ public class SplitEntry
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>
-/// Share-link invite (SP3): any member can mint one; the link joins
-/// ANYONE — no friendship required, no space access granted. Multi-use
-/// while valid; minting a new link retires the split's previous one.
-/// The token is the whole secret, so it's long and random.
-/// </summary>
+// any member can mint one; the link joins anyone, no friendship or space access needed; a new link retires the previous one
 public class SplitInvite
 {
     public required string Token { get; set; }
@@ -265,11 +250,10 @@ public class SplitInvite
     /// <summary>#538: how many people the link lets in — 0 = any number; used up, it is as good as gone</summary>
     public int MaxUses { get; set; }
     public int Uses { get; set; }
-    /// <summary>people who use the link wait until an owner lets them in</summary>
     public bool NeedsApproval { get; set; }
 }
 
-/// <summary>#538: the photo of an entry's receipt (a data URL), kept apart from the entry.</summary>
+// #538: kept apart from the entry
 public class SplitReceipt
 {
     public required string EntryId { get; set; }
@@ -277,7 +261,6 @@ public class SplitReceipt
     public required string Image { get; set; }
 }
 
-/// <summary>#538: someone used a link that asks for approval and waits for an owner's word.</summary>
 public class SplitJoinRequest
 {
     public Guid Id { get; set; }
@@ -288,7 +271,6 @@ public class SplitJoinRequest
     public DateTimeOffset? AnsweredAt { get; set; }
 }
 
-/// <summary>#538: an owner asked a friend in — no link, no waiting once they say yes.</summary>
 public class SplitFriendInvite
 {
     public Guid Id { get; set; }
@@ -300,7 +282,6 @@ public class SplitFriendInvite
     public DateTimeOffset? AnsweredAt { get; set; }
 }
 
-/// <summary>#538: one payment of a settlement's plan — who pays whom, and whether it was said to be paid.</summary>
 public class SplitPayment
 {
     public Guid Id { get; set; }
@@ -311,21 +292,13 @@ public class SplitPayment
     public DateTimeOffset? PaidAt { get; set; }
 }
 
-/// <summary>operator-editable server-wide settings (the catalog document, …)</summary>
 public class AppSetting
 {
     public required string Key { get; set; }
     public required string Value { get; set; }
 }
 
-/// <summary>a device's public key for E2EE store-connection sync (SC1);
-/// WrappedCsk is the sync key encrypted TO this device by another one —
-/// the server can store it but never open it</summary>
-/// <summary>
-/// One signed-in device per user (logged-in-devices plan): stamped on
-/// every authenticated request (throttled), revocable — a revoked
-/// device's next request answers 410 and the client wipes itself.
-/// </summary>
+// a revoked device's next request answers 410 and the client wipes itself
 public class UserDevice
 {
     /// <summary>the client's stable device id (the HLC node id)</summary>
@@ -340,8 +313,7 @@ public class UserDevice
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
-/// <summary>A device enrolled in connection sync: its public key and the
-/// Connection Sync Key wrapped to it (null until another device approves)</summary>
+// public key plus the Connection Sync Key wrapped to it (null until another device approves)
 public class ConnectionSyncDevice
 {
     public Guid Id { get; set; }
@@ -353,8 +325,7 @@ public class ConnectionSyncDevice
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-/// <summary>AES-GCM ciphertext of one connection's credential bundle —
-/// opaque to the server by design</summary>
+// AES-GCM ciphertext, opaque to the server by design
 public class ConnectionCipher
 {
     public Guid Id { get; set; }
@@ -371,7 +342,6 @@ public class User
     /// <summary>OIDC subject (Logto) or test-mode identifier.</summary>
     public required string Sub { get; set; }
     public string? Email { get; set; }
-    /// <summary>shown to friends/space members; set by the client after login</summary>
     public string? DisplayName { get; set; }
     /// <summary>avatar preset id ("icon|color"), chosen on the profile screen</summary>
     public string? Picture { get; set; }
@@ -381,12 +351,13 @@ public class User
     public string? DisplayCurrency { get; set; }
     /// <summary>#580: the in-app notifications up to this moment were cleared on one of the person's devices — the others follow</summary>
     public DateTimeOffset? NotificationsClearedAt { get; set; }
+    /// <summary>#614: the same per part of the list the bell shows — a JSON map from "general" or a space id to its moment</summary>
+    public string? NotificationsClearedScopes { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class Space
 {
-    /// <summary>Client-generated id (uuidv7); the unit of sharing and sync.</summary>
     public required string Id { get; set; }
     /// <summary>Monotonic per-space sequence used purely as a pull cursor.</summary>
     public long LastSeq { get; set; }
@@ -398,7 +369,6 @@ public class SpaceMember
     public required string SpaceId { get; set; }
     public Guid UserId { get; set; }
     public required string Role { get; set; } // owner | contributor | reader (SpaceRoles)
-    /// <summary>#172 "member since"</summary>
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>#549: whether this member gets the space's notifications — personal, never shown to the others</summary>
     public bool Notify { get; set; } = true;
@@ -414,16 +384,19 @@ public class SyncOpRow
     public required string Entity { get; set; }
     public required string EntityId { get; set; }
     public required string Hlc { get; set; }
-    /// <summary>JSON-serialized fields dictionary.</summary>
     public required string PayloadJson { get; set; }
     public bool Deleted { get; set; }
     public DateTimeOffset ReceivedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>
-/// Domain-agnostic materialized state — the server never interprets the
-/// app's entities, it only merges and relays them.
-/// </summary>
+// #615: keeps a device that still holds the deleted space from giving birth to an empty one of the same id on its next push
+public class ErasedSpace
+{
+    public required string SpaceId { get; set; }
+    public DateTimeOffset ErasedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+// the server never interprets the app's entities, it only merges and relays them
 public class EntityRow
 {
     public required string SpaceId { get; set; }

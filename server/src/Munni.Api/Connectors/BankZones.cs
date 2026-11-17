@@ -1,11 +1,7 @@
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The zone a bank books in, from the IBAN's country: an unattended fetch
-/// that a party wants at a local hour (<c>limits.preferred_fetch_hour_local</c>)
-/// is timed in it. Banks book overnight, so 03:00 local gets whole days.
-/// Unknown countries and platforms without the zone read as UTC.
-/// </summary>
+// the zone a bank books in, from the IBAN's country: banks book overnight, so a party's preferred local fetch hour
+// (03:00) gets whole days; unknown countries and platforms without the zone read as UTC
 public static class BankZones
 {
     private static readonly Dictionary<string, string> ZoneByCountry = new(StringComparer.Ordinal)
@@ -44,7 +40,6 @@ public static class BankZones
         ["SK"] = "Europe/Bratislava",
     };
 
-    /// <summary>The zone for an IBAN (its first two letters) or a country code; UTC when unknown.</summary>
     public static TimeZoneInfo ZoneFor(string? ibanOrCountry)
     {
         var country = ibanOrCountry is { Length: >= 2 } text ? text[..2].ToUpperInvariant() : string.Empty;
@@ -59,7 +54,6 @@ public static class BankZones
         }
     }
 
-    /// <summary>True when it is <paramref name="hour"/> o'clock in the zone of <paramref name="ibanOrCountry"/>.</summary>
     public static bool IsLocalHour(string? ibanOrCountry, int hour, DateTimeOffset nowUtc) =>
         TimeZoneInfo.ConvertTime(nowUtc, ZoneFor(ibanOrCountry)).Hour == hour;
 }

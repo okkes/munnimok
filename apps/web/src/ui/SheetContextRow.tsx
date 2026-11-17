@@ -1,7 +1,5 @@
 import { Icon } from '@/ui/Icon';
 
-/** compact context row used inside sheets (review + tx form): a value
- *  with its caption and a pencil, opening a stacked picker */
 export function SheetContextRow({
   testId,
   icon,

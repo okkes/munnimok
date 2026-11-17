@@ -8,11 +8,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The validator is only worth something if the manifests actually shipped
-/// pass it. A validator exercised solely against manifests written by its
-/// own test is a validator that agrees with itself.
-/// </summary>
+// a validator exercised only against its own test's manifests agrees with itself; the shipped ones must pass it
 public sealed class ShippedManifestTests
 {
     private static IReadOnlyList<IProviderAdapter> Bank => BankAdapters.All();
@@ -40,8 +36,7 @@ public sealed class ShippedManifestTests
     [Fact]
     public void Both_products_actually_ship_providers()
     {
-        // Guards the theories above: a fleet that emptied out would make
-        // every one of them vacuously pass by never running.
+        // an emptied fleet would make every theory pass by never running
         Assert.NotEmpty(Bank);
         Assert.NotEmpty(Shop);
     }
@@ -77,8 +72,7 @@ public sealed class ShippedManifestTests
     [Fact]
     public void A_registry_builds_over_each_product_and_validates_on_the_way_in()
     {
-        // ProviderRegistry validates every manifest in its constructor, so a
-        // bad one refuses to boot rather than failing at a user's login.
+        // the registry validates in its constructor, so a bad manifest refuses to boot instead of failing at a user's login
         AssertRegistry(new ProviderRegistry(Bank));
         AssertRegistry(new ProviderRegistry(Shop));
     }
@@ -106,8 +100,7 @@ public sealed class ShippedManifestTests
     [Fact]
     public void The_catalogue_digest_moves_with_a_manifest_version()
     {
-        // This is what a consumer revalidates its cached catalogue against,
-        // so it has to move whenever a bundle-invalidating version moves.
+        // consumers revalidate their cached catalogue against it, so it must move with a bundle-invalidating version
         var registry = new ProviderRegistry(Shop);
         var bumped = new ProviderRegistry([.. Shop.Select(a => (IProviderAdapter)new VersionBump(a))]);
 
@@ -117,8 +110,7 @@ public sealed class ShippedManifestTests
     [Fact]
     public void The_two_products_do_not_share_a_provider_id()
     {
-        // Separate services, separate databases, separate subject salts. A
-        // shared id would be the first thing to make them look correlatable.
+        // separate services, databases and subject salts: a shared id would make them look correlatable
         var bank = Bank.Select(a => a.Describe().Id).ToHashSet(StringComparer.Ordinal);
         var shop = Shop.Select(a => a.Describe().Id).ToHashSet(StringComparer.Ordinal);
 
@@ -144,9 +136,7 @@ public sealed class ShippedManifestTests
         var first = adapter.Describe();
         var second = adapter.Describe();
 
-        // Describe answers every catalogue request. One that rebuilt state,
-        // read a clock or did I/O would turn a cheap cached GET into work,
-        // and would move the catalogue digest under a consumer's ETag.
+        // Describe answers every catalogue request: rebuilt state, a clock read or I/O would move the digest under a consumer's ETag
         Assert.Equal(first.Id, second.Id);
         Assert.Equal(first.ManifestVersion, second.ManifestVersion);
         Assert.Equal(first.Runtime, second.Runtime);
@@ -165,8 +155,7 @@ public sealed class ShippedManifestTests
         Assert.NotEmpty(registry.Manifests);
         Assert.Matches("^sha256:[0-9a-f]{64}$", registry.CatalogDigest);
 
-        // Ordered by id so the digest is a function of the manifests and not
-        // of the order a host happened to register them in.
+        // ordered by id so the digest depends on the manifests, not on registration order
         Assert.Equal(
             registry.Manifests.Select(m => m.Id).Order(StringComparer.Ordinal).ToArray(),
             registry.Manifests.Select(m => m.Id).ToArray());
@@ -180,11 +169,6 @@ public sealed class ShippedManifestTests
         }
     }
 
-    /// <summary>
-    /// The same provider, one manifest version later. A double, not a stub:
-    /// only <see cref="Describe"/> is ever reached, and the two run methods
-    /// throw rather than pretending to have done something.
-    /// </summary>
     private sealed class VersionBump : IProviderAdapter
     {
         private readonly ProviderManifest _manifest;

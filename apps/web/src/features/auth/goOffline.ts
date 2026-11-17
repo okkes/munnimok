@@ -10,28 +10,9 @@ import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 import { adoptOfflineProfile } from './offlineProfiles';
 
-/**
- * Online → offline conversion (OO1-OO3). munni is local-first, so this
- * is not a data migration: the device already holds everything. It is
- * an identity REBIND (the new offline profile adopts the existing
- * store) plus an honest triage of the server-only features:
- *
- * - bank-linked accounts flip to the manual tier (user ruling: manual
- *   continuation instead of a frozen label) — data stays, you type from
- *   here on;
- * - shared-space MEMBERSHIP ends server-side for every shared space;
- *   locally each one is either kept as a snapshot or purged (per-space
- *   choice);
- * - server data is deleted outright when asked (GDPR-clean exit) —
- *   default ON in the UI.
- *
- * Every server call is best-effort: going offline must work while
- * offline. Returns the new profile id (arc 8 lifted the one-per-device
- * rule — the conversion mints its profile next to any existing ones).
- *
- * The server exit cannot be taken back, so it comes last: what can fail
- * here fails before it (the person stays signed in), nothing after it throws.
- */
+// an identity REBIND, not a data migration (local-first): the offline profile adopts the existing store;
+// bank-linked accounts flip to manual, shared spaces are kept as snapshot or purged, server data is deleted outright;
+// every server call is best-effort. The server exit cannot be undone, so it comes last: what can fail fails before it
 export interface GoOfflineContext {
   store: StorageBackend;
   engine: { catchUp: () => Promise<boolean>; purgeSpace: (spaceId: string) => Promise<void>; halt: () => Promise<void>; resume: () => void } | null;
@@ -44,7 +25,6 @@ export const SERVER_EXIT_WAIT_MS = 15_000;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export interface GoOfflineOptions {
-  /** shared spaces whose LOCAL copy is purged instead of kept as snapshot */
   dropSpaceIds: readonly string[];
   profileName: string;
   profilePicture?: string;
@@ -72,14 +52,11 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   let profileId: string;
   let bankFed: AccountRow[];
   try {
-    // dropped shared spaces lose their local copy; kept ones stay as
-    // read-only-by-circumstance snapshots (no members to sync with)
     for (const spaceId of opts.dropSpaceIds) {
       await ctx.engine?.purgeSpace(spaceId);
     }
     bankFed = (await ctx.store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector');
-    // the registry rebind — the new profile adopts this identity's existing store.
-    // Last of the steps that can fail, so a profile is never left half-made.
+    // last of the steps that can fail, so a profile is never left half-made
     profileId = adoptOfflineProfile(opts.profileName, opts.profilePicture, identityKey(ctx.identity)).id;
   } catch (err) {
     // still a member everywhere: sync goes on and pulls a purged space back
@@ -101,11 +78,8 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   // the account's muted spaces would stay muted in the profile, where no switch reaches them
   await forgetSpacesNotifyOff(ctx.store).catch((err: unknown) => reportError('goOffline', err));
 
-  // server exit, best-effort (user ruling: going offline always deletes
-  // the server data — as if the app had been offline from day one).
-  // keepIdentity: the Logto login survives in EVERY environment (dev and
-  // prod share identities); other devices detect the dead account via
-  // the /me binding check and wipe themselves.
+  // server exit, best-effort: going offline always deletes the server data. keepIdentity spares the Logto login
+  // (shared by every environment); other devices detect the dead account via the /me binding check and wipe themselves
   await Promise.race([apiFetch('/me?keepIdentity=true', { method: 'DELETE' }).catch(() => undefined), wait(SERVER_EXIT_WAIT_MS)]);
 
   return profileId;

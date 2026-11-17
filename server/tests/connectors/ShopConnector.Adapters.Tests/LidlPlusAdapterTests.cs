@@ -8,10 +8,6 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The Lidl fetch path: after the one browser login, everything is plain
-/// HTTP against the ticket API, which means all of it is testable offline.
-/// </summary>
 public sealed class LidlPlusAdapterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
@@ -60,15 +56,11 @@ public sealed class LidlPlusAdapterTests
         var receipt = Assert.Single(result.Receipts);
         Assert.Equal("lidl-2026-07-18-8801", receipt.ExternalId);
         Assert.Equal("lidl", receipt.Merchant.Id);
-        // The branch NAME, from the store object the detail states - not its
-        // code. Reading `store` as a string gave "NL0263" and titled every
-        // receipt in the demo with it.
+        // the branch NAME from the detail's store object, not its code: reading `store` as a string gave "NL0263"
         Assert.Equal("Testdorp", receipt.Merchant.StoreName);
-        // From the DETAIL's totalAmount, which is a JSON number in euros.
         Assert.Equal(376, receipt.Total.Value);
 
-        // The detail's own wall-clock date, read in the store's country zone -
-        // not the list's, which put every receipt two hours late.
+        // the detail's wall-clock date in the store's country zone; the list's date put every receipt two hours late
         Assert.Equal(TimeSpan.FromHours(2), receipt.PurchasedAt.Offset);
         Assert.Equal(new DateTime(2026, 8, 4, 12, 51, 18), receipt.PurchasedAt.DateTime);
 
@@ -80,9 +72,7 @@ public sealed class LidlPlusAdapterTests
         Assert.True(result.Complete);
         Assert.Equal("tickets-v2", result.Via);
 
-        // Two list pages (the second is empty and terminates the walk) and
-        // exactly one detail call - one per receipt inside the window, never
-        // the whole history.
+        // two list pages (the second is empty and ends the walk) and one detail call per receipt inside the window
         Assert.Equal(
             ["/api/v2/NL/tickets", "/api/v2/NL/tickets", "/api/v3/NL/tickets/lidl-2026-07-18-8801"],
             handler.Requests.Select(r => r.Path));
@@ -96,18 +86,12 @@ public sealed class LidlPlusAdapterTests
 
         await Adapter().FetchAsync(ctx, Requests.Receipts(since: Requests.Day(2026, 7, 10)), CancellationToken.None);
 
-        // Sent because the API needs them to route, not to disguise anything.
-        // The casing of "iOs" is the provider's, and is confirmed.
+        // sent because the API routes on them; the casing of "iOs" is the provider's, confirmed
         Assert.All(handler.Requests, request =>
         {
-            // NOT "999.99.9". Lidl's edge drops the TCP connection on that
-            // exact string - measured live on 2026-08-03, one header at a
-            // time - because it is the sentinel the well-known scraper library
-            // sends. Nothing else about the value is checked: 999.99.99 and
-            // 99.99.9 both reach authentication and answer 401.
-            //
-            // It surfaced as "request timed out" sixty seconds later, naming
-            // nothing, on a provider whose login had just succeeded.
+            // NOT "999.99.9": Lidl's edge drops the TCP connection on that sentinel (the well-known scraper's), measured 2026-08-03
+            // 999.99.99 and 99.99.9 reach authentication and answer 401
+            // it surfaced as a nameless "request timed out" after 60 s
             Assert.NotEqual("999.99.9", request.Header("App-Version"));
             Assert.Equal("15.20.3", request.Header("App-Version"));
             Assert.Equal("iOs", request.Header("Operating-System"));
@@ -136,8 +120,7 @@ public sealed class LidlPlusAdapterTests
     [Fact]
     public void The_authorize_url_carries_the_confirmed_parameters_and_the_pkce_pair()
     {
-        // A verifier chosen here rather than generated, so the challenge in
-        // the URL is a value this test can compute independently.
+        // a fixed verifier, so the URL's challenge can be computed independently
         var pkce = PkceChallenge.For("k0PBJmBFPYRe0S6dr1RxD1bcVYh7z7iHFbSC6X1IH0M");
 
         var url = Adapter().AuthorizeUrl(pkce, new LidlSettings("NL", "nl"));
@@ -151,16 +134,12 @@ public sealed class LidlPlusAdapterTests
         // token is the whole T2 story.
         Assert.Contains("offline_access", url, StringComparison.Ordinal);
 
-        // RFC 7636, and the reason a real login could not have worked: an
-        // authorization server that recorded a challenge refuses to exchange
-        // the code without the verifier.
+        // RFC 7636: a server that recorded a challenge refuses the code exchange without the verifier
         Assert.Contains($"code_challenge={Uri.EscapeDataString(pkce.Challenge)}", url, StringComparison.Ordinal);
         Assert.Contains("code_challenge_method=S256", url, StringComparison.Ordinal);
 
-        // OBSERVED live: without these accounts.lidl.com does not render a
-        // login page at all, it redirects to /error. Capitalised bare country,
-        // lower-case full locale - and "nl" alone for the language is another
-        // /error, so the two spellings are asserted rather than assumed.
+        // OBSERVED: without these accounts.lidl.com redirects to /error instead of rendering a login page
+        // bare capitalised country, lower-case full locale; "nl" alone as language is another /error
         Assert.Contains("Country=NL", url, StringComparison.Ordinal);
         Assert.Contains("language=nl-NL", url, StringComparison.Ordinal);
 
@@ -195,8 +174,7 @@ public sealed class LidlPlusAdapterTests
     {
         var handler = new StubHttpHandler(Route);
 
-        // A caller that resumed a session without resending config still has
-        // to be serviceable: every ticket URL and two headers need these.
+        // a session resumed without config must stay serviceable: every ticket URL and two headers need these
         using var ctx = new FakeJobContext(handler)
         {
             Material = new SessionMaterial
@@ -212,8 +190,7 @@ public sealed class LidlPlusAdapterTests
 
         await Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
 
-        // Country uppercase, language lowercase: both appear verbatim in URLs
-        // and headers and Lidl is case-sensitive about them.
+        // Lidl is case-sensitive about country (upper) and language (lower), which appear verbatim in URLs and headers
         Assert.All(handler.Requests, request =>
         {
             Assert.Contains("/NL/", request.Path, StringComparison.Ordinal);
@@ -240,9 +217,7 @@ public sealed class LidlPlusAdapterTests
     [Fact]
     public async Task A_list_that_keeps_answering_the_same_page_stops_instead_of_looping()
     {
-        // The symptom of a pagination parameter that stopped advancing
-        // upstream. Without the guard this is the same request twenty times
-        // against a defended endpoint.
+        // a pagination parameter that stopped advancing upstream would repeat the request twenty times against a defended endpoint
         var handler = new StubHttpHandler((_, _) => Stub.Fixture("lidl/tickets-page-1.json"));
         using var ctx = Context(handler);
 
@@ -252,10 +227,6 @@ public sealed class LidlPlusAdapterTests
         Assert.Equal(2, handler.Requests.Count);
     }
 
-    /// <summary>
-    /// One page of tickets, distinct per page, so a walk that really advances
-    /// is told apart from one re-reading page one.
-    /// </summary>
     private static HttpResponseMessage PageOf(RecordedRequest request)
     {
         var page = request.Query.Contains("pageNumber=", StringComparison.Ordinal)
@@ -269,17 +240,7 @@ public sealed class LidlPlusAdapterTests
         """);
     }
 
-    /// <summary>
-    /// A HISTORY LONGER THAN THE PAGE BUDGET IS NOT A COMPLETE PASS.
-    /// </summary>
-    /// <remarks>
-    /// The walk stops at <c>MaxPages</c> whatever is left underneath it, and
-    /// completeness was judged only by the record cap - a limit this walk never
-    /// reaches. So a history longer than the budget came back truncated at the
-    /// old end and labelled complete, and nothing downstream could have worked
-    /// that out: the rows look like an ordinary result. A consumer syncing
-    /// incrementally would have kept the gap and had no way to see it.
-    /// </remarks>
+    // a history longer than MaxPages is not complete: it once came back truncated and labelled complete, invisible downstream
     [Fact]
     public async Task A_history_longer_than_the_page_budget_is_not_called_complete()
     {
@@ -290,28 +251,16 @@ public sealed class LidlPlusAdapterTests
 
         var result = await adapter.FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
 
-        // It really did spend the budget rather than stopping early, and every
-        // page it read is in the answer.
         Assert.Equal(3, handler.Requests.Count);
         Assert.Equal(3, result.Receipts.Count);
 
         Assert.False(result.Complete);
 
-        // And it says which limit stopped it, because "incomplete" alone reads
-        // as a provider having a bad day.
+        // names the limit that stopped it, since bare "incomplete" reads as a provider having a bad day
         Assert.Contains(ctx.Notes, n => n.Contains("3 pages", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// <c>include=raw</c> IS ANSWERABLE ON ITS OWN, without asking for items
-    /// too.
-    /// </summary>
-    /// <remarks>
-    /// Raw is the detail document, and it was only ever captured on the way
-    /// past to the line items - so the one request that says "show me exactly
-    /// what Lidl said" was the one request that came back empty, reporting
-    /// success, on a resource whose manifest declares raw.
-    /// </remarks>
+    // raw is the detail document, once captured only on the way to items: include=raw alone must answer, not come back empty
     [Fact]
     public async Task Raw_can_be_asked_for_without_items()
     {
@@ -327,15 +276,7 @@ public sealed class LidlPlusAdapterTests
         Assert.All(result.Raw.Values, payload => Assert.Contains("ticketType", payload, StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// And asking for it does not quietly change the receipt itself.
-    /// </summary>
-    /// <remarks>
-    /// The detail rewrites the total, the store name and the timestamp, so
-    /// running that for a raw-only request would give one purchase two
-    /// different content hashes depending on which include a caller happened to
-    /// pass. Raw hands back what Lidl said; it does not alter what was read.
-    /// </remarks>
+    // the detail rewrites total, store name and timestamp: running it for raw-only gives one purchase two content hashes
     [Fact]
     public async Task Asking_for_raw_does_not_change_the_receipt_it_came_with()
     {

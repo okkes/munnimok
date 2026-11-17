@@ -12,11 +12,7 @@ internal static class MockStoreManifest
         ? Persistent(profile)
         : Inline(profile);
 
-    /// <summary>
-    /// Everything but the persistent mock is T1 inline: no browser, no
-    /// agent, no network. A mock that needed either would stop being usable
-    /// as the offline backbone the moment CI ran without one.
-    /// </summary>
+    /// all but the persistent mock are T1 inline (no browser, agent or network), so CI can run them offline
     private static ProviderManifest Inline(MockStoreProfile profile) => new()
     {
         Id = profile.Id,
@@ -72,17 +68,11 @@ internal static class MockStoreManifest
             Reauth = new ReauthSpec { Cheap = true, TriggerCodes = ["session_expired"] },
         },
         Resources = [Receipts(profile)],
-        // No rate limit worth enforcing on a provider that never leaves the
-        // process, and a six-hour floor would make the mock useless for
-        // exercising a scheduler.
+        // no rate limit worth enforcing in-process; a six-hour floor would make the mock useless for scheduler tests
         Limits = new ProviderLimits { MinIntervalSeconds = 60, Concurrency = 1 },
     };
 
-    /// <summary>
-    /// The BYO routing case: the bundle carries <c>{agent_id, profile_id}</c>
-    /// and no credential at all, so the control plane never holds a secret
-    /// for this connection.
-    /// </summary>
+    /// the BYO routing case: the bundle carries {agent_id, profile_id} and no credential, so the control plane holds no secret
     private static ProviderManifest Persistent(MockStoreProfile profile) => new()
     {
         Id = profile.Id,
@@ -100,8 +90,7 @@ internal static class MockStoreManifest
         NotesKey = MessageKeys.MockNotes,
         Auth = new AuthSpec
         {
-            // No credential step: the human authenticated once, directly
-            // into a profile on hardware they control.
+            // no credential step: the human authenticated once, into a profile on their own hardware
             Flow = AuthFlow.DevicePersistent,
             Steps = [],
             Session = new SessionSpec { TtlSeconds = 31_536_000, Refreshable = true, RotatesOnUse = false },

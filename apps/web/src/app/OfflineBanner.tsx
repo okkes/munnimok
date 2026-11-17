@@ -11,20 +11,8 @@ import { isSessionExpired, subscribeSessionExpiry } from './sessionExpiry';
 import { oidcSignIn } from './authToken';
 import { callbackUri } from '@/features/auth/logto';
 
-/**
- * Why sync is failing for a signed-in user right now:
- * - 'session-expired'  — the sign-in grant is spent (#222): the server
- *   is fine, but every call is unauthorized until a fresh sign-in
- * - 'no-network'       — the device has no connectivity at all
- * - 'unreachable'      — the network is up but the munni server can't be
- *   reached (server down, DNS, or a firewall/filter blocking it)
- * - 'client-outdated'  — the server no longer speaks this app version
- * - 'server-outdated'  — this app needs a newer server (native apps ship
- *   on their own cadence; the handshake keeps a mismatch from corrupting
- *   data — lib/protocol.ts)
- * null when everything is fine — and always null for demo/offline
- * identities, whose local-only mode is a choice, not an error.
- */
+// why sync fails for a signed-in user (session-expired = grant spent #222, server fine); null when fine and for
+// demo/offline identities, whose local-only mode is a choice
 export type OfflineReason = 'session-expired' | 'no-network' | 'unreachable' | ProtocolIssue;
 
 export function resolveOfflineReason(
@@ -35,11 +23,9 @@ export function resolveOfflineReason(
   sessionExpired = false,
 ): OfflineReason | null {
   if (!hasEngine) return null;
-  // an expired session outranks everything: the network and server are
-  // fine — saying "unreachable" sent the user chasing the wrong problem
+  // an expired session outranks everything: "unreachable" sent the user chasing the wrong problem
   if (sessionExpired) return 'session-expired';
-  // a version mismatch is the most specific answer — the server IS
-  // reachable, syncing is deliberately refused
+  // a version mismatch outranks the network states: the server is reachable, syncing is deliberately refused
   if (compat) return compat;
   if (!onLine) return 'no-network'; // definitive — show before any sync attempt fails
   if (status === 'offline' || status === 'error') return 'unreachable';
@@ -90,11 +76,9 @@ const REASON_ICON: Record<OfflineReason, string> = {
   'server-outdated': 'cloud-alert-outline',
 };
 
-// sessionStorage so a dismissal lasts for this visit only — closing and
-// reopening the app brings the banner back (the user's requested behavior)
+// sessionStorage: a dismissal lasts this visit only, a reopened app shows the banner again
 const DISMISS_KEY = 'munni_offline_banner_dismissed';
 
-/** Slim strip above the tab bar: you are offline, and this is why. */
 export function OfflineBanner() {
   const { t } = useLang();
   const reason = useOfflineReason();
@@ -109,8 +93,7 @@ export function OfflineBanner() {
     >
       <Icon name={REASON_ICON[reason]} size={15} color="var(--m-warning)" />
       <span className="min-w-0 flex-1 text-[12px] leading-snug text-ink-2">
-        {/* "Offline — saved on this device" would be a lie here: the
-            network is fine, the SESSION is spent (#222) */}
+        {/* "Offline — saved on this device" would be a lie: the network is fine, the SESSION is spent (#222) */}
         {!expired && <span className="font-medium">{t('sync.offlineBanner')} </span>}
         {t(OFFLINE_REASON_KEYS[reason])}
       </span>
@@ -123,7 +106,6 @@ export function OfflineBanner() {
           >
             {t('sync.signInAgain')}
           </button>
-          {/* user 2026-10-07: a way to another account from a half-working app */}
           <button
             data-testid="offline-banner-another"
             onClick={() => void oidcSignIn(callbackUri(), true)}
@@ -148,7 +130,6 @@ export function OfflineBanner() {
   );
 }
 
-/** what the pill says: the reason outranks the count, a count alone says how many wait */
 export function syncPillFace(
   reason: OfflineReason | null,
   pending: number,
@@ -163,11 +144,7 @@ export function syncPillFace(
   return { icon: 'cloud-upload-outline', text: count ?? '' };
 }
 
-/** Quiet pill for the Home app bar: keeps signalling offline after the
- *  banner was dismissed, without shouting — and (user 2026-10-06) counts
- *  the changes still waiting on this device: they sync by themselves once
- *  the server is back in reach. Tapping it opens Settings, whose sync row
- *  says the same in a sentence. */
+/** quiet pill for Home: keeps signalling offline after the banner was dismissed, counts changes waiting on this device */
 export function SyncIndicator() {
   const { t } = useLang();
   const navigate = useNavigate();

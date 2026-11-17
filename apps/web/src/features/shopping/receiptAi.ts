@@ -1,7 +1,6 @@
 import type { ReceiptItem } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 
-/** a category the reader may file a line under */
 export interface ReadCategory {
   id: string;
   name: string;
@@ -23,7 +22,6 @@ export interface ReadReceipt {
   currency: string | null;
   totalCents: number;
   lines: ReadLine[];
-  /** the lines add up to the total */
   reconciled: boolean;
 }
 
@@ -63,11 +61,7 @@ export function itemsFromRead(receipt: ReadReceipt): ReceiptItem[] {
 
 const CONSENT_KEY = 'munni_receipt_ai';
 
-/**
- * The person's say on this device (user 2026-11-11: a one-time notice
- * that names the provider, and a switch to turn it off again): 'yes' once
- * they agreed, 'no' once they switched it off, null before either.
- */
+/** 'yes' once agreed, 'no' once switched off, null before either; a one-time notice names the provider */
 export function receiptAiChoice(): 'yes' | 'no' | null {
   try {
     const value = localStorage.getItem(CONSENT_KEY);

@@ -9,8 +9,7 @@ import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 // demo identity is fully local: profile edits must not touch the network
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
-// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
-// here we care about the flow around it
+// happy-dom has no canvas; the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
 vi.mock('@/lib/image', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/image')>()),
@@ -82,7 +81,6 @@ describe('ProfileScreen (offline identity)', () => {
   });
 
   it('deletes the profile AND its data from the danger card (moved off the chooser)', async () => {
-    // create + use a profile so real data exists
     const first = renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
     fireEvent.click(await screen.findByTestId('offline-continue'));
@@ -95,13 +93,10 @@ describe('ProfileScreen (offline identity)', () => {
     const identity = readSessionIdentity();
     first.unmount();
 
-    // still signed in AS THE OFFLINE PROFILE (renderApp's default demo
-    // login would replace it): the delete now lives on the profile
-    // screen, mirroring the online account (user ruling 2026-07-29)
+    // stay signed in AS THE OFFLINE PROFILE: renderApp's default demo login would replace it
     renderApp('/profile', { identity: identity ?? undefined });
     fireEvent.click(await screen.findByTestId('settings-delete-profile'));
     fireEvent.click(await screen.findByTestId('offline-delete-confirm'));
-    // signed out, registry emptied — back on the login screen
     await screen.findByTestId('screen-login');
     expect(JSON.parse(localStorage.getItem('munni_offline_profiles') ?? '[]')).toHaveLength(0);
     expect(localStorage.getItem('munni_session')).toBeNull();
@@ -127,7 +122,6 @@ describe('ProfileScreen (user identity, scripted server)', () => {
       },
     });
 
-    // the server name lands in the input; the id is there for friend requests
     const name = await screen.findByTestId('profile-name');
     await waitFor(() => expect((name as HTMLInputElement).value).toBe('Server Name'));
     expect(screen.getByTestId('profile-copy-id').textContent).toContain('uid-123');
@@ -157,7 +151,6 @@ describe('ProfileScreen (user identity, scripted server)', () => {
     expect((await db.meta.get('profile'))?.value).toMatchObject({ name: 'Server Name' });
     db.close();
 
-    // still a draft: leaving asks first
     fireEvent.click(screen.getByTestId('profile-back'));
     expect(await screen.findByTestId('screen-discard')).toBeTruthy();
   }, 15_000);

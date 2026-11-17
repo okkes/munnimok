@@ -63,4 +63,38 @@ describe('copying categories from several other spaces', { timeout: 15_000 }, ()
       { timeout: 5000 },
     );
   });
+
+  it('#390 r4: Not interested takes one main out of the offer; it returns when that main gains a sub, and Show them again brings all back', async () => {
+    renderApp('/categories');
+    await screen.findByTestId('cats-group-consumption');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    const custom = { color: '', txType: 'expense', direction: 'debit', sortOrder: 999, builtin: 0 } as const;
+    await repo.upsert('space', 's-fam', 's-fam', { kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1, name: 'Family' });
+    await repo.upsert('category', 's-fam', 'fam-hobby', { ...custom, name: 'Hobby', icon: 'palette', color: '#E91E63', isParent: 1 });
+    await repo.upsert('category', 's-fam', 'fam-paint', { ...custom, parentId: 'fam-hobby', name: 'Paint', icon: 'brush' });
+    await repo.upsert('category', 's-fam', 'fam-padel', { ...custom, parentId: 'sport', name: 'Padel', icon: 'tennis-ball' });
+
+    await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('2 custom categories'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('cats-copy-open'));
+    await screen.findByTestId('cats-copy-unit-fam-hobby');
+    fireEvent.click(screen.getByTestId('cats-copy-decline-main:hobby'));
+    await waitFor(() => expect(screen.queryByTestId('cats-copy-unit-fam-hobby')).toBeNull());
+    expect(screen.getByTestId('cats-copy-into-s-fam-sport')).toBeTruthy();
+    expect(screen.getByTestId('cats-copy-hidden').textContent).toContain('1');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('1 custom category'), { timeout: 5000 });
+
+    await repo.upsert('category', 's-fam', 'fam-clay', { ...custom, parentId: 'fam-hobby', name: 'Clay', icon: 'pot' });
+    await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('2 custom categories'), { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('cats-copy-open'));
+    fireEvent.click(await screen.findByTestId('cats-copy-decline-main:hobby'));
+    await waitFor(() => expect(screen.queryByTestId('cats-copy-unit-fam-hobby')).toBeNull());
+    fireEvent.click(screen.getByTestId('cats-copy-restore'));
+    expect(await screen.findByTestId('cats-copy-unit-fam-hobby')).toBeTruthy();
+    expect(screen.queryByTestId('cats-copy-hidden')).toBeNull();
+    db.close();
+  });
 });

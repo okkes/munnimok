@@ -45,11 +45,6 @@ const entry = (id: string, description: string, cents: number, paidBy: string, s
 
 const member = (userId: string, displayName: string, role = 'contributor', state = 'active') => ({ userId, role, state, displayName, picture: null, isMe: userId === ME });
 
-/**
- * A stand-in for the splits API with one split in it: it keeps what the
- * screens post and answers the next read from that, the way the server
- * would — the tests then read the screen, and `calls` for what was sent.
- */
 function server(over: { split?: Json; members?: Json[]; entries?: Json[]; payments?: Json[]; requests?: Json[] | null; friendInvites?: Json[] | null } = {}) {
   const state = {
     split: {
@@ -157,7 +152,6 @@ beforeEach(() => {
   resetDemoSplits();
 });
 
-/** #538: split events — the list, one split, its people, its expenses and how it ends */
 describe('Splits', () => {
   it('the list sorts splits by where they stand, says what each cost and where I stand, and folds the archived ones away', async () => {
     const base = { currency: 'EUR', role: 'owner', state: 'active', picture: null, startDate: null, endDate: null, attachedSpaceId: null, attachedEventId: null, memberCount: 3, entryCount: 2, deleteAt: null };
@@ -178,12 +172,10 @@ describe('Splits', () => {
     expect(running.textContent).toMatch(/1 Jan 2020 – 8 Jan 2020 · 3 members/);
     expect(running.textContent).toContain('Total €2,470.00');
     expect(text('split-standing-run')).toBe('you get €42.50');
-    // a deletion counting down says so instead of a balance
     expect(running.textContent).toContain('Being deleted');
     expect(text('splits-section-planned')).toMatch(/Antwerp.*from 1 Jan 2999 · 1 member/);
     expect(text('splits-section-settling')).toContain('Lowlands');
     expect(text('split-standing-pay')).toBe('you owe €204.50');
-    // archived ones wait behind their count
     expect(screen.queryByTestId('split-row-old')).toBeNull();
     fireEvent.click(screen.getByTestId('splits-archived-toggle'));
     expect(screen.getByTestId('split-row-old').textContent).toContain('Barcelona 2025');
@@ -288,7 +280,6 @@ describe('Splits', () => {
         },
       },
     });
-    // somebody else's expense: readable, with its receipt, and no way to change it
     fireEvent.click(await screen.findByTestId('split-entry-open-e-hotel'));
     const form = await screen.findByTestId('splitentry-form');
     expect(form.getAttribute('data-readonly')).toBe('true');
@@ -344,7 +335,6 @@ describe('Splits', () => {
     expect(screen.queryByTestId('split-tx-tx-salary')).toBeNull();
     expect((screen.getByTestId('split-tx-tx-in') as HTMLButtonElement).disabled).toBe(true);
     expect(text('split-tx-tx-in')).toContain('in split “Barcelona”');
-    // one space, or a search by what it was, what it cost or its day
     fireEvent.click(screen.getByTestId('split-tx-space-s-user'));
     expect(screen.queryByTestId('split-tx-tx-ski')).toBeNull();
     fireEvent.click(screen.getByTestId('split-tx-space-all'));
@@ -357,7 +347,6 @@ describe('Splits', () => {
     type('split-tx-search', 'ski');
     fireEvent.click(screen.getByTestId('split-tx-tx-ski'));
 
-    // the next sheet has what it was, what it cost and its day; who paid and who shares is still the person's to say
     await screen.findByTestId('splitentry-from-tx');
     expect((screen.getByTestId('split-entry-desc') as HTMLInputElement).value).toBe('Ski rental Val Thorens');
     expect((screen.getByTestId('split-entry-amount') as HTMLInputElement).value).toBe('184,50');
@@ -366,7 +355,6 @@ describe('Splits', () => {
     await waitFor(() => expect(sent('entry')).toHaveLength(1));
     expect(sent('entry')[0]).toMatchObject({ description: 'Ski rental Val Thorens', amountCents: 18_450, date: '2026-11-08', sourceTxId: 'tx-ski', sourceSpaceId: 's-trip' });
 
-    // the space says where the payment went — to everyone in it
     const check = new MunniDB(USER_TEST_DB);
     await waitFor(async () => expect((await check.transactions.get('tx-ski'))?.splitRef).toEqual({ splitId: ID, name: 'Barcelona' }));
     check.close();
@@ -382,11 +370,9 @@ describe('Splits', () => {
     fireEvent.click(screen.getByTestId('split-payment-save'));
     await waitFor(() => expect(sent('entry')).toHaveLength(1));
     expect(sent('entry')[0]).toMatchObject({ kind: 'settlement', paidByUserId: ANNA, amountCents: 1000, shareMode: 'exact', shares: [{ userId: ME, cents: 1000 }] });
-    // it reads as a payment in the list, and what is left to settle went down
     await waitFor(() => expect(text('split-entries')).toContain('Anna paid you back'));
     await waitFor(() => expect(text('split-transfer')).toContain('€5.00'));
 
-    // from scratch: nobody is named yet, and one cannot pay oneself
     fireEvent.click(screen.getByTestId('split-add-entry'));
     fireEvent.click(await screen.findByTestId('split-add-payment'));
     type('split-payment-amount', '5,00');
@@ -414,7 +400,6 @@ describe('Splits', () => {
     expect(text(`split-member-${ME}`)).toMatch(/you.*Owner/);
     expect(text(`split-member-${ANNA}`)).toMatch(/Anna.*Contributor/);
 
-    // the queue: let one in, refuse the other
     fireEvent.click(screen.getByTestId(`split-approve-${CARA}`));
     await screen.findByTestId(`split-member-${CARA}`);
     fireEvent.click(await screen.findByTestId(`split-refuse-${BEN}`));
@@ -422,7 +407,6 @@ describe('Splits', () => {
     expect(sent('approve')).toHaveLength(1);
     expect(sent('refuse')).toHaveLength(1);
 
-    // an owner makes an owner, and takes someone out on a second tap
     fireEvent.click(screen.getByTestId(`split-promote-${ANNA}`));
     await waitFor(() => expect(text(`split-member-${ANNA}`)).toContain('Owner'));
     expect(screen.queryByTestId(`split-promote-${ANNA}`)).toBeNull();
@@ -432,7 +416,6 @@ describe('Splits', () => {
     await waitFor(() => expect(screen.getByTestId(`split-member-${ANNA}`).getAttribute('data-state')).toBe('removed'));
     expect(text(`split-member-${ANNA}`)).toContain('Removed');
 
-    // no link yet: its limits are set when it is made
     expect(await screen.findByTestId('split-invite-none')).toBeTruthy();
     type('split-link-max', '6');
     type('split-link-days', '14');
@@ -442,7 +425,6 @@ describe('Splits', () => {
     expect(sent('link')[0]).toEqual({ maxUses: 6, needsApproval: true, validDays: 14 });
     expect(text('split-invite-link')).toContain('/splits/join/tok-new');
     expect(text('split-invite-facts')).toBe('0 of 6 used · an owner lets people in · no end date');
-    // a new link ends this one: said before it is made; stopping takes the link away
     fireEvent.click(screen.getByTestId('split-invite-new'));
     expect(screen.getByTestId('split-invite-new-note')).toBeTruthy();
     fireEvent.click(screen.getByTestId('split-invite-create'));
@@ -452,14 +434,13 @@ describe('Splits', () => {
     await screen.findByTestId('split-invite-none');
     expect(sent('link-stop')).toHaveLength(1);
 
-    // friends who are not in it (Anna was taken out, so she is asked like anyone): ask, see it pending, take it back
+    // Anna was taken out, so she is asked like anyone
     const friend = await screen.findByTestId(`split-friend-${BEN}`);
     fireEvent.click(within(friend).getByTestId(`split-friend-invite-${BEN}`));
     await waitFor(() => expect(text(`split-friend-${BEN}`)).toContain('Invited — no answer yet'));
     expect(sent('friend')[0]).toEqual({ toUserId: BEN });
     fireEvent.click(screen.getByTestId(`split-friend-cancel-${BEN}`));
     await waitFor(() => expect(screen.getByTestId(`split-friend-invite-${BEN}`)).toBeTruthy());
-    // someone who declined can be asked again
     state.friendInvites = [{ id: 'inv-2', toUserId: BEN, displayName: 'Ben', picture: null, status: 'declined', createdAt: '2026-11-12T10:00:00Z' }];
     fireEvent.click(screen.getByTestId(`split-friend-invite-${BEN}`));
     await waitFor(() => expect(sent('friend')).toHaveLength(2));
@@ -475,17 +456,14 @@ describe('Splits', () => {
     expect(text('split-closed-note')).toContain('Settled');
     expect(text('split-payments-cap')).toBe('Payments · 0 of 1 paid');
     expect(text('split-payment-pay-0')).toContain('Anna owes you €15.00');
-    // nothing is added any more
     expect(screen.queryByTestId('split-add-entry')).toBeNull();
     expect(screen.queryByTestId('split-preview')).toBeNull();
 
-    // an owner reopens: the plan goes, the look ahead is back
     fireEvent.click(screen.getByTestId('split-reopen'));
     fireEvent.click(await screen.findByTestId('split-ask-confirm'));
     await screen.findByTestId('split-preview');
     expect(sent('reopen')).toHaveLength(1);
 
-    // settled again, the receiver marks the payment: everything is paid, so the split is archived
     fireEvent.click(screen.getByTestId('split-settle-now'));
     fireEvent.click(await screen.findByTestId('split-ask-confirm'));
     fireEvent.click(await screen.findByTestId('split-payment-toggle-pay-0'));
@@ -493,12 +471,10 @@ describe('Splits', () => {
     expect(sent('paid')[0]).toEqual({ paid: true });
     expect(screen.getByTestId('split-payment-pay-0').getAttribute('data-paid')).toBe('true');
     expect(text('split-closed-note')).toContain('Archived');
-    // archived: no toggle, no edit, no archive — delete and leave remain
     expect(screen.queryByTestId('split-payment-toggle-pay-0')).toBeNull();
     expect(screen.queryByTestId('split-edit')).toBeNull();
     expect(screen.queryByTestId('split-archive')).toBeNull();
 
-    // deleting with others in it: a countdown everybody sees, which an owner stops
     fireEvent.click(screen.getByTestId('split-delete'));
     expect((await screen.findByTestId('split-ask-delete')).textContent).toContain('7 days');
     fireEvent.click(screen.getByTestId('split-ask-confirm'));
@@ -508,7 +484,6 @@ describe('Splits', () => {
     await waitFor(() => expect(screen.queryByTestId('split-delete-banner')).toBeNull());
     expect(sent('keep')).toHaveLength(1);
 
-    // archive straight from a running split
     state.split.status = 'open';
     state.payments = [];
     cleanup();
@@ -517,7 +492,6 @@ describe('Splits', () => {
     fireEvent.click(await screen.findByTestId('split-ask-confirm'));
     await waitFor(() => expect(sent('archive')).toHaveLength(1));
 
-    // leaving goes back to the list
     fireEvent.click(await screen.findByTestId('split-leave'));
     fireEvent.click(await screen.findByTestId('split-ask-confirm'));
     await screen.findByTestId('screen-splits');
@@ -601,7 +575,6 @@ describe('Splits', () => {
     const { api } = server({ entries: [mine('e-hotel', 'tx-hotel', 'Hotel Roma', 42_000), mine('e-taxi', 'tx-taxi', 'Taxi Fiumicino', 5500)] });
     renderAppAsUser(`/splits/${ID}`, { api });
 
-    // in the split, in no event: both can join the event at once, or one by one
     const toEvent = await screen.findByTestId('split-suggest-to-event');
     expect(toEvent.textContent).toContain('In the split, not yet in “Rome weekend”');
     expect(toEvent.textContent).toContain('Hotel Roma');
@@ -621,14 +594,12 @@ describe('Splits', () => {
     expect(screen.queryByTestId('split-suggest-tx-refund')).toBeNull();
     fireEvent.click(screen.getByTestId('split-suggest-ignore-tx-gelato'));
     await waitFor(() => expect(screen.queryByTestId('split-suggest-tx-gelato')).toBeNull());
-    // "Add to split" opens the expense with what the payment says; who shares is still the person's to say
     fireEvent.click(screen.getByTestId('split-suggest-add-tx-pasta'));
     await screen.findByTestId('splitentry-from-tx');
     expect((screen.getByTestId('split-entry-desc') as HTMLInputElement).value).toBe('Trattoria');
     expect((screen.getByTestId('split-entry-amount') as HTMLInputElement).value).toBe('64,00');
     check.close();
 
-    // the event's own page says a payment is still missing from the split
     cleanup();
     renderAppAsUser('/events/ev-rome', { api });
     expect((await screen.findByTestId('event-split-pending')).textContent).toBe('1 payment of this event is not in the split');
@@ -747,7 +718,6 @@ describe('Splits', () => {
     fireEvent.click(screen.getByTestId('splits-archived-toggle'));
     expect(screen.getByTestId('split-row-demo-split-barcelona')).toBeTruthy();
 
-    // a new one, made and opened without a server
     fireEvent.click(screen.getByTestId('splits-add'));
     type('split-name', 'Camping');
     fireEvent.click(screen.getByTestId('split-create'));
@@ -759,13 +729,11 @@ describe('Splits', () => {
     fireEvent.click(screen.getByTestId('split-entry-save'));
     await waitFor(() => expect(text('split-entries')).toContain('Tent'));
     expect(text('split-total')).toBe('€80.00');
-    // alone in it: deleting is at once
     fireEvent.click(screen.getByTestId('split-delete'));
     fireEvent.click(await screen.findByTestId('split-ask-confirm'));
     await screen.findByTestId('screen-splits');
     expect(screen.queryByText('Camping')).toBeNull();
 
-    // the seeded running split: an owner's view with someone waiting, a plan to look at, a payment to mark in another
     fireEvent.click(await screen.findByTestId('split-row-demo-split-ski'));
     expect((await screen.findByTestId('split-people-row')).textContent).toContain('1 waiting to join');
     await screen.findByTestId('split-preview');
@@ -790,7 +758,6 @@ describe('Splits: the demo’s stand-in', () => {
   });
 });
 
-/** #538: what an expense is made of */
 describe('Splits: entering an expense', () => {
   it('an expense is divided equally among the ticked, by amounts or by percentages — and the form says what does not add up', async () => {
     const { api, sent } = server({ members: [member(ME, 'Me', 'owner'), member(ANNA, 'Anna'), member(BEN, 'Ben')] });
@@ -799,12 +766,10 @@ describe('Splits: entering an expense', () => {
     fireEvent.click(await screen.findByTestId('split-add-manual'));
     await screen.findByTestId('splitentry-form');
 
-    // nothing typed: the blockers name what is missing
     fireEvent.click(screen.getByTestId('split-entry-save'));
     expect(screen.getByTestId('splitentry-name-blocker')).toBeTruthy();
     expect(screen.getByTestId('splitentry-amount-blocker')).toBeTruthy();
 
-    // equally, without the payer: Anna paid a taxi for Ben and me
     type('split-entry-desc', 'Taxi');
     type('split-entry-amount', '25,00');
     type('split-entry-date', '2026-11-09');
@@ -816,7 +781,6 @@ describe('Splits: entering an expense', () => {
     expect(sent('entry')[0]).toMatchObject({ kind: 'expense', description: 'Taxi', amountCents: 2500, date: '2026-11-09', paidByUserId: ANNA, shareMode: 'equal', shares: [{ userId: ME }, { userId: BEN }] });
     await waitFor(() => expect(text('split-entries')).toContain('Taxi'));
 
-    // by amounts: they must add up to the cent
     fireEvent.click(screen.getByTestId('split-add-entry'));
     fireEvent.click(await screen.findByTestId('split-add-manual'));
     type('split-entry-desc', 'Hotel');
@@ -835,7 +799,6 @@ describe('Splits: entering an expense', () => {
     await waitFor(() => expect(sent('entry')).toHaveLength(2));
     expect(sent('entry')[1]).toMatchObject({ shareMode: 'exact', shares: [{ userId: ME, cents: 4000 }, { userId: ANNA, cents: 5000 }, { userId: BEN, cents: 1000 }] });
 
-    // by percentages: a hundred together
     fireEvent.click(screen.getByTestId('split-add-entry'));
     fireEvent.click(await screen.findByTestId('split-add-manual'));
     type('split-entry-desc', 'Fondue');
@@ -859,12 +822,10 @@ describe('Splits: entering an expense', () => {
     type('split-entry-date', '2026-11-10');
     fireEvent.click(screen.getByTestId('splitentry-foreign-toggle'));
     fireEvent.click(screen.getByTestId('splitentry-foreign-CHF'));
-    // no original amount yet: that is what is missing
     type('split-entry-amount', '1,00');
     fireEvent.click(screen.getByTestId('split-entry-save'));
     expect(screen.getByTestId('splitentry-foreign-blocker')).toBeTruthy();
     type('splitentry-foreign-amount', '50,00');
-    // the day's reference rate fills in what it counts as — and the person's own figure replaces it
     await waitFor(() => expect((screen.getByTestId('split-entry-amount') as HTMLInputElement).value).toBe('100,00'));
     type('split-entry-amount', '101,35');
     fireEvent.change(screen.getByTestId('splitentry-receipt-file'), { target: { files: [new File(['x'], 'bon.jpg', { type: 'image/jpeg' })] } });

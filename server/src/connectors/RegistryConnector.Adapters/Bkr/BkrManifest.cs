@@ -9,12 +9,8 @@ internal static class BkrManifest
 {
     public const int Version = 1;
 
-    /// <summary>
-    /// An hour. BKR states a standing position rather than a feed, and its own
-    /// portal changes when a credit opens or closes - a handful of times a
-    /// year. A consumer syncing this hourly is asking a human for six digits
-    /// hourly, which is the surest way to have the connection turned off.
-    /// </summary>
+    /// an hour: BKR states a standing position that changes a few times a year;
+    /// hourly sync means asking a human for six digits hourly
     public const int SessionTtlSeconds = 3_600;
 
     public static ProviderManifest Build() => new()
@@ -25,9 +21,7 @@ internal static class BkrManifest
         Country = "NL",
         ManifestVersion = Version,
 
-        // T3. Sign-in is Azure AD B2C behind a second factor, and the portal
-        // is server-rendered - so a browser drives the login and plain HTTP
-        // could not, but nothing here needs a browser to stay open afterwards.
+        // a browser drives the login (B2C behind a second factor, server-rendered portal); nothing needs it open afterwards
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = new AgentRequirement
         {
@@ -36,20 +30,12 @@ internal static class BkrManifest
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
 
-        // FALSE, and it stays false whatever the user stores.
-        //
-        // The seed below can remove the six-digit prompt, and it is tempting to
-        // read that as "so it can sync unattended now". It cannot, and must
-        // not: the credential lives in a bundle the user's own device holds,
-        // so there is nobody to hand it over at 3am. A registry that signed
-        // itself in with nobody present is an account takeover with a cron
-        // entry, and the whole custody model exists to make that impossible
-        // rather than merely discouraged.
+        // stays false whatever is stored: even with the seed the credential sits in the user's own device bundle,
+        // nobody hands it over at 3am; a registry signing itself in unattended is an account takeover with a cron entry
         UnattendedFetch = false,
         LoginNeedsHeadedAgent = false,
 
-        // The password is worth keeping: it does not change, and retyping it
-        // for a monthly sync is the friction that stops people syncing.
+        // the password does not change; retyping it for a monthly sync is the friction that stops syncing
         OffersCredentialStore = true,
 
         SecretCustody = SecretCustody.Client,
@@ -67,23 +53,8 @@ internal static class BkrManifest
                     Id = "credentials",
                     LabelKey = MessageKeys.StepCredentials,
 
-                    // ALL THREE OPTIONAL, and that is the whole design. What
-                    // the user supplies decides how much of the sign-in they
-                    // have to watch:
-                    //
-                    //   nothing            -> BKR's own page is streamed from
-                    //                         its first screen
-                    //   username+password  -> both are typed in, then the page
-                    //                         is streamed for the second
-                    //                         factor - which covers a texted
-                    //                         code, an authenticator code, and
-                    //                         any screen offering a choice
-                    //                         between them
-                    //   ...plus the seed   -> the code is computed here and
-                    //                         nobody is disturbed at all
-                    //
-                    // A required field would make the first two impossible to
-                    // offer, and the first is what a first connect looks like.
+                    // all three optional: what the user supplies decides how much sign-in they watch (nothing: streamed,
+                    // user+password: typed, second factor streamed; plus seed: computed); a required field would rule out the first two
                     Fields =
                     [
                         new FieldSpec
@@ -102,15 +73,8 @@ internal static class BkrManifest
                             LabelKey = MessageKeys.FieldPassword,
                         },
 
-                        // The one that needs explaining before it is filled
-                        // in, not after - see connect.bkr.totp.
-                        //
-                        // Secret, obviously: it is the seed behind every code
-                        // the account will ever accept. Storing it means this
-                        // connection alone can pass both factors, which is a
-                        // real reduction in what two-factor was bought for.
-                        // It is optional and unset by default, and the login
-                        // works without it by asking.
+                        // secret: the seed behind every code the account accepts, so storing it lets this connection alone pass both factors
+                        // optional, unset by default (connect.bkr.totp)
                         new FieldSpec
                         {
                             Key = "totp",
@@ -123,29 +87,19 @@ internal static class BkrManifest
                 },
             ],
 
-            // LiveView answers everything the typed path cannot: a texted
-            // code, an authenticator code, a choice between the two, a
-            // password reset, a consent screen nobody has met yet. MfaCode is
-            // declared beside it because a stored seed is not a guarantee -
-            // a clock that has drifted, or a seed that was mistyped, has to
-            // be answerable by a human rather than fatal.
+            // LiveView answers what the typed path cannot (texted code, choice, reset, consent).
+            // MfaCode too: a drifted clock or mistyped seed must be answerable by a human
             Challenges = [ChallengeType.LiveView, ChallengeType.MfaCode],
 
-            // The same defect DUO exposed, fixed here at the same time: BKR's
-            // sign-in is Azure AD B2C on its own host, so a streamed login
-            // pinned to the portal stops the moment the password screen
-            // appears. Both hosts are already named in BkrOptions - these are
-            // those, and nothing wider.
+            // B2C is on its own host, so a streamed login pinned to the portal stops at the password screen
+            // exactly the two hosts in BkrOptions
             LoginOrigins = ["portaal.mijnkredietregistratie.nl", "login.mijnkredietregistratie.nl"],
 
             Session = new SessionSpec
             {
                 TtlSeconds = SessionTtlSeconds,
 
-                // Nothing to refresh. B2C hands the portal an id_token by
-                // form_post and the portal keeps a cookie; the browser is
-                // never given a refresh token, so the next sync signs in
-                // again from the stored password and a new code.
+                // nothing to refresh: no refresh token, so the next sync signs in again from the stored password and a new code
                 Refreshable = false,
                 RotatesOnUse = false,
             },
@@ -159,10 +113,7 @@ internal static class BkrManifest
                 Id = BkrAdapter.CreditsResource,
                 Returns = ResourceShape.CreditRegistration,
 
-                // No `since` and no `until`. A register states what is true
-                // NOW; asking it for "credits since March" is a question it
-                // has no way to answer, and declaring the parameter would
-                // invite one.
+                // no since/until: a register states what is true now, and declaring the parameter would invite a question it cannot answer
                 Params = [],
                 MaxRecordsPerFetch = 200,
             },

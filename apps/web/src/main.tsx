@@ -34,30 +34,24 @@ import { UpdateToast } from '@/ui/UpdateToast';
 
 // a party that brings the person back to the app's own page (a bank's consent, §15)
 const isConnectorReturnPath = window.location.pathname.includes(RETURN_PATH);
-// split invites are REAL paths now (OS link matching never sees a #
-// fragment) — bounce into the hash router before anything renders
+// split invites are REAL paths (OS link matching never sees a #): bounce into the hash router before anything renders
 if (window.location.pathname.startsWith('/splits/join/')) {
   window.location.replace(`${window.location.origin}/#${window.location.pathname}`);
 }
-// an invitation mail (Logto's magic link) lands on a REAL path too:
-// /invite?token=…&email=… — bounce into the hash router with the query
-// intact. The single-use token is spent on the person's tap alone
-// (InviteScreen), never by landing here
+// the invitation mail (Logto magic link) lands on a real /invite path: bounce into the hash router, query intact;
+// the single-use token is spent on the person's tap alone (InviteScreen), never by landing here
 if (/^\/invite\/?$/.test(window.location.pathname)) {
   window.location.replace(`${window.location.origin}/#/invite${window.location.search}`);
 }
 
-// Chosen-offline identities (demo / offline mode) promise ZERO network
-// traffic — not even crash reports. Signed-in users who merely lost
-// connectivity are different: their reports queue locally and flush
-// once the network returns (offline transport below).
+// chosen-offline identities (demo/offline) promise ZERO network traffic, crash reports included; signed-in users who merely
+// lost connectivity queue reports locally and flush when the network returns
 const isZeroNetworkIdentity = () => {
   const kind = useSession.getState().identity?.kind;
   return kind === 'demo' || kind === 'offline';
 };
 
-// error AND performance monitoring (docs/observability.md): GlitchTip
-// speaks the Sentry protocol; no-op when unset
+// GlitchTip speaks the Sentry protocol; no-op when unset
 if (config.glitchtipDsn) {
   Sentry.init({
     dsn: config.glitchtipDsn,
@@ -65,15 +59,10 @@ if (config.glitchtipDsn) {
     environment: config.channel || 'local',
     // financial app: never send request/response bodies or user input
     sendDefaultPii: false,
-    // the session ping (fires at init, before any identity check could
-    // run) and outcome client reports would break the zero-network
-    // promise, and we don't use release health anyway
+    // the session ping (fires at init, before any identity check) and client reports would break the zero-network promise
     integrations: (defaults) => [
       ...defaults.filter((integration) => integration.name !== 'BrowserSession'),
-      // performance (user 2026-10-09): pageload + navigation transactions
-      // named by the route PATTERN (/transactions/$txId, never the id) with
-      // the fetches, long animation frames (and their script) and the
-      // interaction-to-next-paint under them; the gates below decide who sends
+      // pageload + navigation transactions named by the route PATTERN, never the id; the gates below decide who sends
       Sentry.tanstackRouterBrowserTracingIntegration(router, {
         enableInp: true,
         enableLongAnimationFrame: true,
@@ -82,28 +71,21 @@ if (config.glitchtipDsn) {
       }),
     ],
     tracesSampleRate: config.tracesSampleRate,
-    // the sync api continues our traces (a slow Confirm shows its push end
-    // to end; its CORS allows any header) — Logto, logo.dev and every
-    // other origin see no sentry-trace/baggage header
+    // the sync api continues our traces (its CORS allows any header); every other origin sees no sentry-trace/baggage header
     tracePropagationTargets: config.apiUrl ? [config.apiUrl] : [],
     sendClientReports: false,
-    // no connectivity ≠ no telemetry: queue in IndexedDB, flush when online.
-    // The gate under it is the zero-network promise for what no hook sees
-    // (standalone INP spans): a demo/offline identity sends nothing, ever.
+    // offline queues in IndexedDB and flushes when online; the gate under it keeps demo/offline silent for what no hook sees
+    // (standalone INP spans)
     transport: Sentry.makeBrowserOfflineTransport(gateTransport(Sentry.makeFetchTransport, isZeroNetworkIdentity)),
     // the offline transport reads OfflineTransportOptions, which the init
     // options type doesn't surface — hence the widened literal
     transportOptions: { flushAtStartup: true } as Partial<Parameters<typeof Sentry.makeFetchTransport>[0]>,
-    // pure connectivity noise, not bugs: the browser's generic fetch
-    // network errors (WebKit / Chromium / Firefox wording) fire whenever
-    // the API or IdP is unreachable — offline is a supported state here
+    // connectivity noise, not bugs: generic fetch errors fire whenever the API or IdP is unreachable (offline is supported)
     ignoreErrors: [
       'Load failed',
       'Failed to fetch',
       'NetworkError when attempting to fetch resource',
-      // store-teardown noise (GlitchTip 79/80/82): sign-out closes the
-      // local store while the sync engine's in-flight queries settle —
-      // these signatures only occur around that close and say nothing
+      // store-teardown noise (GlitchTip 79/80/82): sign-out closes the local store while in-flight queries settle
       'DatabaseClosedError',
       'The connection was closed',
       /Connection to munni_\w+ not available/,
@@ -114,9 +96,6 @@ if (config.glitchtipDsn) {
     beforeSend: (event) => (isZeroNetworkIdentity() ? null : scrubEvent(event)),
     beforeSendTransaction: (event) => (isZeroNetworkIdentity() ? null : transactionFilter(event)),
   });
-  // the interaction the person felt: a poor INP (> 500 ms tap-to-paint)
-  // files one warning per element with its phases and longest script —
-  // through reportWarning, so the same zero-network gate applies
   installWebVitals();
 }
 
@@ -126,13 +105,12 @@ initPressFeedback();
 initDeepLinks(); // native shell only: munni:// callbacks re-enter here
 watchNativeExits(); // the Android shell only: what ended the app last time, told before a screen can end it again
 installViewportGuard(); // iOS keyboard focus-scroll must never displace the shell
-installKeyboardDismiss(); // touch-scroll or Enter closes the mobile keyboard
+installKeyboardDismiss();
 installKeyboardReveal(); // iOS: fields the keyboard swallowed scroll back into view (#129)
 // #135: sustained JS-heap growth pages GlitchTip once per session (the
 // zero-network gate in beforeSend keeps demo/offline identities silent)
 installMemWatch((message, extra) => reportWarning('memwatch', message, extra));
 
-// OIDC / party-return redirects land outside the hash router
 function AppEntry() {
   // the lock gates a signed-in session (and its callbacks); signed out
   // there is nothing to protect and login must stay reachable

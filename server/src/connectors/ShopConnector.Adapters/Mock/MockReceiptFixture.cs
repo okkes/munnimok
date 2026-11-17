@@ -7,27 +7,11 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Mock;
 
-/// <summary>
-/// Reads a mock provider's receipts from a fixture file.
-///
-/// The fixture states every amount in minor units, named <c>*_minor</c>, and
-/// this reader declares <see cref="MoneyUnit.Minor"/> to match. That is the
-/// same rule the real adapters follow, applied where it costs nothing -
-/// a fixture whose unit had to be inferred would teach the wrong habit to
-/// everyone who copied it.
-///
-/// The file's receipts are the store's FIRST cycle, on the days the file
-/// states: a fixed first day, never moved, so every id and hash they ever had
-/// still holds. From there each one repeats every
-/// <see cref="MockStoreAdapters.ReceiptCycleDays"/> days at the same wall-clock
-/// time up to the clock's now, and the store keeps them as far back as its
-/// history limit - so what it serves always sits inside the window the
-/// platform resolves, on any day. Read as it stood, the file fell out of that
-/// window a year after its last receipt, and every test expecting one went red.
-/// </summary>
+/// Fixture amounts are minor units (*_minor), declared as MoneyUnit.Minor like the real adapters do.
+/// The file's receipts are the first cycle on fixed days (ids and hashes stay stable); each repeats every
+/// ReceiptCycleDays at the same wall-clock time up to now, so the store stays inside the platform's window on any day.
 internal static class MockReceiptFixture
 {
-    /// <summary>The store's receipts at <paramref name="now"/>, newest first, as far back as <paramref name="historyDays"/> reach.</summary>
     public static IReadOnlyList<Receipt> Read(
         string fixtureName, string providerId, string sessionId, bool withItems, DateTimeOffset now, int historyDays)
     {
@@ -65,8 +49,7 @@ internal static class MockReceiptFixture
                 StoreName = JsonAccess.StrOf(row, "store_name"),
             };
 
-            // Fixtures carry a real offset, so the mocks prove the rule
-            // the real adapters have to enforce by hand.
+            // fixtures carry a real offset, so the mocks prove the rule the real adapters enforce by hand
             var first = ReceiptTime.Parse(JsonAccess.StrOf(row, "purchased_at"), RetailZones.Dutch, providerId, "purchased_at");
             var total = MoneyReader.Require(row, MoneyUnit.Minor, currency, "receipt.total", "total_minor");
             IReadOnlyList<ReceiptItem> items = withItems ? Items(row, currency) : [];
@@ -84,11 +67,7 @@ internal static class MockReceiptFixture
         return [.. receipts.OrderByDescending(r => r.PurchasedAt)];
     }
 
-    /// <summary>
-    /// A receipt's purchase and its repeats, every cycle after it at the same
-    /// wall-clock time in the store's zone (the offset follows the season),
-    /// for as long as they are not in the future.
-    /// </summary>
+    /// repeats keep the same wall-clock time in the store's zone; the offset follows the season
     private static IEnumerable<DateTimeOffset> Repeats(DateTimeOffset first, DateTimeOffset now)
     {
         var wallClock = first.DateTime;
@@ -101,11 +80,7 @@ internal static class MockReceiptFixture
         }
     }
 
-    /// <summary>
-    /// What follows the day in a fixture id, <c>mock-{yyyy-MM-dd}-{n}</c>. A
-    /// repeat carries its own day in the same place, so the first cycle keeps
-    /// the file's ids exactly and every later receipt has an id of its own.
-    /// </summary>
+    /// what follows the day in an id; a repeat carries its own day, so the first cycle keeps the file's ids exactly
     private static string Sequence(string externalId, DateTimeOffset first, string providerId)
     {
         var prefix = IdOn(DateOnly.FromDateTime(first.DateTime), string.Empty);
@@ -125,9 +100,7 @@ internal static class MockReceiptFixture
 
         foreach (var line in lines)
         {
-            // A nameless line is a broken fixture, and a broken fixture must
-            // fail the suite rather than quietly emit fewer items than the
-            // file lists.
+            // a nameless line is a broken fixture: fail the suite rather than emit fewer items than the file lists
             var name = JsonAccess.StrOf(line, "name")
                        ?? throw ConnectorException.ProviderChanged("mock: fixture item without a name");
 

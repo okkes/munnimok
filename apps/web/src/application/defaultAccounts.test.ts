@@ -26,7 +26,6 @@ describe('#546: the retired family defaults leave their spaces', () => {
     return { store, repo };
   }
 
-  /** a default as #221 minted it */
   const mintOld = (repo: Repo, family: 'saving' | 'debtPayment' | 'transfer', name: string, type: 'savings' | 'loan' | 'checking') =>
     repo.upsert('account', SPACE, defaultAccountId(SPACE, family), {
       name, type, source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: family,
@@ -39,12 +38,10 @@ describe('#546: the retired family defaults leave their spaces', () => {
     await repo.upsert('transaction', SPACE, 'aside1', {
       accountId: 'main', date: '2026-07-01', amountCents: -5000, currency: 'EUR', merchant: 'Set aside', catId: 'savingDeposit', needsReview: 0,
     });
-    // the old fold linked it onto the default — the leg carried the money there
     await writeTxTransform(repo, { id: 'aside1', spaceId: SPACE, feedSpaceId: undefined, needsReview: 0 }, { linkedAccountId: pot });
     expect((await store.get('transaction', mirrorTxId('aside1')))?.accountId).toBe(pot);
     await repo.upsert('recurring', SPACE, 'rec1', { name: 'Monthly aside', catId: 'savingDeposit', amountCents: -5000, every: 'month', dueDay: 1, active: 1, linkedAccountId: pot });
     await repo.upsert('space', SPACE, SPACE, { goalPoolAccountIds: [pot, 'main'] });
-    // the cash wallet is the default that stays
     await ensureCashWallet(store, repo, SPACE);
 
     expect(await retireDefaultAccounts(store, repo)).toBe(1);
@@ -57,7 +54,6 @@ describe('#546: the retired family defaults leave their spaces', () => {
     expect((await store.get('recurring', 'rec1'))?.linkedAccountId ?? undefined).toBeUndefined();
     expect((await store.get('space', SPACE))?.goalPoolAccountIds).toEqual(['main']);
     expect((await store.get('account', cashWalletId(SPACE)))?.deleted).toBe(0);
-    // every boot: nothing left to retire
     expect(await retireDefaultAccounts(store, repo)).toBe(0);
   });
 

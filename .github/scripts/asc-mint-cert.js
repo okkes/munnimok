@@ -1,9 +1,5 @@
-// Mint an Apple Development certificate from a CSR via the App Store
-// Connect API — the no-Mac path to the persistent signing cert (the
-// user has no macOS machine; docs/native-setup.md §5b).
-//
-// stdin: nothing. argv[2]: path to a PEM CSR. stdout: the cert DER as
-// base64 (single line). Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID.
+// the no-Mac path to the persistent signing cert (docs/native-setup.md §5b)
+// argv[2] = PEM CSR path; stdout = the cert DER as one-line base64
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 

@@ -5,18 +5,10 @@ import type { ParsedStatement } from './ing';
 
 export type { ParsedStatement };
 
-/**
- * One entry point for every statement format the app understands.
- * Transactions arrive from all over in different shapes — this module
- * normalizes them into the same ParsedStatement, so the importer,
- * dedupe ids and screens never care where a file came from.
- *
- * Detection is content-based (header sniffing), not extension-based:
- * banks are creative with file names.
- */
+// every statement format normalizes into one ParsedStatement;
+// detection is content-based (header sniffing): banks are creative with file names
 
-/** the format families the sniffer can name — #226 r2: the import flow
- *  compares this against the picked bank before parsing */
+/** #226 r2: the import flow compares this against the picked bank before parsing */
 export type StatementKind = 'paypal' | 'ing' | 'camt' | 'unknown';
 
 /** every ING sub-shape told apart ONCE — parseStatement routes on these
@@ -31,14 +23,13 @@ function sniffFormat(content: string): SniffedFormat {
     return 'camt'; // CAMT.053 XML (ASN, SNS, Rabo, ING business…)
   }
   if (looksLikePaypalCsv(head)) {
-    return 'paypal'; // PayPal activity export
+    return 'paypal';
   }
   // every ING shape ships in Dutch AND English (verified against real
   // 2026 exports) — detection checks both header sets
   if (has('Kaartnummer', 'Card number')) {
     return 'ingCredit';
   }
-  // balance-history exports: no transactions, just Boeksaldo/Book balance
   if (has('Boeksaldo', 'Book balance')) {
     return 'ingBalance';
   }
@@ -53,8 +44,6 @@ function sniffFormat(content: string): SniffedFormat {
   return 'unknown';
 }
 
-/** #226 r2: name a file's format family WITHOUT parsing it — the import
- *  flow warns when the picked bank promised a different one */
 export function detectStatementKind(content: string, _fileName?: string): StatementKind {
   const format = sniffFormat(content);
   if (format === 'camt' || format === 'paypal' || format === 'unknown') return format;

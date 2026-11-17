@@ -3,13 +3,8 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Munni.Api.Investments;
 
-/// <summary>
-/// Delayed-quote pass-through (approved investments design): Yahoo's
-/// chart endpoint for stocks/ETFs, CoinGecko for crypto — both free,
-/// both unofficial-but-stable, cached 60s server-side to stay a polite
-/// citizen. Prices are a convenience, never stored: the client keeps
-/// its own device cache and demo/offline identities never call this.
-/// </summary>
+// Yahoo chart (stocks/ETFs) and CoinGecko (crypto): free, unofficial, cached 60s.
+// prices are never stored, demo/offline identities never call
 public static class QuoteEndpoints
 {
     public const string YahooClientName = "yahoo";

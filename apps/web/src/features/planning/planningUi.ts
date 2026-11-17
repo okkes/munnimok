@@ -3,7 +3,6 @@ import type { SubjectStatus } from '@/domain/planning';
 import type { TranslationKey } from '@/i18n';
 import type { Tone } from '@/ui/primitives';
 
-/** each segment's face and name */
 export const SEGMENT_META: Record<PlanSegmentKind, { icon: string; labelKey: TranslationKey; addKey: TranslationKey }> = {
   recurring: { icon: 'autorenew', labelKey: 'plan.segment.recurring', addKey: 'plan.addSourceTitle.recurring' },
   debts: { icon: 'scale-balance', labelKey: 'plan.segment.debts', addKey: 'plan.addSourceTitle.debts' },
@@ -13,11 +12,8 @@ export const SEGMENT_META: Record<PlanSegmentKind, { icon: string; labelKey: Tra
   goals: { icon: 'flag-outline', labelKey: 'plan.segment.goals', addKey: 'plan.addSourceTitle.goals' },
 };
 
-/**
- * A status reads in one tone everywhere (user 2026-10-21, #517: "all these
- * colours are confusing"): green funded, orange short of the target, red
- * overspent; spent past the target but covered is green with orange stripes.
- */
+// a status reads in one tone everywhere (#517): green funded, orange short, red overspent;
+// spent past the target but covered is green with orange stripes
 export const STATUS_TONE: Record<SubjectStatus, Tone> = {
   neutral: 'neutral',
   underfunded: 'warning',
@@ -28,7 +24,7 @@ export const STATUS_TONE: Record<SubjectStatus, Tone> = {
   settled: 'neutral',
 };
 
-/** the bar's fill per status — the subject's own colour stays on its tile only */
+/** the subject's own colour stays on its tile only */
 export const STATUS_BAR: Record<SubjectStatus, string> = {
   neutral: 'var(--m-ink-4)',
   underfunded: 'var(--m-warning)',
@@ -39,7 +35,6 @@ export const STATUS_BAR: Record<SubjectStatus, string> = {
   settled: 'var(--m-ink-4)',
 };
 
-/** the orange stripes over a bar whose spending went past the target while the funding covers it */
 export const OVER_TARGET_STRIPES = 'repeating-linear-gradient(135deg, var(--m-warning) 0 4px, transparent 4px 8px)';
 
 export const STATUS_KEY: Record<SubjectStatus, TranslationKey> = {
@@ -52,7 +47,6 @@ export const STATUS_KEY: Record<SubjectStatus, TranslationKey> = {
   settled: 'plan.status.settled',
 };
 
-/** the colours of the circle as it fills (domain/planning aheadColor) */
 export const AHEAD_COLOR: Record<'grey' | 'green' | 'orange' | 'red', string> = {
   grey: 'var(--m-ink-4)',
   green: 'var(--m-accent)',
@@ -60,7 +54,7 @@ export const AHEAD_COLOR: Record<'grey' | 'green' | 'orange' | 'red', string> = 
   red: 'var(--m-negative)',
 };
 
-/** the expense subject's own face: a first pick of icons and colours (the editor searches the whole icon font too) */
+/** a first pick; the editor searches the whole icon font too */
 export const SUBJECT_ICONS = [
   'cart-outline',
   'food-fork-drink',
@@ -82,7 +76,6 @@ export const SUBJECT_ICONS = [
 
 export const SUBJECT_COLORS = ['#16A085', '#2980B9', '#9B59B6', '#E91E63', '#E67E22', '#27AE60', '#C0392B', '#F39C12', '#34495E', '#1ABC9C'] as const;
 
-/** an Unplanned source row's kind (user 2026-10-09): the segment "Plan it" adds it to, and the label under its name */
 export type UnplannedSourceKind = 'recurring' | 'debt' | 'event' | 'goal';
 export const UNPLANNED_SEGMENT: Record<UnplannedSourceKind, PlanSegmentKind> = { recurring: 'recurring', debt: 'debts', event: 'events', goal: 'goals' };
 export const UNPLANNED_KIND_KEY: Record<UnplannedSourceKind, TranslationKey> = {

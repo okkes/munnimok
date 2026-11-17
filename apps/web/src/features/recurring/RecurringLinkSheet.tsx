@@ -11,7 +11,7 @@ import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
-/** days either side of a due date that count as "around it" (user 2026-10-06) */
+/** days either side of a due date that count as "around it" */
 export const NEAR_DUE_DAYS = 7;
 
 const utcDay = (iso: string): number => {
@@ -19,17 +19,13 @@ const utcDay = (iso: string): number => {
   return Date.UTC(y, m - 1, d) / 86_400_000;
 };
 
-/** charges a recurring could take: negative, not linked anywhere (its own
- *  payments are listed on the screen), not a multi-part container (the
- *  reconciler's rule - parts link from their own pages) */
+/** charges a recurring could take: negative, unlinked, not a multi-part container (parts link from their own pages) */
 export function linkableCharges(txs: readonly SpaceTx[]): SpaceTx[] {
   return txs.filter(
     (tx) => tx.deleted === 0 && tx.amountCents < 0 && !tx.recurringId && (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length <= 1,
   );
 }
 
-/** the charges within NEAR_DUE_DAYS of a due date of the past year or the
- *  coming weeks, newest first - the quick pick before any search */
 export function chargesNearDue(rec: RecurringRow, charges: readonly SpaceTx[], today: string): SpaceTx[] {
   const due = occurrencesBetween(rec, addDays(today, -400), addDays(today, 45)).map(utcDay);
   if (due.length === 0) return [];
@@ -40,14 +36,6 @@ export function chargesNearDue(rec: RecurringRow, charges: readonly SpaceTx[], t
   return [...near].sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/**
- * User 2026-10-06: "allow me to add transactions from a recurring cost
- * screen" - the creation flow proposes charges once, and afterwards there
- * was no way to find one. The quick segment is every unlinked charge around
- * a due date; typing searches every transaction. A tap links the charge
- * (the same op the creation sheet uses, which re-files it under the
- * recurring's category) and the row leaves the list for the payments.
- */
 export function RecurringLinkSheet({ rec, onClose }: Readonly<{ rec: RecurringRow | null; onClose: () => void }>) {
   const { t } = useLang();
   const ops = useRecurringOps();

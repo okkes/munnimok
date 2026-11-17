@@ -26,7 +26,6 @@ const parsePct = (text: string): number => {
   return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : 0;
 };
 
-/** what a new entry starts from when it is a transaction picked from one of the person's spaces */
 export interface EntrySeed {
   description: string;
   amountCents: number;
@@ -43,9 +42,7 @@ interface Draft {
   date: string;
   paidBy: string;
   mode: SplitShareMode;
-  /** who shares when it is divided equally */
   included: ReadonlySet<string>;
-  /** per member: an amount or a percentage, as typed */
   values: Readonly<Record<string, string>>;
   foreign: { currency: string; amount: string } | null;
   /** undefined = as it was; a picture = new; '' = taken off */
@@ -83,7 +80,6 @@ function startDraft(entry: SplitEntry | undefined, seed: EntrySeed | undefined, 
   };
 }
 
-/** the shares as the API takes them, and what still stands in the way of saving */
 function sharesOf(draft: Draft, cents: number, members: readonly SplitMember[]): { shares: SplitEntryDraft['shares']; left: number; unit: 'cents' | 'pct' | null } {
   if (draft.mode === 'equal') {
     return { shares: members.filter((member) => draft.included.has(member.userId)).map((member) => ({ userId: member.userId })), left: 0, unit: null };
@@ -96,7 +92,6 @@ function sharesOf(draft: Draft, cents: number, members: readonly SplitMember[]):
   return { shares, left: Math.round((100 - shares.reduce((sum, share) => sum + share.pct, 0)) * 100) / 100, unit: 'pct' };
 }
 
-/** who shares in it, and how: equally among the ticked, by typed amounts, or by typed percentages */
 function SharesEditor({
   draft,
   cents,
@@ -173,7 +168,6 @@ function SharesEditor({
   );
 }
 
-/** an amount paid in another currency: what it was there, and what it counts as here */
 function ForeignAmount({
   draft,
   currency,
@@ -239,7 +233,6 @@ function ForeignAmount({
   );
 }
 
-/** the photo of the receipt: add one, look at the one there is, take it off */
 function ReceiptField({
   api,
   splitId,
@@ -286,14 +279,8 @@ function ReceiptField({
   );
 }
 
-/**
- * #538: an expense of a split — what it was, what it cost, when, who paid
- * and who shares in it: equally, by amounts or by percentages. The payer
- * need not share (the chocolate somebody else owes in full). A sum paid in
- * another currency keeps what it was there next to what it counts as here.
- * Whoever may not change it (user: its author, its payer, an owner — and
- * nobody once settled) reads the same sheet without a Save.
- */
+// #538: the payer need not share; whoever may not change an entry (author, payer, owner;
+// nobody once settled) reads it without Save
 export function SplitEntrySheet({
   api,
   splitId,
@@ -308,7 +295,6 @@ export function SplitEntrySheet({
   api: SplitsApi;
   splitId: string;
   currency: string;
-  /** the people who are in the split now */
   members: readonly SplitMember[];
   open: boolean;
   onOpenChange: (open: boolean) => void;

@@ -9,11 +9,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { BlockListEditor } from '@/features/customize/BlockListEditor';
 
-/** every block the landing zone can show, in default order (user ruling:
- *  review → this period → transactions → budgets → coming up → goals →
- *  debts → events → insights; portfolio left Home for its own tab; #512:
- *  the net-worth block left too — Trends carries the line; #577: the
- *  shortcuts to what the space took out of its phone bar) */
+/** every block the landing zone can show, in default order; portfolio has its own tab, net worth left for Trends (#512) */
 export const HOME_BLOCK_IDS = ['review', 'receipts', 'cashflow', 'overview', 'shortcuts', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'recurring', 'goals', 'debts', 'events', 'splits', 'insights', 'trends'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
@@ -37,8 +33,6 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   trends: 'trends.title',
 };
 
-/** each block wears its own face — the plain text list read as a form
- *  instead of a preview of Home (user feedback 2026-07-24) */
 export const HOME_BLOCK_ICONS: Record<HomeBlockId, string> = {
   review: 'check-decagram-outline',
   receipts: 'receipt-text-outline',
@@ -64,10 +58,7 @@ export interface HomeBlockConfig {
   hidden: boolean;
 }
 
-/** the space's saved layout merged with defaults (new blocks append,
- *  switched on — the one opt-in block was networth); a block that left
- *  Home (#512: networth) is dropped here and from the next write — the
- *  stored entry is inert until then */
+// the saved layout merged with defaults: new blocks append switched on; ids no longer a block (#512 networth) are dropped
 export function resolveHomeBlocks(space: SpaceRow | undefined): HomeBlockConfig[] {
   const saved = space?.homeBlocks ?? [];
   const known = new Set<string>(HOME_BLOCK_IDS);
@@ -79,12 +70,8 @@ export function resolveHomeBlocks(space: SpaceRow | undefined): HomeBlockConfig[
   return ordered;
 }
 
-/**
- * "Customize Home" as a full screen (user request: dragging around on a
- * bottom sheet felt awkward, and the sheet's transform sent the drag
- * ghost drifting). Saved on the space row, so the layout is a per-space
- * decision and syncs to every member/device.
- */
+// a full screen, not a sheet: the sheet's transform sent the drag ghost drifting;
+// saved on the space row, so per-space and synced
 export function HomeCustomizeScreen() {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
@@ -124,8 +111,7 @@ export function HomeCustomizeScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="pb-2 text-[12px] text-ink-3">{t('home.customizeSub')}</p>
         <ReadOnlyNote className="mb-3" testId="home-customize-readonly-note" />
-        {/* render only once the SAVED layout arrived — acting on the
-            defaults mid-load silently overwrote the real order */}
+        {/* render only once the SAVED layout arrived: acting on the defaults mid-load overwrote the real order */}
         {space && (
         <div className="flex flex-col" data-testid="home-customize-list" inert={canEdit ? undefined : true}>
           <BlockListEditor

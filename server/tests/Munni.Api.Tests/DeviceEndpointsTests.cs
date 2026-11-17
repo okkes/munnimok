@@ -32,12 +32,7 @@ public class DevicesApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>
-/// Logged-in devices: every authenticated request names its device (or
-/// is refused), stamping, list/rename, and the remote-disconnect contract
-/// (revoked device → 410, so the client wipes itself — 403 would read as
-/// a lost space membership).
-/// </summary>
+// revoked device -> 410 so the client wipes itself; 403 would read as a lost space membership
 public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
 {
     private readonly DevicesApiFactory _factory;
@@ -67,7 +62,7 @@ public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
     {
         var sub = $"dev_{Guid.NewGuid():N}";
         var phone = ClientFor(sub, "phone-2", "ios");
-        await phone.GetAsync("/me/devices"); // stamps the row
+        await phone.GetAsync("/me/devices");
 
         var rename = await phone.PatchAsJsonAsync("/me/devices/phone-2", new RenameDeviceRequest("Okkes' iPhone"));
         Assert.Equal(HttpStatusCode.OK, rename.StatusCode);
@@ -85,9 +80,7 @@ public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
         var refused = await ClientFor(sub).GetAsync("/me/devices");
         Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
         Assert.Contains("device-required", await refused.Content.ReadAsStringAsync());
-        // an over-long id is no id either
         Assert.Equal(HttpStatusCode.Unauthorized, (await ClientFor(sub, new string('x', 65)).GetAsync("/me/devices")).StatusCode);
-        // nothing was stamped for the refused calls
         var devices = await ClientFor(sub, "phone-4", "android").GetFromJsonAsync<List<DeviceDto>>("/me/devices");
         Assert.Equal("phone-4", Assert.Single(devices!).Id);
     }
@@ -101,17 +94,14 @@ public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
         await phone.GetAsync("/me/devices");
         await laptop.GetAsync("/me/devices");
 
-        // the laptop disconnects the phone
         Assert.Equal(HttpStatusCode.OK, (await laptop.PostAsync("/me/devices/phone-3/revoke", null)).StatusCode);
 
         var refused = await phone.GetAsync("/me/devices");
         Assert.Equal(HttpStatusCode.Gone, refused.StatusCode);
         Assert.Contains("device-revoked", await refused.Content.ReadAsStringAsync());
 
-        // the laptop is untouched and sees the phone marked revoked
         var devices = await laptop.GetFromJsonAsync<List<DeviceDto>>("/me/devices");
         Assert.Contains(devices!, d => d.Id == "phone-3" && d.Revoked);
-        // revoking an unknown device 404s
         Assert.Equal(HttpStatusCode.NotFound, (await laptop.PostAsync("/me/devices/ghost/revoke", null)).StatusCode);
     }
 }

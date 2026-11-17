@@ -55,8 +55,6 @@ public class ValidationTests
         Assert.Equal(valid, result.IsValid);
     }
 
-    // every attachment carries its history gate (a date) and, when it
-    // names a type, one the apps know
     [Theory]
     [InlineData("2026-01-01", null, true)]
     [InlineData("2026-01-01", "savings", true)]
@@ -82,11 +80,9 @@ public class ValidationTests
     [Fact]
     public void Push_accepts_the_overlay_entities()
     {
-        // the feed import pushes these — a missing whitelist entry strands
-        // the owner's outbox with 400s (found by the sync-a6 e2e)
+        // a missing whitelist entry strands the owner's outbox with 400s (the feed import pushes these)
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "txMeta")])).IsValid);
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "accountLink")])).IsValid);
-        // recurring costs + dismissed suggestions sync the same way
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "recurring")])).IsValid);
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "recurringDismiss")])).IsValid);
     }
@@ -94,10 +90,8 @@ public class ValidationTests
     [Fact]
     public void Push_accepts_plans_and_composite_subject_ids()
     {
-        // an entity missing from the whitelist + a 64-char EntityId cap
-        // poisoned real outboxes (user outage 2026-07-20: a hundred store
-        // receipts stuck behind one rejected op, surfacing as "offline").
-        // #128: a mirrored plan subject is `psub:plan:{space-uuid}:{kind}:{period}:{segment}:{uuid}`
+        // a missing whitelist entry or a 64-char EntityId cap poisoned real outboxes: one rejected op blocked the rest
+        // #128: a mirrored plan subject id is `psub:plan:{space-uuid}:{kind}:{period}:{segment}:{uuid}`
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "plan")])).IsValid);
         var subjectId = $"psub:plan:{Guid.NewGuid()}:actual:2026-07-01:recurring:{Guid.NewGuid()}";
         Assert.True(subjectId.Length > 64);
@@ -109,16 +103,13 @@ public class ValidationTests
     [Fact]
     public void Push_accepts_the_activity_history_entity()
     {
-        // per-space "who did what" rows (capped client-side at 200)
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "activity")])).IsValid);
     }
 
     [Fact]
     public void Push_accepts_the_receipts_v3_entities()
     {
-        // receipts redesign: instance metadata, per-space inclusion links
-        // and snapshot receipt links all travel the oplog — a missing
-        // whitelist entry poisons the outbox (the 2.20.1 lesson)
+        // a missing whitelist entry poisons the outbox (the 2.20.1 lesson)
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "storeConn")])).IsValid);
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "storeConnLink")])).IsValid);
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "receiptLink")])).IsValid);

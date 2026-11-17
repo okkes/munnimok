@@ -1,9 +1,3 @@
-// The setup wizard's helper over the platform model: token + host gates,
-// the status shape (names, never values), the wizard's store routing, the
-// platform config endpoints (environments, store ids, published path, the
-// vault account, commit), the Access endpoints against Logto's Management
-// API, the NAS probe, the credential checks, and the lcl tool allowlist.
-// Everything runs against a temporary platforms tree + render dir.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -19,7 +13,7 @@ const PLATFORMS = join(SCRATCH, 'platforms');
 process.env.MUNNI_RENDER_DIR = RENDER;
 process.env.MUNNI_PLATFORMS_DIR = PLATFORMS;
 delete process.env.PLATFORM_DOMAIN;
-// the two platforms, inline — the repository holds no platform config (#416); one lcl environment (prod, slot 0)
+// the repository holds no platform config (#416), so the platforms are inline
 const PLATFORM_FILES = {
   lcl: { platform: 'lcl', label: 'This computer', delivery: 'docker', registry: 'ghcr.io/okkes', sharedChannel: 'dev' },
   nas: { platform: 'nas', label: 'Synology NAS', delivery: 'synology', domain: '${PLATFORM_DOMAIN}', registry: 'ghcr.io/okkes', publishedPath: '/docker/munni-nas/published', sharedChannel: 'latest' },
@@ -38,7 +32,6 @@ const { writeApplied } = await import('../modules/config.mjs');
 
 test.after(() => { if (process.env.MUNNI_KEEP_SCRATCH) console.log(`scratch kept at ${SCRATCH}`); else rmSync(SCRATCH, { recursive: true, force: true }); });
 
-/* ── harness ── */
 function fakeRes() {
   const res = { statusCode: 0, headers: null, chunks: [], ended: false };
   res.writeHead = (code, headers) => { res.statusCode = code; res.headers = headers; };
@@ -62,7 +55,6 @@ const fakeReq = ({ method = 'GET', url = '/', host = '127.0.0.1:8377', token = '
   };
 };
 const settle = async (res) => { for (let i = 0; i < 200 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10)); };
-/** fake child processes for the multi-step endpoints: output and exit code per call */
 const scriptedSpawn = (spawned, outputFor = () => 'ok\n', codeFor = () => 0) => (cmd, args, opts) => {
   spawned.push({ cmd, args, opts });
   const child = new EventEmitter();
@@ -95,7 +87,6 @@ const app = createApp({
 const call = async (a, opts) => { const res = fakeRes(); await a(fakeReq(opts), res); await settle(res); return res; };
 const post = (a, url, body) => call(a, { method: 'POST', url, body });
 
-/* ── gates ── */
 test('guards: no token 401, bad host 403, the served page carries the token, non-api paths and unknown routes 404', async () => {
   assert.equal((await call(app, { url: '/api/status', token: null })).statusCode, 401);
   assert.equal((await call(app, { url: '/api/status', host: 'evil.example' })).statusCode, 403);
@@ -106,7 +97,6 @@ test('guards: no token 401, bad host 403, the served page carries the token, non
   assert.equal((await call(app, { url: '/api/nope' })).statusCode, 404);
 });
 
-/* ── the wizard's store ── */
 test('wizard values: every value lands in the named platform and nowhere else; no platform, no store; non-operator names are dropped; an empty value forgets', async () => {
   assert.equal((await post(app, '/api/wizard/values', { values: { GOCARDLESS_SECRET_ID: 'nowhere' } })).statusCode, 400, 'a value without a platform is refused');
   const r = await post(app, '/api/wizard/values', { values: { GOCARDLESS_SECRET_ID: 'gc-id-value', SYNOLOGY_URL: 'https://nas:5001', PLATFORM_DOMAIN: 'nas.example', PATH: 'evil', POSTGRES_PASSWORD: 'not-yours' }, platform: 'nas' });
@@ -138,7 +128,6 @@ test('status: the platforms, the lcl stacks, and the stores by NAME — never a 
   const lcl = body.platforms[0];
   assert.equal(lcl.sharedStack, 'munni-lcl-shared');
   assert.equal(lcl.sharedEnvironment, 'lcl-shared');
-  // the shared card's link chips (user 2026-10-09) read the shared stack's urls and its probed services by the same keys
   const sharedStack = body.stacks['munni-lcl-shared'];
   assert.deepEqual(Object.keys(sharedStack.urls).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
   assert.deepEqual(Object.keys(sharedStack.services).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
@@ -184,7 +173,6 @@ test('services (#560): every service of a platform with the address to open — 
   assert.equal(byKey.logtoAdmin.name, 'Logto console');
   assert.equal(byKey.connector, undefined, 'no control plane host where the environment runs no connectors');
 
-  // nas: under the platform's domain, from the wizard's store — and without it, nothing to link yet
   assert.equal((await post(app, '/api/wizard/values', { values: { PLATFORM_DOMAIN: 'nas.example' }, platform: 'nas' })).statusCode, 200);
   const nas = (await call(app, { url: '/api/services?platform=nas' })).json();
   assert.equal(nas.shared.services.find((s) => s.key === 'vault').url, 'https://vault-nas.nas.example');
@@ -208,7 +196,6 @@ test('vault account: generated once into the platform section, the same on a sec
   assert.equal(loadWizardStore().platforms.lcl.VAULT_MASTER_PASSWORD, stored.VAULT_MASTER_PASSWORD, 'idempotent — never re-minted');
 });
 
-/* ── environments as config ── */
 test('envs: an unknown platform, a bad or reserved name and a duplicate are refused before anything is written', async () => {
   assert.equal((await post(app, '/api/envs', { platform: 'moon', env: 'x1' })).statusCode, 400);
   for (const env of ['P', 'a', 'has-dash', 'toolongname123', 'shared', 'all']) assert.equal((await post(app, '/api/envs', { platform: 'lcl', env })).statusCode, 400, env);
@@ -331,9 +318,7 @@ test('platforms/save: the published path must be a folder inside a share; the co
   assert.equal((await post(app, '/api/platforms/save', { platform: 'nas', controlEnv: '' })).json().platform.controlEnv, undefined, 'an empty control env means the lowest slot again');
 });
 
-/* ── admin access (Logto's Management API) ── */
 const PROD = () => loadStack('munni-lcl-prod');
-/** a fake Logto behind global fetch (lcl urls are plain http → localAwareFetch uses fetch) */
 function fakeLogto({ users = [], admins = [] } = {}) {
   const calls = [];
   const members = new Set(admins);
@@ -356,7 +341,6 @@ function fakeLogto({ users = [], admins = [] } = {}) {
   };
   return { fetch: f, calls, members };
 }
-/** the helper hands its injected fetch to the Logto module — the Access tests build an app around the fake */
 const appWith = (fetchImpl) => createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl });
 
 test('access/users: an environment stack only; no machine credential → 502 naming the sign-in setup; with it, every user with the admin flag', async () => {
@@ -368,7 +352,7 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   const nasNoVault = await call(app, { url: '/api/access/users?stack=munni-nas-prod' });
   assert.equal(nasNoVault.statusCode, 502);
   assert.match(nasNoVault.json().error, /vault account/);
-  // with the vault account stored, the nas path reaches the platform vault — the shared stack resolves with the domain the wizard holds (it used to throw "PLATFORM_DOMAIN is not set")
+  // the nas vault path resolves the shared stack with the domain the wizard holds, not PLATFORM_DOMAIN
   await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: 'vault@munni.nas', VAULT_MASTER_PASSWORD: 'nas-master' }, platform: 'nas' });
   const vaultDown = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => '' }) });
   const nasVault = await call(vaultDown, { url: '/api/access/users?stack=munni-nas-prod' });
@@ -432,7 +416,6 @@ test('access/toggle: a bad user id or a shared stack is refused; on adds the use
   assert.equal(logto.calls.filter((c) => c === 'POST /api/roles/r1/users').length, 1, 'a member is not added twice');
 });
 
-/* ── the NAS seen from outside ── */
 test('nas-probe: refuses a bad domain and a docker platform; every host names the one-time step it misses; the environment it borrowed is restored', async () => {
   const tlsErr = (code) => { const e = new Error('fetch failed'); e.cause = { code }; return e; };
   const netFetchImpl = async (url) => {
@@ -456,7 +439,6 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.deepEqual(body.stacks.map((s) => s.stack), ['munni-nas-shared', 'munni-nas-prod']);
   const shared = Object.fromEntries(body.stacks[0].hosts.map((h) => [h.key, h]));
   const prod = Object.fromEntries(body.stacks[1].hosts.map((h) => [h.key, h]));
-  // the shared card's link chips (user 2026-10-09) read the same probe by key: the four shared services under the domain
   assert.deepEqual(Object.keys(shared).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
   assert.deepEqual(['glitchtip', 'vault', 'control', 'pgadmin'].map((k) => shared[k].host), ['glitchtip-nas.nas.example', 'vault-nas.nas.example', 'control-nas.nas.example', 'pgadmin-nas.nas.example']);
   assert.equal(shared.control.state, 'up', 'a host that answers with munni is up — the chip\'s dot');
@@ -479,12 +461,10 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.ok(body.summary.rulesMissing >= 3);
   assert.equal(body.summary.containersMissing, 1);
   assert.equal(process.env.PLATFORM_DOMAIN, undefined, 'the probe restores the environment it borrowed');
-  // the stored domain is the default; the memo answers the repeat
   const memo = await call(app2, { url: '/api/local/nas-probe?platform=nas' });
   assert.equal(memo.json().domain, 'nas.example');
 });
 
-/* ── credential checks ── */
 test('validate: pasted values win over the wizard store (the platform picks its section); non-validatable names and bad callbacks are dropped; the store ids ride along', async () => {
   validations.length = 0;
   const res = await post(app, '/api/validate', { provider: 'gocardless', platform: 'nas', values: { GOCARDLESS_SECRET_ID: 'pasted', GOCARDLESS_SECRET_KEY: 'k', PATH: 'evil', POSTGRES_PASSWORD: 'x' }, redirectUris: ['https://munni-prod-nas-logto.nas.example/callback/google-universal', 'javascript:alert(1)', 42, 'http://localhost:3201/callback/google-universal'] });
@@ -504,7 +484,6 @@ test('validate: pasted values win over the wizard store (the platform picks its 
   assert.ok(OPERATOR_NAMES.has('SYNOLOGY_URL') && OPERATOR_NAMES.has('GH_PAT') && !OPERATOR_NAMES.has('POSTGRES_PASSWORD'));
 });
 
-/* ── the config on GitHub (#416) ── */
 test('config/publish: the platform\'s files become its repository variable through gh with the platform\'s own token; no token says so; an unknown platform is refused', async () => {
   const gh = fakeGh();
   try {
@@ -629,7 +608,6 @@ test('gh-pat: a token lands in the named platform\'s store; an empty one or no p
   assert.equal(loadWizardStore().platforms.nas?.GH_PAT, undefined, 'the other platform connects on its own');
 });
 
-/* ── the lcl tools ── */
 test('run + tool: run targets a KNOWN lcl stack (unknown → the first environment) and passes only operator names as env; tools come from the fixed allowlist', async () => {
   runs.length = 0;
   await post(app, '/api/local/run', { stack: 'munni-lcl-test', values: { GOCARDLESS_SECRET_ID: 'x', PATH: 'evil', LD_PRELOAD: 'evil', PLATFORM_DOMAIN: 'd' } });
@@ -831,7 +809,6 @@ test('registry + ca-trust: anonymous pulls decide the registry verdict (memoized
   assert.equal(caListingHasFingerprint('Cert Hash(sha1): 00\n', 'ab:cd'), false);
 });
 
-/* ── the end of the lcl platform ── */
 test('wipe: every rendered lcl stack is destroyed, the rendered folders, the LAN marker and the environment files go; the wizard store only on request', async () => {
   for (const name of ['munni-lcl-shared', 'munni-lcl-prod']) { mkdirSync(join(RENDER, name), { recursive: true }); writeFileSync(join(RENDER, name, `docker-compose.${name}.yml`), 'services: {}\n'); }
   writeFileSync(join(RENDER, 'lan-host'), '192.168.2.5\n');
@@ -896,7 +873,6 @@ test('app links: the Play app-signing fingerprint is validated and saved into th
   assert.equal(saved.statusCode, 200, saved.text());
   assert.match(saved.text(), /fingerprint saved for prod/);
   assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, fp, 'upper-cased, as the file is served');
-  // the live host serves both files (for whatever package and bundle the config names by now) and Google lists the statement
   const { androidPackage: pkg, iosBundleId: bundle } = loadEnv('nas', 'prod').store;
   const files = {
     assetlinks: [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: [fp] } }],
@@ -915,13 +891,11 @@ test('app links: the Play app-signing fingerprint is validated and saved into th
   assert.equal(body.ios.state, 'ok');
   assert.equal(body.ios.appId, `TEAM123456.${bundle}`, 'the team id comes from the App Store Connect tile, the bundle id from the config');
   assert.ok(seen.some((u) => u.startsWith('https://munni-prod-nas.nas.example/.well-known/assetlinks.json')), 'fetched from the environment\'s own web host');
-  // nothing served yet: both missing, Google unknown
   const dark = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
   const miss = (await call(dark, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
   assert.equal(miss.android.state, 'missing');
   assert.equal(miss.ios.state, 'missing');
   assert.equal(miss.android.google, null);
-  // an empty value clears the fingerprint; the check then says so instead of comparing
   await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '' });
   assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, null);
   const none = (await call(live, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
@@ -944,7 +918,6 @@ test('app links: the Digital Asset Links JSON snippet is accepted whole — its 
   await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '' });
 });
 
-/* ── what runs vs what is configured ── */
 test('envs/pending (nas): what the last run recorded on GitHub vs what is configured — nothing, a feature switched on (Bootstrap), the fingerprint alone (Deploy), a save GitHub does not hold yet (Publish first), no run yet, no token', async () => {
   const fp = 'D4:78:00:15:57:04:9A:98:65:B2:F2:BA:68:1D:AD:C6:D0:2E:26:1E:40:E5:A7:01:53:59:68:61:0A:66:6C:00';
   const current = loadEnv('nas', 'prod');
@@ -953,14 +926,12 @@ test('envs/pending (nas): what the last run recorded on GitHub vs what is config
   const gh = fakeGh();
   try {
     const ask = async () => (await post(app, '/api/envs/pending', { platform: 'nas', repo: 'okkes/munnimok', stacks: { 'munni-nas-prod': {}, 'munni-nas-shared': {}, 'munni-lcl-prod': {} } })).json().stacks;
-    // no token for the platform: every stack says why
     const noToken = await ask();
     assert.deepEqual(Object.keys(noToken).sort(), ['munni-nas-prod', 'munni-nas-shared'], 'a stack of another platform is ignored');
     assert.match(noToken['munni-nas-prod'].error, /no GitHub token for platform nas/);
     await post(app, '/api/local/gh-pat', { pat: 'github_pat_nas', platform: 'nas' });
     gh.seed('nas-prod');
     gh.seed('nas-shared');
-    // nothing published, nothing ran: publish, then bootstrap
     const fresh = await ask();
     assert.equal(fresh['munni-nas-prod'].unpublished, true);
     assert.equal(fresh['munni-nas-prod'].needs, 'publish');
@@ -973,7 +944,6 @@ test('envs/pending (nas): what the last run recorded on GitHub vs what is config
     assert.equal(published['munni-nas-prod'].unpublished, false);
     assert.equal(typeof published['munni-nas-prod'].publishedAt, 'string');
     assert.equal(published['munni-nas-shared'].needs, null);
-    // the run saw connectors off; the config has it on and is published
     writeApplied({ stack: 'munni-nas-prod', githubEnvironment: 'nas-prod' }, { by: 'bootstrap', run: '7', now: new Date('2026-10-01T08:00:00Z') });
     writeApplied({ stack: 'munni-nas-shared', githubEnvironment: 'nas-shared' }, { by: 'deploy', now: new Date('2026-10-01T08:00:00Z') });
     saveEnv('nas', { ...now, features: { ...now.features, connectors: true } });
@@ -984,19 +954,16 @@ test('envs/pending (nas): what the last run recorded on GitHub vs what is config
     assert.equal(on.then, null);
     assert.deepEqual(on.applied, { at: '2026-10-01T08:00:00.000Z', by: 'bootstrap', run: '7' });
     assert.equal((await ask())['munni-nas-shared'].needs, null, 'the platform did not change');
-    // the fingerprint alone: Deploy republishes the rendered files
     saveEnv('nas', { ...now, store: { ...now.store, androidCertSha256: fp } });
     await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
     const fpOnly = (await ask())['munni-nas-prod'];
     assert.deepEqual(fpOnly.changes, ['store.androidCertSha256: none → D4:78:00:15…']);
     assert.equal(fpOnly.needs, 'deploy');
-    // the same edit saved here but not on GitHub: publish first, then what it needs
     saveEnv('nas', { ...now, features: { ...now.features, connectors: true }, store: { ...now.store, androidCertSha256: fp } });
     const unsaved = (await ask())['munni-nas-prod'];
     assert.equal(unsaved.unpublished, true);
     assert.equal(unsaved.needs, 'publish');
     assert.equal(unsaved.then, 'bootstrap');
-    // the platform file itself changed and was published: the shared stack needs its run
     const p = loadPlatform('nas');
     const { file: _f, ...rest } = p;
     writeFileSync(join(PLATFORMS, 'nas', 'platform.json'), `${JSON.stringify({ ...rest, controlEnv: 'prod' }, null, 2)}\n`);
@@ -1023,7 +990,6 @@ test('envs/pending (lcl): the config a stack was last started with is stamped wh
   const never = await ask(app);
   assert.equal(never[stack].never, true);
   assert.equal(never[stack].needs, null);
-  // a failed start stamps nothing
   const failing = createApp({ token: 'tok', runImpl: (res) => { res.writeHead(200, {}); res.end('[exit 1]\n'); return { code: 1 }; } });
   await post(failing, '/api/local/tool', { tool: `${stack}:up` });
   assert.equal(existsSync(stamped), false);
@@ -1052,20 +1018,17 @@ test('envs: a bank party without the control plane is refused — on creation an
   assert.equal(created.statusCode, 400);
   assert.match(created.json().error, /gocardless is a party of the connector platform/);
   assert.equal(platformEnvs('nas').some((e) => e.env === 'acc'), false, 'nothing written');
-  // with the control plane ticked the same environment is fine
   const ok = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless', 'enablebanking'], connectors: true } });
   assert.equal(ok.statusCode, 200);
-  // the control plane check of a nas stack borrows the platform's domain from the wizard's store (it used to refuse with "PLATFORM_DOMAIN is not set")
+  // the control plane check of a nas stack borrows the platform's domain from the wizard's store
   const probe = await call(app, { url: '/api/connector-probe?stack=munni-nas-acc' });
   assert.equal(probe.statusCode, 200, probe.body);
   assert.match(probe.json().url, /^https:\/\/munni-acc-nas-connector\.[^/]+\/v1\/health$/);
   assert.equal(probe.json().ok, false, 'no network in tests: the probe answers honestly instead of throwing');
-  // a settings change that would untick the control plane while a bank stays is refused the same way, and changes nothing
   const changed = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { connectors: false } });
   assert.equal(changed.statusCode, 400);
   assert.match(changed.json().error, /gocardless and enablebanking are parties/);
   assert.equal(loadEnv('nas', 'acc').features.connectors, true);
-  // dropping the banks first is the way out
   const dropped = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { banking: [], connectors: false } });
   assert.equal(dropped.statusCode, 200);
   removeEnv('nas', 'acc');
@@ -1091,7 +1054,6 @@ test('helper state: /api/status says when the helper’s code moved on disk; the
   assert.equal(res.json().restarting, true);
   await new Promise((resolve) => setTimeout(resolve, 350));
   assert.equal(restarted, 1, 'the hook ran once, after the answer went out');
-  // without a hook (tests, embedded use) the route still answers, honestly
   const bare = await post(createApp({ token: 'tok', probeImpl: async () => false }), '/api/helper/restart', {});
   assert.equal(bare.json().restarting, false);
 });

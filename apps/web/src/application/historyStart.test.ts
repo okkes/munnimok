@@ -26,10 +26,8 @@ describe('history start moves (arc 5)', () => {
       name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1, historyStartDate: '2026-05-01',
     });
     const base = { accountId: 'a-own', currency: 'EUR', merchant: 'X', txType: 'expense' as const, needsReview: 0 as const };
-    // own rows: one safely inside, one before the current start (hidden)
     await repo.upsert('transaction', SPACE, 'own-in', { ...base, date: '2026-06-01', amountCents: -100 });
     await repo.upsert('transaction', SPACE, 'own-old', { ...base, date: '2026-04-10', amountCents: -200 });
-    // an attached feed with rows on both sides of its gate
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), {
       feedSpaceId: FEED, accountId: 'a-feed', historyFrom: '2026-05-01', archived: 0,
     });
@@ -48,11 +46,9 @@ describe('history start moves (arc 5)', () => {
 
   it('counts the consequences in both directions before anything happens', async () => {
     const { store } = await seeded();
-    // newer: the visible feed row falls out, BOTH own rows are before 2026-07-01
     expect(await historyMoveImpact(store, SPACE, '2026-07-01')).toEqual({
       direction: 'newer', feedHiddenCount: 1, manualDeleteCount: 2, surfacedCount: 0,
     });
-    // older: the hidden own row + the gated feed row surface
     expect(await historyMoveImpact(store, SPACE, '2026-04-01')).toEqual({
       direction: 'older', feedHiddenCount: 0, manualDeleteCount: 0, surfacedCount: 2,
     });
@@ -64,7 +60,6 @@ describe('history start moves (arc 5)', () => {
     await applyHistoryMove(store, repo, SPACE, '2026-07-01');
     expect((await store.get('space', SPACE))?.historyStartDate).toBe('2026-07-01');
     expect((await store.get('accountLink', accountLinkId(SPACE, FEED)))?.historyFrom).toBe('2026-07-01');
-    // own rows before the new start are gone for good; feed rows survive stored
     expect((await store.get('transaction', 'own-in'))?.deleted).toBe(1);
     expect((await store.get('transaction', 'own-old'))?.deleted).toBe(1);
     expect((await store.get('transaction', 'feed-in'))?.deleted).toBe(0);
@@ -80,8 +75,7 @@ describe('history start moves (arc 5)', () => {
 
   it('#259: a gateless link falls back to the SPACE start at read time — no heal needed', async () => {
     const { store, repo } = await seeded();
-    // device B's reality: the link arrived by sync without a gate and
-    // no heal has run yet — the space date must still govern the list
+    // device B: the link arrived by sync without a gate and no heal ran yet; the space date must still govern
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed2'), {
       feedSpaceId: 'feed2', accountId: 'a-feed2', archived: 0,
     });
@@ -89,7 +83,6 @@ describe('history start moves (arc 5)', () => {
     await repo.upsert('transaction', 'feed2', 'f2-in', { ...feedBase, date: '2026-05-20', amountCents: -300 });
     await repo.upsert('transaction', 'feed2', 'f2-older', { ...feedBase, date: '2026-04-20', amountCents: -400 });
     const visible = (await visibleTransactions(store, SPACE)).map((t) => t.id).sort((a, b) => a.localeCompare(b));
-    // f2-older sits before the space start: hidden even with no link gate
     expect(visible).toEqual(['f2-in', 'feed-in', 'own-in']);
   });
 });

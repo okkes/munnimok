@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
+import { settleInsightDigest } from '@/application/inboxResolve';
 import { useInsightDigest, useInsightOps, useInsights } from '@/application/insights';
 import type { Insight, InsightGroup, InsightSeverity } from '@/domain/insights';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -21,7 +22,6 @@ const SEVERITY_COLOR: Record<InsightSeverity, string> = {
   win: 'var(--m-accent-deep)',
 };
 
-/** tiny inline bar chart — the legacy card's sparkline, CSS only; `focus` is the bar it stresses (the last by default) */
 function MiniBars({ data, color, focus }: Readonly<{ data: number[]; color: string; focus?: number }>) {
   const max = Math.max(...data, 1);
   const stressed = focus ?? data.length - 1;
@@ -38,13 +38,7 @@ function MiniBars({ data, color, focus }: Readonly<{ data: number[]; color: stri
   );
 }
 
-/**
- * Insights (approved design N1, #516): ranked detector findings — what
- * needs a look now, what leaks, how you spend, what one change would win —
- * with the evidence and a door to the fix. Findings that give the same
- * advice share one card that lists them. All local math; dismissals sync
- * per space.
- */
+/** #516: findings that give the same advice share one card; dismissals sync per space */
 export function InsightsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -53,6 +47,11 @@ export function InsightsScreen() {
   const ops = useInsightOps();
   const canEdit = useCanEdit(); // #505: a dismissal hides the card for every member
   useInsightDigest(insights);
+  // #614: the bell's digest row counts what waits here now, and goes with the last insight
+  const waiting = insights?.length;
+  useEffect(() => {
+    if (waiting !== undefined) void settleInsightDigest(store, spaceId, waiting).catch(() => undefined);
+  }, [store, spaceId, waiting]);
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const text = useInsightText(currency);
@@ -62,7 +61,6 @@ export function InsightsScreen() {
     if (insight.actionTo) void navigate({ to: insight.actionTo });
   };
 
-  /** one finding of a card that holds several: its line, a door when it has one */
   const renderLine = (insight: Insight) => {
     const body = <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink">{text.line(insight)}</span>;
     if (!insight.actionTo) {

@@ -1,25 +1,7 @@
 #!/usr/bin/env node
-/**
- * The setup wizard's LOCAL HELPER — `node infra/setup/serve.mjs` (or
- * double-click infra/setup/start.cmd). Zero dependencies.
- *
- * It serves infra/setup/index.html on 127.0.0.1 and gives the page hands
- * on THIS machine: the lcl platform (Docker Desktop — the shared stack
- * plus every environment, each with its own Logto) is run from here; for
- * the nas platform the helper only keeps the wizard's own store, writes
- * the platform config (infra/platforms, published to GitHub as the
- * platform's variable — #416, never committed) and answers what the page
- * cannot compute itself — GitHub Actions does the deploying.
- *
- * Security model (a localhost dev tool, but still):
- * - binds 127.0.0.1 only; Host header must be localhost/127.0.0.1;
- * - every /api call needs the per-run token the server injects into the
- *   page it serves (other local pages can't drive it);
- * - commands are a fixed allowlist over the KNOWN stacks — the only
- *   caller-controlled data are operator secret VALUES (stored in the
- *   wizard's store, passed as env to bootstrap, never argv, never logged)
- *   and the platform config fields, validated before they are written.
- */
+// local helper of the setup wizard: gives the page hands on this machine (lcl runs from here; nas only gets store + config)
+// binds 127.0.0.1; every /api call needs the per-run token; fixed command allowlist over known stacks
+// secret values go by env to bootstrap, never argv, never logged
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -46,29 +28,21 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
 const HTML = join(DIR, 'index.html');
 
-/* ── the stacks this helper may touch ───────────────────────────────── */
 const LCL = 'lcl';
 export const LCL_SHARED = stackName(LCL);
 export const LCL_ENVS = () => platformEnvStacks(LCL).map((s) => s.stack);
 export const LCL_STACKS = () => [LCL_SHARED, ...LCL_ENVS()];
 const isLcl = (name) => parseStackName(name)?.platform === LCL;
 
-// MUNNI_RENDER_DIR: same test override the render/localstore modules honor
 const renderedDir = (name) => process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
 const composeArgs = (name) => ['compose', '--env-file', `.env.${name}`, '-f', `docker-compose.${name}.yml`];
-/** the named lcl stack when it exists, else the first environment, else the shared stack */
 const pickLclStack = (candidate) => (LCL_STACKS().includes(candidate) ? candidate : (LCL_ENVS()[0] ?? LCL_SHARED));
 const pickLclEnv = (candidate) => (LCL_ENVS().includes(candidate) ? candidate : LCL_ENVS()[0]);
 
-/** operator names the wizard may store (the manifest's operator + wizard entries) */
 export const OPERATOR_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || s.scope === 'wizard').map((s) => s.name));
 const NAME_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
 
-/**
- * a nas stack's domain is a secret the wizard holds in its platform
- * section — loading such a stack needs it in the environment for the
- * duration of the call
- */
+// a nas stack's domain is a secret in the wizard's platform section: loading such a stack needs it in the env for the call
 function withPlatformEnv(platform, fn) {
   const prev = process.env.PLATFORM_DOMAIN;
   const domain = wizardValues(platform).PLATFORM_DOMAIN;
@@ -86,13 +60,10 @@ function ghEnvFor(platform) {
   if (!pat) throw new Error(`no GitHub token for platform ${platform} in the wizard's store — connect GitHub on this platform first`);
   return { ...process.env, GH_TOKEN: pat };
 }
-/** the repository the page names (owner/name), or none — gh then takes the checkout's origin */
 const repoOf = (body) => (typeof body?.repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(body.repo) ? body.repo : null);
-/** the values a stack's setup sees: lcl = the stores, nas = the wizard's own values */
 const valuesFor = (stack) => (stack.delivery === 'docker' ? stackValues(stack) : wizardValues(stack.platform));
 
 const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
-/** fixed verb set over the KNOWN lcl stacks — nothing here is caller-controlled beyond picking one */
 export function toolFor(id) {
   const m = /^(.+):(up|down|destroy)$/.exec(String(id ?? ''));
   if (!m) return null;
@@ -124,7 +95,6 @@ async function probe(url) {
   }
 }
 
-/** run a command, stream its output to the response */
 /** streams a process to the response; resolves with its exit code once it is over (null when it could not start) */
 function runToStream(res, cmd, args, opts = {}) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
@@ -149,8 +119,7 @@ const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'a
 const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   new Promise((resolve) => {
     if (label) res.write(`▶ ${label}\n`);
-    // windowsHide: a helper restarted from the page runs without a console, and every gh/git/docker child
-    // would otherwise flash its own console window (seen 2026-10-01: a terminal popping up on every poll)
+    // windowsHide: a restarted helper has no console, so every gh/git/docker child would flash its own window
     const child = spawnImpl(cmd, args, { ...opts, shell: false, windowsHide: true });
     let out = '';
     const mask = opts.mask ?? ((s) => s);
@@ -161,7 +130,6 @@ const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   });
 const streamHead = (res) => res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
 
-/* ── status ───────────────────────────────────────────────────────── */
 const SERVICE_PROBE_PATH = { web: '', lab: '', api: '/health', logto: '/oidc/.well-known/openid-configuration', glitchtip: '/api/0/', vault: '/alive', control: '', pgadmin: '/misc/ping' };
 
 async function stackStatus(name, probeImpl) {
@@ -183,7 +151,6 @@ async function stackStatus(name, probeImpl) {
   };
 }
 
-/** the committed platform config as the page shows it (never a secret) */
 function platformsView() {
   return listPlatforms().map((p) => ({
     platform: p.platform,
@@ -203,7 +170,6 @@ function platformsView() {
   }));
 }
 
-/* ── every service and endpoint of a platform in one overview (#560): the shared stack, then each environment by slot ── */
 export function platformServices(platform) {
   const label = loadPlatform(platform).label;
   try {
@@ -232,9 +198,8 @@ function servicesEndpoint(res, url) {
   return json(res, 200, platformServices(platform));
 }
 
-/* ── the helper's own code: a pull that moved this file leaves the running process on the old version ──
-   (a stale helper silently drops features it does not know — the connectors tick of 2026-10-01 — and
-   answers 404 to routes the newer page asks for; the page shows the state and restarts it on a click) */
+// a pull that moved this file leaves the process on old code (drops unknown features, 404s newer routes)
+// the page shows it and restarts on a click
 const SERVE_FILE = fileURLToPath(import.meta.url);
 const STARTED_AT = new Date().toISOString();
 const CODE_STAMP = statSync(SERVE_FILE).mtimeMs;
@@ -273,7 +238,6 @@ async function statusEndpoint(res, probeImpl) {
   });
 }
 
-/* ── the wizard's own store (operator values) ─────────────────────── */
 function wizardValuesGet(res, url) {
   const platform = url.searchParams.get('platform') || null;
   const store = loadWizardStore();
@@ -307,8 +271,7 @@ async function vaultAccountEndpoint(req, res) {
   return json(res, 200, { email, generated: !v.VAULT_MASTER_PASSWORD });
 }
 
-/* ── platform config as code (infra/platforms) ────────────────────── */
-// inviteOnly: invitation-only sign-up — a Bootstrap applies it to the environment's Logto (user 2026-10-07)
+// inviteOnly: invitation-only sign-up, applied to the environment's Logto by a Bootstrap
 const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'imageSearch', 'receiptAi', 'telemetry', 'pgadmin', 'connectors', 'inviteOnly'];
 const BANKING = ['gocardless', 'enablebanking'];
 const SIGNIN = ['google', 'apple'];
@@ -364,7 +327,6 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-/** change an environment's features, channel, label or store ids; lcl re-renders */
 async function envUpdateEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
   const platform = String(body.platform ?? '');
@@ -388,7 +350,6 @@ async function envUpdateEndpoint(req, res, spawnImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-/** edit a platform's own fields (published path, control environment) */
 async function platformSaveEndpoint(req, res) {
   const body = await readBody(req);
   let p;
@@ -443,7 +404,6 @@ async function agentSizingEndpoint(res, url, netFetchImpl) {
   return json(res, 200, { ...recommendAgents({ totalMb, environments, concurrency, privateSlots }), source });
 }
 
-/** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */
 async function connectorProbeEndpoint(res, url, fetchImpl) {
   let stack;
   // a nas stack's addresses need the platform's domain, which the wizard holds (loadAnyStack borrows it like the host probe does)
@@ -490,7 +450,7 @@ async function configPullEndpoint(req, res) {
   }
 }
 
-/** what Publish would change (user 2026-10-09): the platform document saved here against the one GitHub holds, per environment, secrets masked */
+/** the saved platform document against the one GitHub holds, per environment, secrets masked */
 function configDiffEndpoint(res, url) {
   const platform = String(url.searchParams.get('platform') ?? '');
   if (!listPlatforms().some((p) => p.platform === platform)) return json(res, 400, { error: `unknown platform "${platform}"` });
@@ -503,7 +463,6 @@ function configDiffEndpoint(res, url) {
   }
 }
 
-/* ── run bootstrap / tools (lcl) ──────────────────────────────────── */
 async function runEndpoint(req, res, runImpl) {
   const body = await readBody(req);
   const name = pickLclStack(body.stack);
@@ -526,14 +485,9 @@ async function toolEndpoint(req, res, runImpl) {
   return result;
 }
 
-/* ── what runs vs what is configured: the strip that says "Bootstrap + Deploy applies this" ──
-   On the NAS the applied side is what the last successful Bootstrap / Deploy run recorded on the
-   stack's GitHub environment (MUNNI_APPLIED, #416) and the configured side must also be on GitHub
-   (the platform's variable) before a run can read it; on this computer it is the config the
-   stack was last started with (applied.json beside its rendered files). Both sides are
-   normalized the way every reader normalizes them, so a difference is a real one. */
+// applied side: nas = what the last run recorded on the stack's GitHub environment (MUNNI_APPLIED, #416)
+// lcl = applied.json beside the rendered files; both sides normalized like every reader does
 const appliedFile = (stack) => join(renderedDir(stack), 'applied.json');
-/** the config as it is now: the environment's own keys plus the platform's under `platform` (a shared stack has only the latter) */
 function currentConfig(platform, env) {
   const { file, ...platformCfg } = loadPlatform(platform);
   return env ? { ...loadEnv(platform, env), platform: platformCfg } : { platform: platformCfg };
@@ -551,7 +505,6 @@ function pendingLocal(stack, { platform, env }) {
   const verdict = pendingFrom(applied.config, currentConfig(platform, env));
   return { stack, applied: { at: applied.at }, changes: verdict.changes, needs: verdict.needs ? 'setup' : null };
 }
-/** nas: what the last run applied vs what is configured here, and whether GitHub holds the latter yet (#416) */
 function pendingDeployed(stack, { platform, env }, { repo, published }) {
   const current = currentConfig(platform, env);
   const slice = documentStackConfig(published, stack);
@@ -590,10 +543,6 @@ async function pendingEndpoint(req, res) {
   return json(res, 200, { stacks: out });
 }
 
-/* ── zero-input Logto per lcl environment: seed the minted machine
-   credentials straight into THAT environment's Logto database, then
-   bootstrap (apps, API resource + admin scope, the admin role, connectors,
-   branding, the console's admin) and restart web/admin ── */
 const envPgService = (name) => `postgres-${parseStackName(name).env}`;
 const envPsql = (name, db, sql) => [...composeArgs(name), 'exec', '-T', envPgService(name), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', ...sql.flatMap((s) => ['-c', s])];
 
@@ -635,9 +584,6 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
   return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
 }
 
-/* ── zero-input GlitchTip (lcl): the shared stack's admin + the minted
-   API token are created inside the container; the environment's
-   projects + DSNs follow through bootstrap ── */
 const GT_SEED_PY = `
 import os
 from django.contrib.auth import get_user_model
@@ -683,7 +629,6 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
   return res.end(`\n[exit ${restart.code === 0 ? 0 : 1}]\n`);
 }
 
-/* ── admin access: list the environment's users, toggle the admin role ── */
 async function accessCredential(stack, fetchImpl = localAwareFetch) {
   if (stack.delivery === 'docker') {
     const v = stackValues(stack);
@@ -697,9 +642,8 @@ async function accessCredential(stack, fetchImpl = localAwareFetch) {
   const shared = withPlatformEnv(stack.platform, () => sharedOf(stack));
   const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, fetchImpl);
   const item = items.find((i) => i.name === 'Logto infra M2M');
-  // the vault is the ONLY readable copy of a nas environment's machine credential (GitHub never hands a secret
-  // back, the platform document carries none): say what the folder holds and where the run that files it
-  // explains itself (user 2026-10-09: "I ran Bootstrap" — the run had refused the vault write, its log said so)
+  // the vault is the ONLY readable copy of a nas environment's machine credential (GitHub never hands a secret back):
+  // say what the folder holds and where the log of the run that files it explains itself
   if (!item?.username || !item?.password) {
     const held = items.length ? `holds ${items.length} other item${items.length === 1 ? '' : 's'} but` : 'is empty —';
     throw new Error(`the vault's folder ${stack.stack} ${held} no "Logto infra M2M" item — the last Bootstrap for this environment could not file it: its log's "vault:" line says why. Press Bootstrap + Deploy for this environment once more (the run files the credential it holds), then Reload users`);
@@ -737,7 +681,6 @@ async function accessToggleEndpoint(req, res, netFetchImpl) {
   }
 }
 
-/* ── cleanup (lcl): revoke the stack's own GoCardless consents, then remove containers + volumes + network ── */
 async function purgeGcRequisitions(target, res) {
   const values = wizardValues(LCL);
   if (!values.GOCARDLESS_SECRET_ID || !values.GOCARDLESS_SECRET_KEY) {
@@ -787,10 +730,8 @@ async function cleanupEndpoint(req, res, runImpl) {
   void runImpl;
 }
 
-/* ── LAN mode + CI-built native apps ─────────────────────────────── */
 const LAN_FILE = () => join(process.env.MUNNI_RENDER_DIR ?? join(ROOT, 'infra', 'rendered'), 'lan-host');
 
-/** the machine's plausible LAN addresses, private ranges first */
 export function lanCandidates(interfacesImpl = networkInterfaces) {
   const rank = (ip) => {
     if (ip.startsWith('192.168.')) return 0;
@@ -806,7 +747,6 @@ function lanGetEndpoint(res) {
   return json(res, 200, { current: lanHost(), candidates: lanCandidates() });
 }
 
-/** flip the lcl family between localhost and a LAN address: write the marker, re-render every stack, restart the containers */
 async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
   const body = await readBody(req);
   const host = String(body.host ?? '').trim();
@@ -848,7 +788,6 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-/** trust the family CA in the desktop browser too (certutil, CurrentUser Root — one Windows consent dialog) */
 async function installFamilyCa(res, run, netFetchImpl) {
   const lan = lanHost();
   if (!lan) { res.write('LAN mode is off — no local CA to trust\n'); return false; }
@@ -926,7 +865,6 @@ async function caTrustEndpoint(res, url, netFetchImpl, spawnImpl) {
   return json(res, 200, await caTrustState(netFetchImpl, spawnImpl, { force: url.searchParams.get('force') === '1' }));
 }
 
-/* ── are the munni images public? Then no registry token is needed ── */
 let registryMemo = { at: 0, value: null };
 async function registryState(netFetchImpl, { force = false } = {}) {
   if (!force && registryMemo.value && Date.now() - registryMemo.at < 600000) return registryMemo.value;
@@ -949,9 +887,6 @@ async function registryEndpoint(res, url, netFetchImpl) {
   return json(res, 200, await registryState(netFetchImpl, { force: url.searchParams.get('force') === '1' }));
 }
 
-/* ── NAS readiness without any DSM credential: seen from outside, every
-   reverse-proxy host tells which one-time step is still missing ── */
-/** the hosts a platform's stacks need, computed under the given domain */
 export function nasHosts(platform, domain) {
   const prev = process.env.PLATFORM_DOMAIN;
   process.env.PLATFORM_DOMAIN = domain;
@@ -1027,7 +962,6 @@ async function nasProbeEndpoint(res, url, netFetchImpl, insecureImpl) {
   return json(res, 200, value);
 }
 
-/* ── store readiness: the wizard POLLS whether the one-time store records exist ── */
 async function googleAccessToken(values, scope, fetchImpl) {
   let sa;
   try {
@@ -1086,7 +1020,6 @@ async function playAppExists(values, appId, fetchImpl) {
   return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
 }
 
-/** ES256 App Store Connect token from the stored key (base64 or raw PEM) */
 function ascJwt(values) {
   const now = Math.floor(Date.now() / 1000);
   return jwtES256({ header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' }, payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 }, pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8') });
@@ -1107,7 +1040,6 @@ async function ascAppExists(values, bundleId, fetchImpl) {
   return { state: (body.data ?? []).length ? 'ready' : 'missing-app' };
 }
 
-/** is push WIRED for this env? project firebase-enabled + both apps registered */
 async function firebaseState(values, stack, fetchImpl) {
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
   let access;
@@ -1138,7 +1070,6 @@ async function firebaseState(values, stack, fetchImpl) {
   return missing.length ? { state: 'missing-app', detail: `not registered at Firebase yet: ${missing.join(', ')} — pressing Build registers them` } : { state: 'ready' };
 }
 
-/** an environment stack of any platform from ?stack= (400 otherwise) */
 function envStackFrom(name) {
   const stack = loadAnyStack(String(name ?? ''));
   if (stack.role !== 'env') throw new Error('an environment stack is needed');
@@ -1157,16 +1088,9 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
   return json(res, 200, { stack: stack.stack, env: stack.env, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
 }
 
-/* ── app links per environment: the served /.well-known files against the config, and whether Google sees the statement ── */
 const FINGERPRINT_RE = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const normalizeFingerprints = (raw) => String(raw ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
-/**
- * The fingerprints in what the operator pasted: the SHA-256 alone (one or
- * more, comma-separated) or the Digital Asset Links JSON snippet the App
- * signing page offers with a copy button — its sha256_cert_fingerprints ARE
- * the app signing key's, so the snippet cannot be confused with the upload
- * key certificate that sits above it on the same page.
- */
+/** the snippet's sha256_cert_fingerprints are the app signing key's, not the upload key certificate above it */
 export function fingerprintsFrom(raw) {
   const text = String(raw ?? '').trim();
   if (!/^[[{]/.test(text)) return { fingerprints: normalizeFingerprints(text) };
@@ -1241,7 +1165,7 @@ async function appLinksSaveEndpoint(req, res) {
   return res.end('[exit 0]\n');
 }
 
-/* ── OPT-IN store retirement: the DISTRIBUTION is withdrawn (Play internal releases, TestFlight builds); records stay ── */
+// opt-in: withdraws the distribution (Play internal releases, TestFlight builds); records stay
 async function storeRetireEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
   let stack;
@@ -1321,7 +1245,6 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
-/* ── Firebase push as code: the Play service account's own Cloud project becomes the Firebase project ── */
 const FB_BASE = 'https://firebase.googleapis.com/v1beta1';
 const SU_BASE = 'https://serviceusage.googleapis.com/v1';
 const FB_API = 'firebase.googleapis.com';
@@ -1484,7 +1407,7 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
   }
 }
 
-/* ── the machine owns the upload keystore (Play pins the first upload key per package) ── */
+// Play pins the first upload key per package, so this machine owns the keystore
 async function mintKeystoreEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
   const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
@@ -1514,7 +1437,7 @@ async function mintKeystoreEndpoint(req, res, spawnImpl) {
   return res.end('[exit 0]\n');
 }
 
-/** the operator names a store package (a burned Play package rolls to a fresh one; iOS may diverge) */
+/** a burned Play package rolls to a fresh one; iOS may diverge */
 async function storeIdEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
   const platform = String(body.platform ?? '');
@@ -1536,7 +1459,6 @@ async function storeIdEndpoint(req, res, spawnImpl) {
   return res.end('[exit 0]\n');
 }
 
-/* ── Apple App ID as code: bundle id + long-run capabilities ── */
 const IOS_CAPABILITIES = [
   ['PUSH_NOTIFICATIONS', 'push notifications (FCM later — tick now, never reprovision)', null],
   ['APPLE_ID_AUTH', 'Sign in with Apple as the PRIMARY App ID (keys and Services IDs attach to it)', [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }]],
@@ -1641,7 +1563,6 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
   return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables: known });
 }
 
-/* ── lcl environments: delete, wipe, leftovers ────────────────────── */
 async function refreshFamilyTls(res, spawnImpl) {
   if (!lanHost()) return;
   const run = stepRunner(spawnImpl);
@@ -1681,7 +1602,6 @@ async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-/** wipe the lcl platform: every stack's containers + volumes, the rendered dirs, the LAN marker, the environment files; the wizard's store only on request */
 async function wipeEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
   streamHead(res);
@@ -1701,7 +1621,6 @@ async function wipeEndpoint(req, res, spawnImpl) {
   return res.end('[exit 0]\n');
 }
 
-/** post-wipe verification: name what is STILL there */
 async function cleanupCheckEndpoint(res, spawnImpl) {
   const dockerLines = (args) => new Promise((resolve) => {
     const c = spawnImpl('docker', args, { shell: false });
@@ -1739,7 +1658,6 @@ async function cleanupCheckEndpoint(res, spawnImpl) {
   return json(res, 200, { clean: leftovers.length === 0, leftovers, kept, byHand });
 }
 
-/* ── the GitHub token + reading secrets back ───────────────────────── */
 async function ghPatEndpoint(req, res) {
   const body = await readBody(req);
   const pat = String(body.pat ?? '').trim();
@@ -1757,7 +1675,6 @@ function secretsEndpoint(res) {
   return json(res, 200, { wizard: loadWizardStore(), values });
 }
 
-/* ── the lcl vault: account + every secret item, per-stack folders ── */
 const VAULT_PURPOSE = {
   GOCARDLESS_SECRET_ID: 'GoCardless Bank Account Data credential (half 1) — the api mints access tokens with the pair for bank syncs and consents.',
   GOCARDLESS_SECRET_KEY: 'GoCardless Bank Account Data credential (half 2) — paired with the secret id.',
@@ -1845,7 +1762,6 @@ function buildVaultItems() {
   return items;
 }
 
-/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json) */
 function vaultExportEndpoint(res) {
   const rows = buildVaultItems();
   const folderNames = [...new Set(rows.map((r) => r.folder))];
@@ -1900,9 +1816,8 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const token = await vaultEnsureAccount(res, run, base, account, fetchImpl);
   if (!token) return res.end('[exit 1]\n');
   res.write('▶ refresh the secret items (purge + import, one folder per stack)\n');
-  // the account's REAL user key (an account that already existed never has buildAccount's fresh random one — items
-  // written with that key were unreadable in the apps) and its user id: Vaultwarden 1.37+ refuses every cipher that
-  // does not name `encryptedFor` (user 2026-10-09, the same refusal that emptied the nas platform's vault folders)
+  // the account's real user key (an existing account lacks buildAccount's random one: items were unreadable) and its user id:
+  // Vaultwarden 1.37+ refuses every cipher that does not name `encryptedFor`
   const sync = await vaultSync(base, token, fetchImpl);
   const keys = userKeysOf(email, password, sync.profile?.key ?? sync.Profile?.Key);
   const encryptedFor = syncUserId(sync);
@@ -1925,7 +1840,6 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-/* ── credential checks (the tiles' Check) ─────────────────────────── */
 const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
 
 async function validateEndpoint(req, res, validateImpl) {
@@ -1947,7 +1861,6 @@ function serveHtml(res, token) {
   res.end(html);
 }
 
-/* ── the machine owns the Apple Development certificate ───────────── */
 const APPLE_CERT_ARTIFACT = 'apple-dev-cert-p12';
 const APPLE_CERT_FILE = 'APPLE_DEV_CERT_P12.b64';
 const APPLE_CERT_SERIAL_FILE = 'APPLE_DEV_CERT_SERIAL.txt';
@@ -2021,9 +1934,6 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   }
 }
 
-/* ── keeps itself up to date (lcl): the helper IS the poller — fetch the
-   branch, fast-forward when clean, re-render, pull images, bring the
-   family up, restart itself once its own code moved ── */
 const AUTONOMY_TASK = 'munni local helper';
 const AUTONOMY_MIN_MINUTES = 2;
 let autonomyRunning = false;
@@ -2150,7 +2060,6 @@ async function autonomyLogonEndpoint(req, res, spawnImpl) {
   return res.end('[exit 0]\n');
 }
 
-/** build the handler; spawn/probe/validate deps injectable for tests */
 export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch, netFetchImpl = localAwareFetch, restartImpl = null } = {}) {
   const url = (req) => new URL(req.url, 'http://localhost');
   const routes = {
@@ -2226,7 +2135,6 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
   };
 }
 
-// ── main ───────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 const openBrowser = (url) => {

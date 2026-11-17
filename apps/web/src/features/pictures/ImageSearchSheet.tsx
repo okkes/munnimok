@@ -7,7 +7,6 @@ import { Sheet } from '@/ui/Sheet';
 import { fetchPickedImage, googleImagesUrl, searchImages } from './imageSearch';
 import type { ImageHit, ImageSearchReply } from './imageSearch';
 
-/** the note in place of results when the search has none to give: why, until when, and the way out */
 function StateNote({ reply, query }: Readonly<{ reply: ImageSearchReply; query: string }>) {
   const { t, lang } = useLang();
   const when = reply.until
@@ -23,7 +22,7 @@ function StateNote({ reply, query }: Readonly<{ reply: ImageSearchReply; query: 
     <div className="rounded-card bg-bg-2 p-3 text-[12px] leading-snug text-ink-2" data-testid="imagesearch-note" data-state={reply.state}>
       <p>{text}</p>
       {reply.state !== 'ok' && (
-        // user 2026-11-11: a way out while the search is paused — the picture then comes in as a file
+        // a way out while the search is paused: the picture then comes in as a file
         <a
           href={googleImagesUrl(query)}
           target="_blank"
@@ -40,13 +39,7 @@ function StateNote({ reply, query }: Readonly<{ reply: ImageSearchReply; query: 
   );
 }
 
-/**
- * #521 (user): "google search pictures … then the user can just pick one
- * they like (or they can search for something else)". Every search is paid
- * for, so it runs on the button, never while typing; the words start from
- * what the picture is for. A picked picture goes to the caller as a file —
- * the same road an upload takes.
- */
+/** #521: every search is paid for, so it runs on the button, never while typing */
 export function ImageSearchSheet({
   open,
   onOpenChange,
@@ -61,7 +54,6 @@ export function ImageSearchSheet({
   const [picking, setPicking] = useState<string | null>(null);
   const [pickFailed, setPickFailed] = useState(false);
 
-  // every opening starts from what the picture is for, with nothing found yet
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);

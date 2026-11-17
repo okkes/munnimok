@@ -2,10 +2,7 @@ import { useCanEdit } from '@/app/useCanEdit';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 
-/**
- * #505 (user): the one explanation a space this identity only reads shows
- * where its edit doors would be — nothing at all where it may write.
- */
+/** #505: shown where a read-only space's edit doors would be; nothing where the identity may write */
 export function ReadOnlyNote({
   spaceId,
   testId = 'readonly-note',

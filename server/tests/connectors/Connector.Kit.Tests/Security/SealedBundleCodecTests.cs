@@ -7,13 +7,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The sealed bundle is the only thing standing between "the user's device
-/// holds their credentials" and "anyone holding the blob holds the
-/// credentials". Every rejection rule here is load-bearing, and the
-/// rotation property is what keeps a key change from being a mass
-/// re-login event.
-/// </summary>
+// the sealed bundle is what keeps credentials on the user's device; rotation keeps a key change from being a mass re-login
 public sealed class SealedBundleCodecTests
 {
     private const string Provider = "jumbo";
@@ -22,8 +16,7 @@ public sealed class SealedBundleCodecTests
 
     private static readonly BundleBinding Binding = new(Provider, Subject, ManifestVersion);
 
-    // Derived from the kid rather than random, so a failure is reproducible
-    // and a test never depends on which bytes the CSPRNG handed out.
+    // derived from the kid, not random, so a failure is reproducible
     private static byte[] KeyFor(string kid) => SHA256.HashData(Encoding.UTF8.GetBytes("connector.kit.tests:" + kid));
 
     private static BundleKeyRing Ring(string currentKid, params string[] kids)
@@ -99,8 +92,7 @@ public sealed class SealedBundleCodecTests
 
         var bundle = codec.Seal(Payload(), Binding);
 
-        // Not a formality: the bundle is handed to munni and then to a
-        // device, both of which log request bodies somewhere.
+        // the bundle is handed to munni and then a device, both of which log request bodies somewhere
         Assert.DoesNotContain("rt_live_71ab", bundle, StringComparison.Ordinal);
         Assert.DoesNotContain("at_live_9f2c", bundle, StringComparison.Ordinal);
         Assert.DoesNotContain(Make.SessionId, bundle, StringComparison.Ordinal);
@@ -148,8 +140,7 @@ public sealed class SealedBundleCodecTests
         var (codec, _) = Codec();
         var bundle = codec.Seal(Payload(), Binding);
 
-        // The adapter's material shape moved, so the manifest version was
-        // bumped. Opening this would misinterpret the old shape.
+        // the adapter's material shape moved so the manifest version was bumped; opening would misread the old shape
         var ex = Assert.Throws<ConnectorException>(
             () => codec.Open(bundle, Binding with { ManifestVersion = ManifestVersion + 1 }));
 
@@ -170,9 +161,9 @@ public sealed class SealedBundleCodecTests
     }
 
     [Theory]
-    [InlineData(2)]   // nonce
-    [InlineData(3)]   // ciphertext
-    [InlineData(4)]   // tag
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
     public void Rejects_a_tampered_bundle(int segment)
     {
         var (codec, _) = Codec();
@@ -212,8 +203,7 @@ public sealed class SealedBundleCodecTests
         time.Now = expiry.AddTicks(-1);
         Assert.Equal(Make.SessionId, codec.Open(bundle, Binding).SessionId);
 
-        // A bundle that expires "now" is expired - a lifetime that includes
-        // its own end is a lifetime nobody can reason about.
+        // a bundle that expires "now" is expired
         time.Now = expiry;
         Assert.Throws<ConnectorException>(() => codec.Open(bundle, Binding));
     }
@@ -222,9 +212,9 @@ public sealed class SealedBundleCodecTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not-a-bundle")]
-    [InlineData("sb_v1.k1.aaa.bbb")]                    // four segments
-    [InlineData("sb_v2.k1.aaa.bbb.ccc")]                // wrong version prefix
-    [InlineData("sb_v1.k1.!!!!.!!!!.!!!!")]             // not base64url
+    [InlineData("sb_v1.k1.aaa.bbb")]
+    [InlineData("sb_v2.k1.aaa.bbb.ccc")]
+    [InlineData("sb_v1.k1.!!!!.!!!!.!!!!")]
     public void Rejects_a_malformed_bundle(string bundle)
     {
         var (codec, _) = Codec();
@@ -265,8 +255,7 @@ public sealed class SealedBundleCodecTests
 
         var codes = attempts.Select(a => Assert.Throws<ConnectorException>(() => a()).Code).Distinct().ToList();
 
-        // Distinguishable failures would tell an attacker holding a stolen
-        // blob which of the three bindings they got wrong.
+        // distinguishable failures would tell a holder of a stolen blob which binding they got wrong
         Assert.Equal(new[] { ErrorCode.SessionExpired }, codes);
 
         time.Now = TestTime.Anchor.AddDays(1);
@@ -283,13 +272,11 @@ public sealed class SealedBundleCodecTests
         var minted = before.Seal(payload, Binding);
         Assert.StartsWith("sb_v1.k1.", minted, StringComparison.Ordinal);
 
-        // The rotation: k2 becomes current, k1 stays in the ring.
         var after = new SealedBundleCodec(Ring("k2", "k1", "k2"), time);
 
         Assert.StartsWith("sb_v1.k2.", after.Seal(payload, Binding), StringComparison.Ordinal);
 
-        // The whole point of a kid: every bundle already on a user's device
-        // keeps working, so rotating a key is not a mass re-login event.
+        // rotating a key is not a mass re-login: bundles already on devices keep working
         Assert.Equal(payload.SessionId, after.Open(minted, Binding).SessionId);
     }
 
@@ -299,8 +286,7 @@ public sealed class SealedBundleCodecTests
         var time = TestTime.AtAnchor();
         var minted = new SealedBundleCodec(Ring("k1", "k1"), time).Seal(Payload(), Binding);
 
-        // k1 dropped from the ring once every bundle sealed under it has
-        // outlived the provider's TTL.
+        // k1 is dropped once every bundle sealed under it has outlived the provider's TTL
         var retired = new SealedBundleCodec(Ring("k2", "k2"), time);
 
         Assert.Equal(
@@ -334,8 +320,7 @@ public sealed class SealedBundleCodecTests
         var bundle = one.Seal(Payload(), Binding);
         Assert.Equal(Make.SessionId, one.Open(bundle, Binding).SessionId);
 
-        // Two processes with ephemeral rings share nothing - which is why a
-        // deployed host must refuse to start on one.
+        // processes with ephemeral rings share nothing, so a deployed host must refuse to start on one
         Assert.Throws<ConnectorException>(() => other.Open(bundle, Binding));
     }
 

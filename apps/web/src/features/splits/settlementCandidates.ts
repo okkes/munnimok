@@ -5,18 +5,11 @@ export interface SettlementCandidate {
   cents: number;
   splitId: string;
   splitName: string;
-  /** who settled (their display name, or null for unnamed accounts) */
   fromName: string | null;
 }
 
-/**
- * Money a split says is coming MY way (SP5, design: "when the actual bank
- * transfer shows up in B's feed, review suggests linking it"): a payment
- * a member recorded to me while the split runs, and — once it is settled —
- * every payment of the plan that names me as its receiver and is not
- * marked paid yet. Splits are online-only — any failure returns [] and
- * review simply shows no suggestion.
- */
+// money a split says is coming my way: payments recorded to me, and once settled the unpaid plan payments naming me
+// (SP5); splits are online-only: any failure returns [] and review shows no suggestion
 export async function fetchSettlementCandidates(): Promise<SettlementCandidate[]> {
   const splits = (await serverSplits.list()) ?? [];
   const candidates: SettlementCandidate[] = [];

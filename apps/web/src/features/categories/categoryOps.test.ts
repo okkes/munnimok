@@ -7,6 +7,8 @@ import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import {
   copyCount,
+  copyDeclineKey,
+  copyDeclineNames,
   copyFaces,
   copyGroupToSpace,
   copyGroups,
@@ -14,6 +16,7 @@ import {
   createSubCategory,
   directionForType,
   iconConflict,
+  withoutDeclined,
 } from './categoryOps';
 
 describe('#244: direction derives from the parent — the user never states it', () => {
@@ -79,6 +82,28 @@ describe('#389 iconConflict / #390 copyableUnits', () => {
     expect(groups[0].space.name).toBe('Family');
     // the banner counts a main once and each sub that joins a main here
     expect(copyCount(groups)).toBe(3);
+  });
+
+  it('#390 r4: an offer the space declined stays away until its main gains a sub that was not on offer — a sub removed there changes nothing', () => {
+    const base = [
+      { id: 'm1', spaceId: 'other', isParent: 1, name: 'Padel', icon: 'tennis', deleted: 0 },
+      { id: 's1', spaceId: 'other', isParent: 0, parentId: 'm1', name: 'Court', icon: 'map', deleted: 0 },
+      { id: 's2', spaceId: 'other', isParent: 0, parentId: 'm1', name: 'Balls', icon: 'circle', deleted: 0 },
+      { id: 's3', spaceId: 'other', isParent: 0, parentId: 'sport', name: 'Swim', icon: 'swim', deleted: 0 },
+    ] as never[];
+    const offers = copyGroups('here', spaces, base);
+    expect(offers.map(copyDeclineKey)).toEqual(['main:padel', 'into:sport']);
+    const declined = { [copyDeclineKey(offers[0])]: copyDeclineNames(offers[0]) };
+    expect(declined).toEqual({ 'main:padel': ['balls', 'court'] });
+    expect(withoutDeclined(offers, declined).map(copyDeclineKey)).toEqual(['into:sport']);
+    expect(withoutDeclined(offers, undefined)).toHaveLength(2);
+
+    const fewer = copyGroups('here', spaces, base.filter((r) => (r as { id: string }).id !== 's2'));
+    expect(withoutDeclined(fewer, declined).map(copyDeclineKey)).toEqual(['into:sport']);
+    const more = copyGroups('here', spaces, [...base, { id: 's4', spaceId: 'other', isParent: 0, parentId: 'm1', name: 'Lessons', icon: 'school', deleted: 0 } as never]);
+    const back = withoutDeclined(more, declined);
+    expect(back.map(copyDeclineKey)).toEqual(['main:padel', 'into:sport']);
+    expect(back[0].subs.map((r) => r.name)).toEqual(['Balls', 'Court', 'Lessons']);
   });
 
   it('#389: a copied sub keeps its icon unless a sibling there wears it — then the first free one', () => {

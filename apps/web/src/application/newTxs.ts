@@ -12,33 +12,18 @@ const KNOWN_CAP = 1500;
 const NEW_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface NewMarker {
-  /** every id this device has ever registered for the space */
   known: string[];
-  /** id → when it was labeled new (ms) — the 24h badge clock */
   fresh: Record<string, number>;
 }
 
-/**
- * "New transactions" (#148 r2, user spec): a row seen for the FIRST
- * time — linked, imported or created since the previous usage — is
- * labeled new and stays new for 24 hours from that labeling, then
- * quietly expires. Reviewing/categorizing does not clear the label.
- *
- * r3 (user): for SIGNED-IN identities the clock is one clock across the
- * user's devices — the first-seen rows sync through the private state
- * space (domain/userState), so what the desktop saw yesterday is not
- * "new" on the phone today. A per-space BASELINE row marks when the
- * scheme started: rows born (by their field HLCs) before it are known
- * without a row of their own, so history never floods a fresh device.
- * Offline/demo identities keep the device-local marker — there is no
- * server to agree through, as the user noted.
- */
+// signed-in: first-seen rows sync through the private state space (domain/userState), so one clock spans devices;
+// a per-space baseline row marks when the scheme started, so history never floods a fresh device.
+// Offline/demo keep a device-local marker: no server to agree through.
 export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceTx[]; newIds: ReadonlySet<string> } {
   const { store, repo, spaceId } = useData();
   const identity = readSessionIdentity();
   const stateSpaceId = identity?.kind === 'user' ? userStateSpaceId(identity.sub) : null;
 
-  // ── synced path (user identities) ─────────────────────────────────
   const seenRows = useQuery(
     store,
     // #296: a backend missing the entity must degrade to "nothing new",
@@ -54,12 +39,11 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
   );
   const baseline = useMemo(() => spaceSeen.find((row) => row.baseline === 1), [spaceSeen]);
 
-  // ── device-local path (offline/demo) ──────────────────────────────
   const key = KEY_PREFIX + spaceId;
   const marker = useQuery(
     store,
     async () => {
-      if (stateSpaceId) return null; // the synced rows own it
+      if (stateSpaceId) return null;
       return ((await store.metaGet(key))?.value as NewMarker | undefined) ?? null;
     },
     [spaceId, stateSpaceId],
@@ -67,11 +51,9 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     `newMarker:${spaceId}:${stateSpaceId ?? '-'}`, // #361: remount cache
   );
 
-  // #515 (user): the counter leg munni mints itself (a loan payment's, a
-  // savings move's) arrives with its source — never a new transaction
+  // #515: the counter leg munni mints itself arrives with its source, never as a new transaction
   const arrivals = useMemo(() => txs?.filter((tx) => !isMintedLeg(tx)), [txs]);
 
-  // label arrivals — one write per real change, whichever path owns it
   useEffect(() => {
     if (!arrivals) return;
     if (stateSpaceId) {
@@ -111,7 +93,6 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
   return { newTxs, newIds };
 }
 
-/** the synced labeling pass — module-level for S3776 */
 async function labelSynced(
   repo: ReturnType<typeof useData>['repo'],
   stateSpaceId: string,
@@ -122,8 +103,6 @@ async function labelSynced(
 ): Promise<void> {
   const now = Date.now();
   if (!baseline) {
-    // first sight of this space under the scheme: everything current is
-    // history
     await repo.upsert('txSeen', stateSpaceId, txSeenBaseId(spaceId), {
       forSpaceId: spaceId,
       labeledAt: now,
@@ -134,13 +113,11 @@ async function labelSynced(
   const seenTxIds = new Set(spaceSeen.map((row) => row.txId).filter(Boolean));
   for (const tx of txs) {
     if (tx.deleted !== 0 || seenTxIds.has(tx.id)) continue;
-    // born before the baseline = known history on every device
     if (bornAtMs(tx.fieldVersions) <= baseline.labeledAt) continue;
     await repo.upsert('txSeen', stateSpaceId, txSeenRowId(spaceId, tx.id), { forSpaceId: spaceId, txId: tx.id, labeledAt: now });
   }
 }
 
-/** the device-local labeling pass (offline/demo) — r2 behavior */
 async function labelLocal(
   store: ReturnType<typeof useData>['store'],
   key: string,
@@ -149,7 +126,6 @@ async function labelLocal(
 ): Promise<void> {
   const now = Date.now();
   if (marker === null) {
-    // first sight of this space: everything counts as already seen
     await store.metaPut(key, {
       known: txs.slice(0, KNOWN_CAP).map((t) => t.id),
       fresh: {},
@@ -161,7 +137,7 @@ async function labelLocal(
   let changed = false;
   for (const [id, at] of Object.entries(marker.fresh)) {
     if (now - at < NEW_TTL_MS) fresh[id] = at;
-    else changed = true; // badge expired
+    else changed = true;
   }
   for (const tx of txs) {
     if (tx.deleted !== 0 || known.has(tx.id)) continue;

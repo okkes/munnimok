@@ -12,6 +12,7 @@ import { useServerRefresh } from '@/lib/serverEvents';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { settleAnswered } from '@/application/deliveredResolve';
 import { adoptEventLinks } from './splitEvents';
 import { SplitFormSheet } from './SplitFormSheet';
 import { splitDates, splitPhase, useSplitsApi } from './splitsCore';
@@ -19,7 +20,6 @@ import type { SplitPhase } from './splitsCore';
 
 const SECTIONS: readonly SplitPhase[] = ['running', 'planned', 'settling', 'archived'];
 
-/** where the person stands in an event, as the row's right-hand word */
 function Standing({ split }: Readonly<{ split: SplitSummary }>) {
   const { t, lang } = useLang();
   if (split.deleteAt) return <span className="shrink-0 text-[11px] font-medium text-warning">{t('splits.deleting')}</span>;
@@ -54,13 +54,7 @@ function SplitRow({ split, onOpen }: Readonly<{ split: SplitSummary; onOpen: () 
   );
 }
 
-/**
- * Splits (#538): group ledgers whose membership has nothing to do with
- * spaces. The list says which are running, which are planned, which are
- * being settled and which are archived; an invitation from a friend waits
- * on top for a yes or a no. Online by design — a profile without an
- * account is told so, the demo shows seeded examples.
- */
+/** online by design: a profile without an account is told so, the demo shows seeded examples (#538) */
 export function SplitsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -82,6 +76,8 @@ export function SplitsScreen() {
     // an answer that cannot be had keeps what was on screen
     setSplits((prev) => list ?? prev ?? []);
     if (invites) setInvitations(invites);
+    // #614: an invitation that was answered leaves the phone's notification centre too
+    if (invites) void settleAnswered({ splitInvites: invites.map((invite) => invite.splitId) }).catch(() => undefined);
     // a link the server still keeps from before lands on its event once
     if (list) void adoptEventLinks(store, repo, list);
   }, [api, store, repo]);

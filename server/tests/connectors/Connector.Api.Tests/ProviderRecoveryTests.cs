@@ -5,41 +5,12 @@ using Xunit;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Provider health has to be able to go both ways.
-///
-/// It could only ever get worse: a single unrecognised shape set `degraded`
-/// and nothing cleared it, so the catalogue went on telling every user "the
-/// provider's site changed and an engineer is on it" for a provider that had
-/// been working again for hours. Consumers are told to render that status, so
-/// one that cannot recover actively misleads them.
-///
-/// The recovery is deliberately narrow, and the last test is the important
-/// one: an operator's pause must survive a job succeeding, or the kill switch
-/// stops working precisely when someone has just pulled it.
-///
-/// PROVIDER STATUS IS GLOBAL, which makes this file the one place in the suite
-/// that mutates state its neighbours can see. Two consequences, both learned
-/// the hard way when the first version of these tests went in:
-///
-///   - It joins the shared collection. On <c>IClassFixture</c> xUnit gives the
-///     class its own implicit collection and runs it CONCURRENTLY with the
-///     others, against a second copy of the whole host. Two apps racing over
-///     one status table is a flake generator.
-///   - Every test restores what it changed in a <c>finally</c>. A test that
-///     leaves a provider degraded does not fail itself - it fails whichever
-///     unrelated test runs next, which is the most expensive kind of failure
-///     to diagnose.
-/// </summary>
+// provider status is global: join the shared collection (a lone IClassFixture class runs concurrently on a second host)
+// and restore every changed status in a finally, or an unrelated later test fails
 [Collection(ShopApiCollection.Name)]
 public sealed class ProviderRecoveryTests(ShopApiFactory factory)
 {
-    /// <summary>
-    /// Status is written by the job that finished, not by the request that
-    /// started it, so "the call returned" and "the status has moved" are two
-    /// different moments. Polling states the actual expectation - it settles -
-    /// rather than asserting on a race and calling the loser a bug.
-    /// </summary>
+    // status is written by the finished job, not the request that started it: poll until it settles
     private static readonly TimeSpan Settle = TimeSpan.FromSeconds(15);
 
     [Fact]
@@ -48,9 +19,7 @@ public sealed class ProviderRecoveryTests(ShopApiFactory factory)
         var http = factory.CreateAuthorizedClient();
         try
         {
-            // mock-store-broken signs in happily and reports the shape change
-            // on the FETCH, which is the realistic shape of this failure: a
-            // login page that still works and a data endpoint that moved.
+            // mock-store-broken signs in fine and reports the shape change on the FETCH
             var connection = await Flows.ConnectAsync(http, "mock-store-broken", Flows.NewSubject("degrade"),
                 new Dictionary<string, string> { ["username"] = "u", ["password"] = "p" });
 
@@ -95,9 +64,6 @@ public sealed class ProviderRecoveryTests(ShopApiFactory factory)
         {
             await SetAsync(http, "mock-store-sms", "paused", "connect.provider.paused");
 
-            // A paused provider refuses work outright, which is itself the
-            // guarantee: there is no successful job to heal it with. What must
-            // never happen is the state quietly reverting on its own.
             using var request = Wire.Post("/v1/mock-store-sms/login", new
             {
                 subject = Flows.NewSubject("paused"),

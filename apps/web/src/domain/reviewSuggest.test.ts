@@ -45,7 +45,6 @@ describe('resolveTransferPrediction', () => {
 });
 
 describe('#565 the loan a payment belongs to', () => {
-  // the user's three ING loans (#556 ss): one collector, three payment plans
   const loan = (id: string, paymentCents: number, over: object = {}) => ({
     id, name: `ING Loan ${id}`, type: 'loan' as const, paymentCents, paymentEvery: 'month' as const, merchantKey: 'ing bank', ...over,
   });
@@ -66,7 +65,6 @@ describe('#565 the loan a payment belongs to', () => {
     const untaught = loans.map((a) => ({ ...a, merchantKey: undefined }));
     const draft = { catId: 'loanRepayment', txType: 'debtPayment' as const };
     expect(suggestLoanCounter(draft, { ...payment, amountCents: -6324 }, untaught, catalog)?.linkedAccountId).toBe('l2');
-    // an ordinary category with no taught merchant is not a loan's business
     const groceries = { catId: 'groceries', txType: 'expense' as const };
     expect(suggestLoanCounter(groceries, payment, untaught, catalog)).toBe(groceries);
   });

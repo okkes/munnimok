@@ -13,11 +13,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Following a fetch that did not finish inside its window. Identical
-/// contract to a login: poll, subscribe, answer - and, like a login, only
-/// for the subject whose session the job belongs to.
-/// </summary>
+/// follows a fetch that outlived its window: the same contract as a login, only for the session's subject
 internal static class JobEndpoints
 {
     public static void Map(IEndpointRouteBuilder api)
@@ -57,8 +53,7 @@ internal static class JobEndpoints
                 {
                     db.ChangeTracker.Clear();
                     var row = await db.Jobs.FirstOrDefaultAsync(j => j.Id == job.Id, token);
-                    // Never the bundle over a stream: it can only be handed
-                    // over once, and a stream cannot acknowledge receipt.
+                    // never the bundle over a stream: it is handed over once and a stream cannot acknowledge receipt
                     return row is null ? null : await views.JobAsync(row, deliverBundle: false, token);
                 },
                 view => JobStateMachine.IsTerminal(view.State),
@@ -69,8 +64,6 @@ internal static class JobEndpoints
 
             return Results.Empty;
         })
-        // The same view the poll returns, one per event - identical contract to
-        // a login's stream, and named the same way.
         .Produces<JobResponse>(StatusCodes.Status200OK, "text/event-stream");
 
         api.MapPost("/{provider}/jobs/{jobId}/answer", async (
@@ -91,10 +84,8 @@ internal static class JobEndpoints
             return ConnectorResults.Json(await views.JobAsync(job, deliverBundle: false, ct));
         });
 
-        // What a failed run left behind is the person's to give (#441 L1):
-        // yes retains the picture for the operator, no deletes it. Both go
-        // through the same subject join as the view, so an id learned
-        // elsewhere can neither share nor destroy somebody else's.
+        // a failed run's picture is the person's to give (#441 L1): yes retains it for the operator, no deletes it
+        // both join through the subject, so an id learned elsewhere can neither share nor destroy another's
         api.MapPost("/{provider}/jobs/{jobId}/artifacts/share", async (
             HttpContext http,
             string provider,
@@ -130,11 +121,7 @@ internal static class JobEndpoints
         });
     }
 
-    /// <summary>
-    /// The job, if it exists AND its session belongs to the caller. One
-    /// answer for both misses, so a job id learned from somewhere else tells
-    /// its holder nothing.
-    /// </summary>
+    /// one answer for both misses, so a job id learned elsewhere tells its holder nothing
     private static async Task<JobRow> RequireAsync(
         ConnectorDbContext db, string providerId, string jobId, string subject, CancellationToken ct) =>
         await db.Jobs

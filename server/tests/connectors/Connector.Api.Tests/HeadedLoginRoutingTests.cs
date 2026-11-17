@@ -10,39 +10,15 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Who gets offered a login that needs somebody at the browser.
-///
-/// Jumbo's sign-in can meet an interactive Auth0 wall, and an interactive wall
-/// cannot be photographed into an answer - the only person who can pass it is
-/// one with hands on that machine. The manifest says so now
-/// (<c>login_needs_headed_agent</c>), but until the queue read it the fact was
-/// discovered rather than declared: a headless pooled agent leased the login,
-/// drove it for two minutes, met the widget, and failed the job
-/// <c>blocked_by_provider</c>. A wasted lease for the user, a wasted run
-/// against a defended provider, and an error that reads to the account's owner
-/// like their account is broken.
-///
-/// The gate is on the LOGIN alone, and the second test is the one that matters
-/// most: the same headless agent must still be offered the same provider's
-/// fetches, which are most of the work and need nobody at all. A rule that
-/// idled it for those would trade one waste for a larger one.
-/// </summary>
+// the gate is on the LOGIN alone: a headless agent must still get the provider's fetches, which need nobody
+// declared via login_needs_headed_agent: before, a headless agent leased it, met the widget and failed blocked_by_provider
 [Collection(ShopApiCollection.Name)]
 public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
 {
-    /// <summary>
-    /// Browser-tier, pooled, and declares login_needs_headed_agent: bol's
-    /// reCAPTCHA is interactive and mints its token in the browser that
-    /// rendered it, so nobody remote can pass it.
-    /// </summary>
+    // browser-tier, pooled, login_needs_headed_agent: bol's reCAPTCHA mints its token in the browser that rendered it
     private const string HeadedOnlyProvider = "bol";
 
-    /// <summary>
-    /// Also browser-tier and pooled, but its login is streamed to the account's
-    /// owner wherever they are - so any agent may take it. Jumbo joined this
-    /// side once Auth0's Turnstile made the typed path unfinishable.
-    /// </summary>
+    // browser-tier, pooled, login streamed to the account's owner wherever they are: any agent may take it
     private const string RelayableProvider = "ah";
 
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(2);
@@ -54,8 +30,6 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
 
         var leased = await LeaseAsync(headed: false, JobKind.Login);
 
-        // Not merely "a different job" - nothing at all. The job waits for an
-        // agent that can finish it rather than being spent on one that cannot.
         Assert.Null(leased);
         Assert.Equal(JobState.Queued, await StateOfAsync(queued));
     }
@@ -67,9 +41,7 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
 
         var leased = await LeaseAsync(headed: false, JobKind.Fetch);
 
-        // The whole point of two flags rather than one. Jumbo's fetch needs
-        // nobody, and withholding it would idle a perfectly capable agent for
-        // a constraint that belongs to the sign-in.
+        // two flags rather than one: withholding the fetch would idle a capable agent for a constraint of the sign-in
         Assert.NotNull(leased);
         Assert.Equal(queued, leased.JobId);
     }
@@ -77,8 +49,7 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
     [Fact]
     public async Task A_headed_agent_is_offered_the_login_the_headless_one_was_refused()
     {
-        // Coolblue rather than Jumbo so this test does not race the queued job
-        // the refusal test above deliberately leaves behind.
+        // coolblue, not jumbo: avoids racing the job the refusal test leaves queued
         const string provider = "coolblue";
 
         var queued = await QueueAsync(provider, JobKind.Login);
@@ -96,16 +67,11 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
     {
         var queued = await QueueAsync(RelayableProvider, JobKind.Login);
 
-        // Albert Heijn streams its own page to whoever owns the account, wall
-        // and all, so "headless" says nothing about whether it can finish.
-        // Gating on the runtime instead of the declared fact would have caught
-        // this one too, and wrongly.
+        // AH streams its page to the account's owner: gating on the runtime instead of the declared fact would be wrong
         Assert.True(
             await LeasedByAsync(headed: false, RelayableProvider, queued),
             "a relayable login should not need a headed agent");
     }
-
-    // ---- setup -------------------------------------------------------------
 
     private async Task<string> QueueAsync(string provider, JobKind kind)
     {
@@ -151,13 +117,8 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
             Providers = [provider ?? HeadedOnlyProvider],
             Headed = headed,
 
-            // The address the three providers used here ask to be reached
-            // from - residential NL for bol and ah, and NL/any for coolblue,
-            // which a residential claim also satisfies. CanServe compares it
-            // now, and an agent that claims nothing is offered none of them,
-            // so without this every assertion below would be about a lease
-            // that never happened for a reason that has nothing to do with
-            // who is standing at the browser.
+            // the address these providers ask for: CanServe compares it, and an agent claiming nothing gets none of them,
+            // so every assertion would be about a lease that never happened
             Egress = new EgressRequirement { Country = "NL", Kind = EgressRequirement.Residential },
         };
 
@@ -171,15 +132,7 @@ public sealed class HeadedLoginRoutingTests(ShopApiFactory factory)
             CancellationToken.None);
     }
 
-    /// <summary>
-    /// Leases until the job under test is the one handed over.
-    ///
-    /// The suite shares one host, so other classes leave queued logins for
-    /// these same providers behind and candidates come back oldest-first.
-    /// Asserting "the very next lease is mine" would be asserting the order of
-    /// the whole assembly; what this class is about is whether the job is
-    /// offered to this agent at all.
-    /// </summary>
+    // the suite shares one host: other classes leave queued logins for these providers, oldest first, so lease until this job
     private async Task<bool> LeasedByAsync(bool headed, string provider, string jobId)
     {
         for (var attempt = 0; attempt < 25; attempt++)

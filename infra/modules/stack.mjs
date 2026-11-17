@@ -3,13 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeAgents } from './agents.mjs';
 
-/**
- * The platform/environment model (infra/platforms/README.md): every
- * platform runs ONE shared stack and N environment stacks, all described
- * by committed JSON the wizard writes and the workflows read. Nothing
- * here is hand-written per stack any more — names, hosts and ports are
- * derived from <platform, env, slot>.
- */
+// every platform runs ONE shared stack and N environment stacks; names, hosts and ports derive from <platform, env, slot>
 
 // MUNNI_PLATFORMS_DIR / MUNNI_RENDER_DIR: test overrides so specs never touch the real tree
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -21,7 +15,6 @@ export const PLATFORM_LABELS = { lcl: 'This computer', nas: 'Synology NAS', rpi:
 export const RESERVED_ENV_NAMES = new Set(['shared', 'platform', 'all']);
 /** 2-12 lowercase letters/digits, starting with a letter (hostnames, compose project names, GitHub environments) */
 export const ENV_NAME_RE = /^[a-z][a-z0-9]{1,11}$/;
-/** a git branch name as the platform's `branch` field may name it */
 export const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 /** the branch a stack's runs check out (#416): the platform's choice, else its image channel decides — latest = master releases, dev = the dev branch */
 export const branchFor = (platformBranch, channel) => platformBranch || (channel === 'latest' ? 'master' : channel);
@@ -53,8 +46,6 @@ const platformFile = (id) => join(PLATFORMS_DIR(), id, 'platform.json');
 const envsDir = (id) => join(PLATFORMS_DIR(), id, 'envs');
 const envFile = (id, env) => join(envsDir(id), `${env}.json`);
 
-/* ── platforms ───────────────────────────────────────────────────────── */
-
 export function listPlatforms() {
   const dir = PLATFORMS_DIR();
   if (!existsSync(dir)) return [];
@@ -76,7 +67,7 @@ export function normalizePlatform(id, cfg, file = null) {
     label: PLATFORM_LABELS[id] ?? id,
     registry: 'ghcr.io/okkes',
     sharedChannel: 'latest',
-    // the pooled agents' egress is a CLAIM the control planes believe — a home line is residential, a rack is not
+    // the pooled agents' egress is a CLAIM the control planes believe (a home line is residential, a rack is not)
     // the branch every run of this platform checks out (#416); empty = by each stack's image channel
     branch: null,
     ...cfg,
@@ -99,8 +90,6 @@ export function savePlatform(cfg) {
   return loadPlatform(cfg.platform);
 }
 
-/* ── environments ────────────────────────────────────────────────────── */
-
 export function platformEnvs(id) {
   const dir = envsDir(id);
   if (!existsSync(dir)) return [];
@@ -114,9 +103,9 @@ export function normalizeEnv(platform, raw, fromFile) {
   const env = raw.env ?? fromFile;
   if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
   if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);
-  // inviteOnly: invitation-only sign-up — the environment's Logto admits new accounts through the admin portal's invitation alone; a Bootstrap applies it (user 2026-10-07)
+  // inviteOnly: the environment's Logto admits new accounts through the admin portal's invitation alone;
+  // a Bootstrap applies it
   const features = { android: false, ios: false, push: false, logos: false, imageSearch: false, receiptAi: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [], ...(raw.features ?? {}) };
-  // #420: the environment's own browser agents — pooled replicas (jobs at once each) and private slots, rendered beside its control plane
   const agents = normalizeAgents(raw.agents);
   const appChannel = raw.appChannel ?? (env === 'prod' ? 'production' : 'staging');
   return {
@@ -127,9 +116,8 @@ export function normalizeEnv(platform, raw, fromFile) {
     label: raw.label ?? `munni ${env}-${platform}`,
     features,
     agents,
-    // performance tracing (user 2026-10-09, docs/observability.md): the share of traces the environment's web app,
-    // api, connector and agents send to GlitchTip — a fifth on production, every one on a staging environment (the
-    // test ground), 0 = errors only; one value, four containers, applied by a Deploy
+    // tracing: the share of traces web, api, connector and agents send to GlitchTip
+    // a fifth on production, all on staging, 0 = errors only; applied by a Deploy
     tracing: normalizeTracing(raw.tracing, env, appChannel),
     store: {
       androidPackage: raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
@@ -155,7 +143,6 @@ export function loadEnv(platform, env) {
   return normalizeEnv(platform, readJson(file), env);
 }
 
-/** the lowest free slot on a platform */
 export function nextSlot(platform) {
   const used = new Set(platformEnvs(platform).map((e) => e.slot));
   let slot = 0;
@@ -174,9 +161,6 @@ export function removeEnv(platform, env) {
   if (existsSync(file)) rmSync(file);
 }
 
-/* ── stacks ──────────────────────────────────────────────────────────── */
-
-/** every stack: per platform the shared stack first, then its environments by slot */
 export function listStacks() {
   return listPlatforms().flatMap((p) => [stackName(p.platform), ...platformEnvs(p.platform).map((e) => stackName(p.platform, e.env))]);
 }
@@ -187,7 +171,6 @@ export const hostsFor = (platform, env = null, { connectors = false } = {}) => (
     web: `munni-${env}-${platform}`,
     admin: `munni-${env}-${platform}-admin`,
     api: `munni-${env}-${platform}-api`,
-    // the connector lab (#441): the operator's workbench beside the admin portal, in every environment
     lab: `munni-${env}-${platform}-lab`,
     ...(connectors ? { connector: `munni-${env}-${platform}-connector` } : {}),
     logto: `munni-${env}-${platform}-logto`,
@@ -207,12 +190,7 @@ export function platformDomain(p, { lenient = false } = {}) {
   throw new Error(`PLATFORM_DOMAIN is not set — the ${p.platform} platform's domain is a secret the environment provides`);
 }
 
-/**
- * load a stack: {stack, platform, env, role, delivery, channel, slot,
- * ports, hosts, host(key), urls, sharedStack, githubEnvironment, native,
- * features, store, registry, domain, lan}. `lenient`: a nas stack loads
- * without the domain (urls carry UNRESOLVED_DOMAIN) — for listings only.
- */
+/** `lenient`: a nas stack loads without the domain (urls carry UNRESOLVED_DOMAIN), for listings only */
 export function loadStack(name, { lenient = false } = {}) {
   const parsed = parseStackName(name);
   if (!parsed) throw new Error(`"${name}" is not a stack name (munni-<platform>-<env|shared>)`);
@@ -258,7 +236,6 @@ export function loadStack(name, { lenient = false } = {}) {
     controlApi: controlEnvName ? stackName(p.platform, controlEnvName) : null,
     githubEnvironment: `${p.platform}-${parsed.env ?? 'shared'}`,
     features: shared ? { telemetry: true } : envCfg.features,
-    // #420: the environment's pooled browser agents (and private slots), rendered beside its control plane with the platform's egress claim
     agents: shared ? null : { ...envCfg.agents, egress: p.agentEgress },
     tracing: shared ? null : envCfg.tracing,
     store: shared ? null : envCfg.store,
@@ -273,15 +250,12 @@ export function loadStack(name, { lenient = false } = {}) {
   };
 }
 
-/** the platform's shared stack (self for a shared stack) */
 export function sharedOf(stack) {
   return stack.role === 'shared' ? stack : loadStack(stack.sharedStack);
 }
 
-/** every environment stack of a platform, by slot */
 export const platformEnvStacks = (platform) => platformEnvs(platform).map((e) => loadStack(stackName(platform, e.env)));
 
-/* ── the services a stack answers on, as the operator opens them (#560) ── */
 // names and the page worth opening per host key of hostsFor; a key missing here still shows, under its own name
 const SERVICE_INFO = {
   web: { name: 'munni app', what: 'the app people use' },
@@ -297,7 +271,6 @@ const SERVICE_INFO = {
   pgadmin: { name: 'pgAdmin', what: 'one console over every database of the platform' },
 };
 
-/** every service of a loaded stack with its name, what it is and the url to open — from the stack's own urls, so a new host appears by itself */
 export function stackServices(stack) {
   return Object.entries(stack.urls).flatMap(([key, base]) => {
     const info = SERVICE_INFO[key] ?? { name: key, what: '' };
@@ -306,7 +279,6 @@ export function stackServices(stack) {
   });
 }
 
-/* ── the helper's self-update settings (lcl) ─────────────────────────── */
 const AUTONOMY_FILE = () => join(RENDER_DIR(), 'local-autonomy.json');
 export const AUTONOMY_DEFAULTS = Object.freeze({ enabled: false, intervalMinutes: 10, lastCheckAt: null, lastResult: null });
 

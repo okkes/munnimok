@@ -11,12 +11,8 @@ using Munni.Api.Tests.Admin;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// The full account-deletion pipeline (approved decisions: shared
-/// spaces leave-and-archive, immediate, Logto optional). Uses the admin
-/// factory: test auth + in-memory database; a bank's consent ending at
-/// its party is ConnectorOpenBankingTests' walk.
-/// </summary>
+/// decisions: shared spaces leave-and-archive, immediate, Logto optional;
+/// a bank's consent ending at its party is ConnectorOpenBankingTests' walk
 public class AccountDeletionTests : IClassFixture<AdminApiFactory>
 {
     private readonly AdminApiFactory _factory;
@@ -69,8 +65,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
     [Fact]
     public async Task The_identity_goes_through_the_shared_Logto_session_minted_once()
     {
-        // one minting path with the admin portal's invitations (user
-        // 2026-10-07): two deletions ride one token
+        // one minting path with the admin portal's invitations: two deletions ride one token
         var logto = new FakeLogtoHandler();
         var config = LogtoSettings();
         var management = new LogtoManagement(new CountingHttpFactory(logto), config, TimeProvider.System);
@@ -109,7 +104,6 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
             new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-shared", FeedSpaceId = $"{prefix}-feed-shared", AccountId = "a1", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" },
             new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-solo", FeedSpaceId = $"{prefix}-feed-solo", AccountId = "a2", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" });
 
-        // push + friendship
         db.PushSubscriptions.Add(new PushSubscriptionRow
         {
             Id = Guid.NewGuid(), UserId = leaver.Id, Endpoint = $"https://push/{prefix}",
@@ -132,24 +126,21 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // the user and their solo world are gone
         Assert.False(await db.Users.AnyAsync(u => u.Id == leaverId));
         Assert.False(await db.Spaces.AnyAsync(s => s.Id == "d1-solo"));
         Assert.False(await db.EntityRows.AnyAsync(r => r.SpaceId == "d1-solo"));
         Assert.False(await db.SyncOps.AnyAsync(o => o.SpaceId == "d1-solo"));
         Assert.False(await db.FeedSpaces.AnyAsync(f => f.Id == "d1-feed-solo"));
 
-        // the shared space survives for the friend, ownership transferred
         var friendMembership = await db.SpaceMembers.SingleAsync(m => m.SpaceId == "d1-shared");
         Assert.Equal(friendId, friendMembership.UserId);
         Assert.Equal(SpaceRoles.Owner, friendMembership.Role);
-        // decision ①: the shared feed stays readable (archived link)
+        // the shared feed stays readable (archived link)
         Assert.True(await db.FeedSpaces.AnyAsync(f => f.Id == "d1-feed-shared"));
         Assert.True(await db.EntityRows.AnyAsync(r => r.SpaceId == "d1-feed-shared"));
         var sharedLink = await db.SpaceAccountLinks.SingleAsync(l => l.FeedSpaceId == "d1-feed-shared");
         Assert.True(sharedLink.Archived);
 
-        // push + friendship erased
         Assert.False(await db.PushSubscriptions.AnyAsync(p => p.UserId == leaverId));
         Assert.False(await db.Friendships.AnyAsync(f => f.UserAId == leaverId || f.UserBId == leaverId));
     }
@@ -231,7 +222,6 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         Assert.False(await db.Users.AnyAsync(u => u.Sub == "del-target"));
         Assert.True(await db.Users.AnyAsync(u => u.Sub == "del-witness"));
 
-        // without the admin scope the operator path is closed
         var user = ClientFor("del-witness");
         Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/users/del-witness")).StatusCode);
     }

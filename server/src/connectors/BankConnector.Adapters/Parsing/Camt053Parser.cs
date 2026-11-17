@@ -8,29 +8,20 @@ using Connector.Kit.Normalization;
 
 namespace BankConnector.Adapters.Parsing;
 
-/// <summary>
-/// What the caller has to tell the parser, because CAMT.053 does not say it.
-/// </summary>
 public sealed record Camt053Options
 {
     public required string SessionId { get; init; }
 
-    /// <summary>Named in every <see cref="ErrorCode.ProviderChanged"/> detail.</summary>
     public required string ProviderId { get; init; }
 
-    /// <summary>
-    /// CAMT.053 identifies an account but never says what KIND it is - the
-    /// standard has no notion of "savings" versus "credit card". The adapter
-    /// knows, because it drove the export form that produced the file, so it
-    /// declares the type here rather than the parser guessing from a name.
-    /// </summary>
+    // CAMT.053 never says an account's kind; the adapter that drove the export declares it,
+    // the parser does not guess from a name
     public AccountType AccountType { get; init; } = AccountType.Unknown;
 
     /// <summary>Overrides <c>Stmt/Acct/Nm</c>, which many banks omit.</summary>
     public string? DisplayName { get; init; }
 }
 
-/// <summary>One <c>Stmt</c>: an account, its balances, and its entries.</summary>
 public sealed record Camt053Statement
 {
     public required string StatementId { get; init; }
@@ -47,19 +38,8 @@ public sealed record Camt053Statement
     public Balance? Closing { get; init; }
 }
 
-/// <summary>
-/// ISO 20022 CAMT.053 bank statements.
-///
-/// Two rules shape everything here, and they pull in opposite directions.
-/// Optional elements are genuinely optional: banks differ in which of
-/// <c>RmtInf</c>, <c>AddtlNtryInf</c>, <c>ValDt</c>, <c>RltdPties</c> and
-/// <c>Bal</c> they populate, and that is a fixture problem, not a
-/// code-branch problem. But a REQUIRED element that is missing, or a value
-/// that will not parse, means the export's shape moved - so it raises
-/// <see cref="ErrorCode.ProviderChanged"/>, which pages an operator and
-/// degrades the provider, and never <see cref="ErrorCode.Internal"/>, which
-/// would be quietly retried forever.
-/// </summary>
+// optional elements stay optional (banks differ); a missing REQUIRED element or unparseable value is ProviderChanged
+// (pages an operator, degrades the provider), never Internal, which would be retried forever
 public static class Camt053Parser
 {
     public static IReadOnlyList<Camt053Statement> Parse(string xml, Camt053Options options)
@@ -73,9 +53,7 @@ public static class Camt053Parser
         XDocument document;
         try
         {
-            // DTD processing stays off: a statement file is data from a
-            // third party, and an external entity in one is a file-read
-            // primitive on the agent.
+            // DTD off: a statement is third-party data and an external entity is a file-read primitive on the agent
             using var reader = XmlReader.Create(
                 new StringReader(xml),
                 new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
@@ -90,8 +68,7 @@ public static class Camt053Parser
         var root = document.Root
                    ?? throw ConnectorException.ProviderChanged($"{options.ProviderId}: camt.053 export has no root element");
 
-        // Some banks wrap the message in an envelope, so the report is
-        // located by name rather than by assuming it is the root's child.
+        // some banks wrap the message in an envelope: locate the report by name
         var report = string.Equals(root.Name.LocalName, "BkToCstmrStmt", StringComparison.Ordinal)
             ? root
             : root.Descendants().FirstOrDefault(e => string.Equals(e.Name.LocalName, "BkToCstmrStmt", StringComparison.Ordinal));
@@ -126,10 +103,7 @@ public static class Camt053Parser
 
         var entries = stmt.Children("Ntry").ToList();
 
-        // Currency, in descending order of authority: the account's own
-        // declaration, then the first entry's amount, then the closing
-        // balance. A statement with none of the three cannot be normalised
-        // at all - money without a currency is not money.
+        // currency by authority: the account's Ccy, the first entry's amount, the closing balance; none of them cannot be normalised
         var currency = stmt.Path("Acct", "Ccy").Text()
                        ?? entries.FirstOrDefault().Child("Amt").Attr("Ccy")
                        ?? closing?.Amount.Currency
@@ -167,12 +141,7 @@ public static class Camt053Parser
         };
     }
 
-    /// <summary>
-    /// An IBAN where the bank gives one, otherwise the proprietary
-    /// identifier under <c>Othr/Id</c> - which is how credit-card and
-    /// non-payment accounts appear, and those are exactly the accounts this
-    /// service exists to reach.
-    /// </summary>
+    // IBAN, else Othr/Id: how credit-card and non-payment accounts appear
     private static string AccountIdentification(XElement stmt, string provider, out string? iban)
     {
         var id = stmt.Path("Acct", "Id");
@@ -196,9 +165,7 @@ public static class Camt053Parser
         var amountElement = entry.Child("Amt")
                             ?? throw ConnectorException.ProviderChanged($"{provider}: Ntry without Amt in statement '{statementId}'");
 
-        // The currency lives on the amount, not on the entry, and per-entry
-        // currencies do occur on card statements. Fall back to the
-        // statement's only when the attribute is genuinely absent.
+        // the currency lives on the amount; per-entry currencies occur on card statements
         var currency = amountElement.Attr("Ccy") ?? statementCurrency;
         var magnitude = MoneyParser.ToMinor(amountElement.Text(), MoneyUnit.MajorString, $"{provider}: Ntry/Amt");
 
@@ -208,9 +175,7 @@ public static class Camt053Parser
         var booked = OptionalDate(entry.Child("BookgDt"), provider, "Ntry/BookgDt");
         var value = OptionalDate(entry.Child("ValDt"), provider, "Ntry/ValDt");
 
-        // A booked statement without a booking date is unusable, but some
-        // banks date the entry only by value. Falling back is tolerance;
-        // having neither is a shape change.
+        // some banks date an entry only by value: falling back is tolerance, having neither is a shape change
         var bookedAt = booked ?? value
             ?? throw ConnectorException.ProviderChanged(
                 $"{provider}: Ntry in statement '{statementId}' has neither BookgDt nor ValDt");
@@ -230,20 +195,13 @@ public static class Camt053Parser
             Counterparty = counterparty,
             Description = description,
             Kind = Kind(entry),
-            // CAMT.053 states no per-entry balance. Deriving one from the
-            // opening figure and then "verifying" it would check our own
-            // arithmetic against itself; the real redundancy the format
-            // offers is OPBD + entries = CLBD, checked once per statement.
+            // no per-entry balance: deriving one would check our own arithmetic against itself; the real check is OPBD + entries = CLBD
             ResultingBalance = null,
         });
     }
 
-    /// <summary>
-    /// <c>RmtInf/Ustrd</c> is the remitter's own message and is what a user
-    /// recognises; <c>AddtlNtryInf</c> is the bank's rendering of the whole
-    /// line. Prefer the former, fall back to the latter, and join repeated
-    /// <c>Ustrd</c> elements because banks split long messages across them.
-    /// </summary>
+    // Ustrd is the remitter's message and what a user recognises, AddtlNtryInf the bank's rendering of the line; Ustrd repeats
+    // because banks split long messages
     private static string? Description(XElement entry, List<XElement> details)
     {
         var unstructured = details
@@ -258,15 +216,8 @@ public static class Camt053Parser
                ?? details.Select(d => d.Child("AddtlTxInf").Text()).FirstOrDefault(t => t is not null);
     }
 
-    /// <summary>
-    /// On a debit the counterparty is the creditor; on a credit it is the
-    /// debtor. Where the expected side is absent we take the other rather
-    /// than emitting nothing - some banks always fill <c>Cdtr</c>.
-    ///
-    /// A batched entry (more than one <c>TxDtls</c>) has no single
-    /// counterparty, and picking the first would be an invention. Those get
-    /// none at all, and their <c>AddtlNtryInf</c> carries the batch label.
-    /// </summary>
+    // debit: creditor, credit: debtor, the other side when absent (some banks always fill Cdtr); a batched entry
+    // (several TxDtls) has no single counterparty: none, and AddtlNtryInf carries the batch label
     private static Counterparty? Counterparty(List<XElement> details, int sign)
     {
         if (details.Count != 1) return null;
@@ -285,21 +236,12 @@ public static class Camt053Parser
         return name is null && iban is null ? null : new Counterparty { Name = name, Iban = iban };
     }
 
-    /// <summary>
-    /// From camt.053.001.08 the party moved under an extra <c>Pty</c>
-    /// wrapper to make room for an agent identification. Both shapes are in
-    /// production simultaneously, so both are read.
-    /// </summary>
+    // from camt.053.001.08 the party sits under an extra Pty wrapper; both shapes are in production
     private static string? PartyName(XElement parties, string role) =>
         parties.Path(role, "Nm").Text() ?? parties.Path(role, "Pty", "Nm").Text();
 
-    /// <summary>
-    /// A stable per-entry identifier, in the order banks actually populate
-    /// them. When a bank supplies none - which happens on older exports -
-    /// one is synthesized from the entry's own content plus an occurrence
-    /// counter, so two identical rows on one day stay distinguishable and a
-    /// re-fetch still deduplicates.
-    /// </summary>
+    // stable id in the order banks populate them; when none (older exports) synthesized from content plus an occurrence counter,
+    // so identical rows on one day stay distinct and a re-fetch deduplicates
     private static string ExternalId(
         XElement entry,
         List<XElement> details,
@@ -333,12 +275,7 @@ public static class Camt053Parser
         return "syn-" + Convert.ToHexStringLower(digest.AsSpan(0, 10));
     }
 
-    /// <summary>
-    /// A best-effort classification. It is a hint for the consumer's UI and
-    /// never touches an amount, so an unrecognised code degrades to
-    /// <see cref="TransactionKind.Other"/> instead of failing the run - the
-    /// opposite of how an unparseable amount is treated.
-    /// </summary>
+    // a UI hint only: an unrecognised code degrades to Other instead of failing the run, unlike an unparseable amount
     private static TransactionKind Kind(XElement entry)
     {
         var code = entry.Path("BkTxCd", "Domn");
@@ -402,12 +339,7 @@ public static class Camt053Parser
         return null;
     }
 
-    /// <summary>
-    /// The redundancy CAMT.053 actually offers: opening plus every entry
-    /// must equal closing. It catches a dropped entry, an inverted
-    /// debit/credit flag and a misread decimal separator - all of which
-    /// otherwise produce a statement that looks entirely plausible.
-    /// </summary>
+    // opening + entries = closing: catches a dropped entry, an inverted debit/credit flag and a misread decimal separator
     private static void VerifyAgainstBalances(
         string provider,
         string statementId,
@@ -447,11 +379,8 @@ public static class Camt053Parser
         _ => throw ConnectorException.ProviderChanged($"{provider}: {where} has unknown value '{indicator}'"),
     };
 
-    /// <summary>
-    /// Absent is fine; present but unparseable is a shape change. The
-    /// wrapper element carries either <c>Dt</c> (a date) or <c>DtTm</c> (a
-    /// timestamp) depending on the bank and the message version.
-    /// </summary>
+    // absent is fine, present but unparseable is a shape change; the wrapper holds Dt (date) or DtTm (timestamp)
+    // depending on the bank and message version
     private static DateOnly? OptionalDate(XElement? wrapper, string provider, string where)
     {
         if (wrapper is null) return null;

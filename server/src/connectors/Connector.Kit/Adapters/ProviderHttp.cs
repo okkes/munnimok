@@ -4,21 +4,9 @@ using Connector.Kit.Errors;
 
 namespace Connector.Kit.Adapters;
 
-/// <summary>
-/// The one place a provider's HTTP status becomes a connector error.
-///
-/// Getting this mapping wrong is a real user-facing bug rather than a
-/// tidiness issue: telling somebody their password is wrong when the truth
-/// is bot protection sends them to reset a password that was fine, and
-/// leaves the actual block undiagnosed. So a status only becomes
-/// <see cref="ErrorCode.InvalidCredentials"/> where a caller has proved it
-/// means that - never here.
-/// </summary>
-/// <remarks>
-/// Shared by every pack (it started in the shop pack, and the bank pack's
-/// aggregators speak HTTP the same way). A pack declares which statuses mean
-/// "refusing us" for its providers through <paramref name="blockedStatuses"/>.
-/// </remarks>
+// the one place a provider's HTTP status becomes a connector error; a status is InvalidCredentials only where a
+// caller proved it (never here): blaming the password for bot protection sends people to reset a fine one. A pack
+// declares which statuses mean "refusing us" through blockedStatuses
 public static class ProviderHttp
 {
     public static async Task<HttpResponseMessage> SendAsync(
@@ -40,11 +28,6 @@ public static class ProviderHttp
         }
     }
 
-    /// <summary>
-    /// Maps a non-success status. <paramref name="blockedStatuses"/> lets a
-    /// provider declare which statuses mean "refusing us" for it
-    /// specifically; everything else follows the default reading.
-    /// </summary>
     public static ConnectorException Failure(
         HttpStatusCode status, string providerId, string what, IReadOnlySet<int>? blockedStatuses = null)
     {
@@ -73,19 +56,8 @@ public static class ProviderHttp
         throw Failure(response.StatusCode, providerId, what, blockedStatuses);
     }
 
-    /// <summary>
-    /// Same, but keeps what the provider actually said.
-    ///
-    /// An error body is the single most useful thing a provider ever hands
-    /// back - a GraphQL 400 names the field it did not recognise, and often
-    /// suggests the right one - and discarding it turns a five-second fix into
-    /// an afternoon of guessing against a live account. The body is operator
-    /// -facing detail, never shown to an end user, and is truncated because
-    /// a block page can be a megabyte of HTML.
-    ///
-    /// Bounded, best effort, and never allowed to mask the original failure:
-    /// if reading the body throws, the status-only error still goes out.
-    /// </summary>
+    // keeps the provider's error body (a GraphQL 400 names the unknown field): operator-facing only, truncated (a block page can
+    // be a megabyte), best effort: a failing read never masks the status-only error
     public static async Task EnsureSuccessAsync(
         HttpResponseMessage response, string providerId, string what,
         IReadOnlySet<int>? blockedStatuses, CancellationToken ct)
@@ -112,10 +84,7 @@ public static class ProviderHttp
             : new ConnectorException(failure.Code, $"{failure.Detail}; provider said: {body}");
     }
 
-    /// <summary>
-    /// The caller owns the returned document's lifetime; every
-    /// <see cref="JsonElement"/> read from it dies with it.
-    /// </summary>
+    // the caller owns the returned document; every JsonElement read from it dies with it
     public static async Task<JsonDocument> ReadJsonAsync(
         HttpResponseMessage response, string providerId, string what, CancellationToken ct)
     {

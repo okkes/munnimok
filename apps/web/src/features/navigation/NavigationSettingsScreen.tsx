@@ -13,11 +13,7 @@ import { Icon } from '@/ui/Icon';
 import { HOME_NAV, MAX_NAV_ITEMS, MAX_NAV_PICKS, NAV_FEATURE_IDS, NAV_FEATURES, navUsableFor, resolveNavTabs } from './navFeatures';
 import { useNavOps } from './useNavTabs';
 
-/**
- * The space's phone bar (#577): Home always first, up to seven picks after
- * it, in the order they are dragged to. Every change applies at once (LWW
- * on the space row) — the bar below is the preview. Readers look only.
- */
+/** #577: every change applies at once (LWW on the space row), the bar below is the preview; readers look only */
 export function NavigationSettingsScreen() {
   const { t } = useLang();
   const { store } = useData();

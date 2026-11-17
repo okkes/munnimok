@@ -6,11 +6,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Exploring;
 
-/// <summary>
-/// The operator's explore provider (#441 L3): a valid manifest with nothing
-/// to fetch, operator-only, and an address rule that keeps the fleet's
-/// browser off the household's own network.
-/// </summary>
+// #441 L3: the address rule keeps the fleet's browser off the household's own network
 public sealed class ExploreProviderTests
 {
     [Fact]

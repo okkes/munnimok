@@ -5,11 +5,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// #562: an agent says which browser it runs, so that one left behind on
-/// somebody's own computer can be told to renew - the pooled ones follow
-/// every deploy by themselves.
-/// </summary>
+// #562: an agent names its browser so one left on somebody's own computer can be told to renew
+// (pooled ones follow every deploy)
 public sealed class AgentBrowserTests
 {
     [Fact]

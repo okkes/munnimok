@@ -43,7 +43,6 @@ describe('notifications chosen per space (#549)', () => {
     expect(await spaceNotifyOn(store, 's1')).toBe(false);
     expect(await spaceNotifyOn(store, 's2')).toBe(true);
 
-    // the server out of reach: the mirror keeps what it knew
     apiFetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     expect(await refreshSpacesNotifyOff(store)).toBeNull();
     expect(await readSpacesNotifyOff(store)).toEqual(['s1']);
@@ -75,9 +74,8 @@ describe('notifications chosen per space (#549)', () => {
     const store = fresh();
     apiFetchMock.mockResolvedValueOnce(json({ off: ['s1'] }));
     await refreshSpacesNotifyOff(store);
-    // a clear the server never heard about
     apiFetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await clearNotifications(store, true);
+    await clearNotifications(store, true, ['general']);
 
     await forgetSpacesNotifyOff(store);
     expect(await spaceNotifyOn(store, 's1')).toBe(true);

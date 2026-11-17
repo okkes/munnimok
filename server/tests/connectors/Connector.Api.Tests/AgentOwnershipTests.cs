@@ -10,28 +10,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The invariant the enrollment endpoint states in a comment - "an agent may
-/// only ever serve the user who enrolled it, and letting it name its own owner
-/// would undo that in one line" - asserted against the queue that has to keep
-/// it.
-///
-/// It was written in four places and enforced in none. `AgentRow.OwnerSubject`
-/// had a column, an index, a doc comment and a write at enrollment, and its
-/// only reader was the `/agents` listing. `TryLeaseAsync` filtered on provider,
-/// job kind, profile affinity and per-session concurrency, and never once asked
-/// whose job it was handing over - so any enrolled machine could lease any
-/// user's login job and `Materialize` would deserialise that user's password
-/// into it in plaintext.
-///
-/// These tests exist because the omission cost nothing to make and nothing to
-/// keep: every suite stayed green the whole time it was there.
-///
-/// The provider is an agent-tier one on purpose. `InlineJobRunner` serves only
-/// manifests with `Agent.Class == Inline &amp;&amp; !Agent.Required`, so a job
-/// queued for a browser-tier provider stays queued instead of racing the
-/// in-process pump for it.
-/// </summary>
+/// an agent may only serve the user who enrolled it; TryLeaseAsync once never asked whose job it handed over
+/// agent-tier provider on purpose: InlineJobRunner serves only Inline && !Required manifests, so the job stays queued
 [Collection(ShopApiCollection.Name)]
 public sealed class AgentOwnershipTests(ShopApiFactory factory)
 {
@@ -39,14 +19,8 @@ public sealed class AgentOwnershipTests(ShopApiFactory factory)
 
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(2);
 
-    /// <summary>Only ever names the provider; the ownership rule must do the rest.</summary>
-    /// <summary>
-    /// A residential Dutch line, because the provider these tests use asks for
-    /// one and <c>CanServe</c> now compares the two. An agent that claims no
-    /// address at all is offered nothing that asks for one, so leaving this out
-    /// would make every test below pass for the wrong reason - nobody leases
-    /// anything, and ownership never gets a chance to decide.
-    /// </summary>
+    /// a residential Dutch line, because the provider asks for one:
+    /// without it nobody leases anything and ownership never decides
     private static AgentCapabilities Capabilities => new()
     {
         Providers = [AgentTierProvider],
@@ -59,22 +33,15 @@ public sealed class AgentOwnershipTests(ShopApiFactory factory)
         var owner = NewSubject();
         var stranger = NewSubject();
 
-        // The stranger queues FIRST, and that ordering is the test. Candidates
-        // come back `OrderBy(CreatedAt)`, so with no ownership rule the oldest
-        // queued job wins and the stranger's is the one handed over. Queue the
-        // owner's first and this test passes with or without the fix - which
-        // it did, until the bite check caught it.
+        // the stranger queues FIRST on purpose: candidates are OrderBy(CreatedAt), so without the ownership rule their job wins
         var strangersJob = await QueueLoginAsync(stranger, "strangers-password");
         var ownersJob = await QueueLoginAsync(owner, "owners-password");
 
-        // The agent that belongs to `owner`, asking for work.
         var leased = await LeaseAsync(ownerScope: owner);
 
         Assert.NotNull(leased);
         Assert.Equal(ownersJob, leased.JobId);
 
-        // The part that actually matters: not merely "it got the right job"
-        // but "the other subject's credential never entered this process".
         Assert.NotEqual(strangersJob, leased.JobId);
         Assert.DoesNotContain("strangers-password", leased.Inputs.Values);
         Assert.Contains("owners-password", leased.Inputs.Values);
@@ -88,9 +55,6 @@ public sealed class AgentOwnershipTests(ShopApiFactory factory)
 
         await QueueLoginAsync(stranger, "strangers-password");
 
-        // `idle` has queued nothing. Before ownership was enforced this
-        // returned the stranger's job, because a queued job for a serveable
-        // provider was reason enough to hand it over.
         var leased = await LeaseAsync(ownerScope: idle);
 
         Assert.Null(leased);
@@ -102,15 +66,8 @@ public sealed class AgentOwnershipTests(ShopApiFactory factory)
         var somebody = NewSubject();
         var queued = await QueueLoginAsync(somebody, "a-password");
 
-        // A null scope is how the in-process runner and a configured fleet
-        // agent ask. It is a parameter rather than something read off the
-        // agent row precisely so that opting out has to be written down.
-        //
-        // The fleet takes the OLDEST queued job first, and the tests above
-        // leave their strangers' jobs queued on purpose (nobody may lease
-        // them) — so the fleet is asked until it reaches the one queued here,
-        // and every job it is handed on the way belongs to somebody, which is
-        // exactly the crossing this test is about.
+        // a null scope is the in-process runner and a configured fleet agent; the fleet takes the oldest job, and earlier tests
+        // leave strangers' jobs queued, so it leases until it reaches ours
         var seen = new List<string>();
         LeasedJob? leased;
         do
@@ -125,11 +82,7 @@ public sealed class AgentOwnershipTests(ShopApiFactory factory)
 
     private static string NewSubject() => $"u_own_{Guid.NewGuid():N}";
 
-    /// <summary>
-    /// A session and a queued login for it, straight into the tables. Going
-    /// through POST /login would work too, but it would also drag consent,
-    /// idempotency and manifest validation into a test about none of them.
-    /// </summary>
+    /// straight into the tables: POST /login would drag consent, idempotency and manifest validation into this test
     private async Task<string> QueueLoginAsync(string subject, string password)
     {
         using var scope = factory.Services.CreateScope();

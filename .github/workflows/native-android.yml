@@ -1,10 +1,4 @@
-# Native Android build + publish, one store identity PER environment
-# (infra/platforms/<platform>/envs/<env>.json: store.androidPackage,
-# default app.munni.<platform>.<env>). Pushes build every environment
-# whose channel matches the branch (dev → `dev`, master → `latest`) and
-# that enables the Android app; the wizard dispatches one stack. Stack
-# config (NATIVE_* variables, signing secrets) comes from the stack's
-# GitHub environment, written by the setup.
+# one store identity per environment (store.androidPackage in infra/platforms/<platform>/envs/<env>.json)
 name: Native Android
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('Android {0}', inputs.stack) || format('Android ({0})', github.ref_name) }}
 
@@ -28,7 +22,7 @@ permissions:
 
 jobs:
   stacks:
-    # first-boot latch: fresh repo copies skip every run until the wizard marks the repo initialized
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     outputs:
@@ -61,8 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}
-    # one Play publish at a time per stack: two pushes seconds apart raced
-    # their Play edit sessions; the newer run supersedes the queued one
+    # two pushes seconds apart raced their Play edit sessions
     concurrency:
       group: native-android-${{ matrix.stack }}
       cancel-in-progress: true
@@ -97,7 +90,7 @@ jobs:
           CATALOG_URL: ${{ vars.NATIVE_API_URL }}/catalog
 
       - name: Build web bundle and sync the shell
-        # #596: the shell's own downloads (CocoaPods, Gradle) fail on a CDN's bad minute — one more try after a pause
+        # #596: the shell's downloads (CocoaPods, Gradle) fail on a CDN's bad minute: retry once
         run: |
           npm ci
           npm run sync -w @munni/native || { echo "::warning::the shell sync failed — one more try in 30 s"; sleep 30; npm run sync -w @munni/native; }
@@ -111,9 +104,8 @@ jobs:
           VITE_NATIVE_SCHEME: ${{ matrix.scheme }}
           VITE_CHANNEL: ${{ matrix.appChannel }}
 
-      # #497: ONE scheme for every build. The commit count (push) and the seconds since 2026 (dispatch) lived side
-      # by side; one dispatched upload (~22.5M) left every later push (~1,800) below it, and Play refuses a release
-      # that no installed user can upgrade to. Seconds since 2026 always grow and stay under Play's 2.1e9 cap until 2092.
+      # #497: one scheme for every build: a commit-count code fell below an earlier dispatched upload and Play
+      # refuses a release nobody can upgrade to. Seconds since 2026 always grow, under Play's 2.1e9 cap until 2092.
       - name: Compute version (seconds since 2026 for every build — always higher than the last upload)
         id: version
         run: |
@@ -130,13 +122,12 @@ jobs:
 
       - name: Rebrand the flavor's static files for this environment
         working-directory: apps/native/android/app/src/app
-        # the google-services stub must match the applicationId or the build fails; shortcuts target the real package/scheme
+        # the google-services stub must match the applicationId or the build fails
         run: |
           sed -i "s/app\.munni\.placeholder/${MUNNI_APP_ID}/g" google-services.json
           sed -i "s/app\.munni\.placeholder/${MUNNI_APP_ID}/g; s/munni-placeholder:/${MUNNI_SCHEME}:/g" res/xml/shortcuts.xml
           grep -c "$MUNNI_APP_ID" google-services.json res/xml/shortcuts.xml
 
-      # the wizard's Firebase automation hands the REAL config as a variable — push works out of the box
       - name: Bake the Firebase config
         if: vars.NATIVE_GOOGLE_SERVICES_B64 != ''
         run: echo "$GS_B64" | base64 -d > apps/native/android/app/src/app/google-services.json
@@ -158,9 +149,7 @@ jobs:
           path: apps/native/android/app/build/outputs/apk/app/debug/app-app-debug.apk
           retention-days: 30
 
-      # ---- signed release: the keystore comes from the environment (minted by the wizard,
-      # kept because Play pins the first upload key per package) — or is minted right here
-      # for a fresh environment and persisted into it
+      # Play pins the first upload key per package: the keystore stays in the environment, minted here when fresh
       - name: Restore or mint the upload keystore
         id: keystore
         run: |
@@ -217,11 +206,8 @@ jobs:
           path: apps/native/android/app/build/outputs/bundle/appRelease/app-app-release.aab
           retention-days: 90
 
-      # ---- Play internal track: the app record is the ONE manual step per package
-      # (Play only adds releases to existing apps). A setup gap (no record, the
-      # service account not invited, the API off) is a warning and the signed .aab
-      # artifact is the deliverable until then; a refusal of the release itself
-      # fails the run (#497: a hidden versionCode refusal went unseen for weeks)
+      # Play only adds releases to existing apps (the record is the one manual step). A setup gap is a warning
+      # and the .aab the deliverable; a refusal of the release fails the run (#497: a versionCode refusal went unseen)
       - name: Publish to Play internal track
         id: play
         if: ${{ inputs.publish != 'skip' && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}

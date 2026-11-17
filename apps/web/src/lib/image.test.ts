@@ -33,10 +33,8 @@ describe('isDataImage', () => {
   });
 });
 
-/** a 2×1 RGBA picture: opaque, or with a see-through pixel */
 const pixels = (transparent: boolean) => new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, transparent ? 0 : 255]);
 
-/** the canvas a downscale draws on — what it was asked to encode, and what it was given */
 function stubCanvas(rgba: Uint8ClampedArray, encodes: (type: string) => string) {
   const drawn = { fillRect: vi.fn(), drawImage: vi.fn(), composite: '' };
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
@@ -112,11 +110,10 @@ describe('downscaleImage', () => {
 
     const url = await downscaleImage(new Blob(['x']), 256);
     expect(url).toBe('data:image/jpeg;base64,tiny');
-    // 1000×500 fits a 256 square as 256×128 — the canvas IS that size
     expect(canvas?.width).toBe(256);
     expect(canvas?.height).toBe(128);
     expect(drawImage).toHaveBeenCalledTimes(1);
-    expect(close).toHaveBeenCalled(); // bitmap released on success
+    expect(close).toHaveBeenCalled();
   });
 
   it('releases the bitmap when the canvas is unavailable', async () => {

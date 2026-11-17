@@ -7,30 +7,15 @@ using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Exploring;
 
-/// <summary>
-/// The operator's explore run (#441 L3): a browser on a fleet agent, opened
-/// at an address the operator typed, driven through the lab's live view
-/// with the navigation vocabulary nobody else may use, and recorded from
-/// the first byte. There is no adapter to speak of - the "login" is the
-/// operator looking around a site that has no adapter yet - which is why
-/// it lives here as a provider the control plane and the agent both know,
-/// hidden from every consumer catalogue and refused on every door but the
-/// lab's.
-///
-/// The address rule is the whole safety story of an agent that browses
-/// where it is told: public hosts only. The fleet sits on the household's
-/// own network, and a run pointed at <c>10.0.0.1</c> or <c>localhost</c>
-/// would be the operator's browser inside the NAS. Refused by the manifest
-/// field's pattern on the way in, by the adapter at run time, and by the
-/// live input's own check for every navigation that follows.
-/// </summary>
+// the operator's explore run (#441 L3): a browser on a fleet agent at an address the operator typed, driven through the
+// lab's live view; hidden from consumer catalogues, refused on every door but the lab's. Public hosts only: the fleet is
+// on the household's network, so 10.0.0.1 or localhost would be the operator's browser inside the NAS
 public static class ExploreProvider
 {
     public const string Id = "explore";
 
     public const string UrlField = "url";
 
-    /// <summary>The answer that ends an explore run: the operator is done looking.</summary>
     public const string Done = "done";
 
     /// <summary>How long one live view lasts before the operator has to say "more".</summary>
@@ -38,7 +23,6 @@ public static class ExploreProvider
 
     public const int MaxUrlLength = 2_048;
 
-    /// <summary>The prompt key the live view carries, for the lab to word.</summary>
     public const string PromptKey = "lab.explore.drive";
 
     public static ProviderManifest Manifest { get; } = new()
@@ -81,19 +65,10 @@ public static class ExploreProvider
         Resources = [],
     };
 
-    /// <summary>
-    /// What the control plane registers for this provider: the manifest and
-    /// nothing that runs. Every explore job is leased by a fleet agent, which
-    /// carries the real adapter; a control plane asked to run one inline
-    /// cannot, and says so.
-    /// </summary>
+    // the manifest and nothing that runs: every explore job is leased by a fleet agent carrying the real adapter.
+    // run inline, the control plane says it cannot
     public static IProviderAdapter ManifestOnly { get; } = new ManifestOnlyAdapter();
 
-    /// <summary>
-    /// Whether an address may be opened or navigated to: absolute, http(s),
-    /// no user-info, a public host. Private, loopback, link-local and
-    /// local-only names are refused.
-    /// </summary>
     public static bool IsNavigable(string? raw, out Uri uri)
     {
         uri = null!;

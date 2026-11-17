@@ -43,12 +43,12 @@ describe('lock config + pin (identity-scoped)', () => {
     expect(readLockConfig()).toBeNull();
     localStorage.setItem('munni_lock_demo', 'not json');
     expect(readLockConfig()).toBeNull();
-    localStorage.setItem('munni_lock_demo', JSON.stringify({ enabled: true })); // missing pinHash
+    localStorage.setItem('munni_lock_demo', JSON.stringify({ enabled: true }));
     expect(readLockConfig()).toBeNull();
   });
 
   it('signed out there is no lock config to read or write', () => {
-    writeLockConfig(config()); // must be a no-op
+    writeLockConfig(config());
     expect(localStorage).toHaveLength(0);
     expect(readLockConfig()).toBeNull();
   });
@@ -60,11 +60,11 @@ describe('lock config + pin (identity-scoped)', () => {
     expect(readLockConfig()).toBeNull(); // shared machine: login stays reachable
 
     signIn('offline');
-    expect(readLockConfig()).toBeNull(); // someone else's lock never applies
+    expect(readLockConfig()).toBeNull();
 
     useSession.getState().logout();
     signIn('demo');
-    expect(readLockConfig()?.timeoutSec).toBe(300); // same person: lock re-arms
+    expect(readLockConfig()?.timeoutSec).toBe(300);
   });
 
   it('validPin: 4-8 digits only', () => {
@@ -90,7 +90,7 @@ describe('shouldLock', () => {
     expect(shouldLock(null, 999_999)).toBe(false);
     expect(shouldLock(config({ timeoutSec: 60 }), 59_000)).toBe(false);
     expect(shouldLock(config({ timeoutSec: 60 }), 60_000)).toBe(true);
-    expect(shouldLock(config({ timeoutSec: 0 }), 0)).toBe(true); // immediately
+    expect(shouldLock(config({ timeoutSec: 0 }), 0)).toBe(true);
   });
 });
 
@@ -117,7 +117,6 @@ describe('webauthn wrappers', () => {
     });
     const registration = await registerBiometric();
     expect(registration).toEqual({ kind: 'webauthn', credentialId: 'AQID-g' }); // base64url, unpadded
-    // the config the setup screens store from a registration
     const config = { biometricKind: registration!.kind, credentialId: registration!.credentialId };
     expect(await verifyBiometric(config)).toBe(true);
 
@@ -207,7 +206,7 @@ describe('#315 last-active stamp (store actions)', () => {
       now.mockRestore();
     }
     expect(readLockConfig()?.lastActiveAt).toBe(1_000_000);
-    expect(bootLocked(readLockConfig(), 1_000_000 + 59_000)).toBe(false); // the #315 refresh
+    expect(bootLocked(readLockConfig(), 1_000_000 + 59_000)).toBe(false);
     expect(bootLocked(readLockConfig(), 1_000_000 + 61_000)).toBe(true);
   });
 
@@ -286,12 +285,11 @@ describe('lock watcher', () => {
 
     let visibility = 'hidden';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
-    document.dispatchEvent(new Event('visibilitychange')); // going hidden arms the timer
+    document.dispatchEvent(new Event('visibilitychange'));
     visibility = 'visible';
-    document.dispatchEvent(new Event('visibilitychange')); // returning past the timeout locks
+    document.dispatchEvent(new Event('visibilitychange'));
     expect(useLock.getState().locked).toBe(true);
 
-    // signing out (identity change) frees the shared machine
     useSession.getState().logout();
     expect(useLock.getState().locked).toBe(false);
   });

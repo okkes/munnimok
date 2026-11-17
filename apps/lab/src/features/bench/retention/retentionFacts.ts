@@ -3,7 +3,6 @@ import type { Call } from '../../../app/api';
 import type { AgentView, FetchView, JobList, JobView, OperatorJob, ProviderEntry, RetentionRun, RetentionStep, RetentionStepState } from '../../../types';
 import { TERMINAL } from '../benchFacts';
 
-/** the scenario's steps, in the order the bench takes them */
 export const STEPS = [
   { name: 'sign-in', label: 'Sign in on the agent, recorded' },
   { name: 'fetch', label: 'Fetch once' },
@@ -33,7 +32,6 @@ export interface Verdict {
 /** a party whose login lives in a browser profile on the agent (T4), rather than in the bundle the relay holds */
 export const isPersistent = (party: ProviderEntry | null | undefined): boolean => party?.runtime === 'browser_persistent';
 
-/** whether the agent holds a healthy login for the party */
 export function keptLoginVerdict(agent: AgentView | undefined, provider: string, persistent: boolean): Verdict {
   if (!persistent) return { state: 'skip', detail: 'the party keeps its session in the bundle the relay holds, not on the agent' };
   if (!agent) return { state: 'fail', detail: 'the agent is not listed any more' };
@@ -43,10 +41,8 @@ export function keptLoginVerdict(agent: AgentView | undefined, provider: string,
   return { state: 'pass', detail: `${kept.id} kept, last ok ${kept.lastOkAt ?? 'never'}` };
 }
 
-/** the steps a run that had to sign in again goes through */
 export const LOGIN_STEPS = new Set(['authenticating', 'awaiting_human']);
 
-/** whether the second fetch reused what was kept, read off the run's steps */
 export function noLoginVerdict(job: OperatorJob | null): Verdict {
   if (!job) return { state: 'fail', detail: 'the second fetch left no run in the history' };
   if (job.state !== 'succeeded') {
@@ -59,7 +55,6 @@ export function noLoginVerdict(job: OperatorJob | null): Verdict {
   return { state: 'pass', detail: `steps: ${done.join(', ') || 'none recorded'}` };
 }
 
-/** whether a released slot has wiped what it kept */
 export function wipeVerdict(agent: AgentView | undefined): Verdict {
   if (!agent) return { state: 'fail', detail: 'the agent is not listed any more' };
   if (agent.resetting) return { state: 'running', detail: 'the wipe is asked for; the agent confirms it on its next heartbeat' };
@@ -68,10 +63,8 @@ export function wipeVerdict(agent: AgentView | undefined): Verdict {
   return { state: 'pass', detail: 'the slot is free and keeps nothing' };
 }
 
-/** how the run ended, from its steps */
 export const runVerdict = (steps: readonly RetentionStep[]): 'passed' | 'failed' => (steps.some((s) => s.state === 'fail') ? 'failed' : 'passed');
 
-/** the steps in a few words: passed, failed, skipped */
 export function runSummary(run: Pick<RetentionRun, 'steps'>): string {
   const count = (state: RetentionStepState) => run.steps.filter((s) => s.state === state).length;
   const parts = [
@@ -92,7 +85,6 @@ export interface FetchOutcome {
   detail: string;
 }
 
-/** one recorded fetch through the bench, followed as a job when the run outruns the window */
 export async function fetchOnce(call: Call, provider: string, sessionId: string, resource: string): Promise<FetchOutcome> {
   const res = await call(`/lab/bench/sessions/${encodeURIComponent(sessionId)}/fetch`, { method: 'POST', body: JSON.stringify({ resource, record: true }) }).catch(() => null);
   if (!res?.ok) return { ok: false, detail: await reasonOf(res) };
@@ -109,13 +101,11 @@ export async function fetchOnce(call: Call, provider: string, sessionId: string,
   }
 }
 
-/** the newest fetch the history holds for the session */
 export async function latestFetchJob(call: Call, sessionId: string): Promise<OperatorJob | null> {
   const list = await getJson<JobList>(call, `/lab/jobs?session=${encodeURIComponent(sessionId)}&kind=fetch&limit=1`);
   return list && list !== 'unreachable' ? (list.jobs[0] ?? null) : null;
 }
 
-/** the agent as the fleet lists it now */
 export async function readAgent(call: Call, agentId: string): Promise<AgentView | undefined> {
   const list = await getJson<{ agents: AgentView[] }>(call, '/lab/agents');
   return list && list !== 'unreachable' ? list.agents.find((a) => a.id === agentId) : undefined;

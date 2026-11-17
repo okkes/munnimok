@@ -22,6 +22,7 @@ import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { RolePicker } from './InviteFriendSheet';
 import { MemberSheet } from './MemberSheet';
+import { settleAnswered } from '@/application/deliveredResolve';
 
 export type { SpaceRole } from '@/sync/spaceAccess';
 
@@ -52,7 +53,6 @@ interface OutgoingInviteDto {
   toName: string | null;
   role: string;
 }
-/** #291: a sent friend request as GET /friends reports it */
 interface SentFriendRequestDto {
   id: string;
   toUserId: string;
@@ -68,13 +68,8 @@ interface FriendsPayload {
 const short = (id: string) => `${id.slice(0, 8)}…`;
 const roleKey = (role: string): TranslationKey => `space.role.${role}` as TranslationKey;
 
-/**
- * The signed-in user's role in a space. #505: the role the server last
- * named (sync/spaceAccess — known offline too); this screen's members call
- * refreshes it. Non-synced identities (demo, offline) own everything they
- * see, and a space the server never named reads as owner — the server's
- * enforcement stays the real gate.
- */
+// #505: the role the server last named (sync/spaceAccess, known offline too); non-synced identities and
+// spaces the server never named read as owner: the server's enforcement stays the real gate
 export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceRole {
   const { store, repo, access } = useData();
   const known = useSpaceRole(spaceId);
@@ -87,8 +82,7 @@ export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceR
       ]);
       if (!membersRes?.ok || !meRes?.ok) return;
       const members = (await membersRes.json()) as MemberDto[];
-      // #277 r2: every members fetch is a chance to heal a joiner's (or
-      // pre-flip owner's) row that never learned it is shared
+      // every members fetch heals a joiner's (or pre-flip owner's) row that never learned it is shared (#277)
       void healSharedKind(store, repo, spaceId, members);
       const me = ((await meRes.json()) as { userId: string }).userId;
       const mine = members.find((m) => m.userId === me)?.role;
@@ -98,12 +92,7 @@ export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceR
   return known ?? 'owner';
 }
 
-/**
- * Self-removal from a shared space: the server drops the membership
- * FIRST (that instantly revokes read access to every financial account
- * attached through the space — feed access derives from membership),
- * then the local copy is purged and the active space moves on.
- */
+// the server drops the membership FIRST: that instantly revokes read access to the space's financial accounts
 export async function leaveSpace(
   ctx: {
     store: { allRows: (entity: 'space') => Promise<{ deleted: number; id: string }[]> };
@@ -126,7 +115,6 @@ export async function leaveSpace(
   return true;
 }
 
-/** Pending space invites, shown at the top of the Spaces tab. */
 export function SpaceInvitesBanner() {
   const { t } = useLang();
   const { store, repo, engine } = useData();
@@ -134,7 +122,11 @@ export function SpaceInvitesBanner() {
 
   const reload = useCallback(async () => {
     const res = await apiFetch('/me/invites').catch(() => null);
-    if (res?.ok) setInvites((await res.json()) as InviteDto[]);
+    if (!res?.ok) return;
+    const waiting = (await res.json()) as InviteDto[];
+    setInvites(waiting);
+    // #614: with the last invitation answered the phone lets go of its notice
+    void settleAnswered({ spaceInvites: waiting.length }).catch(() => undefined);
   }, []);
   useEffect(() => void reload(), [reload]);
   useServerRefresh(reload);
@@ -143,9 +135,7 @@ export function SpaceInvitesBanner() {
     await apiFetch(`/spaces/invites/${invite.id}/${action}`, { method: 'POST' });
     await reload();
     if (action === 'accept') {
-      // pull the new space now; #277 r2 (user): the JOINER's copy must
-      // carry the shared fact too (the inviter is an owner — good enough
-      // for a missing creator line)
+      // the joiner's copy must carry the shared fact too; the inviter counts as owner for a missing creator line (#277)
       await stampJoinedSharedSpace(
         store,
         repo,
@@ -188,12 +178,8 @@ export function SpaceInvitesBanner() {
   );
 }
 
-/**
- * #292: the signed-in user's row reads "Me" and wears a check mark that
- * ONLY the authenticated self row gets — a member merely NAMED "Me"
- * shows no mark, so nobody can pose as you. #304 (user): the mark sits
- * AFTER the name and the quiet real-name suffix is gone.
- */
+// #292: the check mark ONLY the authenticated self row gets: a member merely NAMED "Me" shows none,
+// so nobody can pose as you
 function MemberRow({ member, isSelf, onOpen }: Readonly<{ member: MemberDto; isSelf: boolean; onOpen: (userId: string) => void }>) {
   const { t } = useLang();
   return (
@@ -224,19 +210,12 @@ function MemberRow({ member, isSelf, onOpen }: Readonly<{ member: MemberDto; isS
 interface SpaceMembersSectionProps {
   spaceId: string;
   spaceName: string;
-  /** reports the current user's role once members are loaded */
   onMyRole?: (role: SpaceRole) => void;
-  /** called after this user left the space (sheet should close) */
   onLeft?: () => void;
 }
 
-/** Members, roles + invite-a-friend for the space settings sheet (user identities). */
-/**
- * #391 (user): the invitation switch lives HERE, with the members — not
- * in the space settings. Closed = nobody can be invited (the invite door
- * below hides). Opening invitations on a device with an app lock asks
- * for the PIN first (#302); closing needs none.
- */
+// #391: the invitation switch lives with the members; closed = nobody can be invited.
+// Opening it on a device with an app lock asks the PIN first (#302)
 function InviteLockRow({ locked, onWrite }: Readonly<{ locked: boolean; onWrite: (next: 0 | 1) => void }>) {
   const { t } = useLang();
   const [challengeOpen, setChallengeOpen] = useState(false);
@@ -283,30 +262,21 @@ function InviteLockRow({ locked, onWrite }: Readonly<{ locked: boolean; onWrite:
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId, access } = useData();
-  // the private lock (arc 4): a locked space renders the invite tools as
-  // an explainer — unlocking is an explicit owner act in space settings
   const spaceRow = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const locked = spaceRow?.inviteLock === 1;
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [outgoing, setOutgoing] = useState<OutgoingInviteDto[]>([]);
-  // #291: friend requests sent from HERE, still waiting for their yes
   const [pendingFriends, setPendingFriends] = useState<SentFriendRequestDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
-  // #304 (user): leaving is as destructive as being removed — the same
-  // danger sheet (with the standard cooldown) asks first
+  // #304: leaving is as destructive as being removed: the same danger sheet with cooldown
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
-  // #304: ONE door — the sheet holds the friends list AND the
-  // friend-request path (#291) together
   const [inviteOpen, setInviteOpen] = useState(false);
-  // #172: the tapped member's sheet — held by ID so reloads keep it fresh
-  // and a kicked member's sheet closes on its own
+  // held by ID so reloads keep it fresh and a kicked member's sheet closes on its own (#172)
   const [memberSheetId, setMemberSheetId] = useState<string | null>(null);
-  // removing someone is disruptive (they lose the shared accounts too) —
-  // the door only opens a confirm sheet, the sheet does the removal
+  // removing is disruptive (they lose the shared accounts too): the door only opens a confirm sheet
   const [kickTarget, setKickTarget] = useState<MemberDto | null>(null);
-  // #303: withdrawing a pending invite asks first, like every removal
   const [revokeTarget, setRevokeTarget] = useState<OutgoingInviteDto | null>(null);
 
   const reload = useCallback(async () => {
@@ -324,18 +294,15 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     if (friendsRes?.ok) {
       const payload = (await friendsRes.json()) as FriendsPayload;
       setFriends(payload.friends);
-      // #291: requests sent from this surface pend HERE too — the carried
-      // space name is the only key the payload offers
+      // the carried space name is the only key the payload offers (#291)
       setPendingFriends((payload.sentPending ?? []).filter((r) => r.spaceName === spaceName));
     }
     if (meRes?.ok) setMe(((await meRes.json()) as { userId: string }).userId);
     if (outgoingRes?.ok) setOutgoing((await outgoingRes.json()) as OutgoingInviteDto[]);
-    // #277 r2 (after the state lands): 2+ members = shared, whatever the
-    // local row still says — both sides may run this heal (idempotent LWW)
+    // 2+ members = shared, whatever the local row says; both sides may run this heal (idempotent LWW) (#277)
     if (list) await healSharedKind(store, repo, spaceId, list);
   }, [spaceId, spaceName, store, repo]);
   useEffect(() => void reload(), [reload]);
-  // an accepted invite shows up while you're looking at the member list
   useServerRefresh(reload);
 
   const myRole = members?.find((m) => m.userId === me)?.role;
@@ -350,20 +317,14 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const memberIds = new Set(members.map((m) => m.userId));
   const pendingIds = new Set(outgoing.map((i) => i.toUserId));
   const invitable = friends.filter((f) => !memberIds.has(f.userId) && !pendingIds.has(f.userId));
-  // #291 r2: the space-invite row is the richer fact — anyone already
-  // carrying a pending SPACE invite (or already a member) must not show
-  // a second time as a friend-request row on this surface
+  // someone with a pending SPACE invite or already a member must not also show as a friend-request row (#291)
   const friendPendingRows = pendingFriends.filter((r) => !pendingIds.has(r.toUserId) && !memberIds.has(r.toUserId));
 
-  // inviting someone makes this a shared space: category adoption + the
-  // kind flip live in ensureSpaceShared now (#277 r2 — the joiner-side
-  // stamp and the members-fetch heal share the same machinery)
   const ensureShared = async () => {
     if (await ensureSpaceShared(store, repo, spaceId)) {
       void logActivity(store, repo, spaceId, 'spaceShare', spaceName);
     }
   };
-  // #171: the role travels with the invite — picked in the sheet up front
   const invite = async (friend: FriendDto, role: SpaceRole) => {
     const res = await apiFetch(`/spaces/${spaceId}/invites`, {
       method: 'POST',
@@ -382,17 +343,14 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     setRevokeTarget(null);
     await reload();
   };
-  // #169: one shot — the friend request carries this space and the
-  // picked role, so accepting it also joins them here. The field state
-  // lives in the sheet (#304); this does the sending + bookkeeping.
+  // #169: the friend request carries this space and the role, so accepting it also joins them here
   const sendFriendRequestHere = async (toUserId: string, role: SpaceRole): Promise<FriendRequestOutcome> => {
     const outcome = await postFriendRequest({ toUserId, spaceId, role, spaceName });
     if (outcome === 'sent') {
       void logActivity(store, repo, spaceId, 'memberInvite', short(toUserId));
       await ensureShared();
     }
-    // if they had already requested me, the server auto-accepts (the
-    // space intent becomes a regular invite) and the reload shows it
+    // if they had already requested me, the server auto-accepts (the space intent becomes a regular invite)
     await reload();
     return outcome;
   };
@@ -417,9 +375,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     <div className="mt-2" data-testid="space-members">
       <div className="m-cap mb-1 px-1">{t('space.members')}</div>
       <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {/* #172: the row opens the member's sheet — role control and
-            removal live there now (read-only info for non-owners).
-            #292: self is matched on the authenticated id, never the name */}
+        {/* #292: self is matched on the authenticated id, never the name */}
         {members.map((m) => (
           <MemberRow key={m.userId} member={m} isSelf={m.userId === me} onOpen={setMemberSheetId} />
         ))}
@@ -435,12 +391,10 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
                   <span className="block truncate text-[14px] text-ink">
                     {invitation.toName ?? short(invitation.toUserId)}
                   </span>
-                  {/* #303: the row says which role the invite carries */}
                   <span className="block truncate text-[12px] text-ink-4">
                     {t('space.invitePending')} · {t(roleKey(invitation.role))}
                   </span>
                 </span>
-                {/* #303: the X only opens a confirm — the sheet cancels */}
                 <button
                   aria-label={t('friends.cancelInvite')}
                   data-testid={`space-invite-revoke-${invitation.id}`}
@@ -451,8 +405,6 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
                 </button>
               </div>
             ))}
-            {/* #291: friend requests sent from here wait HERE too — the
-                person becomes a member the moment they accept */}
             {friendPendingRows.map((request) => (
               <div
                 key={request.id}
@@ -471,7 +423,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </div>
         </>
       )}
-      {/* #391 (user): the invitation switch sits with the members — owner only, applies immediately (LWW) */}
+      {/* #391: owner only; applies immediately (LWW) */}
       {isOwner && (
         <InviteLockRow
           locked={locked}
@@ -489,8 +441,6 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
               {t('space.spaceInviteSent', { name: inviteSentTo })}
             </p>
           )}
-          {/* #304 (user): ONE action — the sheet holds the friends list
-              AND the friend-request path together */}
           <Button variant="outline" className="mt-3 w-full" data-testid="space-members-add" onClick={() => setInviteOpen(true)}>
             {t('space.inviteSomeone')}
           </Button>
@@ -498,13 +448,11 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
       )}
       {members.length > 1 && (
         <div className="mt-4">
-          {/* #304 (user): same confirm shape as removing a member */}
           <Button variant="outline" className="w-full" data-testid="space-leave" onClick={() => setLeaveOpen(true)}>
             {t('space.leave')}
           </Button>
         </div>
       )}
-      {/* #304: the combined invite sheet (friends list + friend request) */}
       <SpaceInviteSheet
         open={inviteOpen}
         onOpenChange={setInviteOpen}
@@ -516,7 +464,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
         }}
         onSendRequest={sendFriendRequestHere}
       />
-      {/* #172: the tapped member — resolved live so a kick closes it */}
+      {/* resolved live so a kick closes it (#172) */}
       <MemberSheet
         member={members.find((m) => m.userId === memberSheetId) ?? null}
         meIsOwner={isOwner}
@@ -525,9 +473,6 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
         onChangeRole={(userId, role) => void changeRole(userId, role)}
         onKick={(m) => setKickTarget(m)}
       />
-      {/* removal double-check (user request): the door never removes
-          directly. #304: the aligned danger sheet — cooldown included,
-          same shape as every other destructive confirm */}
       <DangerConfirmSheet
         open={kickTarget !== null}
         onOpenChange={(next) => {
@@ -540,8 +485,6 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
         }}
         testId="space-kick"
       />
-      {/* #304 (user): leaving asks with the SAME sheet + cooldown as
-          removing someone — it is the same loss, seen from inside */}
       <DangerConfirmSheet
         open={leaveOpen}
         onOpenChange={setLeaveOpen}
@@ -551,8 +494,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
         onConfirm={() => void leave()}
         testId="space-leave"
       />
-      {/* #303: cancelling a pending invite asks first — no cooldown, a
-          withdrawn invite is re-sendable in two taps (the tx ruling) */}
+      {/* no cooldown: a withdrawn invite is re-sendable in two taps (#303) */}
       <DangerConfirmSheet
         open={revokeTarget !== null}
         onOpenChange={(next) => {
@@ -570,12 +512,6 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   );
 }
 
-/**
- * #304 (user): ONE door for growing the member list — first the friends
- * not yet in the space (pick + role, the #170/#171 flow re-housed), and
- * right below it the friend-request path (#291) for someone not
- * befriended yet: id + role, pending feedback in place.
- */
 function SpaceInviteSheet({
   open,
   onOpenChange,
@@ -595,15 +531,11 @@ function SpaceInviteSheet({
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [role, setRole] = useState<SpaceRole>('contributor');
-  // the friend-request half — field state lives with its fields
   const [friendId, setFriendId] = useState('');
   const [requestRole, setRequestRole] = useState<SpaceRole>('contributor');
-  // #195: Send stays enabled — an empty click says why instead
   const [addAttempted, setAddAttempted] = useState(false);
-  // #291: the id pointed at nobody — a field-level error, not a log line
   const [friendNotFound, setFriendNotFound] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
-  // every open starts fresh: empty search, nothing expanded, default roles
   useEffect(() => {
     if (open) {
       setSearch('');
@@ -635,8 +567,7 @@ function SpaceInviteSheet({
     }
     setAddAttempted(false);
     const outcome = await onSendRequest(toUserId, requestRole);
-    // #291: "not found" says so AT the field and keeps the typed id for
-    // fixing; "sent" is only claimed when it really was
+    // "not found" says so AT the field and keeps the typed id; "sent" is claimed only when true (#291)
     setFriendNotFound(outcome === 'notFound');
     setRequestSent(outcome === 'sent');
     if (outcome === 'sent') {
@@ -649,7 +580,6 @@ function SpaceInviteSheet({
     // dirty: a typed-but-unsent id survives an accidental swipe-down
     <Sheet open={open} onOpenChange={onOpenChange} title={t('space.inviteSomeone')} size="tall" dirty={friendId.trim() !== ''}>
       <div className="flex flex-col gap-3 pt-1" data-testid="space-invite-sheet">
-        {/* (a) friends not yet members: search, expand, role, send */}
         <div className="m-cap px-1">{t('space.inviteFromFriends')}</div>
         <SearchField testId="space-invite-search" value={search} onChange={setSearch} placeholder={t('invite.searchPlaceholder')} height="h-11" textSize="text-[14px]" />
         <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -687,12 +617,10 @@ function SpaceInviteSheet({
             </p>
           )}
         </div>
-        {/* (b) can't find them? the friend-request door lives in the SAME
-            sheet (user decision) — global friends stay the invite guard */}
+        {/* the friend-request door lives in the SAME sheet; global friends stay the invite guard */}
         <div className="m-cap mt-2 px-1">{t('friends.addById')}</div>
         <p className="px-1 text-[12px] text-ink-3">{t('space.inviteRequestLead')}</p>
         <FormBlockerNote show={addAttempted && !friendId.trim()} text={t('form.needId')} testId="space-addfriend-blocker" className="px-1" />
-        {/* #291: the not-found answer lands AT the field, #195 style */}
         <FormBlockerNote show={friendNotFound} text={t('friends.userNotFound')} testId="space-addfriend-notfound" className="px-1" />
         <div className="flex gap-2">
           <input
@@ -716,7 +644,6 @@ function SpaceInviteSheet({
             {t('friends.sendRequest')}
           </Button>
         </div>
-        {/* #169: their role here, decided before they even accept */}
         <RolePicker value={requestRole} onChange={setRequestRole} testIdPrefix="space-addfriend-role" />
         <p className="px-1 text-[12px] text-ink-3" data-testid="space-addfriend-autonote">
           {t('invite.autoAddNote', { space: spaceName })}

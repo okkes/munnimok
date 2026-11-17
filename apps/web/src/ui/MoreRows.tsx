@@ -3,14 +3,9 @@ import type { RefObject } from 'react';
 import { useLang } from '@/i18n';
 import { Icon } from './Icon';
 
-/** how many rows a long list mounts per step (#492) */
 export const PAGE_ROWS = 120;
 
-/**
- * The end of a long list while older rows wait (#492): the next page
- * arrives as the end nears the viewport of `rootRef`, and the button
- * serves keyboards and browsers without IntersectionObserver.
- */
+/** #492: the button serves keyboards and browsers without IntersectionObserver */
 export function MoreRows({
   rootRef,
   remaining,

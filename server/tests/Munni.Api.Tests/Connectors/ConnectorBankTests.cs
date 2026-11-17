@@ -9,13 +9,8 @@ using Munni.Api.Accounts;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// M4's proof (#311 r4, the fork open banking makes): a statement import
-/// that owns an IBAN's canonical account row makes the connector bank bind
-/// its own row for that account until the explicit merge. Its own fixture:
-/// the relay suite syncs the same mock ledger, and a seeded import row must
-/// not collide with those syncs.
-/// </summary>
+/// <summary>M4 (#311 r4): a statement import owning an IBAN's canonical account row makes the bank bind its own row
+/// until the explicit merge. Own fixture: a seeded import row must not collide with the relay suite's syncs.</summary>
 public class ConnectorBankTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string MockBank = "mock-bank-simple";
@@ -63,7 +58,6 @@ public class ConnectorBankTests(ConnectorApiFactory factory) : IClassFixture<Con
         Assert.Equal(ImportIds.BankAccountId(CurrentIban), reference.AccountEntityId);
         Assert.Equal(feedId, reference.FeedSpaceId);
 
-        // the import's row stands untouched; the bank's own row carries the party
         var importRow = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == feedId && r.Entity == "account" && r.EntityId == canonical));
         Assert.Contains("camt053", importRow.DataJson);
         var bankRow = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == feedId && r.Entity == "account" && r.EntityId == ImportIds.BankAccountId(CurrentIban)));
@@ -74,14 +68,12 @@ public class ConnectorBankTests(ConnectorApiFactory factory) : IClassFixture<Con
         // #445: the connection that fetched the row, for the app to read against the ones that still exist
         Assert.Equal("conn-bank-fork", data.GetProperty("connectionId").GetString());
 
-        // the transactions behind it name the bank's row, never the import's
         var transactions = factory.Read(db => db.EntityRows.Where(r => r.SpaceId == feedId && r.Entity == "transaction").ToList());
         Assert.NotEmpty(transactions);
         Assert.All(transactions, tx =>
             Assert.Equal(ImportIds.BankAccountId(CurrentIban), JsonDocument.Parse(tx.DataJson).RootElement.GetProperty("accountId").GetString()));
     }
 
-    /// <summary>A sync that settled inline, or became a job to follow and collect — the sum either way.</summary>
     private static async Task<JsonObject> SyncToTheEndAsync(HttpClient client, string bundle)
     {
         using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", new { connectionId = "conn-bank-fork", bundle });

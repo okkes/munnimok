@@ -15,13 +15,11 @@ type Page = { resource: string; records: Record<string, unknown>[]; complete: bo
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** what the Bundle fact says — a sign-in still running has none yet (S3776) */
 function bundleFact(hasBundle: boolean, signingIn: boolean): string {
   if (signingIn) return 'not yet — the sign-in is still running';
   return hasBundle ? 'kept by the relay' : 'none — sign in again';
 }
 
-/** one lab session in full: the facts, a fetch of any resource with its params and the records that came back, the canary flip, the disconnect */
 export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const query = useRouteQuery();
   const [session, setSession] = useState<LabSessionRow | null | 'loading'>('loading');
@@ -36,7 +34,6 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   const [canaryResource, setCanaryResource] = useState('');
   const [every, setEvery] = useState('60');
   const [record, setRecord] = useState(false);
-  // the sign-in itself while the session is still signing in — where a run left behind is picked up again (#576)
   const [run, setRun] = useState<SessionView | null>(null);
 
   const load = useCallback(async () => {
@@ -80,7 +77,6 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   const landed = (view: { resource?: string | null; data?: Record<string, unknown>[] | null; complete?: boolean; cursor?: string | null; notes?: string[] }, via: string) =>
     setPage({ resource: view.resource ?? chosen, records: view.data ?? [], complete: view.complete !== false, cursor: view.cursor, notes: view.notes ?? [], via });
 
-  /** a fetch that became a job: followed here until it ends, its question answered from the box below */
   const follow = async (provider: string, jobId: string) => {
     setRunning(jobId);
     for (;;) {
@@ -275,7 +271,6 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   );
 }
 
-/** the job a fetch became, followed until it ends — the party's question answered in place */
 function FetchJob({
   job,
   answer,
@@ -305,13 +300,11 @@ function FetchJob({
   );
 }
 
-/** a record's own id keys its row where the party sent one; else its place in the page */
 function rowKey(record: Record<string, unknown>, index: number): string {
   const id = record.id ?? record.externalId;
   return typeof id === 'string' || typeof id === 'number' ? String(id) : String(index);
 }
 
-/** the records a fetch brought back, as the party sent them */
 function FetchedRecords({ page }: Readonly<{ page: Page }>) {
   const columns = columnsOf(page.records);
   return (
@@ -347,7 +340,6 @@ function FetchedRecords({ page }: Readonly<{ page: Page }>) {
   );
 }
 
-/** an explore run's deliverable (#441 L3): its recording, found in the job history by the session */
 function ExploreRecording({ call, sessionId, settled }: Readonly<{ call: Call; sessionId: string; settled: boolean }>) {
   const [job, setJob] = useState<OperatorJob | null | 'loading'>('loading');
   useEffect(() => {
@@ -385,7 +377,6 @@ function ExploreRecording({ call, sessionId, settled }: Readonly<{ call: Call; s
   );
 }
 
-/** one fetch param as the operator fills it: a date box, a pick list for an enum, a multi pick for a multi one, else text */
 function ParamInput({ spec, value, onChange }: Readonly<{ spec: ParamSpec; value: string | string[] | undefined; onChange: (v: string | string[]) => void }>) {
   const id = `bench-param-${spec.key}`;
   if (spec.values && spec.values.length > 0 && spec.multi) {

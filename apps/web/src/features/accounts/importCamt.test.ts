@@ -65,8 +65,7 @@ describe('importCamtStatements', () => {
 
     const txs = await db.transactions.toArray();
     expect(txs).toHaveLength(3);
-    // keyword predictions are guesses: applied, but flagged for review —
-    // only merchant history the user confirmed twice skips the queue
+    // keyword predictions are guesses: applied, but flagged for review
     const grocery = txs.find((t) => t.importRef === 'REF-001')!;
     expect(grocery).toMatchObject({ catId: 'groceries', needsReview: 1 });
     const salary = txs.find((t) => t.importRef === 'REF-002')!;
@@ -76,7 +75,6 @@ describe('importCamtStatements', () => {
   });
 
   it('stamps how far the imported data reaches — and never moves it backwards', async () => {
-    // coverage = newest entry date (balanceAsOf wins only when newer)
     expect(statementCoverageEnd(statement())).toBe('2026-07-05');
     expect(statementCoverageEnd({ entries: [], balanceAsOf: '2026-07-01' })).toBe('2026-07-01');
     expect(statementCoverageEnd({ entries: [] })).toBeNull();
@@ -86,7 +84,6 @@ describe('importCamtStatements', () => {
     const id = first.accounts[0].accountId;
     expect((await db.accounts.get(id))?.dataThroughDate).toBe('2026-07-05');
 
-    // re-importing an OLDER export must not shrink the coverage
     await importCamtStatements(repo, store, 's1', [
       statement({ entries: [statement().entries[2]], closingBalanceCents: null }),
     ]);
@@ -104,8 +101,7 @@ describe('importCamtStatements', () => {
     expect(firstBatch).toBeTruthy();
     expect(first.every((t) => t.importBatchId === firstBatch)).toBe(true);
 
-    // overlapping re-import: dedupe means the original batch still owns
-    // the rows — rolling back the SECOND upload must remove nothing
+    // dedupe: the original batch still owns the rows, so rolling back the second upload removes nothing
     await importCamtStatements(repo, store, 's1', [statement()]);
     const after = await db.transactions.toArray();
     expect(after).toHaveLength(3);
@@ -114,7 +110,6 @@ describe('importCamtStatements', () => {
 
   it('twice-confirmed merchant history overrides keywords — and still waits in the review (user 2026-10-09)', async () => {
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-    // the user categorized this merchant twice by hand (reviewed rows)
     for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
       await repo.upsert('transaction', 's1', id, {
         accountId: 'acct-x',
@@ -127,17 +122,13 @@ describe('importCamtStatements', () => {
       });
     }
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
-    // REF-001 is an Albert Heijn debit: history (sport) beats the
-    // groceries keyword — prefilled, and the row waits in the review like
-    // every other (two confirmations used to skip it)
+    // history (sport) beats the groceries keyword; the row still waits in the review
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'REF-001')!;
     expect(tx).toMatchObject({ catId: 'sport', needsReview: 1 });
   });
 
   it('#546: a pot-family prediction imports with its story and no default behind it — the review asks for the account', async () => {
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-    // the user filed this merchant as "Set aside" twice — history now
-    // predicts a movement category for its next arrival
     for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
       await repo.upsert('transaction', 's1', id, {
         accountId: 'acct-x',
@@ -174,8 +165,6 @@ describe('importCamtStatements', () => {
 
   const teachTransfer = async () => {
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-    // the user filed PayPal Europe as Transfer Out twice — history now
-    // predicts the transfer family for its next arrival
     for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
       await repo.upsert('transaction', 's1', id, {
         accountId: 'acct-x', date, amountCents: -799, currency: 'EUR',
@@ -198,7 +187,6 @@ describe('importCamtStatements', () => {
     await repo.upsert('account', 's1', 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
     await importCamtStatements(repo, new DexieBackend(db), 's1', [paypalStatement()]);
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'PP-1')!;
-    // the clue-matcher found the PayPal account — linked, and waiting in the review like every import (2026-10-09)
     expect(tx).toMatchObject({ catId: 'transferOut', linkedAccountId: 'pp', needsReview: 1 });
     // bank-fed counter: nothing minted, the real PayPal-side row pairs later
     expect(tx.transferPeerId).toBeUndefined();
@@ -226,7 +214,7 @@ describe('importCamtStatements', () => {
     const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     expect(result.accounts[0]).toMatchObject({ accountId: 'acct-existing', isNew: false });
     expect((await db.accounts.get('acct-existing'))!.balanceCents).toBe(123456);
-    expect((await db.accounts.count())).toBe(1); // no duplicate account
+    expect((await db.accounts.count())).toBe(1);
   });
 
   it('re-import skips every already-imported transaction', async () => {
@@ -258,7 +246,6 @@ describe('importCamtStatements', () => {
     ]);
     expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 5000, balanceAsOf: '2026-07-05' });
 
-    // a newer one wins
     await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 7777, balanceAsOf: '2026-07-06', entries: [] }),
     ]);
@@ -295,34 +282,28 @@ describe('importCamtStatements', () => {
 
     const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(result.imported).toBe(3);
-    // #204: the account is global and belongs to no space yet
     expect(result.accounts[0].attached).toBe(false);
     const feedId = registered[0];
     expect(feedId).toBe(feedSpaceId('NL69INGB0123456789'));
 
-    // raw halves live in the feed space, carrying no opinion
     const raw = await db.transactions.where('spaceId').equals(feedId).toArray();
     expect(raw).toHaveLength(3);
     expect(raw.every((tx) => tx.catId === undefined && tx.needsReview === undefined)).toBe(true);
     expect(await db.transactions.where('spaceId').equals('s1').count()).toBe(0);
 
-    // the space holds the predicted overlay, ready for the day it
-    // attaches — but NO attachment mirror and no server attach (#204)
+    // the space holds the predicted overlay but no attachment mirror and no server attach (#204)
     const metas = await db.txMeta.where('spaceId').equals('s1').toArray();
     expect(metas).toHaveLength(3);
-    expect(metas.some((m) => m.catId !== undefined)).toBe(true); // salary/groceries predicted
+    expect(metas.some((m) => m.catId !== undefined)).toBe(true);
     expect(await db.accountLinks.where('spaceId').equals('s1').count()).toBe(0);
     expect(attached).toHaveLength(0);
 
-    // the account row sits in the feed with the dated balance
     const account = (await db.accounts.toArray())[0];
     expect(account.spaceId).toBe(feedId);
     expect(account.balanceCents).toBe(123456);
 
-    // …and the space sees NOTHING until the user attaches explicitly
     expect(await visibleTransactions(new DexieBackend(db), 's1')).toHaveLength(0);
 
-    // re-import: everything skips, nothing duplicates, still unattached
     const again = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(again).toMatchObject({ imported: 0, skipped: 3 });
     expect(await db.transactions.count()).toBe(3);
@@ -342,23 +323,18 @@ describe('importCamtStatements', () => {
       name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1, historyStartDate: '2026-07-01',
     });
 
-    // first import: global only, nothing attached
     const first = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(attachedFrom).toHaveLength(0);
     const feedId = feedSpaceId('NL69INGB0123456789');
 
-    // the user attaches explicitly (the space accounts flow) with a gate
     await repo.upsert('accountLink', 's1', accountLinkId('s1', feedId), {
       feedSpaceId: feedId, accountId: first.accounts[0].accountId, historyFrom: '2026-07-01',
     });
-    // …from then on a re-import refreshes the SAME attachment
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(attachedFrom[0]).toBe('2026-07-01');
-    // the gate holds: June rows stay stored but out of sight
     const visible = await visibleTransactions(new DexieBackend(db), 's1');
     expect(visible.map((tx) => tx.date)).toEqual(['2026-07-05']);
 
-    // a user-customized gate survives the next re-import untouched
     await repo.upsert('accountLink', 's1', accountLinkId('s1', feedId), { historyFrom: '2026-06-01' });
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect((await db.accountLinks.where('spaceId').equals('s1').toArray())[0].historyFrom).toBe('2026-06-01');
@@ -372,7 +348,7 @@ describe('importCamtStatements', () => {
       source: 'manual',
       currency: 'EUR',
       balanceCents: 42,
-      balanceAsOf: '2026-07-08', // user corrected it today
+      balanceAsOf: '2026-07-08',
       iban: 'NL69INGB0123456789',
     });
     await importCamtStatements(repo, new DexieBackend(db), 's1', [
@@ -381,26 +357,21 @@ describe('importCamtStatements', () => {
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 42, balanceAsOf: '2026-07-08' });
   });
 
-  // #311 r4 (user): "the import and link were two separate financial
-  // accounts and not that the import version was instantly consumed"
+  // #311: the import and a bank link stay two separate accounts, the import is never consumed
   it('#311 r4: a bank-owned canonical account forks the import to its OWN row', async () => {
     const gateway = { register: async (id: string) => id, attach: async () => undefined };
     const iban = 'NL69INGB0123456789';
     const feedId = feedSpaceId(iban);
-    // the bank connection already owns the canonical per-IBAN row
     await repo.upsert('account', feedId, canonicalAccountId(iban), {
       name: 'Mijn ING', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 500, iban,
     });
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
 
     const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
-    // the import keeps its own separate account — never consumed
     expect(result.accounts[0].accountId).toBe(importAccountId(iban));
     const importedAccount = await db.accounts.get(importAccountId(iban));
     expect(importedAccount).toMatchObject({ spaceId: feedId, deleted: 0 });
-    // the bank row stands untouched (its balance is the bank's)
     expect((await db.accounts.get(canonicalAccountId(iban)))!).toMatchObject({ source: 'connector', balanceCents: 500 });
-    // every imported row landed on the IMPORT account
     const rows = (await db.transactions.toArray()).filter((tx) => tx.deleted === 0);
     expect(rows.every((tx) => tx.accountId === importAccountId(iban))).toBe(true);
   });

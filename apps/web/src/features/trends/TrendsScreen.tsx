@@ -16,17 +16,11 @@ import { Icon } from '@/ui/Icon';
 import { CashflowTab } from './CashflowTab';
 import { SpendingTab } from './SpendingTab';
 
-/** the tab ids double as testids (`trends-view-<id>`) — the gallery and the tour anchor on them */
+/** the tab ids double as testids (`trends-view-<id>`): the tour and the guide captures anchor on them */
 type View = 'categories' | 'cashflow' | 'networth';
 const PERIOD_COUNT = 12;
 const NONE: never[] = [];
 
-/**
- * Trends (design T1/T2, rebuilt 2026-10-08 on the user's remarks): the
- * Spending tab's cards (all expenses + custom graphs), the Cash flow tab's
- * balance line and range, and the reconstructed net-worth line — pure
- * client-side domain work. The whole trend follows the space's periods.
- */
 export function TrendsScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -96,7 +90,6 @@ export function TrendsScreen() {
           ))}
         </div>
 
-        {/* #540: a tab's cards ease in rather than snap */}
         <div key={view} className="m-fade">
         {view === 'categories' && (
           <SpendingTab

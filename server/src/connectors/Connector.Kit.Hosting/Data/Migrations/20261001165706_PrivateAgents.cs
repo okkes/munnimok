@@ -4,10 +4,8 @@
 
 namespace Connector.Kit.Hosting.Data.Migrations
 {
-    /// <inheritdoc />
     public partial class PrivateAgents : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -60,7 +58,6 @@ namespace Connector.Kit.Hosting.Data.Migrations
                 column: "Subject");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(

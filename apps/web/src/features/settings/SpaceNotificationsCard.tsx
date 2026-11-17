@@ -10,14 +10,8 @@ import { enablePush, pushEnabled, pushSupported, refreshPushRegistration, sendTe
 import type { PushEnableOutcome } from '@/lib/push';
 import { Pill, Row } from '@/ui/primitives';
 
-/**
- * #549: the space's notifications, on the space's own settings (they were one
- * switch in Global settings). ON means this device gets them: the space is
- * not switched off AND the device is registered — the first switch-on here
- * asks the browser (or the phone) for permission. The choice itself belongs
- * to the person and reaches their other devices; signed-in identities only,
- * like before — the demo and offline profiles have no server to push from.
- */
+// #549: ON = the space is not switched off AND this device is registered; the choice is the person's and reaches their
+// other devices. Signed-in identities only: demo and offline profiles have no server to push from.
 export function SpaceNotificationsCard() {
   const { t } = useLang();
   const { store, spaceId } = useData();
@@ -26,7 +20,6 @@ export function SpaceNotificationsCard() {
   const [deviceOn, setDeviceOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<Exclude<PushEnableOutcome, 'registered'> | null>(null);
-  // the test row: what the last attempt said (sent to n devices / no device / failed)
   const [testNote, setTestNote] = useState<string | null>(null);
   const [testBusy, setTestBusy] = useState(false);
   const off = useQuery(store, async () => readSpacesNotifyOff(store), []);

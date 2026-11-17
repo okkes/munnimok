@@ -18,29 +18,19 @@ import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useQuery } from '@/db/useQuery';
 
-/**
- * Detection inbox: every suspected recurring cost with its evidence —
- * the actual charges that formed the pattern — and one decision per
- * card. Accepting opens the prefilled form; the suggestion disappears
- * on save (its merchant key is then owned by a recurring row).
- */
 export function RecurringSuggestionsScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const recs = useRecurrings();
   const accounts = useSpaceAccounts();
   const dismissed = useDismissedKeys();
-  // the FULL stored history (user design 2026-08-01): detection and its
-  // evidence read past the space's start date — a yearly subscription
-  // only shows a pattern in the long tail. Accepting still links only
-  // the VISIBLE rows; the older charges stay stored-but-hidden.
+  // the FULL stored history: a yearly subscription only shows a pattern in the long tail; accepting links only visible rows
   const txs = useSpaceHistoryTransactions();
   const ops = useRecurringOps();
   const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
-  // #257: the accepted suggestion hands its saved id to the occurrence
-  // review — the user picks which charges belong before links are written
+  // #257: the accepted suggestion hands its saved id to the occurrence review, where the user picks which charges belong
   const [matchRecId, setMatchRecId] = useState<string | null>(null);
 
   const today = localToday();
@@ -53,15 +43,13 @@ export function RecurringSuggestionsScreen() {
 
   const suggestions = useMemo(() => {
     if (!txs || !recs || !dismissed) return [];
-    // #192: a loan owns its merchant key exactly like a recurring row —
-    // accepting a pattern as a loan retires the suggestion
+    // #192: a loan owns its merchant key like a recurring row
     const exclude = new Set([
       ...dismissed,
       ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
       ...(accounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
     ]);
-    // #192 r2 (user): known-lender patterns belong to the DEBTS screen —
-    // the recurring inbox keeps only genuine subscriptions
+    // #192: known-lender patterns belong to the debts screen, not this inbox
     return detectRecurring(txs, { excludeKeys: exclude, today }).filter((s) => !looksLikeDebtCreditor(s.name));
   }, [txs, recs, accounts, dismissed, today]);
 
@@ -95,14 +83,12 @@ export function RecurringSuggestionsScreen() {
                 <span className="block text-[11px] text-ink-3">
                   {t(s.every === 'year' ? 'recurring.patternYearly' : 'recurring.patternMonthly')} ·{' '}
                   {t('recurring.confidence', { n: s.confidence })}
-                  {/* #345: which account the rhythm lives on */}
                   {accountName(s.accountId) ? ` · ${accountName(s.accountId)}` : ''}
                 </span>
               </span>
               <span className="font-mono text-[15px] font-semibold text-ink">{money(s.amountCents)}</span>
             </div>
 
-            {/* the evidence: charges that formed the pattern */}
             <div className="mt-3 border-t border-line-2 px-4 py-2" data-testid={`recsuggest-evidence-${s.merchantKey}`}>
               <div className="m-cap pb-1">{t('recurring.matchedCharges')}</div>
               {evidenceFor(s).map((tx) => (

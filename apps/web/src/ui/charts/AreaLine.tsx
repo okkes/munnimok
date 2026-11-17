@@ -1,10 +1,4 @@
-/** A filled line over calendar days (user 2026-10-08: the balance chart)
- *  — the actual series solid with the series colour washed under it,
- *  an expected path dashed after a "Today" marker, small labels where
- *  money came in, and a scrubber: a finger, a mouse or the arrow keys
- *  put a guide, a dot and a tooltip on any day and report it upward so
- *  the surrounding card can mirror the value in text. Below zero the line
- *  turns red (#501) and the wash fills between the line and zero. */
+/** Balance line: record solid, expectation dashed after Today; below zero it turns red (#501) and the wash fills to zero. */
 import { useId, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { monotonePath, monotonePointAt } from './monotone';
@@ -35,7 +29,6 @@ const PAD = 8;
 const TOP = 20;
 const TIP_W = 108;
 const TIP_H = 30;
-/** #501 (user: "tell instantly when the balance is negative") */
 const NEGATIVE = 'var(--m-negative)';
 
 /** ISO dates parse as UTC midnights — day diffs come out exact */
@@ -52,7 +45,6 @@ function edgeAnchor(x: number): 'start' | 'middle' | 'end' {
   return 'middle';
 }
 
-/** #501: the series colour while the chart stays above zero, red while it stays under, else the gradient's hard stop at zero */
 function zeroPaint(split: number, color: string, gradientId: string): string {
   if (split >= 1) return color;
   if (split <= 0) return NEGATIVE;
@@ -62,7 +54,6 @@ function zeroPaint(split: number, color: string, gradientId: string): string {
 /** where the wash ends: the zero line while the chart holds it, else the chart's floor */
 const washFloor = (zeroY: number, height: number): number => (zeroY >= TOP && zeroY <= height ? zeroY : height);
 
-/** the index whose day offset lies nearest to `day` */
 function nearestIndex(offsets: readonly number[], day: number): number {
   let best = 0;
   for (let i = 1; i < offsets.length; i++) {
@@ -71,7 +62,6 @@ function nearestIndex(offsets: readonly number[], day: number): number {
   return best;
 }
 
-/** the guide, the dot and the tooltip of the scrubbed day */
 function ScrubLayer({
   sx,
   sy,
@@ -101,10 +91,9 @@ function ScrubLayer({
   );
 }
 
-/** a word needs this much of the viewBox to itself — two paydays a week apart used to print on top of each other (gallery 2026-10-08) */
+/** a word needs this much of the viewBox: paydays a week apart printed on top of each other */
 const MARKER_LABEL_GAP = 48;
 
-/** the markers whose word is drawn: every dot stays, a word only where the previous one sits far enough left */
 function labelledMarkers(markers: readonly AreaLabel[], points: readonly AreaPoint[], x: (date: string) => number): Set<string> {
   const shown = new Set<string>();
   let lastX = Number.NEGATIVE_INFINITY;
@@ -119,7 +108,6 @@ function labelledMarkers(markers: readonly AreaLabel[], points: readonly AreaPoi
   return shown;
 }
 
-/** the words above the line where money came in */
 function Markers({
   markers,
   points,
@@ -178,16 +166,12 @@ export function AreaLine({
   projection?: readonly AreaPoint[];
   color?: string;
   height?: number;
-  /** sparse x labels by date */
   labels?: readonly AreaLabel[];
-  /** small words above the line at those days (income spikes) */
   markers?: readonly AreaLabel[];
   todayLabel: string;
-  /** the tooltip's suffix on the expected path */
   projectedLabel: string;
   formatValue: (cents: number) => string;
   formatDate: (date: string) => string;
-  /** the scrubbed day, or null when the finger lifts */
   onScrub?: (scrub: AreaScrub | null) => void;
   ariaLabel?: string;
   testId?: string;
@@ -221,10 +205,8 @@ export function AreaLine({
   const recordPts: ChartPt[] = points.map((point) => ({ x: x(point.date), y: y(point.cents) }));
   const projPts: ChartPt[] = future.length > 0 ? [lastActual, ...future].map((point) => ({ x: x(point.date), y: y(point.cents) })) : [];
   const linePath = n > 1 ? monotonePath(recordPts) : '';
-  // #501: one hard stop at zero paints everything under it red — the line,
-  // the wash and the expectation; the wash fills to the zero line when the
-  // chart holds it, else to the floor (an all-red line hanging from an
-  // unseen zero above read as a mistake)
+  // #501: one hard stop at zero paints everything under it red; the wash fills to the zero line when the chart holds it,
+  // else to the floor (an all-red line hanging from an unseen zero read as a mistake)
   const zeroY = y(0);
   const baseY = washFloor(zeroY, height);
   const areaPath = linePath ? `${linePath} L${fix(x(lastActual.date))},${fix(baseY)} L${fix(x(first))},${fix(baseY)} Z` : '';
@@ -234,7 +216,6 @@ export function AreaLine({
   const colorOf = (cents: number) => (cents < 0 ? NEGATIVE : color);
   const crossesZero = min < 0 && max > 0;
   const todayX = x(lastActual.date);
-  /** the drawn curve at a fractional index of `all` — the bead rides the stroke */
   const curveAt = (t: number): ChartPt => (t <= n - 1 ? monotonePointAt(recordPts, t) : monotonePointAt(projPts, t - (n - 1)));
 
   const pick = (index: number | null, follow = false) => {
@@ -300,7 +281,6 @@ export function AreaLine({
           data-testid={suffixed(testId, 'projection')}
         />
       )}
-      {/* the Today marker: the record ends here, the expectation begins */}
       <line x1={todayX} x2={todayX} y1={TOP - 4} y2={height} stroke="var(--m-line)" strokeWidth={1} strokeDasharray="2 3" data-testid={suffixed(testId, 'today')} />
       <text x={todayX} y={10} textAnchor={edgeAnchor(todayX)} fontSize={8.5} fill="var(--m-ink-4)">
         {todayLabel}

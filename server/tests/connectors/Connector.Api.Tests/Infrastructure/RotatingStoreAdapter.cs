@@ -8,16 +8,8 @@ using Connector.Kit.Security;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// A T1 store whose refresh token rotates on every fetch, and whose receipts
-/// resource declares an operator-only parameter.
-///
-/// Both exist because the shipped mock fleet cannot express them: no mock
-/// returns <see cref="FetchResult.RefreshedMaterial"/>, so the re-issued-bundle
-/// half of <c>rotates_on_use</c> would go untested, and no mock declares an
-/// <see cref="ParamSpec.Internal"/> param, so the rule that a caller may not
-/// set one would go untested too.
-/// </summary>
+// T1 store whose refresh token rotates on every fetch and whose receipts declare an operator-only param:
+// no shipped mock returns RefreshedMaterial or declares an internal param
 internal sealed class RotatingStoreAdapter : IProviderAdapter
 {
     public const string ProviderId = "test-rotating-store";
@@ -74,9 +66,7 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Normalizing);
 
-        // Stands in for a provider's own document. Only ever populated when
-        // the caller asked, which is the property the staging layer is meant
-        // to preserve all the way to the response and no further.
+        // populated only when the caller asked: the staging layer must preserve that up to the response and no further
         var raw = new Dictionary<string, string>(StringComparer.Ordinal);
         if (request.WantsRaw)
         {
@@ -115,7 +105,7 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
 
         return new Receipt
         {
-            // The control plane re-mints both of these when it stages the record;
+            // The control plane re-mints both of these when it stages the record.
             // the adapter still states them so the contract reads honestly.
             Id = Ids.ForRecord(Ids.Receipt, sessionId, externalId),
             ExternalId = externalId,
@@ -140,11 +130,7 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
         Runtime = ProviderRuntime.Http,
         Agent = AgentRequirement.Inline,
         UnattendedFetch = true,
-        // Declared so the Disconnect gate has something offline to prove it
-        // against, and now the ONLY thing: of the shipped fleet only Amazon
-        // logs out upstream and it cannot be driven without a real account.
-        // Without this double, the "a declared logout really does enqueue one"
-        // half of the rule would be asserted by nothing at all.
+        // the only offline provider with a declared logout: of the shipped fleet only Amazon logs out, and needs a real account
         Logout = LogoutSupport.Session,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,

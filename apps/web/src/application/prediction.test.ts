@@ -33,8 +33,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
     });
 
     const memory = await buildSpaceMerchantMemory(new DexieBackend(db), 'sy');
-    // branch city differs: normalization still finds the same merchant —
-    // in the OTHERS layer, since sy itself never saw the merchant
     expect(predictFromMemory(memory.own, 'Albert Heijn Amsterdam', -1900)).toBeNull();
     const hit = predictFromMemory(memory.others, 'Albert Heijn Amsterdam', -1900);
     expect(hit?.catId).toBe('movie');
@@ -50,7 +48,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
       merchant: 'Albert Heijn', catId: 'groceries', needsReview: 0,
     });
     const memory = await buildSpaceMerchantMemory(new DexieBackend(db), 'sy');
-    // sy's own single groceries answer wins over sx's newer movie one
     expect(predictFromMemory(memory.own, 'Albert Heijn', -2000)?.catId).toBe('groceries');
   });
 
@@ -68,7 +65,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
     const memory = await buildSpaceMerchantMemory(new DexieBackend(db), 'sy');
     expect(predictFromMemory(memory.own, 'Padel Baan', -2500)).toBeNull();
     expect(predictFromMemory(memory.others, 'Padel Baan', -2500)).toBeNull();
-    // …while the owning space keeps its own history
     const own = await buildSpaceMerchantMemory(new DexieBackend(db), 'sx');
     expect(predictFromMemory(own.own, 'Padel Baan', -2500)?.catId).toBe('custom_padel_x');
   });
@@ -76,7 +72,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
   it('#564: the counter leg munni minted on the savings pot never teaches — a pot\'s own rows teach its own ledger only', async () => {
     await repo.upsert('account', 'sx', 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', 'sx', 'pot', { name: 'Oranje', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    // the confirmed Set aside, and the leg the link minted on the pot under the same merchant
     await repo.upsert('transaction', 'sx', 'src', {
       accountId: 'chk', date: '2026-08-01', amountCents: -50000, currency: 'EUR',
       merchant: 'Oranje spaarrekening M10614086', catId: 'savingDeposit', needsReview: 0, transferPeerId: mirrorTxId('src'),
@@ -85,7 +80,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
       accountId: 'pot', date: '2026-08-01', amountCents: 50000, currency: 'EUR',
       merchant: 'Oranje spaarrekening M10614086', catId: 'savingDeposit', needsReview: 0, transferPeerId: 'src',
     });
-    // a row the pot's own feed carried, filed from the pot's side
     await repo.upsert('transaction', 'sx', 'potrow', {
       accountId: 'pot', date: '2026-08-02', amountCents: 20000, currency: 'EUR',
       merchant: 'Mw E Kaymazlar', catId: 'savingDeposit', needsReview: 0,
@@ -96,7 +90,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
     expect(predictFromMemory(memory.own, 'Oranje spaarrekening M10614086', 50000)).toBeNull();
     expect(predictFromMemory(memory.own, 'Mw E Kaymazlar', 20000)).toBeNull();
     expect(predictFromMemory(memory.own, 'Mw E Kaymazlar', 20000, 'saving')?.catId).toBe('savingDeposit');
-    // the person's own outgoing filing still teaches its side
     expect(predictFromMemory(memory.own, 'Oranje spaarrekening M10614086', -50000)?.catId).toBe('savingDeposit');
   });
 });

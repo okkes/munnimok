@@ -31,11 +31,8 @@ import type {
   TxSeenRow,
 } from './types';
 
-/**
- * One Dexie database per identity (demo / offline profile / logged-in user),
- * so demo resets and logouts are a whole-database delete, and identities can
- * never bleed into each other.
- */
+// one Dexie database per identity: demo reset and logout are a whole-database delete,
+// identities never bleed into each other
 export class MunniDB extends Dexie {
   spaces!: Table<SpaceRow, string>;
   accounts!: Table<AccountRow, string>;
@@ -52,15 +49,13 @@ export class MunniDB extends Dexie {
   goalContributions!: Table<GoalContributionRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
-  /** device-only — a connection's credential bundle never syncs in
-   *  plaintext (privacy law); keyed by connection id (#367) */
+  /** device-only: a connection's credential bundle never syncs in plaintext (#367) */
   connectorConns!: Table<ConnectorConnRow, string>;
   storeConns!: Table<StoreConnRow, string>;
   storeConnLinks!: Table<StoreConnLinkRow, string>;
   holdings!: Table<HoldingRow, string>;
   lots!: Table<LotRow, string>;
   insightDismissals!: Table<InsightDismissRow, string>;
-  /** #128: plans and their subjects (synced) */
   plans!: Table<PlanRow, string>;
   planSubjects!: Table<PlanSubjectRow, string>;
   activities!: Table<ActivityRow, string>;
@@ -71,58 +66,43 @@ export class MunniDB extends Dexie {
 
   constructor(name: string) {
     super(name);
-    // version 1 is the layout the product deployed from scratch on; a
-    // store change adds a version with its delta (never a rewrite of an
-    // earlier one — Dexie diffs the declarations to upgrade a device)
+    // a store change adds a version with its delta, never a rewrite of an earlier one:
+    // Dexie diffs the declarations to upgrade a device
     this.version(1).stores({
       spaces: 'id',
       accounts: 'id, spaceId',
       categories: 'id, spaceId, parentId',
       transactions: 'id, spaceId, accountId, catId, [spaceId+date]',
-      // feature B: per-space transformation overlay + account attachments
       txMeta: 'id, spaceId, txId, [spaceId+txId]',
       accountLinks: 'id, spaceId, feedSpaceId, accountId',
-      // recurring costs + dismissed suggestions
       recurrings: 'id, spaceId',
       recurringDismissals: 'id, spaceId',
-      // #148 r3: the synced first-seen rows (user identities)
       txSeen: 'id, spaceId, forSpaceId',
       budgets: 'id, spaceId',
       events: 'id, spaceId',
       goals: 'id, spaceId',
       goalContributions: 'id, spaceId, goalId',
-      // allocation (zero-based budgeting) + its custom category groupings
       allocations: 'id, spaceId, [spaceId+periodStart]',
       topics: 'id, spaceId',
-      // receipts v3: global rows in the owner's store feed, snapshot
-      // links per space, instance-keyed device connections, synced
-      // instance metadata + per-space inclusion links, reconnect markers
       receipts: 'id, spaceId',
       receiptLinks: 'id, spaceId, txId, receiptId',
       storeInstances: 'id, store',
       storeConns: 'id, spaceId',
       storeConnLinks: 'id, spaceId, instanceId',
       storeMarkers: 'id, spaceId',
-      // portfolio (investments design) + device-only quote cache
       holdings: 'id, spaceId',
       lots: 'id, spaceId, holdingId',
       quoteCache: 'key',
-      // insights: synced per-space dismissals
       insightDismissals: 'id, spaceId',
-      // activity history: who did what, newest 200 per space
       activities: 'id, spaceId',
       outbox: 'opId, spaceId, hlc',
       meta: 'key',
     });
-    // #367: store tokens gave way to connector bundles, and the marker
-    // table never had a reader — both go; the bundle row arrives
     this.version(2).stores({
       storeInstances: null,
       storeMarkers: null,
       connectorConns: 'id, provider',
     });
-    // #128: planning — a plan per period and kind, its subjects; the
-    // allocation cells and topics it replaces leave with it
     this.version(3).stores({
       plans: 'id, spaceId, [spaceId+kind]',
       planSubjects: 'id, spaceId, planId',

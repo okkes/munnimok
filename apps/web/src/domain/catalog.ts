@@ -5,18 +5,12 @@ import type { CatalogDoc } from './catalogDoc';
 import type { Lang } from '@/i18n';
 import type { CatDirection, CategoryRow, SpaceRow, TxType } from '@/db/types';
 
-/**
- * The category catalog, built purely from rows — shared by the React
- * hook (useCategories) and the service worker (budget alerts), which
- * cannot touch React.
- */
+/** built purely from rows: shared by useCategories and the service worker (budget alerts), which cannot touch React */
 
-/** A category at runtime: built-in (nameKey) or custom (name, synced row). */
 export interface Cat extends Omit<BuiltinCategory, 'nameKey'> {
   nameKey?: string;
   /** operator-published names (catalog document) — win over nameKey */
   names?: Record<Lang, string>;
-  /** user-entered name for custom categories */
   name?: string;
   custom?: boolean;
   /** the auto "Other" sub of a custom main (direction locked to 'both') */
@@ -29,13 +23,11 @@ export interface Catalog {
   all: Cat[];
   byId: (id: string | undefined) => Cat;
   childrenOf: (parentId: string) => Cat[];
-  /** mains offered in pickers — per-space hidden mains filtered out */
   parents: Cat[];
   /** every main, hidden-per-space ones included (the manage screen) */
   allParents: Cat[];
   /** mains this space switched off (UI filtering only — data never blocks) */
   hiddenMains: ReadonlySet<string>;
-  /** true when managing a shared space's categories (space scope) */
   sharedScope: boolean;
 }
 
@@ -72,10 +64,7 @@ function toCat(row: CategoryRow, parentById: Map<string, CategoryRow>): Cat {
   };
 }
 
-/** the custom rows visible from `spaceId`: the space's own only — every
- *  custom category belongs to the space it was created in (#387; the old
- *  rule let a personal space's categories show up in every other personal
- *  space). Another space's categories are COPIED over, never shared (#390). */
+/** the space's own custom rows only: another space's categories are COPIED over, never shared (#387, #390) */
 export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly CategoryRow[], spaceId: string): { rows: CategoryRow[]; sharedScope: boolean; hiddenMains: string[] } {
   const active = spaces.find((s) => s.id === spaceId);
   return {
@@ -85,8 +74,6 @@ export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly 
   };
 }
 
-/** built-in catalog merged with the given custom rows (+ the fetched
- *  catalog document when the identity has one) */
 export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: boolean, hiddenMains: readonly string[] = [], doc?: CatalogDoc | null): Catalog {
   const parentById = new Map(customRows.filter((r) => r.isParent === 1).map((r) => [r.id, r]));
   const custom: Cat[] = customRows
@@ -96,15 +83,12 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
   const all: Cat[] = [...(mergedBuiltins(doc) as Cat[]), ...custom];
   const map = new Map(all.map((c) => [c.id, c]));
   const off = new Set(hiddenMains);
-  // #263 (user): everyday EXPENSE families lead every list; income next;
-  // the ◆ special/system families sit below (stable within each band)
+  // #263: everyday expense families lead every list, income next, the special/system families below
   const parentRank = (c: Cat): number => {
     if (LOCKED_MAIN_IDS.has(c.id)) return 2;
     return c.id === 'income' ? 1 : 0;
   };
-  // #388: a built-in main's "Other" (`<main>Other` in the catalog) closes
-  // the list exactly like a custom main's — the gallery caught a new custom
-  // sub landing BELOW Consumption's Other
+  // #388: a built-in main's "Other" (`<main>Other` in the catalog) closes the list like a custom main's
   const isOtherSub = (c: Cat): boolean => !!c.isOther || (!c.custom && !!c.parentId && c.id.endsWith('Other'));
   const childRank = (c: Cat): number => {
     if (isOtherSub(c)) return 2;

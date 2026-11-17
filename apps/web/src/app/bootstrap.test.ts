@@ -10,11 +10,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { bootstrapUserSpaces, firstRoundOf } from './data';
 
-/**
- * Regression suite for the bug that stranded devices on an empty
- * duplicate personal space: bootstrap must FAIL CLOSED — no space
- * creation unless the server confirmed the account has none.
- */
+/** regression: bootstrap fails closed, no space creation unless the server confirmed the account has none */
 class FlakyServer implements SyncBackend {
   failuresLeft = 0;
   serverSpaces: string[] = [];
@@ -22,7 +18,6 @@ class FlakyServer implements SyncBackend {
     return { lastSeq: 0 };
   }
   async pull(spaceId: string, since: number): Promise<PullResult> {
-    // fresh cursor on a server-known space delivers its space row
     if (since === 0 && this.serverSpaces.includes(spaceId)) {
       return {
         ops: [
@@ -47,7 +42,6 @@ class FlakyServer implements SyncBackend {
     }
     return this.serverSpaces;
   }
-  /** the round's discovery (#569): the same spaces, each one move ahead of a fresh cursor */
   async heads(): Promise<SpaceHead[]> {
     return (await this.listSpaces()).map((spaceId) => ({ spaceId, latestSeq: 1 }));
   }
@@ -72,13 +66,11 @@ describe('bootstrapUserSpaces (fail closed)', () => {
 
     await bootstrapUserSpaces(new DexieBackend(db), engine, () => false, FAST_RETRY_MS);
 
-    // brand-new user: zero spaces, onboarding + tutorial pending flags set
     expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
     expect((await db.meta.get('needsOnboarding'))?.value).toBe(true);
     expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
 
-    // re-entrancy: the user finishes onboarding (flags consumed) while a
-    // second bootstrap round completes late — it must NOT re-ambush
+    // re-entrancy: a second bootstrap round completing late, after onboarding finished, must not re-ambush
     await db.meta.delete('needsOnboarding');
     await db.meta.delete('minaTutorialPending');
     await db.meta.put({ key: 'minaTutorialState', value: { active: true, step: 3, ledger: [] } });
@@ -122,7 +114,6 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     await bootstrapUserSpaces(new DexieBackend(db), engine, () => false, FAST_RETRY_MS, (n) => reported.push(n));
 
     expect(reported).toEqual([1, 2, 3]); // one per failed round, then success
-    // confirmed empty → tutorial pending, still no auto-created space
     expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
     expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
     db.close();

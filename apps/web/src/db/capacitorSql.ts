@@ -1,17 +1,9 @@
 import { reportError } from '@/lib/report';
 import type { SqlExecutor } from './sqlBackend';
 
-/**
- * E2: the SQLCipher executor for the native shells, speaking to
- * @capacitor-community/sqlite through the injected Capacitor global —
- * the web bundle never imports native code (platform.ts rule).
- *
- * Key lifecycle (approved design): a random passphrase is minted on
- * first use and handed to the plugin, which keeps it in the iOS
- * Keychain / Android Keystore-backed storage. It never syncs and never
- * lands in a backup — a restored device gets a fresh key and re-syncs
- * (decision 2: key loss = forced re-sync).
- */
+// the web bundle never imports native code (platform.ts rule), so the plugin comes through the injected Capacitor global
+// passphrase minted on first use, kept by the plugin in Keychain/Keystore-backed storage; never synced, never in a backup:
+// a restored device gets a fresh key and re-syncs (key loss = forced re-sync)
 
 interface SqliteQueryResult {
   values?: Record<string, unknown>[];
@@ -44,19 +36,15 @@ const sqlitePlugin = (): CapacitorSqlitePlugin | undefined =>
 
 export const sqliteAvailable = (): boolean => !!sqlitePlugin();
 
-/** E3a: what `PRAGMA cipher_version` reported at open — plugin-reported
- *  proof, not inference. Plain (unencrypted) SQLite answers EMPTY, so
- *  null here means the store is NOT actually SQLCipher. */
+/** what `PRAGMA cipher_version` reported at open; plain SQLite answers empty, so null means the store is NOT SQLCipher */
 let cipherVersion: string | null = null;
 export const sqlCipherVersion = (): string | null => cipherVersion;
 
-/** 32 random bytes as hex — the SQLCipher passphrase (minted exactly once) */
 const mintPassphrase = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
 
-/** open (creating if needed) the identity's encrypted database */
 export async function openEncryptedExecutor(database: string): Promise<SqlExecutor> {
   const plugin = sqlitePlugin();
   if (!plugin) throw new Error('CapacitorSQLite plugin not available');
@@ -64,17 +52,13 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
   const stored = await plugin.isSecretStored();
   if (!stored.result) await plugin.setEncryptionSecret({ passphrase: mintPassphrase() });
 
-  // the NATIVE side outlives webview reloads: after toggling the store
-  // off and on, its registry still holds the old connection and
-  // createConnection threw "Connection … already exists" — which the
-  // never-brick guard read as a broken store and silently cleared the
-  // flag (user bug). A pre-emptive close makes open idempotent.
+  // the native side outlives webview reloads: a stale connection made createConnection throw, and the never-brick guard read
+  // that as a broken store and cleared the flag; closing first makes open idempotent
   await plugin.closeConnection({ database, readonly: false }).catch(() => undefined);
   await plugin.createConnection({ database, version: 1, encrypted: true, mode: 'secret', readonly: false });
   await plugin.open({ database });
 
-  // E3a: capture the cipher proof once per open; a failure to answer is
-  // recorded as null (= no proof), never an open failure
+  // a failure to answer records null (= no proof), never an open failure
   try {
     const result = await plugin.query({ database, statement: 'PRAGMA cipher_version;', values: [] });
     const rows = result.values ?? [];
@@ -99,8 +83,7 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
           await plugin.executeSet({ database, set: statements.map((s) => ({ statement: s.sql, values: s.params })), transaction: false });
           return;
         } catch (err) {
-          // a plugin build that refuses the batch costs the speed, never the sync: the statements go one by one,
-          // the way every device ran them before — said once, so it is known which devices do
+          // a plugin build that refuses the batch costs speed, never the sync: statements go one by one, reported once
           batchRefused = true;
           reportError('sqlite-batch', err);
         }
@@ -110,11 +93,8 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
     async query(statement, params = []) {
       const result = await plugin.query({ database, statement, values: params });
       const rows = result.values ?? [];
-      // raw-plugin quirk: on iOS the FIRST row is {"ios_columns":[...]}.
-      // The plugin's JS wrapper strips it; we talk to the plugin directly,
-      // so strip it here — reading .json off it gave undefined and
-      // JSON.parse(undefined) broke the whole first sync ("Unexpected
-      // identifier 'undefined'", the E2 connect loop).
+      // raw-plugin quirk: on iOS the first row is {"ios_columns":[...]}, which the plugin's JS wrapper strips;
+      // unstripped, JSON.parse(undefined) broke the whole first sync
       return rows[0] && 'ios_columns' in rows[0] ? rows.slice(1) : rows;
     },
     async transaction(fn) {

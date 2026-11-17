@@ -6,18 +6,8 @@ import { applyTypeChange, familyForCounter } from '@/domain/txType';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { cachedCatalog } from '@/sync/catalogSync';
 
-/**
- * Retroactive counterparty linking (user rule 2026-07-17): the moment a
- * new financial account exists in a space, every transaction whose
- * counterparty IBAN belongs to that account becomes a link to it —
- * "import 3 months from checking, then connect the credit card: the
- * top-ups all point at the card now".
- *
- * Idempotent and conservative: rows that already carry a link are never
- * touched, and the type only moves off plain expense/income (deliberate
- * types survive). Category conflicts resolve exactly like a manual link
- * (applyTypeChange). Returns how many rows were linked.
- */
+// retroactive: a new account links every transaction whose counterparty IBAN is its own; linked rows and
+// deliberate types survive, category conflicts resolve like a manual link (applyTypeChange)
 export async function linkAllCounterparties(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const accounts = await visibleAccounts(store, spaceId);
   const byIban = new Map<string, (typeof accounts)[number]>();
@@ -37,8 +27,7 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
     const account = byIban.get(normalizeIban(tx.counterIban));
     if (!account || account.id === tx.accountId) continue;
     const keepType = tx.txType !== 'expense' && tx.txType !== 'income';
-    // #133 r5: the counter's kind names the family — a savings IBAN
-    // match files the saving story, not a blanket transfer
+    // #133 r5: the counter's kind names the family: a savings IBAN files the saving story, not a blanket transfer
     const nextType = keepType ? tx.txType : familyForCounter(account.type);
     const fields = applyTypeChange({
       nextType,

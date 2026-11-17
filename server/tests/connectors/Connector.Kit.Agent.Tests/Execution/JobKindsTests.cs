@@ -7,12 +7,6 @@ using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Agent.Tests.Execution;
 
-/// <summary>
-/// What the runner makes of each kind of leased job — a login's material, a
-/// fetch's records, a logout that always disconnects locally — the verdicts
-/// for the jobs it cannot run at all, and what it does when the control
-/// plane will not take the outcome.
-/// </summary>
 public sealed class JobKindsTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);

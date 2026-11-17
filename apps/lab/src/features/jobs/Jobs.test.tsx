@@ -44,7 +44,6 @@ describe('Jobs', () => {
     expect(globalThis.location.hash).toBe('#/bench/sessions/ses_x');
     cleanup();
 
-    // a person's run or a settled one is nothing the bench could pick up
     scriptFetch(HAPPY());
     renderLab('#/jobs/job_lab1');
     await screen.findByTestId('job-title');

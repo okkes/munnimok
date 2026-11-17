@@ -4,7 +4,6 @@ import { LOCALES, useLang } from '@/i18n';
 import { nearestDateIndex } from '@/domain/dateJump';
 import { Icon } from './Icon';
 
-/** #502: the picker's door to the day of the transaction being linked */
 export function JumpToDateButton({ date, onJump, testId }: Readonly<{ date: string; onJump: () => void; testId: string }>) {
   const { t, lang } = useLang();
   const day = new Date(date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
@@ -21,12 +20,7 @@ export function JumpToDateButton({ date, onJump, testId }: Readonly<{ date: stri
   );
 }
 
-/**
- * #502 (user): a long picker scrolls to the row nearest to a day, so the
- * person scrolls up or down from there. Rows carry `data-jump-id`; the
- * landed row is named by `jumpedId` for a moment so the eye finds it.
- * `ensureShown` widens a paged list until the row is mounted.
- */
+/** #502: rows carry `data-jump-id`; `ensureShown` widens a paged list until the row is mounted */
 export function useJumpToDate(
   rows: readonly { id: string; date: string }[],
   ensureShown?: (index: number) => void,
@@ -45,7 +39,6 @@ export function useJumpToDate(
     pending.current = rows[index].id;
     setJumpedId(rows[index].id);
   };
-  // after the render that mounts it: centre the row inside the scroller only
   useEffect(() => {
     const id = pending.current;
     const scroller = scrollerRef.current;

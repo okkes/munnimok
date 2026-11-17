@@ -37,8 +37,9 @@ describe('NotificationsBell (user identity)', () => {
     fireEvent.click(screen.getByTestId('home-notifications'));
     expect((await screen.findByTestId('notif-request-r1')).textContent).toContain('Carol');
     expect(screen.getByTestId('notif-invite-i1').textContent).toContain('Household');
+    // #614: what is about no space sits under its own name
+    expect(screen.getByTestId('notif-group-general').textContent).toBe('General');
 
-    // a row leads to where the decision is made
     fireEvent.click(screen.getByTestId('notif-invite-i1'));
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
   }, 15_000);
@@ -114,15 +115,15 @@ describe('NotificationsBell (user identity)', () => {
     }
   }, 15_000);
 
-  /** the device's list before the app opens: one plan row about `spaceId`, this release already seen */
-  async function seedInbox(spaceId: string) {
+  /** the device's list before the app opens: one digest row per space named, this release already seen; answers the first */
+  async function seedInbox(...spaceIds: string[]) {
     const store = new DexieBackend(new MunniDB(USER_TEST_DB));
-    await appendNotification(store, 'planOverspent', { n: '1', names: 'Groceries', spaceId }, `plan_${spaceId}`);
+    for (const spaceId of spaceIds) await appendNotification(store, 'digest', { n: '3', spaceId }, `digest_${spaceId}`);
     await store.metaPut('whatsNewSeenVersion', latestWhatsNewVersion());
     await store.metaPut('activeSpaceId', 's-user');
-    const [entry] = await readInbox(store);
+    const entries = await readInbox(store);
     store.close();
-    return entry;
+    return entries.find((entry) => entry.payload?.spaceId === spaceIds[0])!;
   }
 
   const spaces = [
@@ -130,8 +131,8 @@ describe('NotificationsBell (user identity)', () => {
     { id: 's-trip', name: 'Trip', kind: 'shared' as const },
   ];
 
-  it('#551: a row says which space it is about and opens its screen in that space', async () => {
-    const entry = await seedInbox('s-trip');
+  it('#614: the bell shows the open space’s rows under its name; another space’s row waits in that space', async () => {
+    const entry = await seedInbox('s-user', 's-trip');
     renderAppAsUser('/home', {
       spaces,
       api: {
@@ -140,19 +141,23 @@ describe('NotificationsBell (user identity)', () => {
       },
     });
     await screen.findByTestId('screen-home');
-    fireEvent.click(screen.getByTestId('home-notifications'));
-    await waitFor(() => expect(screen.getByTestId(`notif-inbox-meta-${entry.id}`).textContent).toContain('Trip'), { timeout: 5000 });
+    // the badge counts what the bell will show: the row about Trip is not in it
+    await waitFor(() => expect(screen.getByTestId('home-notifications-badge').textContent).toBe('1'), { timeout: 5000 });
 
+    fireEvent.click(screen.getByTestId('home-notifications'));
+    await screen.findByTestId(`notif-inbox-${entry.id}`, {}, { timeout: 5000 });
+    expect(screen.getByTestId('notif-group-space').textContent).toBe('Personal');
+    expect(document.querySelectorAll('[data-testid^="notif-inbox-meta-"]')).toHaveLength(1);
+    expect(screen.queryByTestId('notif-group-general')).toBeNull();
+
+    // #551: the row opens its screen in the space it is about
     fireEvent.click(screen.getByTestId(`notif-inbox-${entry.id}`));
-    await screen.findByTestId('screen-planning', {}, { timeout: 5000 });
-    const db = new MunniDB(USER_TEST_DB);
-    await waitFor(async () => expect((await db.meta.get('activeSpaceId'))?.value).toBe('s-trip'), { timeout: 5000 });
-    db.close();
+    await screen.findByTestId('screen-insights', {}, { timeout: 5000 });
   }, 15_000);
 
-  it('#580: Clear all empties the list and tells the person’s other devices', async () => {
-    const entry = await seedInbox('s-user');
-    const puts: unknown[] = [];
+  it('#580, #614: Clear all empties what the bell shows, tells the person’s other devices, and leaves another space’s rows', async () => {
+    const entry = await seedInbox('s-user', 's-trip');
+    const puts: { clearedAt: string; scopes: string[] }[] = [];
     renderAppAsUser('/home', {
       spaces,
       api: {
@@ -160,8 +165,9 @@ describe('NotificationsBell (user identity)', () => {
         'GET /me/invites': () => [],
         'GET /me/notifications/cleared': () => ({ clearedAt: null }),
         'PUT /me/notifications/cleared': (body) => {
-          puts.push(body);
-          return body;
+          const sent = body as { clearedAt: string; scopes: string[] };
+          puts.push(sent);
+          return { clearedAt: null, scopes: Object.fromEntries(sent.scopes.map((scope) => [scope, sent.clearedAt])) };
         },
       },
     });
@@ -172,7 +178,14 @@ describe('NotificationsBell (user identity)', () => {
     fireEvent.click(screen.getByTestId('notif-clear'));
     expect(await screen.findByTestId('notif-empty', {}, { timeout: 5000 })).toBeTruthy();
     await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].scopes).toEqual(['general', 's-user']);
     expect(screen.queryByTestId('notif-clear')).toBeNull();
+    const store = new DexieBackend(new MunniDB(USER_TEST_DB));
+    try {
+      expect((await readInbox(store)).map((row) => row.payload?.spaceId)).toEqual(['s-trip']);
+    } finally {
+      store.close();
+    }
   }, 15_000);
 
   it('#580: a clear made on another device empties the list here too', async () => {

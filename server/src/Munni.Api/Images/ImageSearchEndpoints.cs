@@ -12,22 +12,13 @@ namespace Munni.Api.Images;
 
 public sealed record ImageHit(string Thumbnail, string Title, string Source, int? Width, int? Height);
 
-/// <summary>
-/// What a search came to. <c>ok</c>: the pictures. <c>paused</c>: the
-/// month's searches are used up, back at <c>Until</c>. <c>limited</c>: this
-/// person's searches for today are used up, back at <c>Until</c>.
-/// <c>unavailable</c>: the search service refused for another reason.
-/// </summary>
+// ok: the pictures; paused: the month's searches are used up; limited: this person's searches for today are.
+// unavailable: the service refused for another reason
 public sealed record ImageSearchReply(string State, IReadOnlyList<ImageHit> Results, DateTimeOffset? Until);
 
 public sealed record ImageSearchSettings(int? DailyPerUser);
 
-/// <summary>
-/// What the API remembers about the paid search between requests (#521):
-/// the pause after the month's searches ran out, what the last answer said
-/// is left, and how many searches each person made today. In memory on
-/// purpose — after a restart the first search simply learns the pause again.
-/// </summary>
+// in memory on purpose: after a restart the first search learns the pause again (#521)
 public sealed class ImageSearchState(TimeProvider time)
 {
     private readonly ConcurrentDictionary<(Guid User, DateOnly Day), int> _used = new();
@@ -64,7 +55,6 @@ public sealed class ImageSearchState(TimeProvider time)
     public bool TrySpend(Guid user, int? dailyLimit)
     {
         var key = (user, DateOnly.FromDateTime(Now.UtcDateTime));
-        // yesterday's counts are of no use to anybody
         foreach (var stale in _used.Keys.Where(k => k.Day < key.Item2).ToList()) _used.TryRemove(stale, out _);
         while (true)
         {
@@ -81,11 +71,7 @@ public sealed class ImageSearchState(TimeProvider time)
         _used.AddOrUpdate(key, 0, (_, used) => Math.Max(0, used - 1));
     }
 
-    /// <summary>
-    /// Reads the search service's own count. It sends one figure per window,
-    /// the shortest first — the last one is the month. Returns when the month
-    /// is back, once nothing is left of it.
-    /// </summary>
+    // the service sends one figure per window, shortest first: the last is the month; returns when it is back once none is left
     public DateTimeOffset? Note(HttpResponseHeaders headers)
     {
         var left = LastOf(headers, "X-RateLimit-Remaining");
@@ -106,13 +92,8 @@ public sealed class ImageSearchState(TimeProvider time)
     }
 }
 
-/// <summary>
-/// Picture search on the web (#521), proxied so the Brave Search key never
-/// reaches a client and every paid search is counted in one place. The
-/// same words within a day are answered from memory. A picked picture is
-/// fetched here too, from Brave's own image store only — never from the
-/// site it was found on.
-/// </summary>
+// proxied so the Brave key never reaches a client and every paid search is counted (#521).
+// a picked picture is fetched only from Brave's image store
 public static class ImageSearchEndpoints
 {
     public const string SearchClientName = "brave-search";
@@ -138,8 +119,7 @@ public static class ImageSearchEndpoints
 
     public static void MapImageSearch(this IEndpointRouteBuilder app, bool enabled)
     {
-        // the operator's side (user 2026-11-11: "configurable … by default infinite"): the limit per person per day,
-        // and how the month stands — mapped without a key too, so the portal can say the feature is off
+        // mapped without a key too, so the portal can say the feature is off; limit per person per day, default none
         var admin = app.MapGroup("/admin").RequireAuthorization(AdminScope.Policy);
         admin.MapGet("/image-search", async (AppDbContext db, ImageSearchState state, CancellationToken ct) =>
             Results.Ok(new

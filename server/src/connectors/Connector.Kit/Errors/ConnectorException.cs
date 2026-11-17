@@ -2,11 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Errors;
 
-/// <summary>
-/// The only exception type that crosses an adapter boundary. Anything else
-/// escaping an adapter is caught and mapped to <see cref="ErrorCode.Internal"/>,
-/// so a caller never sees a stack trace or a bare 500.
-/// </summary>
+// the only exception crossing an adapter boundary: anything else is mapped to Internal, so a caller never sees a stack trace
 public sealed class ConnectorException : Exception
 {
     public ConnectorException(ErrorCode code, string? detail = null, Exception? inner = null)
@@ -21,12 +17,8 @@ public sealed class ConnectorException : Exception
     /// <summary>Operator-facing. Never shown to an end user, never localised.</summary>
     public string? Detail { get; }
 
-    /// <summary>
-    /// For <see cref="ErrorCode.RateLimited"/>: how long the caller should
-    /// wait before asking again. Carried on the exception so the place that
-    /// knows the number - the interval check - and the place that writes the
-    /// envelope - the exception filter - need no third party between them.
-    /// </summary>
+    // carried on the exception so the interval check (knows the number) and the exception filter (writes the envelope)
+    // need nothing between them
     public int? RetryAfterSeconds { get; init; }
 
     public int HttpStatus => ErrorCatalog.HttpStatus(Code);
@@ -39,12 +31,8 @@ public sealed class ConnectorException : Exception
     public static ConnectorException SessionExpired(string? detail = null) =>
         new(ErrorCode.SessionExpired, detail);
 
-    /// <summary>
-    /// The provider's shape moved - a selector vanished, a field changed
-    /// type, an export gained a column. Distinct from a transient failure
-    /// because it needs a human to fix an adapter, and it degrades the
-    /// provider so the next user gets a real message instead of a retry.
-    /// </summary>
+    // the provider's shape moved: needs a human to fix an adapter, and degrades the provider so the next user gets a real
+    // message, not a retry
     public static ConnectorException ProviderChanged(string detail) =>
         new(ErrorCode.ProviderChanged, detail);
 
@@ -68,7 +56,7 @@ public sealed class ConnectorException : Exception
     };
 }
 
-/// <summary>The wire shape. Note there is no free-text message field.</summary>
+// no free-text message field
 public sealed record ConnectorError
 {
     public required string Code { get; init; }
@@ -78,10 +66,7 @@ public sealed record ConnectorError
     [JsonPropertyName("user_action")]
     public required UserAction UserAction { get; init; }
 
-    /// <summary>
-    /// A key, not prose - the consuming app owns the copy in every language
-    /// it ships.
-    /// </summary>
+    // a key, not prose: the consuming app owns the copy in every language
     [JsonPropertyName("message_key")]
     public required string MessageKey { get; init; }
 
@@ -93,7 +78,6 @@ public sealed record ConnectorError
     public int? RetryAfterSeconds { get; init; }
 }
 
-/// <summary>The envelope: <c>{ "error": { … } }</c>.</summary>
 public sealed record ConnectorErrorEnvelope
 {
     public required ConnectorError Error { get; init; }

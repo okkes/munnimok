@@ -11,7 +11,6 @@ export interface RemoteConsent {
 /** grouping key for consents whose return carried no usable origin */
 export const UNATTRIBUTED = 'unattributed';
 
-/** where a consent came from, as the operator reads it: munni's own hosts name their environment */
 export interface ConsentSource {
   key: string;
   label: string;
@@ -21,7 +20,6 @@ export interface ConsentSource {
 // munni's hosts are munni-<env>-<platform>[-<service>] (infra/modules/stack.mjs hostsFor)
 const MUNNI_HOST = /^munni-([a-z][a-z0-9]{1,11})-([a-z]{2,5})(?:-[a-z-]+)?$/;
 
-/** the environment a return origin names: `prod · nas` for munni's hosts, this computer for localhost, else the host itself */
 export function sourceOf(origin: string | null | undefined): ConsentSource {
   if (!origin) return { key: UNATTRIBUTED, label: UNATTRIBUTED, host: null };
   let url: URL;
@@ -37,7 +35,6 @@ export function sourceOf(origin: string | null | undefined): ConsentSource {
   return { key: origin, label: url.host, host: url.host };
 }
 
-/** consents per return origin, munni's named environments first, unattributed last */
 export function groupBySource(consents: readonly RemoteConsent[]): { source: ConsentSource; consents: RemoteConsent[] }[] {
   const groups = new Map<string, { source: ConsentSource; consents: RemoteConsent[] }>();
   for (const c of consents) {
@@ -61,11 +58,7 @@ const FINISHED: Record<string, { word: string; leftover: boolean }> = {
   SU: { word: 'suspended', leftover: true },
 };
 
-/**
- * What a consent's status means for the clean-up: in force, or a leftover
- * nothing can fetch with (expired, rejected, or a sign-in at the bank that
- * was never finished — after a day nobody is still in the middle of one).
- */
+/** a leftover is a consent nothing can fetch with; a bank sign-in unfinished after a day counts (nobody is still in one) */
 export function consentState(consent: Pick<RemoteConsent, 'status' | 'createdAt'>, now = Date.now()): { word: string; leftover: boolean } {
   const known = FINISHED[consent.status];
   if (known) return known;

@@ -3,11 +3,6 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Logging;
 
-/// <summary>
-/// One log line per value, whatever the value carried: the forged entry a
-/// line break would start, the cursor games a control character plays, and
-/// the flood a long payload would be.
-/// </summary>
 public sealed class LogSafeTests
 {
     // U+2028 / U+2029, spelt as code points: a literal one inside a string is a line break to the C# compiler too

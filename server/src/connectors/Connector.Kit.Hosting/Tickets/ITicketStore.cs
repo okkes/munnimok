@@ -3,14 +3,7 @@ using Connector.Kit.Security;
 
 namespace Connector.Kit.Hosting.Tickets;
 
-/// <summary>
-/// What a redeemed bundle turns into.
-///
-/// The unsealed material lives here and nowhere else until a job is created
-/// from it, which is the whole point of the ticket: the caller keeps the
-/// user's requested <c>GET …?since=…</c> shape without a credential ever
-/// riding a URL or an access log.
-/// </summary>
+/// the unsealed material lives here until a job is created from it: a credential never rides a URL or access log
 public sealed record TicketGrant
 {
     public required string Subject { get; init; }
@@ -27,28 +20,16 @@ public sealed record TicketGrant
     public required DateTimeOffset ExpiresAt { get; init; }
 }
 
-/// <summary>
-/// Tickets never leave the consuming server: they are minted by
-/// <c>sessions/resume</c>, presented on the next call, and expire on a hard
-/// TTL. Nothing here is persisted - a restart invalidates every ticket, and
-/// the caller simply resumes again from the bundle it already holds.
-/// </summary>
+/// in memory only: a restart invalidates every ticket and the caller resumes again from its bundle
 public interface ITicketStore
 {
-    /// <summary>Returns the ticket id. The grant is not retrievable by anything else.</summary>
     string Mint(TicketGrant grant);
 
-    /// <summary>
-    /// Looks a ticket up and checks it belongs to the provider namespace it
-    /// was presented under. The grant carries the subject it was minted for,
-    /// so nothing downstream has to be told who the caller is - a ticket
-    /// presented on another provider's route is simply not a ticket.
-    /// </summary>
+    /// a ticket presented on another provider's route is not a ticket; the grant carries the subject it was minted for
     bool TryRedeem(string? ticketId, string providerId, out TicketGrant grant);
 
     void Revoke(string ticketId);
 
-    /// <summary>Drops every ticket for a session. Called on disconnect.</summary>
     void RevokeSession(string sessionId);
 
     int Sweep();

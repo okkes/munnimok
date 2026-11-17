@@ -1,13 +1,6 @@
-# WebKit engine guard, dockerized — same pattern as deploy/sonar/analyze.ps1:
-# the tool runs in a container, nothing is installed on the host. All of iOS
-# (Safari, PWA, both native webviews) renders with WebKit, whose flex sizing
-# is stricter than Blink's — layout bugs invisible to jsdom (no layout) and
-# to the chromium gallery run live here (sheets collapsed to their header on
-# iOS, 2026-07-26). The official Playwright image ships every browser; the
-# app is a production build served by the container itself, so no dev server
-# and no host networking are involved.
-#
-# Usage: ./deploy/webkit-e2e.ps1   (docker + a prior `npm ci` are the only needs)
+# All of iOS (Safari, PWA, native webviews) renders with WebKit, whose flex sizing is stricter than
+# Blink's: layout bugs invisible to jsdom and the chromium run live here (sheets collapsed to their
+# header on iOS). Runs in a container, nothing installed on the host; needs docker and a prior `npm ci`.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $web = Join-Path $root 'apps\web'
@@ -20,9 +13,7 @@ try {
 }
 finally { Pop-Location }
 
-# image tag pinned to the installed @playwright/test (hoisted to the root
-# node_modules by npm workspaces — let node resolve it) so browser builds in
-# the image match the runner exactly
+# image tag pinned to the installed @playwright/test (hoisted to the root node_modules) so browser builds match
 Push-Location $web
 try { $ver = node -p "require('@playwright/test/package.json').version" }
 finally { Pop-Location }

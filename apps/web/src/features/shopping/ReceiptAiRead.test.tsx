@@ -26,7 +26,6 @@ const receipt = (over: Partial<ReadReceipt> = {}): ReadReceipt => ({
 });
 const reply = (over: Partial<ReceiptReadReply>): ReceiptReadReply => ({ state: 'ok', receipt: receipt(), until: null, ...over });
 
-/** #567: a receipt photo read by a vision model through munni's API */
 describe('reading a receipt photo', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -49,7 +48,6 @@ describe('reading a receipt photo', () => {
     expect(receiptAi.receiptAiChoice()).toBe('no');
     expect(read).not.toHaveBeenCalled();
 
-    // the door is not gone: the next tap asks again
     fireEvent.click(screen.getByTestId('receipt-ai-read'));
     fireEvent.click(screen.getByTestId('receipt-ai-yes'));
     await waitFor(() => expect(onRead).toHaveBeenCalledTimes(1));
@@ -95,7 +93,6 @@ describe('reading a receipt photo', () => {
     expect(screen.queryByTestId('receipt-ai-ask')).toBeNull();
     expect(onRead).not.toHaveBeenCalled();
 
-    // the switch back: off on this device, and the next tap asks before anything is sent
     expect(screen.getByTestId('receipt-ai-on').textContent).toContain('Claude, by Anthropic');
     fireEvent.click(screen.getByTestId('receipt-ai-off'));
     expect(receiptAi.receiptAiChoice()).toBe('no');

@@ -18,8 +18,7 @@ describe('fmtTimeAgo', () => {
 
 describe('fmtEtaShort', () => {
   it('#300: seconds under a minute, whole minutes above — localized units', () => {
-    // exact ICU spellings vary slightly per version ("sec" vs "secs") —
-    // the unit family is the honest assertion
+    // ICU spellings vary per version ("sec" vs "secs"): assert the unit family
     expect(fmtEtaShort(45, 'en')).toMatch(/^45 secs?$/);
     expect(fmtEtaShort(59, 'en')).toMatch(/^59 secs?$/);
     expect(fmtEtaShort(60, 'en')).toMatch(/^1 mins?$/);
@@ -60,7 +59,6 @@ describe('humanizeBankKeys', () => {
     expect(humanizeBankKeys('a · mandate_reference: X1 · creditor_id: NL99ZZZ')).toBe(
       'a · Mandate reference: X1 · Creditor id: NL99ZZZ',
     );
-    // plain words with a colon are not keys (no underscore) — untouched
     expect(humanizeBankKeys('PAY PAY >3512 MCC:6012 Apple Pay betaling')).toBe('PAY PAY >3512 MCC:6012 Apple Pay betaling');
   });
 });

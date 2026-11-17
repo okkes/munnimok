@@ -1,7 +1,5 @@
-// The one client that skips certificate verification, and the fence
-// around it: our own locally-signed origins (localhost, the family
-// Caddy's sslip names of a LAN address) and nothing else — not a public
-// address spelt the sslip way, not the NAS, not the world.
+// the one client that skips cert verification is fenced to our own locally-signed origins
+// (localhost, Caddy's sslip LAN names)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { insecureFetch, isLocalTlsUrl, localAwareFetch } from '../modules/insecure-fetch.mjs';

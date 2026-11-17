@@ -8,15 +8,8 @@ import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { ReceiptDocument, ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
 
-/**
- * Receipts v3 (approved redesign, rulings 1+2): the per-space presence
- * of a receipt is a `receiptLink` row carrying a SNAPSHOT of the
- * payload. Linked receipts therefore follow the transactions — they
- * survive the owner leaving the space and the connection instance being
- * removed — because rendering them never needs the owner's store feed.
- */
+// a receiptLink snapshots the receipt payload, so linked receipts outlive the owner leaving or the connection going
 
-/** the payload fields a link snapshot carries */
 export interface ReceiptSnapshot {
   receiptId?: string;
   source: ReceiptRow['source'];
@@ -32,7 +25,6 @@ export interface ReceiptSnapshot {
   reconciled?: boolean;
 }
 
-/** the snapshot a link carries, built from a global receipt row */
 export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
   return {
     receiptId: receipt.id,
@@ -51,11 +43,7 @@ export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
   };
 }
 
-/**
- * Every transaction a link is attached to: the first one (`txId`), then
- * the others (user 2026-10-08: several payments, one receipt) — deduped,
- * empties dropped. A link without a `txId` is attached to nothing.
- */
+/** the first attachment is `txId`, the others `alsoTxIds`; deduped, empties dropped; no `txId` = attached to nothing */
 export function linkedTxIds(link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>): string[] {
   if (!link.txId) return [];
   return [...new Set([link.txId, ...(link.alsoTxIds ?? [])].filter((id) => !!id))];
@@ -63,7 +51,6 @@ export function linkedTxIds(link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>): s
 
 export const isLinkedTo = (link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>, txId: string): boolean => linkedTxIds(link).includes(txId);
 
-/** link (or re-link) a global receipt into a space, optionally to a tx — attached to that one alone */
 export async function writeReceiptLink(
   repo: Repo,
   spaceId: string,
@@ -83,13 +70,7 @@ export async function writeReceiptLink(
   return id;
 }
 
-/**
- * Attach a global receipt to a transaction (user 2026-10-08: "sometimes
- * multiple payments end up with 1 receipt"): no link yet, or one attached
- * to nothing, writes the snapshot link as before; a link that already
- * proves other transactions adds this one — `txId` stays the first
- * attachment, the rest ride `alsoTxIds`; attached to it already = no-op.
- */
+/** `txId` stays the first attachment, further ones ride `alsoTxIds`; already attached = no-op */
 export async function attachReceiptTo(repo: Repo, spaceId: string, receipt: ReceiptRow, txId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   const link = await repo.store.get('receiptLink', id);
@@ -107,13 +88,8 @@ const withRejected = (link: Pick<ReceiptLinkRow, 'rejectedTxIds'>, txIds: readon
   ...new Set([...(link.rejectedTxIds ?? []), ...txIds]),
 ];
 
-/**
- * The link holds no transaction any more: a photo-born one IS the receipt
- * and goes; a store receipt's stays in the space unattached and remembers
- * the transactions it was taken off (#496: "even though I unlinked it, it's
- * still linked" — the same receipt came straight back on the same card), so
- * neither the matcher nor a picker's suggestions put it back there.
- */
+// a photo-born link IS the receipt and goes; a store receipt stays unattached and remembers the rejected transactions,
+// so neither the matcher nor a picker offers it there again (#496)
 export async function releaseLink(repo: Repo, spaceId: string, link: ReceiptLinkRow, txIds: readonly string[]): Promise<void> {
   if (!link.receiptId) {
     await repo.remove('receiptLink', spaceId, link.id);
@@ -128,12 +104,8 @@ export async function releaseLink(repo: Repo, spaceId: string, link: ReceiptLink
   });
 }
 
-/**
- * The receipt lets go of ONE transaction (user 2026-10-08): the others keep
- * it — the first of them becomes `txId` when the primary leaves; the last
- * one leaving releases the link. Either way the transaction it left is
- * remembered as not this receipt's (#496).
- */
+// the first remaining transaction becomes `txId` when the primary leaves; the last one leaving releases the link;
+// the transaction it left is remembered as rejected (#496)
 export async function detachReceiptFrom(repo: Repo, spaceId: string, link: ReceiptLinkRow, txId: string): Promise<void> {
   const linked = linkedTxIds(link);
   if (!linked.includes(txId)) return;
@@ -149,11 +121,8 @@ export async function detachReceiptFrom(repo: Repo, spaceId: string, link: Recei
   });
 }
 
-/**
- * #367 (§5.7): the matcher's best candidate was already reviewed, so the
- * receipt asks instead of attaching — a link with `proposedTxId`, no
- * `txId`, listed under "Matches to check" until a human decides.
- */
+// #367: the best candidate was already reviewed, so the receipt asks: `proposedTxId` and no `txId`,
+// listed under "Matches to check" until a human decides
 export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRow, proposedTxId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, proposedTxId));
@@ -176,7 +145,6 @@ export async function writeProposedLinks(repo: Repo, spaceId: string, proposals:
   );
 }
 
-/** the human agrees: the proposal becomes the attachment */
 export async function acceptProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
   if (!link.proposedTxId) return;
   await repo.upsert('receiptLink', spaceId, link.id, { txId: link.proposedTxId, proposedTxId: null as never, auto: 0 });
@@ -188,14 +156,11 @@ export async function rejectProposal(repo: Repo, spaceId: string, link: ReceiptL
   await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never, rejectedTxIds: withRejected(link, [link.proposedTxId]) });
 }
 
-/** the space's open proposals, newest receipt first */
 export function useProposedMatches(): ReceiptLinkRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => (await spaceReceipts(store, spaceId)).filter((l) => !!l.proposedTxId && !l.txId), [spaceId]);
 }
 
-/** every receipt visible in a space: its snapshot links (store receipts
- *  linked in, photo-born ones), newest first */
 export async function spaceReceipts(store: StorageBackend, spaceId: string): Promise<ReceiptLinkRow[]> {
   const links = (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0);
   links.sort((a, b) => b.date.localeCompare(a.date));
@@ -207,29 +172,20 @@ export function useSpaceReceipts(): ReceiptLinkRow[] | undefined {
   return useQuery(store, async () => spaceReceipts(store, spaceId), [spaceId]);
 }
 
-/** #567: what this space's receipts were filed as, product by product — the suggestions a new receipt starts from */
 export function useItemMemory(): ItemMemory {
   const links = useSpaceReceipts();
   return useMemo(() => itemMemoryOf(links ?? []), [links]);
 }
 
-// ── normalized entries (what the screens render and act on) ──────────────
-
 export type ReceiptKind = 'link' | 'global';
 
-/** one receipt as a screen sees it: a space's snapshot link, or an
- *  owner's still-unmatched global receipt */
 export interface ReceiptEntry {
   kind: ReceiptKind;
-  /** ReceiptRow-shaped payload — rendering + linking always work on this */
   data: ReceiptRow;
   /** the receiptLink row id (kind 'link' — the unlink/delete target) */
   linkId?: string;
-  /** the first transaction the link is attached to */
   txId?: string;
-  /** every transaction the link is attached to, `txId` first (user 2026-10-08: one receipt, several payments) */
   txIds?: string[];
-  /** #567: the lines each attached transaction's categories were built from, by transaction id */
   picks?: Record<string, ReceiptPick[]>;
 }
 
@@ -262,7 +218,6 @@ export const linkAsEntry = (link: ReceiptLinkRow): ReceiptEntry => ({
 
 export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: row });
 
-/** the receipt attached to one transaction — as its first or as one of its further attachments */
 export function useTxReceiptEntry(txId: string | undefined): ReceiptEntry | null | undefined {
   const { store, spaceId } = useData();
   return useQuery(

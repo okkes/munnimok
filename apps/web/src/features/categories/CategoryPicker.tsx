@@ -25,51 +25,29 @@ interface CategoryPickerProps {
   onOpenChange: (open: boolean) => void;
   selectedId?: string;
   onPick: (catId: string) => void;
-  /** the transaction's side — hides categories of the opposite direction */
   direction?: 'debit' | 'credit';
-  /** the transaction's type — a category must support it to be pickable */
   txType?: TxType;
-  /** #133 r5: the row's own account type — with `direction` it runs the
-   *  movement matrix, so a regular account's outgoing row only sees
-   *  "Set aside" of the whole saving family (Interest/Fees live on the
-   *  pot's own ledger, where the matrix runs sign-inverted). Omitted =
-   *  no narrowing (pickers without row context). */
+  // #133 r5: with `direction` it runs the movement matrix: a regular account's outgoing row sees only "Set aside" of the
+  // saving family (Interest/Fees live on the pot's ledger); omitted = no narrowing
   sourceAccountType?: AccountType;
-  /** categories other rows of a split already own — hidden here (user
-   *  rule 2026-07-28: never offer picking the same category twice) */
+  /** categories other rows of a split already own are hidden: never offer the same category twice */
   excludeIds?: readonly string[];
-  /** ALLOWLIST: when set, only these ids are offered — a recurring-linked
-   *  transaction picks between the recurring's category and expected
-   *  reimbursement, nothing else (user rule 2026-07-28) */
+  /** ALLOWLIST: a recurring-linked transaction picks only between the recurring's category and expected reimbursement */
   onlyIds?: readonly string[];
-  /** #228 (user): a spread's rows offer no ◆ special-family categories —
-   *  one special per (split) transaction and it spans the whole, so a
-   *  multi-entry editor hides them (reimbursement, the one exception,
-   *  stays pickable) */
+  /** #228: no ◆ specials for a spread's rows (one special per split transaction, spanning the whole); reimbursement stays */
   noSpecials?: boolean;
-  /** #275: fired right before the create-custom door navigates away —
-   *  hosts stash their return state (review keeps its place) */
+  /** #275: fired before the create-custom door navigates away; hosts stash their return state */
   onCreateCustomNav?: () => void;
-  /** #322 (user): a standing counterparty narrows the list — hosts that
-   *  narrow pass this to render the detach door INSIDE the picker; the
-   *  callback clears the counter through the host's own detach mechanics
-   *  and the picker un-narrows in place */
+  /** #322: hosts that narrow by a counterparty pass this to render the detach door inside the picker; it clears the counter */
   onClearCounter?: () => void;
-  /** #339 (user): pick-by-counter — chips narrowing the catalog to
-   *  categories that can point at that account (the inverse of #322's
-   *  narrowing; for "I know where the money went, not what to call it") */
+  /** #339: chips narrowing the catalog to categories that can point at that account (inverse of #322) */
   counterAccounts?: readonly { id: string; name: string; type: AccountType }[];
-  /** with a chip active, the pick reports the account too — the host
-   *  links it right away (all mint semantics intact) */
+  /** with a chip active, the pick reports the account too so the host links it right away */
   onPickWithCounter?: (catId: string, accountId: string) => void;
-  /** #339 r3 (user): a counterparty already stands — the choice is one of
-   *  the predefined categories that account can mean, so the ◆ lens, the
-   *  pick-by-counter chips and the create door step aside until it is
-   *  removed (onClearCounter brings them back) */
+  /** #339 r3: a counterparty stands: the ◆ lens, counter chips and create door step aside until it is removed */
   counterLinked?: boolean;
 }
 
-/** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
 /** the nearest scrolling ancestor (the sheet's own scroller) back to its top */
 function rewindScroller(el: HTMLElement | null): void {
   for (let node = el?.parentElement; node; node = node.parentElement) {
@@ -86,13 +64,10 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   const ink = useUserInk();
   const cats = useCategories();
   const navigate = useNavigate();
-  // #128: what the plan's subject answering for a category still holds
   const availability = useCategoryAvailability(open);
   const { fmt } = useDisplayMoney();
   const [query, setQuery] = useState('');
-  // #246 (user): one tap to see only the ◆ special categories
   const [specialOnly, setSpecialOnly] = useState(false);
-  // #339: the active pick-by-counter chip
   const [counterAcct, setCounterAcct] = useState<string | null>(null);
   const counterAcctType = counterAccounts?.find((a) => a.id === counterAcct)?.type;
 
@@ -103,36 +78,27 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     const allowedMovement = sourceAccountType && direction ? allowedSpecialCats(sourceAccountType, direction) : null;
     return cats.parents
       .map((parent) => {
-        // #214 (user): a query that hits the PARENT's name keeps the whole
-        // group — every surviving sub shows under the matched header
+        // #214: a query hitting the PARENT's name keeps the whole group
         const parentMatch = !!q && catName(parent, t).toLowerCase().includes(q);
         return {
         parent,
         children: cats
           .childrenOf(parent.id)
-          // `reimbursed` is munni's own bookkeeping: settlement writes it,
-          // people never pick it (user rule 2026-07-24)
+          // `reimbursed` is munni's own bookkeeping: settlement writes it, people never pick it
           .filter((c) => c.id !== REIMBURSED_ID)
           .filter((c) => !direction || directionAllows(c.direction, direction))
-          // the invariant: a transaction's category must speak its type.
-          // R3 relax (typed-splits v2): STANDARD rows also see the marked
-          // special families — picking one pulls the type along. #133 E:
-          // the TRANSFER family joins them (kind rows are gone; the ◆
-          // Transfer pick opens the mandatory counterparty ask) — only
-          // stamped rows keep their narrowed lists
+          // a transaction's category must speak its type; STANDARD rows also see the marked special families (picking one pulls the
+          // type along) and the TRANSFER family (#133 E: its pick opens the mandatory counterparty ask); stamped rows stay narrowed
           .filter(
             (c) =>
               !txType ||
               c.txTypes.includes(txType) ||
-              // #261: the Adjustment family is locked/special but never rides
-              // the standard-row escape — its rows are system-minted only
+              // #261: the Adjustment family never rides this escape: its rows are system-minted only
               (kindOf(txType) === 'standard' && isSpecialCategory(c) && mainCatOf(c.id) !== 'adjustment'),
           )
           .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
           .filter((c) => !noSpecials || specialCatType(c.id) === undefined)
           .filter((c) => !specialOnly || isSpecialCategory(c))
-          // #339: an active counter chip keeps only categories whose
-          // family may point at that account type
           .filter((c) => !counterAcctType || (counterTypesFor(c.id)?.includes(counterAcctType) ?? false))
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
@@ -149,37 +115,26 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     setQuery('');
   };
 
-  // 2026-10-06 (user): the picker takes the sheet's whole height and the
-  // search with its lenses stays pinned at the top (the #245/#273 ride-along
-  // field is gone) — the sheet's own scroller holds the list, so a rewind
-  // means scrolling THAT
+  // the sheet's own scroller holds the list, so a rewind means scrolling THAT
   const listRef = useRef<HTMLDivElement>(null);
-  // #273 r3 (user): reopening must start whole — field shown, list at
-  // top. #329 (user): the ◆ lens resets with it — a filter toggled on
-  // the LAST visit must not silently narrow the next one. #335 (user):
-  // the search query clears too — a stale search must not greet the
-  // reopen (as the #323 resetKey it also rewinds the collapse slack).
+  // reopening starts whole: lens, query and counter chip reset and the list rewinds (#273 #329 #335 #323)
   useEffect(() => {
     if (!open) return;
     setSpecialOnly(false);
-    setCounterAcct(null); // #339: the chip resets with the lens/search
+    setCounterAcct(null);
     setQuery('');
     rewindScroller(listRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  // #323 (user): a query change rewinds the scroller so the shorter
-  // result list starts at its top
+  // #323: a query change rewinds the scroller so the shorter list starts at its top
   useEffect(() => {
     rewindScroller(listRef.current);
   }, [query]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="full">
-      {/* the header is sticky inside the sheet's scroller and bleeds over
-          its padding, so the list scrolls away underneath it */}
       <div className="sticky top-0 z-10 -mx-5 bg-bg px-5 pb-2" data-testid="catpicker-search-wrap">
         <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
-        {/* #246: the ◆ lens — hidden where specials are off the table */}
         {!noSpecials && !counterLinked && (
           <div className="mt-2 flex gap-2">
             <Chip testId="catpicker-special-filter" selected={specialOnly} onClick={() => setSpecialOnly((v) => !v)}>
@@ -188,9 +143,6 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
             </Chip>
           </div>
         )}
-        {/* #339 (user): pick-by-counter — "I know WHERE the money went,
-            not what to call it": a chip narrows to categories that can
-            point at that account, and the later pick links it */}
         {!counterLinked && counterAccounts && counterAccounts.length > 0 && (
           <div className="mt-2" data-testid="catpicker-counter-filter">
             <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-ink-4">
@@ -220,9 +172,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         )}
       </div>
       <div ref={listRef} className="mt-1" data-testid="catpicker-list">
-      {/* #322 (user): the narrowed list says WHY and offers the way out —
-          detaching the counterparty right here frees the whole catalog
-          without a trip back to the counter row */}
+      {/* #322: the narrowed list says why and offers the way out: detaching the counterparty here frees the whole catalog */}
       {onClearCounter && (
         <button
           data-testid="catpicker-clear-counter"
@@ -237,9 +187,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: ink(parent.color) }}>
             <Icon name={parent.icon} size={14} />
-            {/* #187: Highlight emits <mark> fragments — inside a gapped flex
-                row they'd each become flex items and the gap would split the
-                word; the extra span keeps them one inline run */}
+            {/* #187: <mark> fragments in a gapped flex row would split the word: the span keeps them one inline run */}
             <span className="min-w-0 truncate">
               <Highlight text={catName(parent, t)} query={query} />
             </span>
@@ -254,7 +202,6 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
               <Icon name={cat.icon} size={19} color={cat.color ?? parent.color} />
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <SpecialCatMark cat={cat} color={cat.color ?? parent.color} />
-                {/* #187: same one-flex-item wrap as the header above */}
                 <span className="min-w-0 truncate">
                   <Highlight text={catName(cat, t)} query={query} />
                 </span>
@@ -274,10 +221,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           ))}
         </div>
       ))}
-      {/* end of the list (or an empty search): the flow must not dead-end —
-          a door to creating a custom category keeps the user moving (user
-          request); #339 r3: with a counterparty standing, the way out is
-          removing it, never a category of one's own */}
+      {/* never a dead end: a door to a custom category; #339 r3: with a counterparty standing, the way out is removing it */}
       {(!counterLinked || groups.length === 0) && (
         <div className="mt-3 mb-2 flex flex-col items-center gap-1 rounded-card border border-dashed border-line px-4 py-3 text-center">
           {groups.length === 0 && (

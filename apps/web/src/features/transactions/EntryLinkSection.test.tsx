@@ -11,11 +11,8 @@ import { DEMO_SPACE_ID } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { renderApp } from '@/test/harness';
 
-/**
- * The demo checking account as a bank-filled one, with a coffee typed by
- * hand next to the demo's own coffee of today (dm102, €4.20) — written once
- * the boot chain has settled (the db.close trap).
- */
+// the demo checking account as bank-filled plus a hand-typed coffee beside the demo's dm102 (€4.20);
+// written once the boot chain has settled (the db.close trap)
 async function seed(linked: boolean | 'auto') {
   const first = renderApp('/transactions');
   await screen.findByTestId('tx-list');
@@ -58,7 +55,6 @@ const entryRow = async () => {
   }
 };
 
-/** #547: a hand-typed entry and the bank's own transaction, on the transaction's page */
 describe('your entry on the transaction page', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -92,7 +88,6 @@ describe('your entry on the transaction page', () => {
     await seed(true);
     renderApp('/transactions');
     expect(await screen.findByTestId('tx-row-entry-dm102', {}, { timeout: 5000 })).toBeTruthy();
-    // the entry itself is behind the bank's row: one transaction in the list
     expect(screen.queryByTestId('tx-row-my-coffee')).toBeNull();
     expect(screen.queryByTestId('tx-row-waiting-dm102')).toBeNull();
   }, 20_000);
@@ -109,7 +104,6 @@ describe('your entry on the transaction page', () => {
     renderApp('/transactions/my-coffee');
     const block = await screen.findByTestId('tx-entry', {}, { timeout: 5000 });
     expect(block.getAttribute('data-state')).toBe('waiting');
-    // the person's own row: it may leave again
     expect(screen.getByTestId('tx-detail-delete')).toBeTruthy();
     const tick = screen.getByTestId('tx-entry-in-balance') as HTMLInputElement;
     expect(tick.checked).toBe(true);
@@ -118,7 +112,6 @@ describe('your entry on the transaction page', () => {
 
     fireEvent.click(screen.getByTestId('tx-entry-pick'));
     fireEvent.click((await screen.findByTestId('tx-entry-candidate-dm102', {}, { timeout: 5000 })).querySelector('button')!);
-    // the two are one now, on the bank's row
     await waitFor(async () => expect((await entryRow())?.bankTxId).toBe('dm102'), { timeout: 5000 });
     await waitFor(() => expect(screen.getByTestId('tx-entry').getAttribute('data-state')).toBe('linked'), { timeout: 5000 });
     expect(screen.getByTestId('tx-entry-body').textContent).toContain('Coffee to go');

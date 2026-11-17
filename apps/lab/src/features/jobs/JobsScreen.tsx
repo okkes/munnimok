@@ -13,7 +13,6 @@ const KINDS = ['', 'login', 'fetch'];
 
 type Filters = { provider: string; state: string; kind: string; trigger: string; code: string; user: string; limit: string };
 
-/** the filter form's values from the hash query (`#/jobs?provider=ah&state=failed`), so a link from a party's page lands narrowed */
 function filtersFrom(query: URLSearchParams): Filters {
   return {
     provider: query.get('provider') ?? '',
@@ -26,13 +25,7 @@ function filtersFrom(query: URLSearchParams): Filters {
   };
 }
 
-/**
- * The job history (#441 L1): every run the control plane made, newest
- * first — who asked, which party, how it ended, what it left behind.
- * Never what was typed: the control plane's view has no field for inputs
- * or material. Narrowed by the form; the filters live in the hash so a
- * narrowed list is a link.
- */
+/** filters live in the hash so a narrowed list is a link; the control plane's view has no field for inputs or material */
 export function JobsScreen({ call }: Readonly<ScreenProps>) {
   const query = useRouteQuery();
   const [filters, setFilters] = useState<Filters>(() => filtersFrom(query));

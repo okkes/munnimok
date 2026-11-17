@@ -2,14 +2,7 @@ using System.Reflection;
 
 namespace RegistryConnector.Adapters.Fixtures;
 
-/// <summary>
-/// Recorded provider payloads, embedded in the assembly.
-///
-/// Embedded rather than read from disk so a parse test needs no file paths and
-/// cannot drift from the assembly it tests; also copied to the output so an
-/// operator diffing a live capture against the recorded shape can just open
-/// the file.
-/// </summary>
+// recorded payloads, embedded so parse tests need no file paths; also copied to output so an operator can diff a capture
 public static class FixtureCatalog
 {
     private static readonly Assembly Owner = typeof(FixtureCatalog).Assembly;

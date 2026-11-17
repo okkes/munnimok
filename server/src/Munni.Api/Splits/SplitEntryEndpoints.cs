@@ -5,13 +5,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Splits;
 
-/// <summary>
-/// What a split event is made of (#538): expenses somebody paid and the
-/// others share in, and payments one member made to another. Every active
-/// member adds; an entry is changed or taken back by its author, by the
-/// member named as its payer, or by an owner — and by nobody once the
-/// event is settled, until an owner reopens it.
-/// </summary>
+/// #538: an entry is changed or taken back by its author, its payer or an owner, and by nobody once the event is settled
+/// (until an owner reopens it)
 internal static class SplitEntryEndpoints
 {
     public static void MapSplitEntries(this RouteGroupBuilder group)
@@ -24,7 +19,7 @@ internal static class SplitEntryEndpoints
 
     private static bool MayChange(SplitEntry entry, SplitMember me) => entry.CreatedBy == me.UserId || entry.PaidByUserId == me.UserId || me.IsOwner();
 
-    /// <summary>An entry as one member sees it: where it came from is its adder's alone to know.</summary>
+    /// where an entry came from (the source backlink) is its adder's alone to know
     public static SplitEntryDto View(SplitEntry entry, SplitMember me, bool open)
     {
         var mine = entry.CreatedBy == me.UserId;
@@ -34,14 +29,13 @@ internal static class SplitEntryEndpoints
             mine ? entry.SourceTxId : null, mine ? entry.SourceSpaceId : null, entry.CreatedBy, open && MayChange(entry, me));
     }
 
-    /// <summary>What a request makes of an entry, or why it cannot be one.</summary>
     private static async Task<(SplitEntry? Entry, string? Error)> BuildAsync(AppDbContext db, string splitId, EntryRequest request, SplitMember me, SplitEntry? existing, CancellationToken ct)
     {
         if (SplitRules.EntryError(request) is { } error) return (null, error);
         var members = await SplitStore.ActiveMemberIdsAsync(db, splitId, ct);
         var paidBy = request.PaidByUserId ?? me.UserId;
         if (!members.Contains(paidBy)) return (null, "payer not a member");
-        // shares are FROZEN now: who joins later never rewrites what was divided
+        // shares are frozen now: who joins later never rewrites what was divided
         var (shares, mode, shareError) = SplitRules.ResolveShares(request, members);
         if (shareError is not null) return (null, shareError);
 
@@ -64,7 +58,7 @@ internal static class SplitEntryEndpoints
         return (entry, null);
     }
 
-    /// <summary>The photo: a picture sets or replaces it, an empty text takes it off, nothing said leaves it.</summary>
+    /// receipt: a picture sets or replaces it, an empty text takes it off, null leaves it
     private static async Task KeepReceiptAsync(AppDbContext db, SplitEntry entry, string? receipt, CancellationToken ct)
     {
         if (receipt is null) return;

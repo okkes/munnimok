@@ -6,7 +6,7 @@ const build = () => {
   document.body.innerHTML = '';
   const scroller = document.createElement('div');
   scroller.style.overflowY = 'auto';
-  const wrapper = document.createElement('div'); // plain, not a scroller
+  const wrapper = document.createElement('div');
   const field = document.createElement('textarea');
   wrapper.appendChild(field);
   scroller.appendChild(wrapper);
@@ -41,7 +41,6 @@ describe('keyboard scrollport padding (iOS layout viewport never shrinks)', () =
     scroller.style.paddingBottom = '24px';
     setViewport(800, 500); // keyboard took 300px, layout stayed 800
     padScrollportForKeyboard(field);
-    // the field can scroll clear of the keyboard: the inset plus breathing room
     expect(Number.parseFloat(scroller.style.paddingBottom)).toBeGreaterThanOrEqual(300);
     restoreScrollportPad();
     expect(scroller.style.paddingBottom).toBe('24px');
@@ -61,7 +60,6 @@ const box = (el: HTMLElement, top: number, bottom: number, width = 100) => {
     ({ top, bottom, height: bottom - top, width, left: 0, right: width, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
 };
 
-/** an inner list showing 100–500 on screen with plenty to scroll */
 const scrollingList = () => {
   const { scroller, field } = build();
   Object.defineProperty(scroller, 'scrollHeight', { value: 2000, configurable: true });
@@ -77,13 +75,13 @@ describe('visible-band checks (tutorial glow, focus reveal)', () => {
     setViewport(800, 800);
     const { field } = scrollingList();
     box(field, 200, 240);
-    expect(isClippedFromView(field)).toBe(false); // inside the window band AND the list's box
+    expect(isClippedFromView(field)).toBe(false);
     box(field, 20, 60);
-    expect(isClippedFromView(field)).toBe(true); // under the top chrome
+    expect(isClippedFromView(field)).toBe(true);
     box(field, 600, 640);
     expect(isClippedFromView(field)).toBe(true); // window-plausible, but below the list's visible box
     box(field, 200, 240, 0);
-    expect(isClippedFromView(field)).toBe(false); // display:none — nothing to reveal
+    expect(isClippedFromView(field)).toBe(false);
   });
 
   it('revealInScroller centers the element in its nearest scroller only, and stays put when already centered', () => {
@@ -97,7 +95,7 @@ describe('visible-band checks (tutorial glow, focus reveal)', () => {
     expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 170 }));
 
     scrollTo.mockClear();
-    box(field, 280, 320); // already centered — no nudging
+    box(field, 280, 320);
     revealInScroller(field);
     expect(scrollTo).not.toHaveBeenCalled();
   });

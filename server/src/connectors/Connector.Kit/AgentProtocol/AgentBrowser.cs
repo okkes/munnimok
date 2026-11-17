@@ -3,23 +3,15 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.AgentProtocol;
 
-/// <summary>
-/// The browser a build drives (#562). Playwright bundles one Chromium per
-/// release, so its version names the browser - the thing a bank judges
-/// outdated. The pooled agents get theirs with every deploy; an agent on
-/// somebody's own computer is renewed by its owner, and this is how the
-/// control plane can tell them it is time.
-/// </summary>
+// Playwright bundles one Chromium per release, so its version names the browser a bank judges outdated (#562); pooled agents
+// renew with every deploy, an own-computer agent is renewed by its owner and this tells them it is time
 public static class AgentBrowser
 {
     /// <summary>What this build runs, as major.minor.patch.</summary>
     public static string Version { get; } = Read(typeof(IPlaywright).Assembly);
 
-    /// <summary>
-    /// Behind is naming an older browser than this build's - or none at all:
-    /// the claim is newer than any agent that does not make it. A version
-    /// nobody can read judges nothing.
-    /// </summary>
+    // behind: naming an older browser than this build's, or none at all
+    // (the claim is newer than any agent that does not make it)
     public static bool IsBehind(string? reported) => IsBehind(reported, Version);
 
     public static bool IsBehind(string? reported, string ours)

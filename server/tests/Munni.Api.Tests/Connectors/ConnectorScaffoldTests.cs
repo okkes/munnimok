@@ -5,11 +5,6 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The new-service scaffold's door (#441 L5): a recorded run becomes a zip of
-/// files at repo paths, named as the operator asked; the names are held to
-/// their shapes, and a run without a recording is the control plane's refusal.
-/// </summary>
 public class ConnectorScaffoldTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Admin = "openid profile admin";
@@ -60,7 +55,6 @@ public class ConnectorScaffoldTests(ConnectorApiFactory factory) : IClassFixture
         Assert.Contains("Country = \"NL\"", manifest, StringComparison.Ordinal);
         Assert.DoesNotContain("hunter2", manifest, StringComparison.Ordinal);
 
-        // a run without a recording is the control plane's refusal, passed on
         var noRecording = await operatorClient.GetAsync("/lab/jobs/job_nobody/scaffold?provider=x-y&name=Xy&product=bank");
         Assert.Equal(HttpStatusCode.BadRequest, noRecording.StatusCode);
 

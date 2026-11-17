@@ -9,13 +9,6 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
-/**
- * The review card's rows and what arrives on them (#565): every row stands
- * on every card — disabled where the filing cannot use it — and what munni
- * worked out about a row was prepared when it landed. The card's link
- * questions: the counterparty (#339, #555, #556), the recurring cost
- * (#525) and the web search on the title (#506).
- */
 describe('the review card: prepared suggestions and every row standing', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -24,7 +17,6 @@ describe('the review card: prepared suggestions and every row standing', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  /** the demo boots once, then the rows land the way a sync lands them */
   async function land(write: (repo: Repo) => Promise<void>) {
     renderApp('/home');
     await screen.findByTestId('screen-home');
@@ -34,7 +26,7 @@ describe('the review card: prepared suggestions and every row standing', () => {
     db.close();
   }
 
-  /** the pass prepared the row (it runs as the rows land, never when the card opens) */
+  /** the suggestion pass runs as rows land, never when the card opens */
   async function prepared(txId: string) {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -82,10 +74,8 @@ describe('the review card: prepared suggestions and every row standing', () => {
     });
     await openReview('Kwartier Noord');
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Pick a category');
-    // the recurring row is open on the uncategorized card
     fireEvent.click(screen.getByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-rec-gym'));
-    // linking it filed its category at once
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Gym Membership'));
     // taking the recurring off: the category is the person's again
     fireEvent.click(screen.getByTestId('review-recurring-row'));
@@ -133,7 +123,7 @@ describe('the review card: prepared suggestions and every row standing', () => {
       const loan = { type: 'loan' as const, source: 'manual' as const, currency: 'EUR', paymentEvery: 'month' as const };
       await repo.upsert('account', DEMO_SPACE_ID, 'loan-a', { ...loan, name: 'ING Loan 1', balanceCents: -43792, paymentCents: 5520 });
       await repo.upsert('account', DEMO_SPACE_ID, 'loan-b', { ...loan, name: 'ING Loan 2', balanceCents: -274631, paymentCents: 6324 });
-      // filed as a debt payment, an amount neither plan fits: munni cannot tell the loan
+      // a debt payment of an amount neither loan plan fits: munni cannot tell the loan
       await repo.upsert('transaction', DEMO_SPACE_ID, 'repay-1', { ...flagged, date: '2026-01-01', amountCents: -4000, merchant: 'ING BANK NV', catId: 'loanRepayment' });
     });
     await openReview('ING BANK NV');
@@ -182,7 +172,6 @@ describe('the review card: prepared suggestions and every row standing', () => {
     expect(screen.queryByTestId('catpicker-special-filter')).toBeNull();
     expect(screen.queryByTestId('catpicker-counter-filter')).toBeNull();
     expect(screen.queryByTestId('catpicker-create-custom')).toBeNull();
-    // the remove door brings all three back in place
     fireEvent.click(screen.getByTestId('catpicker-clear-counter'));
     await screen.findByTestId('catpicker-special-filter');
     expect(screen.getByTestId('catpicker-counter-filter')).toBeTruthy();

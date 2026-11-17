@@ -1,13 +1,7 @@
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// <c>Connectors:*</c> — the one connector control plane of this environment
-/// (docs/connectors/relay.md, "Configuration"). Absent <see cref="BaseUrl"/>
-/// means this environment runs no connectors: the relay is not mapped and
-/// <c>/health</c> says so. Present, every other setting it needs is required
-/// and a missing one refuses to start — a control plane that is reachable
-/// but half-configured must never look healthy.
-/// </summary>
+// absent BaseUrl: no connectors here and the relay is not mapped; present: every other setting is required,
+// a half-configured control plane must never look healthy
 public sealed class ConnectorOptions
 {
     public const string SectionName = "Connectors";
@@ -15,92 +9,47 @@ public sealed class ConnectorOptions
     /// <summary>The control plane's root on the environment's network, e.g. <c>http://connector-dev:8392/</c>.</summary>
     public string? BaseUrl { get; set; }
 
-    /// <summary>
-    /// Development only: the shared secret the control plane accepts in
-    /// <c>X-Connector-Key</c>. Production leaves it empty and mints machine
-    /// tokens with the M2M application instead.
-    /// </summary>
+    // development only: the shared secret in X-Connector-Key; production leaves it empty and uses the M2M application
     public string? DevKey { get; set; }
 
-    /// <summary>Logto machine-to-machine application minting tokens for the connector's audience.</summary>
     public string? M2mAppId { get; set; }
 
     public string? M2mAppSecret { get; set; }
 
-    /// <summary>The API resource indicator the control plane validates as its audience.</summary>
     public string? Audience { get; set; }
 
-    /// <summary>
-    /// The scope the machine token asks for. Logto grants a client-credentials
-    /// token only the scopes the request names — the roles decide what MAY be
-    /// granted, the request what IS — so a mint without it opened the consumer
-    /// routes and met 403 on <c>/v1/admin/*</c> (found live 2026-10-01). The
-    /// control plane's <c>Connector:Auth:AdminScope</c> by default.
-    /// </summary>
+    // Logto grants a client-credentials token only the scopes the request names: without it /v1/admin/* answers 403
     public string? Scope { get; set; } = "connector:admin";
 
-    /// <summary>
-    /// Per-environment secret the user id is HMAC-ed with to mint the subject
-    /// the connector sees (§6). Rotating it severs every connection of this
-    /// environment and exposes nothing else.
-    /// </summary>
+    // rotating it severs every connection of this environment and exposes nothing else
     public string? SubjectSalt { get; set; }
 
-    /// <summary>
-    /// Where a household agent dials in from the outside — the control
-    /// plane's agent routes as published by the platform (M2), e.g.
-    /// <c>https://api.munni.example/connector/</c>. Absent, this environment
-    /// offers no household agents: enrollment answers without an address
-    /// and the app says so.
-    /// </summary>
+    // absent: no household agents here; enrollment answers without an address
     public string? AgentPublicUrl { get; set; }
 
-    /// <summary>Per-user budget on <c>login</c>, on top of the connector's per-provider interval.</summary>
-    /// <remarks>Twenty: a person reconnecting three banks and two shops in one sitting, with a retry each, is not an attack.</remarks>
+    // per-user budget on login, on top of the connector's per-provider interval
     public int LoginsPerHour { get; set; } = 20;
 
-    /// <summary>Per-user budget on <c>sync</c>.</summary>
-    /// <remarks>
-    /// Sixty, not twelve (prod 2026-10-05): the app syncs every connection
-    /// on open and after a sign-in, so four connections and a handful of
-    /// "Sync now"s spent twelve within the hour and the hub read "too many
-    /// attempts" on a healthy bank. The connector's own per-provider
-    /// interval guards the parties; this one guards the relay.
-    /// </remarks>
+    // 60, not 12: the app syncs every connection on open and after sign-in; twelve ran out within the hour on a healthy bank
+    // the connector's own interval guards the parties, this one guards the relay
     public int SyncsPerHour { get; set; } = 60;
 
-    /// <summary>
-    /// Whether the app's catalogue offers the platform's stand-in parties
-    /// (the mocks, #526). Off: no person is offered a party that is no real
-    /// shop or bank, and the relay refuses to sign one in; the lab's bench
-    /// reaches them through its own door either way. The test host turns it
-    /// on to exercise the protocol end to end.
-    /// </summary>
+    // off: no stand-in party is offered and the relay refuses to sign one in; the lab bench reaches them either way (#526)
     public bool OfferFixtures { get; set; }
 
-    /// <summary>
-    /// One call's ceiling. A fetch waits up to the control plane's own window
-    /// (25 s) before it answers 202, so this sits well above it.
-    /// </summary>
+    // above the control plane's own 25 s window, after which a fetch answers 202
     public int TimeoutSeconds { get; set; } = 60;
 
     public bool Configured => !string.IsNullOrWhiteSpace(BaseUrl);
 
-    /// <summary>Development transport: the shared key instead of a machine token.</summary>
     public bool UsesDevKey => !string.IsNullOrWhiteSpace(DevKey);
 
-    /// <summary>
-    /// Whether the relay holds a credential the control plane accepts: the
-    /// development key, or the machine application with its audience. The
-    /// machine pair is written back by the platform's Logto module after the
-    /// environment's first bootstrap, so its absence is a stage, not a fault
-    /// — <see cref="ConnectorSetup"/> keeps the relay off and says why.
-    /// </summary>
+    // the machine pair is written back by the platform's Logto module after the first bootstrap:
+    // its absence is a stage, not a fault
     public bool HasCredential =>
         UsesDevKey
         || (!string.IsNullOrWhiteSpace(M2mAppId) && !string.IsNullOrWhiteSpace(M2mAppSecret) && !string.IsNullOrWhiteSpace(Audience));
 
-    /// <summary>Throws with the setting's name when a configured relay cannot work with what it was given.</summary>
     public void Require()
     {
         if (!Configured) return;

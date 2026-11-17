@@ -26,9 +26,7 @@ import { Logo } from '@/ui/Logo';
 import { PlanAttention } from '@/features/planning/PlanAttention';
 import { MobileTabBar, SideNav } from '@/features/navigation/NavBars';
 
-/** input types that summon NO on-screen keyboard — focusing a checkbox
- *  must not hide the tab bar (#162 fallout: the private toggle left the
- *  bar hidden until blur) */
+/** input types that summon no on-screen keyboard: focusing one must not hide the tab bar (#162) */
 const KEYBOARDLESS_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color']);
 
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
@@ -38,19 +36,8 @@ const isEditable = (el: EventTarget | null): el is HTMLElement =>
     el.isContentEditable);
 
 
-/**
- * On-screen keyboard awareness (user report 2026-07-24): the viewport
- * RESIZES for the keyboard on Android + the native shells, which pushed
- * the tab bar right on top of it — hide the bar while an editable has
- * focus. The focused field also scrolls itself into view once the
- * resized layout has settled (fields near the bottom stayed hidden).
- */
-/** ONE scroll, once the viewport has SETTLED. The old fixed-delay double
- *  pass (300/750ms) visibly re-corrected after the keyboard had landed
- *  and kept moving fields underneath mid-air fingers — the source of
- *  the dead-tap-then-register feel (user ss ×3, 2026-07-28). Watching
- *  the visualViewport hold still also makes field-to-field hops (no
- *  resize at all) reveal fast instead of waiting out a timer. */
+// the viewport resizes for the keyboard on Android + native shells: the tab bar hides while an editable has focus
+/** one scroll once the visualViewport has settled: fixed-delay passes re-corrected mid-tap and moved fields under fingers */
 function scheduleKeyboardReveal(el: HTMLElement): () => void {
   const vv = window.visualViewport;
   let cancelled = false;
@@ -99,11 +86,7 @@ function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let cancelReveal: (() => void) | null = null;
-    // #312 (user): scrolling blurs the field and the keyboard slides
-    // away — but the relayout (tab bar back, scrollport pad removed)
-    // fired MID-GESTURE and the screen jumped under the finger. While a
-    // touch is down, the close waits for the finger to lift: the list
-    // keeps scrolling as if nothing happened, then ONE calm relayout.
+    // #312: a keyboard closing mid-scroll relaid out under the finger; while a touch is down the close waits for lift-off
     let touchDown = false;
     let pendingClose = false;
     const settleClose = () => {
@@ -126,10 +109,8 @@ function useKeyboardOpen(): boolean {
       pendingClose = false;
       setOpen(true);
       cancelReveal?.();
-      // where the sheet library still owns the keyboard (non-iOS,
-      // non-resizing viewports) a second reveal here fought it. On iOS
-      // the library stands down entirely (#134) and THIS reveal is the
-      // one that pads the sheet's scroller and shows hidden fields.
+      // where the sheet library owns the keyboard (non-iOS, non-resizing viewports) a second reveal fought it;
+      // on iOS it stands down (#134)
       if (SHEET_OWNS_KEYBOARD && e.target.closest('.react-modal-sheet-container')) return;
       cancelReveal = scheduleKeyboardReveal(e.target);
     };
@@ -161,8 +142,7 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
-/** #153: wheel-only mice reach sideways strips — the one app-wide
- *  listener (the decision logic lives in lib/wheelScroll) */
+/** #153: wheel-only mice reach sideways strips */
 function useWheelToHorizontal(): void {
   useEffect(() => {
     document.addEventListener('wheel', wheelToHorizontal, { passive: false });
@@ -170,13 +150,11 @@ function useWheelToHorizontal(): void {
   }, []);
 }
 
-/** headless: fires due-soon reminders once per app open (needs DataProvider) */
 function RecurringReminders() {
   useRecurringReminders();
   return null;
 }
 
-/** headless: connection keep-alive + receipt pull (signed-in only) */
 function StoreKeepAlive() {
   useConnectionKeepAlive();
   return null;
@@ -188,9 +166,7 @@ function ReviewSuggestionsPrep() {
   return null;
 }
 
-/** headless: manually typed spending crosses a budget threshold while
- *  the app is open — same once-per-period markers as the worker path,
- *  so the two can never double-fire (budgets design P4) */
+/** headless: shares the worker path's once-per-period markers, so the two never double-fire */
 function BudgetAlerts() {
   const { store, spaceId } = useData();
   const { lang } = useLang();
@@ -201,7 +177,7 @@ function BudgetAlerts() {
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       for (const alert of await collectBudgetAlerts(store, spaceId, lang)) {
-        hapticNotify('WARNING'); // §5: over-budget deserves a physical nudge
+        hapticNotify('WARNING');
         await registration.showNotification(alert.title, {
           body: alert.body,
           icon: 'icon-192.png',
@@ -215,19 +191,17 @@ function BudgetAlerts() {
   return null;
 }
 
-/** #173 (user): kicked out of the active space — the takeover sheet says
- *  what happened and where the app landed instead of silently vanishing
- *  the data underfoot. Not-active evictions get the phone push only. */
+/** #173: the takeover sheet says what happened and where the app landed; not-active evictions get the phone push only */
 function EvictedNotice() {
   const { t } = useLang();
   const evicted = useEvicted((s) => s.evicted);
   const clear = useEvicted((s) => s.clear);
   return (
-    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t('space.kickedTitle')} size="compact">
+    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t(evicted?.deleted ? 'space.goneTitle' : 'space.kickedTitle')} size="compact">
       {evicted && (
         <div className="flex flex-col gap-3 pt-1" data-testid="space-kicked-sheet">
           <p className="text-[14px] leading-relaxed text-ink-2">
-            {t('space.kickedBody', { space: evicted.spaceName })}
+            {t(evicted.deleted ? 'space.goneBody' : 'space.kickedBody', { space: evicted.spaceName })}
             {evicted.switchedToName ? ` ${t('space.kickedSwitched', { to: evicted.switchedToName })}` : ''}
           </p>
           <Button data-testid="space-kicked-ok" onClick={clear}>
@@ -239,8 +213,6 @@ function EvictedNotice() {
   );
 }
 
-/** unmistakable "this is the demo" marker (user request): a pill next to
- *  the desktop brand, and a slim strip above the mobile tab bar */
 function DemoBadge() {
   const identity = useSession((s) => s.identity);
   if (identity?.kind !== 'demo') return null;
@@ -273,18 +245,14 @@ export function AppLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // onboarding is a focused flow — no navigation chrome (user request)
   const hideNav = pathname.startsWith('/onboarding');
-  // the mobile tab bar makes no sense floating on top of the keyboard
   const keyboardOpen = useKeyboardOpen();
   useWheelToHorizontal(); // #153: wheel-only mice reach sideways strips
 
   return (
-    // #409 (user): on a wide monitor the shell is ONE centred frame — the
-    // navigation sits beside the content instead of at the far left edge
-    // with the screens floating somewhere to the right
+    // #409: on a wide monitor the shell is one centred frame, navigation beside the content
     <div className="flex h-full flex-row justify-center bg-bg-2 text-ink">
       {/* data-app-frame: #558 the tour's step card spans this frame, not the window */}
       <div data-app-frame className="flex h-full w-full flex-row bg-bg md:max-w-[1400px] md:border-x md:border-line">
-      {/* Desktop sidebar */}
       <nav className={`w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 ${hideNav ? 'hidden' : 'hidden md:flex'}`}>
         <div className="flex items-center gap-2 px-2 pb-8">
           <Logo size={26} />
@@ -293,16 +261,13 @@ export function AppLayout() {
         <SideNav pathname={pathname} />
       </nav>
 
-      {/* Content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
           <DataProvider>
-            {/* one shared display-currency lens for every screen and row —
-                per-row hooks melted sync-time performance (useDisplayMoney) */}
+            {/* one shared display-currency lens: per-row hooks melted sync-time performance (useDisplayMoney) */}
             <DisplayMoneyProvider>
             <HelpProvider>
-              {/* desktop content ceiling (redesign §4.1): the single column
-                  stops feeling lost past ~1080px; gutters stay the screens' */}
+              {/* desktop content ceiling (redesign §4.1): a single column feels lost past ~1080px */}
               <div className="min-h-0 w-full flex-1 overflow-hidden md:mx-auto md:max-w-[1080px]">
                 <Outlet />
               </div>

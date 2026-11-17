@@ -17,11 +17,7 @@ export interface MemberInfo {
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
-/**
- * #172: one member, up close — identity, member-since, and (for owners
- * looking at someone else) the role control and the remove door. The
- * remove CONFIRM stays with the caller.
- */
+/** the remove CONFIRM stays with the caller */
 export function MemberSheet({
   member,
   meIsOwner,

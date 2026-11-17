@@ -6,7 +6,6 @@ import { LangProvider } from '@/i18n';
 import '@/test/harness';
 import { Sheet, sheetLibAvoidsKeyboard } from './Sheet';
 
-/** lg viewport: the Sheet renders its centered desktop dialog */
 const stubDesktop = () => {
   const original = window.matchMedia;
   window.matchMedia = (() => ({
@@ -26,8 +25,7 @@ const dialogFor = (ui: React.ReactElement): HTMLDialogElement => {
   return dialog!;
 };
 
-/** the geometry itself (auto height, ceiling, floor) is measured in the
- *  WebKit desktop spec — happy-dom has no layout to measure */
+/** the geometry (auto height, ceiling, floor) is measured in the WebKit desktop spec: happy-dom has no layout */
 describe('desktop dialog', () => {
   it('#290: the dialog opts out of the app-level focus reveal', () => {
     localStorage.setItem('munni_lang', 'en');
@@ -38,11 +36,8 @@ describe('desktop dialog', () => {
           <div />
         </Sheet>,
       );
-      // AppLayout's keyboard reveal CENTERS a focused field in the
-      // nearest scroller — with no on-screen keyboard that yanked
-      // mid-size dialogs "way up" on click. The guard in AppLayout
-      // stands down inside this class wherever SHEET_OWNS_KEYBOARD,
-      // so the dialog must wear it.
+      // AppLayout's keyboard reveal centers a focused field in the nearest scroller (a yank without an on-screen keyboard);
+      // it stands down inside this class wherever SHEET_OWNS_KEYBOARD, so the dialog must wear it
       expect(dialog.className).toContain('react-modal-sheet-container');
     } finally {
       restore();
@@ -100,23 +95,14 @@ describe('desktop dialog', () => {
   });
 });
 
-/** #290 r2 (user): at sub-lg widths the MOBILE sheet hosts the same
- *  forms — and the sheet library's avoidKeyboard machinery misfires on
- *  desktop Chromium (navigator.virtualKeyboard exists keyboard-less;
- *  the lib flips overlaysContent itself and takes any focused field
- *  for "keyboard open" at height 0), smooth-scrolling the field flush
- *  under the sheet header. The library must engage by POINTER, not by
- *  platform: fine pointer = no on-screen keyboard = stand down.
- *  happy-dom has no layout AND framer-motion drops the lib's var()
- *  padding there, so the DOM carries no honest signal — the smoke
- *  specs the exported DECISION the Sheet feeds the library instead
- *  (the scroll behavior itself was verified in a real Chromium). */
+// #290: desktop Chromium exposes navigator.virtualKeyboard keyboard-less and the sheet library reads it as "keyboard open":
+// avoidance must engage by pointer, not platform (fine pointer = stand down); happy-dom has no layout,
+// so the test specs the exported decision the Sheet feeds the library, not the DOM
 describe('#290 r2: mobile-sheet keyboard avoidance engages by pointer', () => {
   const stubPointer = (coarse: boolean) => {
     const original = window.matchMedia;
     window.matchMedia = ((query: string) => ({
-      // '(pointer: coarse)' answers per stub; every other query
-      // (the lg breakpoint) stays false
+      // only '(pointer: coarse)' answers per stub; every other query (the lg breakpoint) stays false
       matches: coarse && query.includes('pointer: coarse'),
       addEventListener: () => {},
       removeEventListener: () => {},

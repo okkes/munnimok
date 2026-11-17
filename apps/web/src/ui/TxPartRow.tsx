@@ -5,13 +5,7 @@ import { orDefaultLabel, txTitle } from '@/lib/text';
 import { Highlight, amountQueryFor } from './Highlight';
 import { Icon } from './Icon';
 
-/**
- * One split PART standing alone in a filtered list (#126 r8): when a
- * filter or drill matches only some of a split's parts, those parts rank
- * as normal rows — aligned exactly like TxRow — with a small split glyph
- * saying "this is a piece of a larger payment". Tapping opens the part's
- * own page.
- */
+/** #126: one split part standing alone in a filtered list; the split glyph says it is a piece of a larger payment */
 export function TxPartRow({
   tx,
   part,
@@ -24,12 +18,10 @@ export function TxPartRow({
   tx: TransactionRow;
   part: TxSplit;
   index: number;
-  /** the formatted amount the list wants to show (share or slice) */
   amountText: string;
   onClick?: () => void;
   /** lists without date group headers show it inline, like TxRow (#143) */
   showDate?: boolean;
-  /** the active search query — label and amount hits light up (#267) */
   highlight?: string;
 }>) {
   const { t, lang } = useLang();
@@ -55,7 +47,6 @@ export function TxPartRow({
           <span className="min-w-0 truncate">
             <Highlight text={label} query={highlight} />
           </span>
-          {/* the split glyph: this row is a piece of a larger payment */}
           <Icon name="call-split" size={12} color="var(--m-accent-deep)" />
         </span>
         <span className="block truncate text-[12px] text-ink-3">
@@ -68,8 +59,7 @@ export function TxPartRow({
           {catName(partCat, t)}
         </span>
       </span>
-      {/* #139: the amount wears exactly TxRow's face — weight and the
-          positive green included */}
+      {/* #139: the amount wears exactly TxRow's face */}
       <span className={`m-num text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
         <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />
       </span>

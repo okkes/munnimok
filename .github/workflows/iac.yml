@@ -1,13 +1,7 @@
 name: Bootstrap
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('Bootstrap {0}{1}', inputs.stack, inputs.cleanup == true && ' (cleanup)' || (inputs.verify_only == true && ' (verify)' || '')) || 'Verify the nas stacks' }}
 
-# Runs infra/bootstrap.mjs for one stack of the nas platform (its GitHub
-# environment carries the secrets). Dispatched by the setup wizard when a
-# platform or an environment is created, re-run by Deploy once a deploy
-# has seeded Logto/GlitchTip, and by hand from the Actions UI. Pushes to
-# dev or master that touch infra/ VERIFY every nas stack (no writes). The
-# platform config comes from the MUNNI_PLATFORM_* variables the wizard
-# publishes (#416), materialized into infra/platforms at the start of a job.
+# Pushes to dev or master that touch infra/ only VERIFY every nas stack (no writes).
 on:
   workflow_dispatch:
     inputs:
@@ -41,7 +35,7 @@ permissions:
 
 jobs:
   stacks:
-    # first-boot latch: fresh repo copies skip every run until the wizard marks the repo initialized
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     outputs:
@@ -61,7 +55,7 @@ jobs:
           MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       - name: Which stacks
         id: m
-        # a stack rides in its GitHub environment; without one it was never bootstrapped — a push skips it (a dispatch names its stack: that Bootstrap creates the environment)
+        # no GitHub environment = never bootstrapped: a push skips the stack, a dispatch names it (and creates it)
         run: |
           if EXISTING=$(gh api "repos/${{ github.repository }}/environments?per_page=100" --jq '[.environments[].name] | join(",")'); then
             FILTER=(--existing "$EXISTING")
@@ -79,13 +73,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # the stacks of one run go one after another: two bootstraps logged into DSM with the same account at once
-      # and one lost its session (2026-10-01, 119 "SID not found" on the reverse-proxy list)
+      # two bootstraps logged into DSM with the same account at once lose a session (119 "SID not found")
       max-parallel: 1
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}
-    # applies of one platform queue behind each other (same DSM account, see above) and are never cancelled;
-    # verifies keep a group per stack and drop a stale one when the next push comes
+    # applies of one platform queue (same DSM account) and are never cancelled; a stale verify is dropped by the next push
     concurrency:
       group: ${{ (github.event_name == 'push' || inputs.verify_only == true) && format('iac-{0}-verify', matrix.stack) || format('iac-{0}-apply', matrix.platform) }}
       cancel-in-progress: ${{ github.event_name == 'push' || inputs.verify_only == true }}
@@ -127,9 +119,8 @@ jobs:
             exit $rc
           fi
         env:
-          # gh needs a token that can manage environments + secrets — GITHUB_TOKEN cannot; the wizard stores GH_PAT
+          # GITHUB_TOKEN cannot manage environments + secrets; the wizard stores GH_PAT
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          # the platform (mirrored into every environment of it)
           PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
@@ -141,7 +132,6 @@ jobs:
           PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
           VAULT_ADMIN_EMAIL: ${{ secrets.VAULT_ADMIN_EMAIL }}
           VAULT_MASTER_PASSWORD: ${{ secrets.VAULT_MASTER_PASSWORD }}
-          # the stack
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
           LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
@@ -173,8 +163,7 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
       - name: Chain the deploy
-        # the wizard dispatches with chain=deploy: a green apply is followed by the
-        # stack's Deploy — never over a NAS that refused the deploy account
+        # chain=deploy: a green apply is followed by the Deploy, never over a NAS that refused the deploy account
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.cleanup != true && inputs.chain == 'deploy' && steps.boot.outputs.nas != 'blocked' }}
         run: |
           gh workflow run deploy-nas.yml --ref "$GITHUB_REF_NAME" -f stack="${{ matrix.stack }}"

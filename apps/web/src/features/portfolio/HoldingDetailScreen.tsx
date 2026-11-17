@@ -20,7 +20,6 @@ import { DecimalInput } from '@/ui/DecimalInput';
 const LOT_KINDS = ['buy', 'sell', 'dividend', 'fee'] as const;
 const LOT_ICON: Record<string, string> = { buy: 'tray-arrow-down', sell: 'tray-arrow-up', dividend: 'cash-plus', fee: 'cash-minus' };
 
-/** One holding: the position, its worth, and the audit trail behind it. */
 export function HoldingDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -64,7 +63,6 @@ export function HoldingDetailScreen() {
     if (priceCents === null || priceCents <= 0) return;
     const isTrade = kind === 'buy' || kind === 'sell';
     if (isTrade && (!Number.isFinite(quantity) || quantity <= 0)) return;
-    // buys take cash out, everything else brings value in
     let totalCents = priceCents;
     if (isTrade) totalCents = Math.round(quantity * priceCents) * (kind === 'buy' ? -1 : 1);
     await ops.addLot(view.holding.id, {
@@ -164,7 +162,6 @@ export function HoldingDetailScreen() {
         )}
       </div>
 
-      {/* add a lot: trades want qty × price, income/fees just a total */}
       <Sheet open={lotOpen} onOpenChange={(open) => !open && setLotOpen(false)} title={t('pf.addLot')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
           <div className="flex gap-1.5">

@@ -15,27 +15,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Providers;
 
-/// <summary>
-/// Runs the operator's own connections, so a provider that changes is found by
-/// a schedule rather than by a person.
-///
-/// <para>
-/// Two phases, and they are separate on purpose. A canary fetch is a real job:
-/// it queues, an agent leases it, a browser drives a bank, and the whole thing
-/// takes a minute or two. Waiting for that inside a timer tick would mean a
-/// stuck provider stalls every other canary behind it. So one phase starts what
-/// is due and the other reads what has finished, and a run that never finishes
-/// at all is settled by the same expiry sweep that settles a user's.
-/// </para>
-///
-/// <para>
-/// Nothing here decides a provider's health directly. The fetch it enqueues
-/// goes through the ordinary pipeline, so <see cref="JobOutcomeService"/>
-/// degrades on <c>provider_changed</c> and recovers on success exactly as it
-/// does for a real user - which is the point. A second opinion about health
-/// would be a second thing to keep consistent.
-/// </para>
-/// </summary>
+// two phases, so a stuck provider cannot stall other canaries: one starts what is due, the other reads what finished
+// health is not decided here: the ordinary pipeline (JobOutcomeService) degrades and recovers as for a user
 public sealed class CanaryScheduler(
     IServiceScopeFactory scopes,
     IOptions<ConnectorOptions> options,
@@ -53,8 +34,7 @@ public sealed class CanaryScheduler(
             {
                 await SweepAsync(stoppingToken);
             }
-            // A call that timed out is an OperationCanceledException too: only
-            // the host's own stop ends the sweeps.
+            // a timed-out call is an OperationCanceledException too: only the host's own stop ends the sweeps
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
@@ -77,15 +57,8 @@ public sealed class CanaryScheduler(
         await StartDueAsync(scope.ServiceProvider, ct);
     }
 
-    /// <summary>
-    /// Reads the verdict off every canary whose run has finished.
-    /// </summary>
-    /// <remarks>
-    /// Harvest before start, so a canary that finished a moment ago is recorded
-    /// - and its bundle rotated - before anything decides whether it is due
-    /// again. The other order would start the next run from last run's bundle,
-    /// which most providers have already invalidated.
-    /// </remarks>
+    // harvest before start: a canary that just finished is recorded and its bundle rotated before it is due again,
+    // else it would start from an invalidated bundle
     private async Task HarvestAsync(IServiceProvider provider, CancellationToken ct)
     {
         var db = provider.GetRequiredService<ConnectorDbContext>();
@@ -101,18 +74,13 @@ public sealed class CanaryScheduler(
         }
     }
 
-    /// <summary>
-    /// One canary's verdict, once its run has finished: recorded, logged, and
-    /// the bundle the run handed back taken with it.
-    /// </summary>
     private async Task HarvestOneAsync(ConnectorDbContext db, CanaryService canaries, CanaryRow canary, CancellationToken ct)
     {
         var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == canary.LastJobId, ct);
 
         if (job is null)
         {
-            // Purged before it was read. Not a provider fault, and not a
-            // verdict either - the canary simply runs again.
+            // purged before it was read: not a provider fault nor a verdict; the canary simply runs again
             await canaries.RecordAsync(
                 canary.ProviderId, canary.LastJobId, intact: false,
                 "the run disappeared before its outcome could be read", rotatedBundle: null, ct);
@@ -127,9 +95,7 @@ public sealed class CanaryScheduler(
 
         var intact = job.State == JobState.Succeeded;
 
-        // The bundle the run handed back. A session issues it once, so
-        // reading it here also takes it - which is right: this is the
-        // device it was issued to.
+        // a session issues its bundle once, so reading it here takes it: this is the device it was issued to
         var rotated = intact ? await TakeRotatedBundleAsync(db, job.SessionId, ct) : null;
 
         var verdict = intact
@@ -144,9 +110,7 @@ public sealed class CanaryScheduler(
         }
         else
         {
-            // Warning, not error: the provider's own health has already
-            // been set by the job outcome, and this line is the operator's
-            // pointer at which run to read.
+            // warning, not error: the job outcome already set the provider's health; this line points at which run to read
             logger.LogWarning(
                 "canary for {Provider} did NOT come back: {Verdict} (job {JobId})",
                 canary.ProviderId, verdict, job.Id);
@@ -168,15 +132,7 @@ public sealed class CanaryScheduler(
         return null;
     }
 
-    /// <summary>
-    /// What a successful run proves, in the terms an operator cares about.
-    /// </summary>
-    /// <remarks>
-    /// A count and nothing else. The records themselves are the account
-    /// holder's - even when the account holder is the operator - and a verdict
-    /// line that quoted one would put a transaction in a table that exists to
-    /// hold no data at all.
-    /// </remarks>
+    // a count only: the records are the account holder's, and the verdict table must hold no data
     private static string Describe(JobRow job) =>
         $"read {job.ResourceId ?? "records"} and parsed what came back";
 
@@ -196,8 +152,7 @@ public sealed class CanaryScheduler(
         {
             if (await HoldAsync(provider, canary, ct) is { } hold)
             {
-                // A run still in flight is the ordinary case between two ticks
-                // and not worth a line a minute; the other holds are.
+                // a run in flight is the ordinary case between ticks, not worth a line a minute
                 if (!hold.Quiet)
                 {
                     logger.LogInformation("canary for {Provider} skipped: {Reason}", canary.ProviderId, hold.Reason);
@@ -210,13 +165,8 @@ public sealed class CanaryScheduler(
         }
     }
 
-    /// <summary>
-    /// The operator's "run it now" (#441 L1): the start the schedule would
-    /// make, without waiting for the interval. The same holds apply - a run
-    /// still in flight, a provider this build lacks, a provider somebody
-    /// paused - and come back as refusals rather than silence, because a
-    /// person is waiting for the answer.
-    /// </summary>
+    // the operator's "run it now" (#441 L1): same holds as the schedule, but refusals rather than silence
+    // because a person is waiting
     public async Task<CanaryView> RunNowAsync(string providerId, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
@@ -245,15 +195,8 @@ public sealed class CanaryScheduler(
 
     private sealed record Hold(string Reason, bool Quiet);
 
-    /// <summary>
-    /// Why a canary must not start right now, or null. Still in flight from an
-    /// earlier tick - DueAsync goes by the clock alone, and a provider slower
-    /// than its own interval would otherwise be given a second run every tick
-    /// for ever; a provider this build does not have; a paused provider - an
-    /// operator saying "stop", and a canary is work, so running one anyway
-    /// would keep hitting a provider somebody has deliberately backed away
-    /// from, which is the situation the kill switch exists for.
-    /// </summary>
+    // holds: DueAsync goes by the clock alone, so a slow provider needs the in-flight hold.
+    // a paused provider is the kill switch, and a canary is work
     private static async Task<Hold?> HoldAsync(IServiceProvider provider, CanaryRow canary, CancellationToken ct)
     {
         if (canary.LastJobId is { } previous && canary.LastIntact is null)
@@ -303,21 +246,15 @@ public sealed class CanaryScheduler(
                 Kind = JobKind.Fetch,
                 ResourceId = resource.Id,
 
-                // The narrowest window the resource allows, because a canary is
-                // asking "does this still work" and not "what happened this
-                // year". A full history every fifteen minutes is a way to get
-                // the operator's own account blocked.
+                // narrowest window: a canary asks "does this still work"; a full history every fifteen minutes
+                // would get the operator's account blocked
                 Request = Probe(resource),
                 Config = opened.Payload.Config,
                 Material = opened.Payload.Material,
                 ProfileId = opened.Session.ProfileId,
-                // Whatever the connection this canary borrows was told to run
-                // on, both ways round. A probe that routed differently from
-                // the fetches it is a canary FOR would be measuring a machine
-                // nobody's real work goes to.
+                // same fleet/own routing as the borrowed connection: a probe routed differently would measure a machine nobody uses
                 FleetOnly = opened.Session.FleetOnly,
-                // The operator's own run: its failure pictures are retained
-                // without asking, and health counts it apart from people's.
+                // the operator's run: failure pictures retained without asking, and health counts it apart from people's
                 Trigger = JobRow.CanaryTrigger,
             }, ct);
 
@@ -336,11 +273,8 @@ public sealed class CanaryScheduler(
         }
         catch (ConnectorException ex)
         {
-            // A BUNDLE THAT WILL NOT OPEN IS A VERDICT, not a crash. It is also
-            // the most likely way a canary dies - an operator's account gets
-            // signed out, or the provider expires the session - and it must be
-            // told apart from the provider having changed, which is why it is
-            // recorded here rather than raised.
+            // a bundle that will not open is a verdict, not a crash: the likeliest way a canary dies,
+            // to be told apart from provider_changed
             await canaries.RecordAsync(
                 canary.ProviderId, jobId: null, intact: false,
                 $"could not start: {ErrorCatalog.Wire(ex.Code)}: {ex.Message}", rotatedBundle: null, ct);
@@ -352,16 +286,7 @@ public sealed class CanaryScheduler(
         }
     }
 
-    /// <summary>
-    /// The smallest ask that still proves the parser works.
-    /// </summary>
-    /// <remarks>
-    /// Yesterday onwards, and no raw payload. A canary is a liveness check on
-    /// the whole path - session opens, provider answers, reader parses - and
-    /// none of that needs volume. Asking for a year would make each run
-    /// expensive, slow, and far more conspicuous to the provider than a person
-    /// checking their account.
-    /// </remarks>
+    // yesterday onwards, no raw payload: a canary is a liveness check; a year would be slow and conspicuous to the provider
     private ResourceRequest Probe(ResourceSpec resource) => new()
     {
         ResourceId = resource.Id,

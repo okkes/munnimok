@@ -1,14 +1,8 @@
 import { isSpecialCategory } from '@/domain/categories';
 import { useLang } from '@/i18n';
 
-/**
- * The "not a random category" diamond (typed-splits v2, user request
- * 2026-08-05): special categories carry system meaning — buckets count
- * them, movements force them — and wear the family-colored mark
- * wherever they are offered or shown. #244: the INCOME family wears it
- * too — with direction gone, the mark is what says "this counts as
- * income" — while staying the one special parent open to user subs.
- */
+// special categories carry system meaning (buckets count them, movements force them)
+// #244: the income family wears it too (direction is gone: the mark says "counts as income") and stays open to user subs
 export function SpecialCatMark({ cat, color }: Readonly<{ cat: { id: string; parentId?: string }; color?: string }>) {
   const { t } = useLang();
   const incomeFamily = cat.id === 'income' || cat.parentId === 'income';

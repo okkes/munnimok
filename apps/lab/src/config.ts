@@ -1,10 +1,4 @@
-/**
- * Lab configuration: runtime overlay first, baked Vite env second — the
- * same contract as the web app and the admin portal. /runtime-config.js
- * is rewritten per deployment by the nginx entrypoint
- * (deploy/nginx/40-runtime-config.sh) so one public image serves every
- * stack; the committed stub sets nothing and the baked config applies.
- */
+/** runtime overlay first, baked Vite env second: the nginx entrypoint rewrites /runtime-config.js per deployment */
 type RuntimeKey = 'API_URL' | 'LOGTO_ENDPOINT' | 'LOGTO_APP_ID' | 'LOGTO_RESOURCE' | 'GLITCHTIP_DSN';
 
 const runtime = (key: RuntimeKey): string | undefined => {

@@ -1,7 +1,3 @@
-// What munni's platform renders for the connector platform (#367, slice M2):
-// the environment's control plane beside its api, the api's relay settings,
-// the pooled browser agent in the shared stack, the secrets the manifest
-// mints, the credential the Logto module grants, and the helper's endpoints.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -66,7 +62,7 @@ test('an environment that runs connectors gets the control plane beside its api:
     assert.equal(e.Connector__Bundle__Keys__k1, '${CONNECTOR_SEAL_KEY_K1}');
     assert.equal(e.Connector__EnrollmentHmacKey, '${CONNECTOR_ENROLLMENT_HMAC}');
     assert.equal(e.Connector__FleetEnrollmentCode, '${CONNECTOR_FLEET_CODE}');
-    // the aggregators live on the control plane (#414): their keys reach it, with an empty default so an environment without them runs no such party
+    // the aggregators live on the control plane (#414); the empty default runs no such party
     assert.equal(e.BankAdapters__GoCardless__SecretId, '${GOCARDLESS_SECRET_ID:-}');
     assert.equal(e.BankAdapters__GoCardless__SecretKey, '${GOCARDLESS_SECRET_KEY:-}');
     assert.equal(e.BankAdapters__EnableBanking__ApplicationId, '${ENABLEBANKING_APPLICATION_ID:-}');
@@ -150,7 +146,6 @@ test('the pooled browser agents are rendered beside the environment\'s control p
     assert.match(first, /image: \$\{REGISTRY\}\/munni-connector-agent:\$\{TAG\}/);
     assert.match(first, /connector-staging:\n        condition: service_healthy/, 'a replica waits for its control plane');
 
-    // the platform's line is the claim every replica makes
     const cfg = loadPlatform('nas');
     savePlatform({ ...cfg, agentEgress: { kind: 'datacenter' } });
     try {
@@ -159,12 +154,10 @@ test('the pooled browser agents are rendered beside the environment\'s control p
       savePlatform(cfg);
     }
 
-    // zero replicas is a choice: a control plane served by household agents only
     withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true }, agents: { pooled: 0 } });
     const { compose: none } = render('munni-nas-staging');
     assert.equal(block(none, 'connector-agent-staging-1'), null);
     assert.ok(!/agentstate/.test(none));
-    // hosted private slots (#420 A2): the household agent's shape on munni's hardware, enrolled with the environment's private-slot code
     withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true }, agents: { pooled: 1, concurrency: 2, privateSlots: 2 } });
     const { compose: slotted, env: slottedEnv } = render('munni-nas-staging');
     assert.match(slottedEnv, /^CONNECTOR_PRIVATE_CODE=\$\{CONNECTOR_PRIVATE_CODE\}$/m);
@@ -182,7 +175,6 @@ test('the pooled browser agents are rendered beside the environment\'s control p
     assert.match(slot1, /privateprofiles1:\/profiles/);
     assert.match(slotted, /^  agentstate1:\n  agentprofiles1:\n  privatestate1:\n  privateprofiles1:\n  privatestate2:\n  privateprofiles2:$/m);
     assert.ok(block(slotted, 'connector-agent-staging-1'), 'the pooled replica stays beside them');
-    // the default: one replica, two jobs at once, no private slot
     withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true } });
     const { compose: one, stack: dflt } = render('munni-nas-staging');
     assert.deepEqual(dflt.agents, { pooled: 1, concurrency: 2, privateSlots: 0, egress: { country: 'NL', kind: 'residential' } });
@@ -226,7 +218,6 @@ test('the manifest: an environment that runs connectors owns its seal key, enrol
   assert.notEqual(generateValue('CONNECTOR_PRIVATE_CODE'), generateValue('CONNECTOR_FLEET_CODE'));
 });
 
-/** a Logto Management API in a box, with the machine-role routes the connector access needs */
 function fakeLogto() {
   const state = { apps: [], resources: [], scopes: {}, roles: [], roleScopes: {}, roleApps: {}, secrets: {} };
   let n = 0;
@@ -288,7 +279,6 @@ test('ensureConnectorAccess: the control plane is an API resource with the conne
     assert.equal(logto.writes(), writesAfterFirst, 'nothing written twice');
     assert.equal(logto.state.secrets[first.appId].length, 2, "Default secret + the module's own — read back on the second run");
 
-    // an environment's cleanup takes the connector app, role and resource with the api's own
     const removed = await removeApps(stack, creds, { fetchImpl: logto.fetchImpl });
     assert.ok(removed.removed.includes('munni-nas-staging api connector m2m'));
     assert.ok(removed.removed.includes('munni-nas-staging connector admin'));

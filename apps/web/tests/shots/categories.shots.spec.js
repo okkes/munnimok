@@ -1,13 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Guide capture (npm run shots — never in CI): custom categories as a
-// real-browser flow — the manage screen's grouped catalog, creating a
-// custom sub through the form sheet and picking it on a transaction
-// through the split-categories editor and the picker (three stacked
-// sheets). It produces the gallery/guide screenshots 29-cats-manage and
-// 30-cats-create. Rename/delete, custom mains (#244) and the cascade are
-// unit-tested (features/categories/ManageCategoriesScreen.test.tsx).
+// guide capture (npm run shots, never in CI): produces 29-cats-manage and 30-cats-create; rename/delete,
+// custom mains (#244) and the cascade are unit-tested (ManageCategoriesScreen.test.tsx)
 
 async function goToManageCats(page) {
   await page.click('[data-testid="tab-settings"]');
@@ -22,7 +17,6 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
-    // groups start collapsed (user redesign) — unfold what we inspect
     await page.click('[data-testid="cats-group-consumption"]');
     await expect(page.locator('[data-testid="managecat-groceries"]')).toBeVisible();
     // demo seed ships a custom main with its locked Other sub
@@ -53,7 +47,6 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="screen-manage-cats"]')).toContainText('Bubble Tea');
     await shot(page, k('30-cats-create') + '--s2');
 
-    // recategorize a transaction to the new custom category
     await page.click('[data-testid="tab-transactions"]');
     await page.click('[data-testid="tx-row-dm100"]');
     await page.click('[data-testid="tx-detail-category-row"]');

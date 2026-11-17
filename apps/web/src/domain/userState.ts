@@ -1,17 +1,9 @@
 import { v5 as uuidv5 } from 'uuid';
 import { decodeHlc } from '@/sync/hlc';
 
-/**
- * #148 r3 (user): per-user state that must AGREE across the user's
- * devices ("24 hours later on my mobile, those transactions I saw on
- * the desktop should disappear") rides the normal sync through a
- * PRIVATE state space. The id derives from the Logto sub — a value
- * other users never see, so nobody can pre-claim it — and the version
- * nibble is forced to 8: the server's feed-shape guard keys on v5, and
- * v8 passes the first-push-creates-the-space door like any client-
- * minted space. The space gets no local `space` row, so no list ever
- * shows it; the sync engine reaches it through /me/spaces + the outbox.
- */
+// #148: per-user state that must agree across devices rides sync through a PRIVATE space whose id derives from the Logto sub
+// (nobody can pre-claim it); the version nibble is forced to 8 because the server's feed-shape guard keys on v5;
+// no local space row, so no list shows it
 const USER_STATE_NS = '9c1f4b2e-6a3d-4f7b-8c5e-2d1a0b9e8f31';
 
 export function userStateSpaceId(sub: string): string {

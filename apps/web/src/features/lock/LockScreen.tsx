@@ -8,7 +8,6 @@ import { hashPin, readLockConfig, useLock, verifyBiometric } from './lock';
 const MAX_PIN = 8;
 const MIN_PIN = 4;
 
-/** layered soft-green waves along the bottom (brand treatment, no asset) */
 function Waves() {
   return (
     <svg
@@ -46,18 +45,11 @@ function Key({
   );
 }
 
-/**
- * Full-screen gate rendered above the whole app while locked: brand wash
- * with waves + arch, PIN keypad as the primary surface (auto-verifies from
- * 4 digits), biometric on the pad and auto-prompted once on mount.
- */
 export function LockScreen() {
   const { t } = useLang();
   const unlock = useLock((s) => s.unlock);
-  // #202: once per LOCK CYCLE, not once per mount — the OS passkey sheet
-  // backgrounds the page, the visibility watcher re-locks (timeout 0) and
-  // the remounted screen used to prompt again, endlessly, while the user
-  // was trying to type the PIN
+  // #202: once per lock cycle, not per mount: the OS passkey sheet backgrounds the page, the watcher re-locks (timeout 0)
+  // and the remounted screen prompted again, endlessly
   const promptSpent = useLock((s) => s.promptSpent);
   const spendPrompt = useLock((s) => s.spendPrompt);
   const [pin, setPin] = useState('');
@@ -74,7 +66,6 @@ export function LockScreen() {
     if (await verifyBiometric(config, t('lock.sub'), controller.signal)) unlock();
   };
 
-  // auto-prompt once per lock cycle
   useEffect(() => {
     if (promptSpent) return;
     spendPrompt();
@@ -84,14 +75,12 @@ export function LockScreen() {
 
   const pressDigit = useCallback(
     (digit: string) => {
-      // typing the PIN IS the decision — dismiss any open passkey sheet
       abortRef.current?.abort();
       setError(false);
       setPin((prev) => {
         const next = (prev + digit).slice(0, MAX_PIN);
         if (config && next.length >= MIN_PIN) {
-          // verify silently on every keypress from 4 digits — unlock on match,
-          // flag the error only once the maximum length is exhausted
+          // verify silently from 4 digits: unlock on match, flag the error only once the maximum length is exhausted
           void hashPin(next, config.pinSalt).then((hash) => {
             if (hash === config.pinHash) {
               unlock();
@@ -107,7 +96,6 @@ export function LockScreen() {
     [config, unlock],
   );
 
-  // physical keyboard support (desktop)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (/^\d$/.test(e.key)) pressDigit(e.key);
@@ -124,7 +112,6 @@ export function LockScreen() {
       <span aria-hidden="true" className="absolute top-[9%] right-[14%] text-[12px] text-[#C9BFA9]">✦</span>
 
       <div className="relative mx-auto flex h-full w-full max-w-[420px] flex-col items-center overflow-y-auto px-6 pt-[max(28px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]">
-        {/* the arch encloses the whole gate — brand, dots AND keypad */}
         <div className="relative flex w-full flex-col items-center rounded-t-[999px] rounded-b-[28px] border border-white/70 bg-white/25 px-4 pt-10 pb-7">
           <div className="flex flex-col items-center gap-2">
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface shadow-[0_4px_18px_rgba(8,55,43,0.10)]">
@@ -138,7 +125,7 @@ export function LockScreen() {
             {error ? t('lock.wrongPin') : t('lock.pinHint')}
           </p>
 
-          {/* dots appear as digits are entered — no fixed-length suggestion */}
+          {/* dots appear as digits are entered: no fixed-length suggestion */}
           <div className="mt-4 flex h-8 items-center gap-3" data-testid="lock-dots" data-length={pin.length}>
             {pin.length === 0 ? (
               <span className="h-3.5 w-3.5 rounded-full border border-ink-4/40" aria-hidden="true" />
@@ -149,7 +136,6 @@ export function LockScreen() {
             )}
           </div>
 
-          {/* keypad */}
           <div className="mt-4 grid grid-cols-3 gap-x-7 gap-y-3.5">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
               <Key key={d} label={d} testId={`lock-key-${d}`} onPress={() => pressDigit(d)} />

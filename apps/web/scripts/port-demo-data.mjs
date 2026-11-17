@@ -1,5 +1,4 @@
-// One-shot port of the legacy built-in category catalog and demo dataset.
-// Usage: node scripts/port-demo-data.mjs
+// one-shot port of the legacy built-in category catalog and demo dataset
 import { writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -30,7 +29,6 @@ const catDirection = (cat) => {
   return t === 'Income' ? 'credit' : t === 'Expense' ? 'debit' : 'both';
 };
 
-// verify every category id has a translation key
 const enSource = readFileSync(path.resolve(here, '../src/i18n/en.ts'), 'utf8');
 const missingKeys = Object.keys(CATEGORIES).filter((id) => !enSource.includes(`'cat.${id}'`));
 if (missingKeys.length) console.warn('categories missing i18n keys:', missingKeys.join(', '));
@@ -88,7 +86,6 @@ export const UNCATEGORIZED_ID = 'uncategorized';
 `,
 );
 
-// ── demo dataset ────────────────────────────────────────────────────────────
 const DAY = 86_400_000;
 const cents = (n) => Math.round(n * 100);
 const daysAgo = (iso) => Math.round((Date.now() - new Date(iso).getTime()) / DAY);

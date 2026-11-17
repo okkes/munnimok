@@ -1,15 +1,7 @@
 import { create } from 'zustand';
 import type { SyncReport } from './connectorSync';
 
-/**
- * What every sync is doing right now, whoever started it (user request
- * 2026-10-02: "give the user visuals when the fetching is busy and when
- * it's done … a counter that goes up"). The first sync after a connect,
- * the app-open keep-alive and Sync now all run through `syncConnection`,
- * which reports here; the hub's rows and the fetched-receipts screen read
- * it. A module store rather than screen state, because the sync outlives
- * the screen that started it.
- */
+// a module store, not screen state: the sync outlives the screen that started it
 export type SyncPhase = 'fetching' | 'done';
 
 export interface SyncActivity {
@@ -21,7 +13,6 @@ export interface SyncActivity {
   older?: string;
   startedAt: number;
   finishedAt?: number;
-  /** the outcome, once done */
   report?: SyncReport;
 }
 
@@ -29,7 +20,6 @@ interface SyncActivityStore {
   activity: Record<string, SyncActivity>;
   begin: (connectionId: string) => void;
   found: (connectionId: string, records: number) => void;
-  /** #460: the sync is fetching older history; `reached` is the oldest day fetched so far */
   older: (connectionId: string, reached: string) => void;
   end: (connectionId: string, report: SyncReport) => void;
   forget: (connectionId: string) => void;
@@ -81,7 +71,6 @@ export const useSyncActivity = create<SyncActivityStore>((set) => ({
     }),
 }));
 
-/** a finished sync whose result is still worth showing */
 export const resultStillFresh = (activity: SyncActivity | undefined, now = Date.now()): activity is SyncActivity & { report: SyncReport } => {
   if (activity?.phase !== 'done' || !activity.report) return false;
   return now - (activity.finishedAt ?? 0) < RESULT_TTL_MS;

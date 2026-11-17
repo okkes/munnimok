@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-/**
- * Rows that leave with an exit animation (user 2026-10-09: "animate the
- * disappearance — right now it happens so instantly I'm not sure I
- * clicked"): an answered row is marked leaving, its write runs at once,
- * and the row keeps its place for the animation's length even when the
- * live query has already dropped it; one whose exit ended stays hidden
- * until the live query drops it too, so a slow write never shows it
- * popping back.
- */
+// an answered row keeps its place for the exit animation; once done it stays hidden until the live query drops it,
+// so a slow write never shows it popping back
 export interface LeavingRow<T> {
   item: T;
   leaving: boolean;
@@ -16,13 +9,10 @@ export interface LeavingRow<T> {
 
 interface Ghost<T> {
   item: T;
-  /** where the row stood when it was answered — a ghost keeps that place */
   index: number;
-  /** the exit animation has played out */
   done: boolean;
 }
 
-/** the live rows and the ones on their way out, in order */
 export function withLeaving<T extends { id: string }>(live: readonly T[], ghosts: ReadonlyMap<string, Ghost<T>>): LeavingRow<T>[] {
   const rows: LeavingRow<T>[] = [];
   for (const item of live) {
@@ -50,7 +40,6 @@ export function useLeavingRows<T extends { id: string }>(
     };
   }, []);
   const rows = useMemo(() => withLeaving(live ?? [], ghosts), [live, ghosts]);
-  // a ghost whose exit ended and whose row the live query dropped is forgotten
   useEffect(() => {
     const liveIds = new Set((live ?? []).map((item) => item.id));
     const stale = [...ghosts].filter(([id, ghost]) => ghost.done && !liveIds.has(id)).map(([id]) => id);

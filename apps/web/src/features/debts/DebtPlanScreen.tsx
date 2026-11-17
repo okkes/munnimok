@@ -65,15 +65,13 @@ interface PlanInputs {
   strategy: PayoffStrategy;
   extraCents: number;
   lumpCents: number;
-  /** the extra aimed at one debt, by its id (user 2026-10-08) */
   extraByDebt: Record<string, number>;
-  /** a paid-off loan's payment keeps flowing to the next loan — the planner's premise, now a switch (user 2026-10-09) */
+  /** a paid-off loan's payment flows on to the next loan */
   rollover: boolean;
 }
 const DEFAULT_INPUTS: PlanInputs = { strategy: 'avalanche', extraCents: 0, lumpCents: 0, extraByDebt: {}, rollover: true };
 const inputsKey = (spaceId: string) => `munni_debtplan_${spaceId}`;
 const cents = (raw: unknown): number => (typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0);
-/** the stored per-debt extras, each a finite amount of cents or dropped */
 function readExtraByDebt(raw: unknown): Record<string, number> {
   if (!raw || typeof raw !== 'object') return {};
   const out: Record<string, number> = {};
@@ -108,15 +106,10 @@ function writeInputs(spaceId: string, inputs: PlanInputs) {
   }
 }
 
-/** the quick extras under the slider, in cents */
 const EXTRA_CHIPS = [2_500, 5_000, 10_000, 25_000];
-/** the quick extras on one debt's card */
 const DEBT_EXTRA_CHIPS = [2_500, 5_000, 10_000];
-/** the ladder: a little more than now */
 const LADDER = [2_500, 5_000, 10_000, 25_000];
-/** a slider's step: whole fives, like the number input */
 const SLIDER_STEP = 500;
-/** one debt's slider runs to at least this, or twice its minimum (user 2026-10-09: "drag a bar") */
 const DEBT_SLIDER_REACH = 50_000;
 const STRATEGY_COPY: Record<PayoffStrategy, { name: TranslationKey; sub: TranslationKey }> = {
   avalanche: { name: 'debtplan.avalanche', sub: 'debtplan.avalancheSub' },
@@ -130,7 +123,6 @@ const STRESS_COPY: Record<DebtStress, TranslationKey> = {
   4: 'debtplan.stress4',
   5: 'debtplan.stress5',
 };
-/** the loan's payment rhythm in words, for the apply confirm of a loan that does not pay monthly */
 const CADENCE_COPY: Record<RecurringEvery, { one: TranslationKey; many: TranslationKey }> = {
   week: { one: 'recurring.everyWeek', many: 'recurring.everyNWeeks' },
   month: { one: 'recurring.everyMonth', many: 'recurring.everyNMonths' },
@@ -143,19 +135,15 @@ const parseEuros = (text: string): number => {
 };
 const eurosText = (amount: number): string => (amount ? String(Math.round(amount / 100)) : '');
 
-/** the per-debt extras of the debts in the plan, summed — the budget line counts them */
 const sumExtras = (extras: Record<string, number>, debts: readonly PlanDebt[]): number => debts.reduce((sum, d) => sum + (extras[d.id] ?? 0), 0);
 
-/** "Mar 2030": the month `months` months after today, in the person's language */
 const monthName = (lang: Lang, today: string, months: number): string =>
   new Date(`${monthAfter(today, months)}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' });
-/** a month tick on a short chart: "Jan ’27" */
 const wordMonth = (lang: Lang, yyyymm: string): string => {
   const month = new Date(`${yyyymm}-01`).toLocaleDateString(LOCALES[lang], { month: 'short' });
   return `${month} ’${yyyymm.slice(2, 4)}`;
 };
 
-/** the two walks of one chart on the same axis, with its labels */
 interface ChartModel {
   axis: ChartAxis;
   plan: WalkPoint[];
@@ -165,12 +153,8 @@ interface ChartModel {
   ticks: ChartTick[];
 }
 
-/**
- * one chart's axis (#513): the plan keeps an even scale with room, the
- * axis always reaches the end of the minimums line — far ends on a
- * compressed tail — and both walks stop where they land; month labels
- * (yyyy-mm) are worded here, years stand as they are
- */
+// the axis always reaches the end of the minimums line (far ends on a compressed tail) (#513)
+// month labels (yyyy-mm) are worded here
 function chartModel(planWalk: readonly number[], planEnd: number | null, baseWalk: readonly number[], baseEnd: number | null, today: string, lang: Lang): ChartModel {
   const axis = chartAxis(planEnd ?? planWalk.length - 1, baseEnd ?? baseWalk.length - 1);
   const ticks = axisTicks(axis, today).map((tick) => (tick.label.length === 7 ? { ...tick, label: wordMonth(lang, tick.label) } : tick));
@@ -184,11 +168,6 @@ function chartModel(planWalk: readonly number[], planEnd: number | null, baseWal
   };
 }
 
-/**
- * the plan against the minimums only — the months and the interest it
- * saves, or why there is no such number; the hero words the gain at
- * length, the overall card briefly
- */
 function savings(t: Translate, plan: PlanResult, baseline: PlanResult, money: Money, gainKey: 'debtplan.vsMinimum' | 'debtplan.ladderGain'): string {
   const months = plan.months !== null && baseline.months !== null ? baseline.months - plan.months : null;
   const interest = baseline.totalInterestCents - plan.totalInterestCents;
@@ -197,7 +176,6 @@ function savings(t: Translate, plan: PlanResult, baseline: PlanResult, money: Mo
   return t(gainKey, { months, interest: money(Math.max(0, interest)) });
 }
 
-/** the two lines named: solid is the plan, dashed the minimums alone */
 function ChartLegend({ plan, base, testId }: Readonly<{ plan: string; base: string; testId?: string }>) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-3" data-testid={testId}>
@@ -213,13 +191,8 @@ function ChartLegend({ plan, base, testId }: Readonly<{ plan: string; base: stri
   );
 }
 
-/**
- * one number with its small label — the planner's facts (user 2026-10-09:
- * "I want to see actual numbers"). #539 (user: "the boxes change in size"
- * while the slider moves): the value and its sub line are one line each,
- * and the sub line is always there — a number that grows or a sub that
- * appears never pushes the card taller
- */
+/** value and sub line are one line each and the sub is always present:
+ * a changing number never makes the card taller (#539) */
 function Fact({ label, value, sub, testId }: Readonly<{ label: string; value: string; sub?: string; testId?: string }>) {
   return (
     <div className="min-w-0" data-testid={testId}>
@@ -234,7 +207,6 @@ function Fact({ label, value, sub, testId }: Readonly<{ label: string; value: st
   );
 }
 
-/** the house switch at row density (the deduct switch of the match sheet) */
 function Switch({ on, label, testId, onToggle }: Readonly<{ on: boolean; label: string; testId: string; onToggle: () => void }>) {
   return (
     <button
@@ -253,14 +225,12 @@ function Switch({ on, label, testId, onToggle }: Readonly<{ on: boolean; label: 
 
 const INPUT_CLASS = 'mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4';
 
-/** when a debt walked alone ends, or why it does not */
 function aloneEnd(t: Translate, r: AloneResult, date: MonthName): string {
   if (r.stuck) return t('debtplan.neverPaid');
   if (r.months === null) return t('debtplan.freeNever');
   return t('debtplan.paidOff', { date: date(r.months) });
 }
 
-/** what the extra buys this debt against its minimum alone — the months on the value line, the interest under it */
 function vsMinimum(t: Translate, alone: AloneResult, minimum: AloneResult, extraCents: number, money: Money, date: MonthName): { value: string; sub?: string } {
   if (extraCents <= 0) return { value: t('debtplan.numbers.noExtra') };
   if (alone.months === null) return { value: t('debtplan.numbers.never') };
@@ -281,7 +251,6 @@ interface DebtNumbersProps {
   testId: string;
 }
 
-/** one debt's facts under its chart: what it owes, pays and costs, when it ends, and what the extra buys */
 function DebtNumbers({ debt, alone, minimum, extraCents, money, date, testId }: Readonly<DebtNumbersProps>) {
   const { t } = useLang();
   // #530: what is owed hides with the sensitive figures; payments and interest stay
@@ -303,7 +272,7 @@ function DebtNumbers({ debt, alone, minimum, extraCents, money, date, testId }: 
   );
 }
 
-/** a picked end month and the extra it takes (null: no amount gets there — a month already here) */
+/** a picked end month and the extra it takes (null: no amount gets there) */
 interface ByDate {
   month: string;
   extra: number | null;
@@ -311,7 +280,6 @@ interface ByDate {
 
 const MONTH_INPUT = /^\d{4}-\d{2}$/;
 
-/** the line under the end-month input: what the pick worked out, or how it works */
 function byDateNote(t: Translate, byDate: ByDate | null, money: Money, date: MonthName, today: string): string {
   if (!byDate) return t('debtplan.byDateHint');
   if (byDate.extra === null) return t('debtplan.byDateTooSoon');
@@ -319,12 +287,7 @@ function byDateNote(t: Translate, byDate: ByDate | null, money: Money, date: Mon
   return byDate.extra === 0 ? t('debtplan.byDateAsIs', { date: when }) : t('debtplan.byDateExtra', { amount: money(byDate.extra), date: when });
 }
 
-/**
- * #514 (user: "provide an end date and get the calculation"): a month to
- * be done by — the extra it takes is worked out and set, so the slider,
- * the number and the chart follow. The note keeps two lines' room, so a
- * pick never moves the card (#539).
- */
+// the note keeps two lines' room so a pick never moves the card (#539)
 function EndMonthRow({ label, value, today, note, onPick, testId }: Readonly<{ label: string; value: string; today: string; note: string; onPick: (month: string) => void; testId: string }>) {
   return (
     <div className="mt-3">
@@ -339,7 +302,6 @@ function EndMonthRow({ label, value, today, note, onPick, testId }: Readonly<{ l
   );
 }
 
-/** the confirm's body: the payment the loan gets, converted to its own rhythm when that is not monthly */
 function applyBody(t: Translate, account: AccountRow, extraCents: number, raised: RaisedPayment, money: Money): string {
   const now = money(account.paymentCents ?? 0);
   const amount = money(raised.paymentCents);
@@ -360,23 +322,13 @@ interface DebtCardProps {
   onApply?: (paymentCents: number) => void;
   today: string;
   money: Money;
-  /** the tsunami weight chips, when that order is on */
   stress?: ReactNode;
   /** stands where Apply would: the loan is another member's to change */
   ownerNote?: ReactNode;
 }
 
-/**
- * one debt on its own (user 2026-10-09: "it should only focus on itself
- * … when I change one, it impacts the other graphs — that should not
- * happen"): the loan walked ALONE — its minimum plus the extra aimed at
- * it, solid, against its minimum alone, dashed — so nothing another
- * card does moves this one; the combined plan (the strategy order, the
- * rollover, every extra feeding the pool) lives on the overall card
- * above. The extra is a slider, a number and chips; Apply writes the
- * raised payment to the loan itself. Both walks are memoised per card:
- * the slider re-walks one loan, nothing else.
- */
+// walked alone (minimum + its own extra) so no other card moves this one
+// the combined plan lives on the overall card
 function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, stress, ownerNote }: Readonly<DebtCardProps>) {
   const { t, lang } = useLang();
   // #530: the balance and the chart's scale hide with the sensitive figures
@@ -528,7 +480,6 @@ interface PayoffOrderProps {
   money: Money;
 }
 
-/** the payoff order, debt by debt, each on its own card */
 function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, writable, today, money }: Readonly<PayoffOrderProps>) {
   const { t } = useLang();
   const stressChips = (account: AccountRow, open: boolean) => (
@@ -590,12 +541,7 @@ interface OverallCardProps {
   date: MonthName;
 }
 
-/**
- * all debts together (user 2026-10-08: one overall chart): the combined
- * plan against the minimums only, its numbers side by side, and the
- * rollover switch (user 2026-10-09: "I haven't made any change and yet
- * somehow it differs from minimums") with the line that says why
- */
+// the rollover switch: with it on the plan beats the minimums even with no extra, so the overall card says why
 function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, money, date }: Readonly<OverallCardProps>) {
   const { t } = useLang();
   // #530: what is owed and the chart's scale hide with the sensitive figures
@@ -656,7 +602,6 @@ function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, mone
   );
 }
 
-/** The payoff planner (#413): which order, how much extra, and what that buys — all from the loans as they stand. */
 export function DebtPlanScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -695,7 +640,6 @@ export function DebtPlanScreen() {
     setFreeBy(null);
     update(patch);
   };
-  /** the extra aimed at one debt; nothing stays stored for a cleared one */
   const setDebtExtra = (id: string, amount: number) => {
     setFreeBy(null);
     setInputs((prev) => {
@@ -719,7 +663,6 @@ export function DebtPlanScreen() {
 
   const date: MonthName = (months) => monthName(lang, today, months);
   const freeLabel = (r: PlanResult) => (r.months === null ? t('debtplan.freeNever') : t('debtplan.freeIn', { date: date(r.months) }));
-  /** what one ladder step buys against the plan as it stands */
   const ladderGain = (earlier: number | null, less: number, months: number | null): string => {
     if (earlier === null) return months === null ? t('debtplan.ladderNone') : t('debtplan.ladderUnstuck', { date: date(months) });
     if (earlier <= 0 && less <= 0) return t('debtplan.ladderNone');
@@ -747,7 +690,6 @@ export function DebtPlanScreen() {
     void repo.upsert('account', account.spaceId, account.id, { debtStress: account.debtStress === value ? (null as never) : value });
     void logActivity(store, repo, account.spaceId, 'accountEdit', account.name);
   };
-  /** Apply on a card: the raised payment becomes the loan's own (user 2026-10-09) */
   const applyPayment = (debtId: string, paymentCents: number) => {
     const account = accountOf(debtId);
     if (!account) return;
@@ -795,7 +737,6 @@ export function DebtPlanScreen() {
               }
             />
 
-            {/* the order */}
             <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="debtplan-strategies">
               <div className="m-cap">{t('debtplan.strategy')}</div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -820,7 +761,6 @@ export function DebtPlanScreen() {
               </div>
             </div>
 
-            {/* the extra */}
             <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="debtplan-extra-card">
               <div className="flex items-end gap-3">
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
@@ -894,7 +834,6 @@ export function DebtPlanScreen() {
               date={date}
             />
 
-            {/* what more buys */}
             <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="debtplan-ladder">
               <div className="m-cap">{t('debtplan.ladder')}</div>
               <div className="mt-1 divide-y divide-line-2">

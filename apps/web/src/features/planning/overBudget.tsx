@@ -4,11 +4,7 @@ import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import type { MoneyFmt } from './SegmentSection';
 
-/**
- * Funding past what the pool holds asks once (user 2026-10-07): the first
- * time a day it is pointed out and confirmed, after that the day's funding
- * goes through without a word — the mark is per space, on this device.
- */
+/** funding past the pool asks once a day: the mark is per space, on this device */
 const key = (spaceId: string) => `munni_plan_overbudget_${spaceId}`;
 
 export const todayKey = (): string => new Date().toISOString().slice(0, 10);
@@ -29,11 +25,9 @@ export function ackToday(spaceId: string): void {
   }
 }
 
-/** true when giving deltaCents more would take what is left of the pool below zero */
 export const exceedsPool = (leftCents: number, deltaCents: number): boolean => deltaCents > 0 && leftCents - deltaCents < 0;
 
 export interface OverBudgetGuard {
-  /** runs `run` at once, or after the person confirms going beyond the pool */
   guard: (leftCents: number, deltaCents: number, run: () => void) => void;
   pending: { overCents: number; run: () => void } | null;
   confirm: () => void;
@@ -59,7 +53,6 @@ export function useOverBudgetGuard(spaceId: string): OverBudgetGuard {
   return { guard, pending, confirm, dismiss: () => setPending(null) };
 }
 
-/** the question itself, mounted once per screen that funds */
 export function OverBudgetSheet({ guard, fmt, currency }: Readonly<{ guard: OverBudgetGuard; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
   // #530: how far past the pool tells what the pool holds — it hides with the sensitive figures

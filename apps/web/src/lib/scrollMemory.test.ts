@@ -26,7 +26,7 @@ describe('scrollMemory (#131)', () => {
   });
 
   it('remembers the user scroll once the restore settled', async () => {
-    attachScrollMemory(el, 'list'); // nothing stored — settles instantly
+    attachScrollMemory(el, 'list');
     await frame();
     el.scrollTop = 512;
     el.dispatchEvent(new Event('scroll'));
@@ -36,7 +36,6 @@ describe('scrollMemory (#131)', () => {
   it('the restore’s own scroll never overwrites the memory', async () => {
     sessionStorage.setItem('munni_scroll_list', '240');
     attachScrollMemory(el, 'list');
-    // the restore assigns scrollTop and fires scroll while still pending
     el.dispatchEvent(new Event('scroll'));
     expect(sessionStorage.getItem('munni_scroll_list')).toBe('240');
   });

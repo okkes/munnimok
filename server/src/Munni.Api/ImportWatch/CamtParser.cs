@@ -20,13 +20,8 @@ public sealed record CamtStatement(
     string? BalanceAsOf,
     IReadOnlyList<CamtEntry> Entries);
 
-/// <summary>
-/// CAMT.053 parser for the watch-folder importer. Field mapping and —
-/// critically — the entry REF derivation mirror the client parser
-/// exactly, so a file dropped in the folder and the same file imported
-/// on a device produce identical transaction ids (dedupe by
-/// construction, like GoCardless ⇄ CAMT already does).
-/// </summary>
+// the entry REF derivation mirrors the client parser exactly: a dropped file and the same file
+// imported on a device get identical ids
 public static class CamtParser
 {
     public static IReadOnlyList<CamtStatement> Parse(string xml)

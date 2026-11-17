@@ -22,7 +22,6 @@ const tx = (partial: Partial<TxView>): TxView =>
     ...partial,
   }) as TxView;
 
-/** one row per day from `from` to `to`, both counted, unless `skip` says otherwise */
 const daily = (from: string, to: string, cents: number | ((day: string) => number), partial: Partial<TxView> = {}, skip?: (day: string) => boolean): TxView[] => {
   const out: TxView[] = [];
   for (let day = from; day <= to; day = addDays(day, 1)) {
@@ -38,7 +37,6 @@ const catalog = {
   childrenOf: () => [] as { id: string }[],
 };
 
-/** a space counting monthly from the 1st, six complete months and July running */
 const inputs = (txs: TxView[], today: string, partial: Partial<InsightInputs> = {}): InsightInputs => {
   const [y, m, d] = today.split('-').map(Number);
   return {
@@ -74,7 +72,6 @@ describe('spending pace', () => {
     expect(hits[0].params.typical).toEqual({ money: 30_000 });
     expect(hits[0].params.usual).toEqual({ money: 61_000 });
     expect(hits[0].params.spent).toEqual({ money: 52_500 });
-    // "at this pace": the month keeps the ratio it has now
     expect(hits[0].params.projected).toEqual({ money: Math.round((61_000 * 52_500) / 30_000) });
     expect(hits[0]).toMatchObject({ id: 'pace:2026-07-01', kind: 'pace', severity: 'pattern', impactCents: 106_750 - 61_000 });
     expect(hits[0].chart).toHaveLength(7);
@@ -92,17 +89,14 @@ describe('spending pace', () => {
   it('stays quiet early in the period, without three covered periods, or in another currency', () => {
     const fast = daily('2026-07-01', '2026-07-15', 3_500);
     expect(spendingPace(inputs([...frame(), ...steady(), ...fast], '2026-07-04'))).toHaveLength(0);
-    // the data starts in May: two complete months only
     const short = daily('2026-05-01', '2026-06-30', 2_000);
     expect(spendingPace(inputs([...short, ...fast], '2026-07-15'))).toHaveLength(0);
-    // a fast July on a dollar card is not euros
     const dollars = daily('2026-07-01', '2026-07-15', 3_500, { currency: 'USD' });
     expect(spendingPace(inputs([...frame(), ...steady(), ...daily('2026-07-01', '2026-07-15', 2_000), ...dollars], '2026-07-15'))).toHaveLength(0);
   });
 });
 
 describe('category drift', () => {
-  /** one shop per month in a category */
   const monthly = (catId: string, amounts: number[], partial: Partial<TxView> = {}) =>
     amounts.map((cents, i) => tx({ date: `2026-0${i + 1}-10`, amountCents: -cents, catId, merchant: catId, ...partial }));
 
@@ -126,7 +120,6 @@ describe('category drift', () => {
     const insurance = monthly('insurance', rise, { recurringId: 'ins' });
     const pennies = monthly('sweets', [500, 500, 500, 700, 700, 700]);
     expect(categoryDrift(inputs([...frame(), ...uncategorized, ...insurance, ...pennies], '2026-07-12'))).toHaveLength(0);
-    // the data starts in February: five complete months
     expect(categoryDrift(inputs(monthly('groceries', rise).slice(1), '2026-07-12'))).toHaveLength(0);
   });
 });
@@ -142,9 +135,7 @@ describe('the most expensive weekday', () => {
     expect(hits).toHaveLength(1);
     // (6 × €20 + €45) / 7 = €23.57; €45 is 91% above it
     expect(hits[0].params).toMatchObject({ weekday: { weekday: 6 }, pct: 91, day: { money: 4_500 }, avg: { money: 2_357 }, weeks: 12 });
-    // Monday first: Saturday is the sixth bar
     expect(hits[0].chartFocus).toBe(5);
-    // a Sunday-first space starts its chart on Sunday
     const sundayFirst = expensiveWeekday(inputs([...frame(), ...daily(from, today, saturdays)], today, { space: { periodType: 'month', periodDay: 1, weekStart: 'sunday' } }));
     expect(sundayFirst[0].chartFocus).toBe(6);
   });
@@ -159,7 +150,6 @@ describe('the most expensive weekday', () => {
 });
 
 describe('no-spend days', () => {
-  /** shopping every day but the 5th, 15th and 25th: three calm days a month */
   const usual = () =>
     daily('2026-02-01', '2026-06-30', 2_000, {}, (day) => ['05', '15', '25'].includes(day.slice(8)));
   const calmInJuly = new Set(['02', '03', '06', '08', '10', '11', '13', '16']);
@@ -176,7 +166,6 @@ describe('no-spend days', () => {
 
   it('days after the newest row are not known yet — a feed that has not synced is no calm', () => {
     const stale = july().filter((t) => t.date <= '2026-07-09');
-    // up to the 9th only four calm days are known
     expect(noSpendDays(inputs([...frame(), ...usual(), ...stale], '2026-07-20'))).toHaveLength(0);
   });
 

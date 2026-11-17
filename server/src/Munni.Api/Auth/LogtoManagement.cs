@@ -5,12 +5,6 @@ using System.Text.Json;
 
 namespace Munni.Api.Auth;
 
-/// <summary>
-/// One call's view of the Logto Management API: the named HttpClient, the
-/// Logto endpoint (Auth:Authority without its /oidc) and a bearer the
-/// machine app minted. Requests are built through <see cref="Request"/> so
-/// every one carries the token and the endpoint the same way.
-/// </summary>
 public sealed record LogtoSession(HttpClient Http, string Endpoint, string AccessToken)
 {
     public HttpRequestMessage Request(HttpMethod method, string path, object? body = null)
@@ -22,14 +16,8 @@ public sealed record LogtoSession(HttpClient Http, string Endpoint, string Acces
     }
 }
 
-/// <summary>
-/// The api's one door to the Logto Management API: account deletion and,
-/// since the admin portal mints invitations (user 2026-10-07: invitation-
-/// only sign-up), the invitation routes. A null session means "no machine
-/// app in this environment" and callers degrade on their own terms — the
-/// deletion leaves the identity for manual cleanup, the portal answers a
-/// 503 that names itself.
-/// </summary>
+// a null session means no machine app in this environment: callers degrade on their own terms
+// (deletion leaves the identity for manual cleanup, the portal answers 503)
 public interface ILogtoManagement
 {
     /// <summary>a session with a valid token, or null when Logto:M2mAppId, Logto:M2mAppSecret and Auth:Authority are not all set</summary>
@@ -39,16 +27,10 @@ public interface ILogtoManagement
     void Forget();
 }
 
-/// <summary>
-/// Client-credentials minting for the M2M app against Auth:Authority's
-/// token endpoint, the token kept until 60 s before it expires behind one
-/// gate (ConnectorAuthSource's shape). Before this every account deletion
-/// minted its own token, and the invitation screen would have minted one
-/// per click; one instance per process, the token is the only state.
-/// </summary>
+// the token is kept until 60 s before it expires behind one gate,
+// so account deletions and invitation clicks do not each mint one
 public sealed class LogtoManagement(IHttpClientFactory httpFactory, IConfiguration config, TimeProvider time) : ILogtoManagement
 {
-    /// <summary>the named HttpClient Program.cs registers for every Logto Management API call</summary>
     public const string ClientName = "logto-m2m";
 
     /// <summary>Logto's fixed resource indicator for its own Management API — an identifier, not an address anyone dials</summary>
@@ -74,12 +56,12 @@ public sealed class LogtoManagement(IHttpClientFactory httpFactory, IConfigurati
 
     public void Forget() => _minted = null;
 
-    /// <summary>the three settings, read per call so a reloaded configuration counts; the endpoint is the authority without its /oidc</summary>
+    /// <summary>Read per call so a reloaded configuration counts.</summary>
     private Credentials? Read()
     {
         var appId = config["Logto:M2mAppId"];
         var appSecret = config["Logto:M2mAppSecret"];
-        var authority = config["Auth:Authority"]; // https://logto.…/oidc
+        var authority = config["Auth:Authority"];
         if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret) || string.IsNullOrEmpty(authority)) return null;
         var endpoint = authority.TrimEnd('/');
         if (endpoint.EndsWith(OidcSuffix, StringComparison.Ordinal)) endpoint = endpoint[..^OidcSuffix.Length];
@@ -106,14 +88,13 @@ public sealed class LogtoManagement(IHttpClientFactory httpFactory, IConfigurati
         }
     }
 
-    /// <summary>the cached token while more than the slack is left; token and expiry travel as one reference, so a reader never sees a torn pair</summary>
+    /// <summary>Token and expiry travel as one reference, so a reader never sees a torn pair.</summary>
     private string? Fresh()
     {
         var minted = _minted;
         return minted is not null && time.GetUtcNow() < minted.ExpiresAt - Slack ? minted.Token : null;
     }
 
-    /// <summary>Logto: <c>client_credentials</c> for the Management API resource with scope <c>all</c>, basic-authenticated with the app's id and secret</summary>
     private async Task<(string Token, TimeSpan Lifetime)> MintAsync(Credentials credentials, CancellationToken ct)
     {
         var http = httpFactory.CreateClient(ClientName);

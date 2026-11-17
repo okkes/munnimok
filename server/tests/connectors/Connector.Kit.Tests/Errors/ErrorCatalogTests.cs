@@ -3,17 +3,9 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The retry policy. One assertion in this file matters more than the rest
-/// of the suite put together, and it has its own test with its own name.
-/// </summary>
 public sealed class ErrorCatalogTests
 {
-    /// <summary>
-    /// The table published in connector-api-spec.md §5, transcribed. It is
-    /// the contract every consumer was handed, so a change here is a
-    /// breaking change whether or not anyone noticed.
-    /// </summary>
+    // the table published in connector-api-spec.md §5, transcribed: a change here is a breaking change for every consumer
     private static readonly (ErrorCode Code, string Wire, int Status, bool Retriable, UserAction Action)[] Published =
     [
         (ErrorCode.InvalidCredentials, "invalid_credentials", 401, false, UserAction.Reauth),
@@ -48,12 +40,7 @@ public sealed class ErrorCatalogTests
         return data;
     }
 
-    /// <summary>
-    /// The single highest-consequence rule in the platform. Three retries
-    /// lock a real bank account, and an account lockout is a support
-    /// incident no amount of good architecture makes up for. If this test
-    /// ever fails, nothing else in the suite matters.
-    /// </summary>
+    // the highest-consequence rule in the platform: three retries lock a real bank account
     [Fact]
     public void InvalidCredentials_is_never_retriable()
     {
@@ -70,8 +57,7 @@ public sealed class ErrorCatalogTests
     {
         var behaviour = ErrorCatalog.Behaviour(code);
 
-        // A code with no registered behaviour is a code the platform would
-        // have to guess about at the exact moment guessing is worst.
+        // a code with no registered behaviour would have to be guessed at when guessing is worst
         Assert.InRange(behaviour.HttpStatus, 400, 599);
         Assert.True(Enum.IsDefined(behaviour.UserAction));
         Assert.Equal(behaviour.HttpStatus, ErrorCatalog.HttpStatus(code));
@@ -82,8 +68,7 @@ public sealed class ErrorCatalogTests
     [Fact]
     public void An_unregistered_code_throws_rather_than_defaulting()
     {
-        // Defaulting to "retriable" here is how a lockout gets shipped by
-        // someone who only added an enum member.
+        // defaulting to retriable is how a lockout ships from someone who only added an enum member
         Assert.Throws<ArgumentOutOfRangeException>(() => ErrorCatalog.Behaviour((ErrorCode)9_999));
     }
 
@@ -91,9 +76,7 @@ public sealed class ErrorCatalogTests
     [MemberData(nameof(EveryCode))]
     public void Never_retry_and_retriable_false_are_the_same_set(ErrorCode code)
     {
-        // Two lists that must agree, kept apart because one drives the queue
-        // and the other drives the wire. Asserting the equivalence per code
-        // is what stops them drifting.
+        // two lists kept apart (one drives the queue, one the wire): the per-code equivalence stops them drifting
         Assert.Equal(ErrorCatalog.NeverRetry.Contains(code), !ErrorCatalog.IsRetriable(code));
     }
 
@@ -107,8 +90,7 @@ public sealed class ErrorCatalogTests
             ErrorCode.MfaFailed,
             ErrorCode.BlockedByProvider,
             ErrorCode.ProviderChanged,
-            // A revoked agent is not coming back by being asked again: the
-            // revocation replaced its token, so every retry is another 401.
+            // a revoked agent's token was replaced, so every retry is another 401
             ErrorCode.AgentRevoked,
             ErrorCode.UnsupportedResource,
             ErrorCode.InvalidRequest,
@@ -133,8 +115,7 @@ public sealed class ErrorCatalogTests
     [Fact]
     public void The_published_taxonomy_covers_every_code()
     {
-        // Otherwise a new code slips in with no published row and the
-        // implementation drifts from the contract without a test failing.
+        // otherwise a new code gets no published row and the implementation drifts from the contract
         Assert.Equal(
             Enum.GetValues<ErrorCode>().Order().ToArray(),
             Published.Select(p => p.Code).Order().ToArray());
@@ -152,8 +133,6 @@ public sealed class ErrorCatalogTests
     {
         var wires = Enum.GetValues<ErrorCode>().Select(ErrorCatalog.Wire).ToList();
 
-        // Two codes sharing a wire form makes the taxonomy lossy at exactly
-        // the boundary a consumer branches on.
         Assert.Equal(wires.Count, wires.Distinct(StringComparer.Ordinal).Count());
     }
 
@@ -180,8 +159,7 @@ public sealed class ErrorCatalogTests
         Assert.Equal("err_9f2c", error.DetailId);
         Assert.Equal(3_600, error.RetryAfterSeconds);
 
-        // There is deliberately no free-text message field on the wire; the
-        // operator-facing detail stays on this side of the boundary.
+        // no free-text message on the wire: the operator-facing detail stays on this side of the boundary
         Assert.Null(typeof(ConnectorError).GetProperty("Message"));
         Assert.Null(typeof(ConnectorError).GetProperty("Detail"));
     }
@@ -212,8 +190,7 @@ public sealed class ErrorCatalogTests
     {
         var behaviour = ErrorCatalog.Behaviour(code);
 
-        // A 401 that retries is an account lockout in slow motion: the
-        // credential is what the provider rejected, so repeating it counts.
+        // a 401 that retries is a lockout in slow motion: the provider rejected the credential, so repeating it counts
         if (behaviour.HttpStatus == 401) Assert.False(behaviour.Retriable);
     }
 

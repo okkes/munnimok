@@ -10,13 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// A fetch says how much it has gathered while it runs (user request
-/// 2026-10-02: a counter that climbs rather than a spinner). The agent
-/// reports a count with its progress; the job's view carries it as
-/// <c>progress.found</c>, and a report without a count leaves the last one
-/// standing rather than resetting it.
-/// </summary>
+// a fetch shows a climbing counter rather than a spinner: the job's view carries progress.found,
+// and a report without a count leaves the last one standing
 [Collection(ShopApiCollection.Name)]
 public sealed class FetchCountTests(ShopApiFactory factory)
 {
@@ -45,7 +40,6 @@ public sealed class FetchCountTests(ShopApiFactory factory)
         Assert.Equal("parsing", progress.Text("step"));
         Assert.Equal(120, progress.GetProperty("found").GetInt32());
 
-        // the row itself kept the count through the report that carried none
         var row = Db.Read(factory, db => db.Jobs.Single(j => j.Id == jobId));
         Assert.Equal(sessionId, row.SessionId);
         Assert.Equal(120, row.Found);

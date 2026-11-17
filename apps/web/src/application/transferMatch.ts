@@ -9,18 +9,9 @@ import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType'
 import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
-/**
- * Pair the two legs of a transfer WITHIN each space's own books. Spaces
- * never reference each other's transactions (user rule 2026-08-01 — the
- * cross-space case is the FUNDING type instead: each side keeps its own
- * books, nothing points across).
- *
- * Idempotent and conservative (PayPal-matcher rules): peered rows never
- * re-enter, ambiguity leaves legs alone. Second pass: an out-leg whose
- * linkedAccountId deliberately names an account may claim that account's
- * RAW income twin (untyped bank row) — the "picture only updated half"
- * case — typing it as the mirror in the same stroke.
- */
+// within each space's own books only: spaces never reference each other's transactions (cross-space is the funding type)
+// idempotent, conservative: peered rows never re-enter, ambiguity leaves both legs alone
+// pass 2: an out-leg's deliberate linkedAccountId may claim that account's raw income twin and type it as the mirror
 export async function linkTransferPairs(store: StorageBackend, repo: Repo): Promise<number> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
   let linked = 0;
@@ -33,8 +24,7 @@ export async function linkTransferPairs(store: StorageBackend, repo: Repo): Prom
 async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const all = await visibleTransactions(store, spaceId);
   const byId = new Map(all.map((tx) => [tx.id, tx]));
-  // #536: an account's type is the SPACE's reading (an attachment's) — a
-  // global account carries none of its own
+  // #536: an account's type is the space's reading (an attachment's); a global account carries none
   const types = new Map((await visibleAccounts(store, spaceId)).map((a) => [a.id, a.type]));
   const typeOf: TypeOf = (accountId) => types.get(accountId);
   const asLeg = (tx: SpaceTx): TransferLeg => ({
@@ -46,8 +36,7 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     transferPeerId: tx.transferPeerId,
   });
 
-  // the pool: rows whose DERIVED type is transfer-family (funding is a
-  // special category on standard rows — kindOf keeps it out)
+  // the pool: rows whose derived type is transfer-family (funding is a special category, kindOf keeps it out)
   const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer');
   const pairs = matchTransferPairs(typed.map(asLeg));
   let linked = 0;
@@ -56,7 +45,6 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     linked++;
   }
 
-  // pass 2: deliberate out-legs claim their raw income twin
   const paired = new Set<string>([...pairs.keys(), ...pairs.values()]);
   const rawIncomes = all.filter((tx) => tx.amountCents > 0 && tx.txType === 'income' && !tx.linkedAccountId && !tx.transferPeerId && !paired.has(tx.id));
   const openOuts = typed.filter((tx) => tx.amountCents < 0 && !!tx.linkedAccountId && !tx.transferPeerId && !paired.has(tx.id));
@@ -72,12 +60,8 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     const twin = twins[0];
     paired.add(out.id);
     paired.add(twin.id);
-    // the twin becomes the typed mirror: pointing back, wearing its own
-    // account's STAMP with the forced movement sub (R1/Q8) — an unstamped
-    // twin files by ITS counter's kind (#133 r5 bijection). Its review
-    // flag stays as it was (user 2026-10-09): this is the machine pairing
-    // on a boot or an import, so the twin waits in the deck with the pair
-    // prefilled and the person confirms it there.
+    // the twin becomes the typed mirror: its account's stamp + forced movement sub, else its counter's kind (#133 r5)
+    // its review flag stays: this is machine pairing on boot/import, the person confirms it in the deck
     const stamp = accountStamp(typeOf(twin.accountId));
     const outType = typeOf(out.accountId);
     await writePair(typeOf, repo, out, twin, {
@@ -91,22 +75,13 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
   return linked;
 }
 
-/** an account's type as the pairing space reads it */
 type TypeOf = (accountId: string) => AccountType | undefined;
 
 async function writePair(typeOf: TypeOf, repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | undefined, incExtra: Parameters<typeof writeTxTransform>[2]): Promise<void> {
   if (!out || !inc) return;
-  // the model's pairing rules (typed-splits v2): a null counterparty
-  // auto-fills from the other leg, and a STAMPED leg stores its stamp +
-  // the forced movement sub (Q8) so the raw row reads true too. The
-  // peer in the same write keeps the choke point from minting — pairing
-  // two REAL rows is the pick-existing case by construction. #133 r5:
-  // an UNSTAMPED leg whose counter is a special account files the
-  // family's movement sub — a checking↔savings pair reads "Set aside",
-  // never "Transfer out"; regular↔regular pairs stay untouched. Neither
-  // leg's review flag moves (user 2026-10-09): the pairing runs by itself
-  // on boot and after imports — the deck shows the stored pair and the
-  // person confirms each leg there.
+  // a null counterparty auto-fills from the other leg; a stamped leg stores its stamp + forced movement sub (Q8)
+  // an unstamped leg whose counter is a special account files its movement sub: checking↔savings reads Set aside (#133 r5)
+  // the peer in the same write keeps the choke point from minting; review flags stay put (machine pairing, person confirms)
   const enrich = (leg: SpaceTx, other: SpaceTx): Parameters<typeof writeTxTransform>[2] => {
     const stamp = accountStamp(typeOf(leg.accountId));
     if (stamp) {
@@ -126,7 +101,4 @@ async function writePair(typeOf: TypeOf, repo: Repo, out: SpaceTx | undefined, i
   await writeTxTransform(repo, inc, { ...enrich(inc, out), ...incExtra, transferPeerId: out.id });
 }
 
-// createCounterTransaction retired 2026-08-05 (typed-splits v2): the
-// mirror leg is minted by the writeTxTransform choke point the moment a
-// MANUAL counter account is linked (application/mirrorMint.ts) — one
-// deterministic mirror per source row, balance riding its lifecycle.
+// the mirror leg is minted by the writeTxTransform choke point when a manual counter account is linked (mirrorMint.ts)

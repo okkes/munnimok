@@ -1,28 +1,16 @@
 import { merchantKey } from './merchantKey';
 import type { RecurringEvery, TxType } from '@/db/types';
 
-/**
- * Pattern detection for recurring costs: the same merchant charging at
- * a steady monthly/yearly rhythm with a stable amount. Suggestions are
- * offered once — accepted ones become recurring rows, dismissed ones
- * are remembered (synced) and never resurface.
- *
- * #345/#346 redesign (user):
- * - patterns are found PER ACCOUNT — a rhythm never mixes accounts;
- * - one merchant may charge several STEADY amounts (tiers, split
- *   plans): amounts cluster first, each cluster gets its own rhythm —
- *   mixed amounts used to poison the single median and detect nothing;
- * - the same pattern echoing on TWO accounts (a transfer leg beside the
- *   real expense) suggests ONCE — the stronger series wins.
- */
+// suggestions are offered once: accepted ones become recurring rows, dismissed ones are remembered (synced) (#345/#346)
+// patterns are per account; amounts cluster first, because several steady amounts at one merchant poisoned a single median
+// the same pattern echoing on two accounts (a transfer leg beside the real expense) suggests once, the stronger series wins
 
 export interface DetectInput {
-  /** present when the caller wants the suggestion to carry its evidence */
   id?: string;
   /** #345: the rhythm lives on ONE account */
   accountId?: string;
   merchant: string;
-  date: string; // yyyy-mm-dd
+  date: string;
   amountCents: number;
   txType: TxType;
   recurringId?: string;
@@ -33,9 +21,7 @@ export interface RecurringSuggestion {
   /** dismissal identity: merchant plus the cluster's amount — one
    *  merchant can carry several suggestions now (#346) */
   key: string;
-  /** #345: the account the pattern was found on */
   accountId?: string;
-  /** display name from the most recent occurrence */
   name: string;
   /** median absolute amount of the CLUSTER */
   amountCents: number;
@@ -44,7 +30,6 @@ export interface RecurringSuggestion {
   count: number;
   confidence: number; // 65..95
   lastDate: string;
-  /** the charges that formed the pattern, oldest → newest */
   txIds: string[];
 }
 
@@ -75,14 +60,8 @@ const RHYTHMS: readonly { every: RecurringEvery; lo: number; hi: number; toleran
   { every: 'year', lo: 330, hi: 400, tolerance: 20 },
 ];
 
-/**
- * monthly ≈ 30-day gaps, yearly ≈ 365-day gaps; anything else is noise.
- * #346: a charge may land a few days off (weekends, a late bank) and a
- * cycle may be skipped altogether (a paused month) — a gap that is a
- * whole number of cycles still fits; only every-cycle drift within the
- * tolerance counts as regular. The base is the median gap, or the
- * smallest gap when the median is a doubled one (three charges, one skip).
- */
+// a charge may land days off (weekends, a late bank) and a cycle may be skipped (paused month): a gap of whole cycles still
+// fits; the base is the median gap, or the smallest when the median is a doubled one (#346)
 function cadenceOf(gaps: number[]): Cadence | null {
   for (const base of [median(gaps), Math.min(...gaps)]) {
     const rhythm = RHYTHMS.find((r) => base >= r.lo && base <= r.hi);
@@ -116,14 +95,8 @@ function bandClusters(rows: DetectInput[]): DetectInput[][] {
   return clusters;
 }
 
-/**
- * #346: split one merchant-account series into steady-amount clusters.
- * Two or more amounts that each repeat exactly (63.24 / 441.97 / 55.20
- * under one provider) are separate plans even when they sit inside each
- * other's 20% band — every exact tier becomes a cluster, near-identical
- * amounts ride the closest tier, and whatever is left is band-clustered
- * on its own. A merchant without such tiers keeps the plain band split.
- */
+// #346: two or more exact amounts that each repeat (63.24 / 441.97 / 55.20 under one provider) are separate plans
+// even inside each other's 20% band; near-identical amounts ride the closest tier
 function amountClusters(group: DetectInput[]): DetectInput[][] {
   const byCents = new Map<number, DetectInput[]>();
   for (const tx of group) {

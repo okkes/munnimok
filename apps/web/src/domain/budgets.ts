@@ -3,12 +3,7 @@ import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 import { nextPeriod } from './periods';
 
-/**
- * Budget math, all pure (budgets design doc, approved 2026-07-09):
- * spending counts a budget's category family's expenses inside the
- * budget's own anchored period; carry-over is REPLAYED from history —
- * never stored — so every device computes the same numbers.
- */
+/** budget math is pure: carry-over is REPLAYED from history, never stored, so every device computes the same numbers */
 
 const DAY_MS = 86_400_000;
 // replay guard: weekly budgets anchored years back stay bounded
@@ -39,28 +34,20 @@ const dayOfMonth = (y: number, m: number, day: number): Date => {
   const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
   return new Date(first.getFullYear(), first.getMonth(), Math.min(day, lastDay));
 };
-/** the first date on/after `d` that falls on the week's first day */
 const weekStartOnOrAfter = (d: Date, weekStart: WeekStart): Date => {
   const target = weekStart === 'sunday' ? 0 : 1;
   return shiftDays(d, (target - d.getDay() + 7) % 7);
 };
-/** the first reset on/after `d` for a monthly budget resetting on `day` */
 const monthResetOnOrAfter = (d: Date, day: number): Date => {
   const inMonth = dayOfMonth(d.getFullYear(), d.getMonth(), day);
   return inMonth >= d ? inMonth : dayOfMonth(d.getFullYear(), d.getMonth() + 1, day);
 };
-/** the start of the space period that follows the one containing `d` */
 const spacePeriodStartAfter = (d: Date, sp: NonNullable<BudgetPeriodOpts['spacePeriod']>): Date =>
   parse(nextPeriod(sp.periodType, sp.periodDay, d).start);
 
-/**
- * The start of cycle `index`. Cycle 0 opens on the start date and runs
- * until the first reset after it — so it may be partial: a monthly budget
- * started mid-month resets on its reset day (#371), a weekly one on the
- * space's first weekday (#370); every later cycle is a full one. A weekly
- * budget that STARTS on the week's first day keeps whole weeks from day
- * one. 'period' follows the space's own budget period (#369).
- */
+// cycle 0 opens on the start date and runs to the first reset after it, so it may be partial (monthly: reset day #371;
+// weekly: the space's first weekday #370); a weekly budget starting on that weekday keeps whole weeks;
+// 'period' follows the space's own period (#369)
 function cycleStart(budget: BudgetRow, index: number, opts: BudgetPeriodOpts): Date {
   const anchor = parse(budget.anchor);
   if (index <= 0) return anchor;
@@ -89,7 +76,6 @@ export function budgetPeriodAt(budget: BudgetRow, index: number, opts: BudgetPer
   return { start: localIso(cycleStart(budget, i, opts)), end: localIso(shiftDays(cycleStart(budget, i + 1, opts), -1)) };
 }
 
-/** how many whole cycles lie between the start date and `today` */
 export function cycleIndex(budget: BudgetRow, today: string, opts: BudgetPeriodOpts = {}): number {
   const now = parse(today);
   if (now < parse(budget.anchor)) return 0;
@@ -112,16 +98,12 @@ interface CatalogLookup {
   childrenOf: (id: string) => { id: string }[];
 }
 
-/** the ids a budget's categories claim: each main claims all its subs */
 export function budgetFamily(catIds: readonly string[], catalog: CatalogLookup): Set<string> {
   return new Set(catIds.flatMap((id) => [id, ...catalog.childrenOf(id).map((c) => c.id)]));
 }
 
-/** positive cents spent by the family inside a period (refunds reduce it).
- *  Slice-aware (reimbursement redesign; typed-splits v2): a split
- *  transaction contributes only its family slices, so reimbursed value
- *  never counts as spending — and a typed part answers to its OWN kind
- *  (a loan part inside the phone bill never eats the telecom budget). */
+// slice-aware: a split transaction contributes only its family slices, so reimbursed value never counts as spending;
+// a typed part answers to its OWN kind (a loan part in the phone bill never eats the telecom budget)
 export function budgetSpentCents(
   txs: readonly TxView[],
   family: ReadonlySet<string>,
@@ -150,9 +132,8 @@ export interface BudgetPayment {
   spentCents: number;
 }
 
-/** #579: the payments behind budgetSpentCents, newest first — the same
- *  slices it counts, so a split whose part is in the budget is listed
- *  even when the rest of the payment belongs elsewhere */
+// #579: the payments behind budgetSpentCents (same slices), newest first:
+// a split whose part is in the budget is listed even when the rest belongs elsewhere
 export function budgetPayments(
   txs: readonly TxView[],
   family: ReadonlySet<string>,
@@ -171,21 +152,15 @@ export function budgetPayments(
   return out.sort((a, b) => b.tx.date.localeCompare(a.tx.date));
 }
 
-/**
- * #534: a budget's maximum is the most ONE period may hold — its own amount and what piled up. The row
- * keeps what may pile up on top of the amount, so a budget made before the change keeps its numbers.
- */
+// #534: a budget's maximum is the most ONE period may hold; the row stores what may pile up on top of the amount,
+// so a budget made before the change keeps its numbers
 export const carryCapFor = (periodMaxCents: number, amountCents: number): number => Math.max(0, periodMaxCents - amountCents);
 
 /** the most one period of the budget may hold; null when nothing limits it that way */
 export const periodMaxOf = (budget: Pick<BudgetRow, 'amountCents' | 'carryMode' | 'carryCapCents'>): number | null =>
   budget.carryMode === 'cap' && budget.carryCapCents ? budget.amountCents + budget.carryCapCents : null;
 
-/**
- * Unused money rolled into the current period. Replayed from history:
- * mode 'periods' looks back at most N cycles; mode 'cap' replays the
- * whole (bounded) history but never accumulates beyond the cap.
- */
+// replayed from history: 'periods' looks back at most N cycles; 'cap' replays the bounded history, never beyond the cap
 export function carriedCents(
   budget: BudgetRow,
   txs: readonly TxView[],
@@ -217,7 +192,6 @@ export interface BudgetStatus {
   period: Period;
   spentCents: number;
   carriedCents: number;
-  /** amount + carried */
   limitCents: number;
   /** limit − spent (negative = over) */
   leftCents: number;
@@ -248,16 +222,11 @@ export function budgetStatus(
   };
 }
 
-/** over-budget first (worst ratio), then closest to the limit */
 export const sortByUrgency = (statuses: readonly BudgetStatus[]): BudgetStatus[] =>
   [...statuses].sort((a, b) => b.ratio - a.ratio);
 
-/**
- * Category exclusivity (per space): a category may live in one budget.
- * Returns, for each candidate id, the name of the budget already
- * claiming it (directly or via the main↔sub family) — the picker
- * disables those with a badge naming the owner.
- */
+// a category may live in one budget per space: maps each candidate to the budget already claiming it
+// (directly or via main/sub family)
 export function categoryConflicts(
   candidates: readonly string[],
   otherBudgets: readonly BudgetRow[],

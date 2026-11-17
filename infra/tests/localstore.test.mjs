@@ -1,6 +1,3 @@
-// The lcl platform's stores: the wizard's own (one set per platform + this computer's),
-// one store per stack, and the merged view a stack renders with — all
-// under a throwaway rendered dir.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scratchPlatforms } from './fixture.mjs';
@@ -17,7 +14,7 @@ const shared = () => loadStack('munni-lcl-shared');
 test('wizard store: every value belongs to ONE platform — a platform sees its own set and nothing of another; only the Apple Development certificate is this computer\'s', () => {
   setWizardValues({ GOCARDLESS_SECRET_ID: 'gc-id', GH_PAT: 'ghp_x', VAULT_ADMIN_EMAIL: 'lcl@vault', VAULT_MASTER_PASSWORD: 'lcl-pw' }, 'lcl');
   setWizardValues({ VAULT_ADMIN_EMAIL: 'nas@vault', PLATFORM_DOMAIN: 'nas.example' }, 'nas');
-  setWizardValues({ APPLE_DEV_CERT_PASSWORD: 'p12-pw' }); // machine-owned: no platform involved
+  setWizardValues({ APPLE_DEV_CERT_PASSWORD: 'p12-pw' });
   assert.throws(() => setWizardValues({ ACME_EMAIL: 'x@acme' }), /platform/, 'a platform value without a platform is a bug, never a shared value');
   assert.throws(() => wizardValues(), /platform/);
   assert.deepEqual(loadWizardStore(), {
@@ -87,7 +84,6 @@ test('ensureLocalSecrets mints what the stack owns and lacks — the shared stac
   assert.equal(p.values.POSTGRES_PASSWORD, 'pg-prod');
   assert.ok(stackManifestEntries(prod()).some((e) => e.name === 'PUSH_VAPID_PUBLIC_KEY'));
 
-  // an operator value offered through the environment is absorbed into the wizard's store
   process.env.FCM_SERVICE_ACCOUNT_JSON = '{"offered":true}';
   try {
     const offered = ensureLocalSecrets(prod());

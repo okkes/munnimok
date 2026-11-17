@@ -26,7 +26,6 @@ describe('WebcamCaptureSheet', () => {
     setMediaDevices(undefined);
     renderSheet();
     expect(await screen.findByTestId('webcam-error')).toBeTruthy();
-    // r2: the video shell stays mounted; only Start/Capture stand down
     expect(screen.queryByTestId('webcam-capture')).toBeNull();
     expect(screen.queryByTestId('webcam-start')).toBeNull();
   });
@@ -46,11 +45,9 @@ describe('WebcamCaptureSheet', () => {
       .mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream);
     setMediaDevices({ getUserMedia });
     renderSheet();
-    // …the note names the cure and the Start button waits for a real tap
     expect(await screen.findByTestId('webcam-error')).toBeTruthy();
     const start = await screen.findByTestId('webcam-start');
     fireEvent.click(start);
-    // the gesture attempt succeeds: capture arms, the note clears
     expect(await screen.findByTestId('webcam-capture')).toBeTruthy();
     expect(screen.queryByTestId('webcam-error')).toBeNull();
     expect(getUserMedia).toHaveBeenCalledTimes(2);

@@ -20,8 +20,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    // the account field replaced the chips (2026-07-31): the CategoryPicker
-    // direction only needs AN account — pick the main one through the sheet
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     // toggle BEFORE opening the editor: a fresh stack per direction
@@ -29,8 +27,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-demo_cat_sidegig');
-    // movement subs went direction-both in typed-splits v2 (they live on
-    // either leg now) — groceries is the debit-only witness instead
+    // groceries is the debit-only witness: movement subs are direction-both
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
   }, 15_000);
 
@@ -42,7 +39,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    // debit picker without a type gate offers the saving family — marked
     await screen.findByTestId('speccat-savingDeposit');
     await screen.findByTestId('catpicker-groceries');
     expect(screen.queryByTestId('speccat-groceries')).toBeNull();
@@ -52,17 +48,13 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    // the account field replaced the chips (2026-07-31): the CategoryPicker
-    // direction only needs AN account — pick the main one through the sheet
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
 
-    // the create door is always at the list's end…
     expect(screen.getByTestId('catpicker-create-custom')).toBeTruthy();
-    // …and a no-result search says so explicitly
     fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'zzz-no-such-cat' } });
     expect(await screen.findByTestId('catpicker-empty')).toBeTruthy();
     fireEvent.click(screen.getByTestId('catpicker-create-custom'));
@@ -73,8 +65,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    // the account field replaced the chips (2026-07-31): the CategoryPicker
-    // direction only needs AN account — pick the main one through the sheet
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
@@ -100,8 +90,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-demo_cat_padel_other');
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
 
-    // #187: the highlighted fragment stays inside one inline run — the
-    // <mark> must not sit as a direct child of the gapped flex row
+    // #187: the <mark> must not sit as a direct child of the gapped flex row
     fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'ocer' } });
     const row = await screen.findByTestId('catpicker-groceries');
     const mark = row.querySelector('mark');
@@ -129,9 +118,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account-brok_256'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    // the brokerage ledger speaks investment: Bought is offered…
     await screen.findByTestId('catpicker-investBuy');
-    // …while everyday expense categories and Adjustment stay out
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
     expect(screen.queryByTestId('catpicker-balanceAdjustment')).toBeNull();
   }, 15_000);
@@ -161,7 +148,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
 
-    // the ◆ lens: plain categories out, marked rows stay
     fireEvent.click(screen.getByTestId('catpicker-special-filter'));
     await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
     expect(document.querySelector('[data-testid^="speccat-"]')).toBeTruthy();
@@ -184,7 +170,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     expect(wrap.className).toContain('sticky');
     expect(wrap.contains(screen.getByTestId('catpicker-search'))).toBe(true);
     expect(wrap.contains(screen.getByTestId('catpicker-special-filter'))).toBe(true);
-    // the whole height: the Sheet marks a full-size body
     expect(wrap.closest('[data-full]')).toBeTruthy();
     // no inner scroller caps the list any more — the sheet's own scrolls
     expect((screen.getByTestId('catpicker-list') as HTMLElement).style.maxHeight).toBe('');
@@ -202,12 +187,9 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
 
     fireEvent.click(screen.getByTestId('catpicker-special-filter'));
     await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
-    // a typed query must not survive the close either…
     fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'gro' } });
     // dismiss WITHOUT picking (Escape reaches only the top sheet)…
     fireEvent.keyDown(window, { key: 'Escape' });
-    // …and the reopened picker starts whole: chip off, field empty and
-    // fully shown, full catalog back
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
     expect(screen.getByTestId('catpicker-special-filter').getAttribute('aria-pressed')).toBe('false');
@@ -227,15 +209,11 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).toBe('demo_save'));
 
-    // the standing counter narrows the reopened picker to what it can
-    // mean — and the door says why, right where the narrowing bites
     fireEvent.click(screen.getByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-clear-counter');
     expect(screen.getByTestId('catpicker-savingDeposit')).toBeTruthy();
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
 
-    // the door runs the counter row's own detach: link gone, category
-    // reset, and the picker un-narrows without closing
     fireEvent.click(screen.getByTestId('catpicker-clear-counter'));
     await screen.findByTestId('catpicker-groceries');
     expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).toBe('');

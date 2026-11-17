@@ -14,10 +14,8 @@ import { StatusBar, statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
 import { STATUS_TONE } from './planningUi';
 
-/** what a move takes from a subject with room: never more than it spares, never more than the red needs */
 const moveFrom = (from: SubjectView, needCents: number): number => Math.min(slackCents(from), needCents);
 
-/** one place the money can come from, and what the move leaves behind there */
 function SourceRow({
   view,
   model,
@@ -50,14 +48,7 @@ function SourceRow({
   );
 }
 
-/**
- * The subjects in the red, one at a time (user 2026-10-23, #557: "like the
- * transaction review … I don't want an auto fix button, it takes away the
- * conscious decision"). Each card says how far the subject went over and
- * where money could come from — what is left to give a job, or a subject
- * with room — with what each move leaves behind there, so every euro moved
- * is a choice. Nothing moves by itself; skipping is always allowed.
- */
+// no auto-fix button, on purpose: every euro moved is a conscious choice; nothing moves by itself (#557)
 export function OverspentReview({
   onClose,
   model,
@@ -76,7 +67,6 @@ export function OverspentReview({
   const current = views.find((v) => v.subject.id === queue[index]) ?? null;
   const done = index >= queue.length;
   const next = () => setIndex((i) => i + 1);
-  // a subject the last move made whole hands over to the next one by itself
   const healed = !!current && current.status !== 'overspent';
   const currentId = current?.subject.id;
   useEffect(() => {

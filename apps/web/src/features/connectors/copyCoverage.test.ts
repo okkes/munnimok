@@ -7,14 +7,7 @@ import { en } from '@/i18n/en';
 import { nl } from '@/i18n/nl';
 import { tr } from '@/i18n/tr';
 
-/**
- * §10.8: every key the connectors can emit has copy in all three
- * languages. The connector sources are the truth — the manifests' label
- * and notes keys, the adapters' challenge prompts, and the enums the wire
- * spells in snake_case (error codes, job steps, session states, user
- * actions, challenge types) — so a new adapter or code fails here before
- * a user ever sees a raw key.
- */
+/** §10.8: every key the connectors emit has EN/NL/TR copy; the C# sources are the truth, so a new adapter fails here */
 const ROOT = path.resolve(__dirname, '../../../../../server/src/connectors');
 
 function csFiles(dir: string, out: string[] = []): string[] {
@@ -29,7 +22,6 @@ function csFiles(dir: string, out: string[] = []): string[] {
 
 const snake = (member: string): string => member.replaceAll(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 
-/** the members of one C# enum, as the wire spells them */
 function enumMembers(sources: readonly string[], name: string): string[] {
   for (const source of sources) {
     const m = new RegExp(`enum ${name}\\s*\\{([^}]*)\\}`).exec(source);

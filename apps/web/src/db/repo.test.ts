@@ -93,13 +93,12 @@ describe('Repo', () => {
     ]);
     expect(transactions).toBe(1);
     expect(writes).toBe(1);
-    expect(await db.accounts.get('a1')).toMatchObject({ name: 'Checking', balanceCents: 200 }); // merged, not replaced
+    expect(await db.accounts.get('a1')).toMatchObject({ name: 'Checking', balanceCents: 200 });
     expect(await db.accounts.get('a3')).toMatchObject({ spaceId: 's2', name: 'Shared', deleted: 0 });
     const ops = await db.outbox.toArray();
     expect(ops.map((o) => o.entityId)).toEqual(['a1', 'a1', 'a2', 'a3']);
-    expect(new Set(ops.map((o) => o.hlc)).size).toBe(4); // every op its own stamp
+    expect(new Set(ops.map((o) => o.hlc)).size).toBe(4);
 
-    // one malformed row refuses the set
     await expect(
       repo.upsertMany('transaction', [
         { spaceId: 's1', entityId: 't1', fields: { accountId: 'a', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', needsReview: 0 } },
@@ -108,7 +107,7 @@ describe('Repo', () => {
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
     expect(await db.transactions.count()).toBe(0);
     expect(await db.outbox.count()).toBe(4);
-    await repo.upsertMany('account', []); // nothing to write: no transaction
+    await repo.upsertMany('account', []);
     expect(transactions).toBe(2);
   });
 
@@ -116,7 +115,6 @@ describe('Repo', () => {
     const repo = makeRepo('devA', db, () => ++wallMs);
     await repo.upsert('account', 's1', 'a1', { name: 'Mine', balanceCents: 100 });
 
-    // remote edit stamped in the past: name loses, color (new field) applies
     const remoteHlc = new HlcClock('devB', undefined, () => 500_000);
     await repo.applyRemoteOps([
       {
@@ -142,11 +140,9 @@ describe('Repo', () => {
     const repoA = makeRepo('devA', dbA, () => ++wa);
     const repoB = makeRepo('devB', dbB, () => ++wb);
 
-    // both devices edit the same account "offline"
     await repoA.upsert('account', 's1', 'a1', { name: 'From A', balanceCents: 100 });
     await repoB.upsert('account', 's1', 'a1', { name: 'From B', color: '#abc' });
 
-    // exchange outboxes in opposite orders (simulates who-syncs-first)
     const opsA = await dbA.outbox.toArray();
     const opsB = await dbB.outbox.toArray();
     await repoA.applyRemoteOps(opsB);
@@ -158,9 +154,8 @@ describe('Repo', () => {
     expect(rowA.balanceCents).toBe(rowB.balanceCents);
     expect(rowA.color).toBe(rowB.color);
     expect(rowA.fieldVersions).toEqual(rowB.fieldVersions);
-    // B's wall clock was ahead, so B's name wins on both devices
     expect(rowA.name).toBe('From B');
-    expect(rowA.balanceCents).toBe(100); // only A ever set it — survives
+    expect(rowA.balanceCents).toBe(100);
 
     await dbA.delete();
     await dbB.delete();
@@ -168,7 +163,6 @@ describe('Repo', () => {
 
   it('model invariants block a malformed local write, whole and clean', async () => {
     const repo = makeRepo('devA', db, () => ++wallMs);
-    // a screen's validation leaked: fractional cents
     await expect(
       repo.upsert('transaction', 's1', 't1', {
         accountId: 'a',
@@ -179,11 +173,9 @@ describe('Repo', () => {
         needsReview: 0,
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
-    // nothing landed: no row, no outbox op
     expect(await db.transactions.get('t1')).toBeUndefined();
     expect(await db.outbox.toArray()).toHaveLength(0);
 
-    // malformed shapes are caught too (split without a category)
     await expect(
       repo.upsert('transaction', 's1', 't2', {
         accountId: 'a',
@@ -196,7 +188,6 @@ describe('Repo', () => {
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
 
-    // a part's category spread must sum to the part (v2.1)
     await expect(
       repo.upsert('transaction', 's1', 't3', {
         accountId: 'a',
@@ -211,7 +202,6 @@ describe('Repo', () => {
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
 
-    // #211: the ROW's category spread must sum to the gross amount
     await expect(
       repo.upsert('transaction', 's1', 't4', {
         accountId: 'a',
@@ -223,7 +213,6 @@ describe('Repo', () => {
         cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 200 }],
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
-    // ...and a sound spread lands (a lone settled entry is legal too)
     await repo.upsert('transaction', 's1', 't5', {
       accountId: 'a',
       date: '2026-07-01',
@@ -249,7 +238,6 @@ describe('Repo', () => {
         hlc: '2026-07-01T00:00:00.000Z-0000-devB',
       },
     ]);
-    // the row landed as sent — every device converges on the same rows
     expect((await db.transactions.get('remote1'))?.merchant).toBe('X');
   });
 

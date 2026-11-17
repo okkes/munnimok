@@ -9,14 +9,14 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TickBox, enterToggles, halfRef } from '@/ui/TickBox';
 import type { TickState } from '@/ui/TickBox';
-import { copyFaces, copyGroupToSpace } from './categoryOps';
+import { copyDeclineKey, copyFaces, copyGroupToSpace, declineCopyGroup, restoreCopyOffers } from './categoryOps';
 import type { CopyGroup } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
 
 const idsOf = (group: CopyGroup): string[] => [...(group.main ? [group.main.id] : []), ...group.subs.map((sub) => sub.id)];
 
-/** a group's tick: a main this space lacks reads full only with every sub along; a group joining a main here, by its subs */
+/** a main this space lacks reads full only with every sub along; a group joining a main here reads by its subs */
 function groupTick(group: CopyGroup, picked: ReadonlySet<string>): TickState {
   const subsIn = group.subs.filter((sub) => picked.has(sub.id)).length;
   if (group.main && !picked.has(group.main.id)) return 'off';
@@ -27,7 +27,6 @@ function groupTick(group: CopyGroup, picked: ReadonlySet<string>): TickState {
 /** a row labels a native checkbox that wears the house tick and lends the row its focus ring (m-focus-card) */
 const rowClass = 'm-tap m-focus-card relative flex w-full items-center gap-3 border-none bg-transparent py-2.5 pr-3 text-left';
 
-/** one main of one other space: its own row (a main this space lacks, or the main here its subs join) and every sub a pick of its own */
 function CopyGroupRows({
   group,
   into,
@@ -36,40 +35,52 @@ function CopyGroupRows({
   faces,
   onToggleGroup,
   onToggleSub,
+  onDecline,
 }: Readonly<{
   group: CopyGroup;
-  /** the main here the subs join */
   into: Cat | null;
   first: boolean;
   picked: ReadonlySet<string>;
   faces: ReadonlyMap<string, string>;
   onToggleGroup: (group: CopyGroup) => void;
   onToggleSub: (group: CopyGroup, subId: string) => void;
+  onDecline: (group: CopyGroup) => void;
 }>) {
   const { t } = useLang();
   const color = group.main?.color || into?.color || 'var(--m-ink-3)';
   const tick = groupTick(group, picked);
   return (
     <div className={first ? '' : 'border-t border-line'}>
-      <label className={`${rowClass} pl-3`}>
-        <input
-          type="checkbox"
-          data-testid={group.main ? `cats-copy-unit-${group.main.id}` : `cats-copy-into-${group.space.id}-${group.intoId}`}
-          data-state={tick}
-          data-quiet-focus
-          ref={halfRef(tick === 'half')}
-          checked={tick === 'checked'}
-          onChange={() => onToggleGroup(group)}
-          onKeyDown={enterToggles}
-          className="sr-only"
-        />
-        <TickBox state={tick} />
-        <Icon name={group.main?.icon ?? into?.icon ?? 'shape-outline'} size={19} color={color} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-semibold text-ink">{group.main?.name ?? (into ? catName(into, t) : '')}</span>
-          <span className="block truncate text-[11px] text-ink-4">{t(group.main ? 'cats.copyNewMain' : 'cats.copyInto')}</span>
-        </span>
-      </label>
+      {/* #390 r4: "not interested" per main sits beside the row, not inside its label */}
+      <div className="flex items-center">
+        <label className={`${rowClass} min-w-0 flex-1 pl-3`}>
+          <input
+            type="checkbox"
+            data-testid={group.main ? `cats-copy-unit-${group.main.id}` : `cats-copy-into-${group.space.id}-${group.intoId}`}
+            data-state={tick}
+            data-quiet-focus
+            ref={halfRef(tick === 'half')}
+            checked={tick === 'checked'}
+            onChange={() => onToggleGroup(group)}
+            onKeyDown={enterToggles}
+            className="sr-only"
+          />
+          <TickBox state={tick} />
+          <Icon name={group.main?.icon ?? into?.icon ?? 'shape-outline'} size={19} color={color} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-semibold text-ink">{group.main?.name ?? (into ? catName(into, t) : '')}</span>
+            <span className="block truncate text-[11px] text-ink-4">{t(group.main ? 'cats.copyNewMain' : 'cats.copyInto')}</span>
+          </span>
+        </label>
+        <button
+          type="button"
+          data-testid={`cats-copy-decline-${copyDeclineKey(group)}`}
+          onClick={() => onDecline(group)}
+          className="m-tap mr-2 shrink-0 rounded-full border border-line bg-transparent px-2.5 py-1 text-[11px] font-medium text-ink-3"
+        >
+          {t('cats.copyDecline')}
+        </button>
+      </div>
       {group.subs.map((sub) => {
         const on = picked.has(sub.id);
         return (
@@ -93,17 +104,13 @@ function CopyGroupRows({
   );
 }
 
-/**
- * #390 (user): copy custom categories from the person's other spaces — per
- * space and per main, every sub on its own row to tick (r2: "I would also
- * like to see the sub categories"). A main this space lacks comes along
- * when ticked (a sub needs it); subs whose main is here already join it.
- */
+// #390: a main this space lacks comes along when ticked (a sub needs it); subs whose main is here join it
 export function CopyCategoriesSheet({
   open,
   onOpenChange,
   groups,
-}: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; groups: readonly CopyGroup[] }>) {
+  hidden,
+}: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; groups: readonly CopyGroup[]; /** offers this space declined */ hidden: number }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
@@ -147,6 +154,12 @@ export function CopyCategoriesSheet({
     onOpenChange(false);
   };
 
+  const decline = (group: CopyGroup) => {
+    setPicked((prev) => new Set([...prev].filter((id) => !idsOf(group).includes(id))));
+    void declineCopyGroup(store, repo, spaceId, group);
+    void logActivity(store, repo, spaceId, 'catCopyDecline', group.main?.name ?? (group.intoId ? catName(cats.byId(group.intoId), t) : ''));
+  };
+
   const spaces = [...new Map(groups.map((g) => [g.space.id, g.space])).values()];
   return (
     <Sheet
@@ -178,11 +191,25 @@ export function CopyCategoriesSheet({
                     faces={faces}
                     onToggleGroup={toggleGroup}
                     onToggleSub={toggleSub}
+                    onDecline={decline}
                   />
                 ))}
             </div>
           </div>
         ))}
+        {hidden > 0 && (
+          <p className="px-1 text-[12px] text-ink-4" data-testid="cats-copy-hidden">
+            {t(hidden === 1 ? 'cats.copyHiddenOne' : 'cats.copyHidden', { n: hidden })}{' '}
+            <button
+              type="button"
+              data-testid="cats-copy-restore"
+              onClick={() => void restoreCopyOffers(repo, spaceId)}
+              className="m-tap border-none bg-transparent p-0 text-[12px] font-semibold text-accent-deep"
+            >
+              {t('cats.copyRestore')}
+            </button>
+          </p>
+        )}
       </div>
     </Sheet>
   );

@@ -22,7 +22,6 @@ export const RECURRING_ICONS: readonly string[] = [
 export const ownIcon = (rec: Pick<RecurringRow, 'icon' | 'kind'>): string | undefined =>
   rec.icon && rec.icon !== KIND_ICON[rec.kind] ? rec.icon : undefined;
 
-/** human cadence: "Monthly", "Yearly", "Weekly", "Every 3 months", … */
 export function cadenceLabel(rec: Pick<RecurringRow, 'every' | 'everyN'>, t: TFunc): string {
   const n = Math.max(1, rec.everyN ?? 1);
   if (rec.every === 'week') return n === 1 ? t('recurring.everyWeek') : t('recurring.everyNWeeks', { n });
@@ -30,10 +29,8 @@ export function cadenceLabel(rec: Pick<RecurringRow, 'every' | 'everyN'>, t: TFu
   return n === 1 ? t('recurring.everyMonth') : t('recurring.everyNMonths', { n });
 }
 
-/** brand logo when set, the kind's MDI icon otherwise. With `fill`, the
- *  logo COVERS the parent tile edge to edge (user request: no colored
- *  padding around the artwork — a slight crop is fine); the parent must
- *  be a relative rounded tile. Bare rows keep the contained thumbnail. */
+/** with `fill` the logo covers the parent tile edge to edge (slight crop fine);
+ *  the parent must be a relative rounded tile */
 export function RecurringVisual({
   rec,
   size = 17,

@@ -3,10 +3,6 @@ using Sentry;
 
 namespace Connector.Api;
 
-/// <summary>
-/// Which of the control plane's requests become performance transactions
-/// (docs/observability.md). A trace the api continued keeps its decision.
-/// </summary>
 public static class ConnectorTracing
 {
     /// <summary>a number in 0..1, else the platform default of a fifth</summary>

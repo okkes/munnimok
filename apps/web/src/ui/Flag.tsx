@@ -1,20 +1,13 @@
 import type { Lang } from '@/i18n';
 
-// bundled offline (scripts/gen-flags.mjs): 4x3 SVGs for every country in
-// COUNTRIES + the language flags — never emoji (broken on Windows), never
-// a CDN (offline-first)
+// SVGs from scripts/gen-flags.mjs: never emoji (broken on Windows), never a CDN (offline-first)
 const FLAG_URLS = import.meta.glob('../assets/flags/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 const urlFor = (code: string): string | undefined => FLAG_URLS[`../assets/flags/${code.toLowerCase()}.svg`];
 
-/** app language → representative flag */
 const LANG_FLAG: Record<Lang, string> = { en: 'gb', nl: 'nl', tr: 'tr' };
 export const langFlagCode = (lang: Lang): string => LANG_FLAG[lang];
 
-/**
- * Country flag icon (user request: flags for every language + country
- * field). Falls back to the familiar code badge when a flag is missing.
- */
 export function Flag({ code, size = 18, className = '' }: Readonly<{ code: string; size?: number; className?: string }>) {
   const url = urlFor(code);
   if (!url) {

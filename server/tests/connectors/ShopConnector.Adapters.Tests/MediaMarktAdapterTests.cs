@@ -10,15 +10,6 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The fetch loop, without a browser.
-///
-/// What is worth testing here is not the parsing - <see cref="MediaMarktOrdersTests"/>
-/// does that - but the walk: when it asks for another page, when it stops, and
-/// what it does when MediaMarkt answers with something other than orders. All
-/// three are decisions this adapter makes, and none of them should need a real
-/// account to exercise.
-/// </summary>
 public sealed class MediaMarktAdapterTests
 {
     private const string FirstUrl =
@@ -26,45 +17,22 @@ public sealed class MediaMarktAdapterTests
         + "&variables=%7B%22limit%22%3A10%2C%22offset%22%3A0%7D"
         + "&extensions=%7B%22persistedQuery%22%3A%7B%22sha256Hash%22%3A%22abc123%22%7D%7D";
 
-    /// <summary>
-    /// The real options, except that pages follow each other immediately.
-    ///
-    /// The gap between pages is a courtesy to Cloudflare, not behaviour worth
-    /// asserting - and paying it for real turned eighteen offline tests into a
-    /// three-second run. What IS asserted about pacing lives in the manifest's
-    /// MinRequestGapMs, which the platform enforces above this adapter.
-    /// </summary>
+    // pages follow each other immediately: the real gap is a courtesy to Cloudflare, and paying it made offline tests slow
+    // pacing is the manifest's MinRequestGapMs, enforced above this adapter
     private static readonly MediaMarktOptions Options = new() { PageGapMs = 0 };
 
-    /// <summary>
-    /// A portal that answers from a script and remembers what it was asked.
-    /// </summary>
     private sealed class ScriptedPortal(params string[] pages) : IMediaMarktPortal
     {
         private int _served;
 
         public List<string> Asked { get; } = [];
 
-        /// <summary>
-        /// MediaMarkt's own client's headers on that call, WHICH THIS FIXTURE
-        /// USED TO OMIT ENTIRELY.
-        /// </summary>
-        /// <remarks>
-        /// The adapter carries the observed call's headers onto the page it
-        /// composes itself, filtered to <c>CarriedHeaders</c> - a mechanism that
-        /// exists because the first live fetch died without it. With no headers
-        /// on the opening call there was nothing to carry, so every test here
-        /// exercised the empty case and the fix was never once run.
-        /// <para>
-        /// The values are representative rather than captured; what is asserted
-        /// is that they SURVIVE the hop, which is what the live 400 was about.
-        /// </para>
-        /// </remarks>
+        // the client's headers on the observed call; the fixture once omitted them, so CarriedHeaders
+        // (added after the first live fetch died) was never exercised; what is asserted is that they SURVIVE the hop
         public static readonly IReadOnlyDictionary<string, string> ClientHeaders =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                // First and load-bearing: this is what satisfies Apollo's CSRF
-                // check on a GET that carries no body.
+                // satisfies Apollo's CSRF check on a GET that carries no body
                 ["content-type"] = "application/json",
                 ["apollographql-client-name"] = "pwa-client",
                 ["apollographql-client-version"] = "not-a-real-version",
@@ -77,10 +45,8 @@ public sealed class MediaMarktAdapterTests
         public MediaMarktCall? Opening { get; init; } =
             new MediaMarktCall(200, FirstUrl, pages[0], ClientHeaders);
 
-        /// <summary>The invoice each order's page hands out; an order not listed here has none.</summary>
         public Dictionary<string, MediaMarktDocument?> Invoices { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>Every order whose page was opened for its invoice, in order.</summary>
         public List<string> InvoicesAsked { get; } = [];
 
         public Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct)
@@ -104,7 +70,6 @@ public sealed class MediaMarktAdapterTests
             return Task.FromResult(Opening);
         }
 
-        /// <summary>How many times the portal was told to navigate.</summary>
         public int Navigated { get; private set; }
 
         public Task<MediaMarktCall?> WatchAsync(string operationName, int timeoutMs, CancellationToken ct)
@@ -114,37 +79,17 @@ public sealed class MediaMarktAdapterTests
             return Task.FromResult(Opening);
         }
 
-        /// <summary>How many times it was told to wait without navigating.</summary>
         public int Watched { get; private set; }
 
         public Task<string> DescribeAsync(CancellationToken ct) =>
             Task.FromResult("at https://www.mediamarkt.nl/nl/myaccount/auth/login; it says 'Onjuist wachtwoord'");
 
-        /// <summary>The headers each composed call actually carried, in order.</summary>
-        /// <remarks>
-        /// Thrown away by the first version of this stub, which is how the one
-        /// header MediaMarkt's API refuses a request without came to be
-        /// untested: <c>CarriedHeaders</c> exists BECAUSE the first live fetch
-        /// died on it, and every test here passed with or without it.
-        /// </remarks>
+        // the headers each composed call carried; the stub once discarded them, which left CarriedHeaders untested
         public List<IReadOnlyDictionary<string, string>> AskedWith { get; } = [];
 
-        /// <summary>
-        /// What Apollo Server does to a GET that cannot be a simple request.
-        /// </summary>
-        /// <remarks>
-        /// Its CSRF prevention refuses any GET whose content type is "simple"
-        /// or absent unless the request carries <c>x-apollo-operation-name</c>
-        /// or <c>apollo-require-preflight</c>. MediaMarkt's own client sends
-        /// <c>content-type: application/json</c> on every GET - pointless on a
-        /// request with no body, and precisely what satisfies that check.
-        /// <para>
-        /// Modelled here rather than assumed away, because this is the exact
-        /// 400 that killed the first live fetch: page one, the SPA's own call,
-        /// came back 200 and page two, the one this connector builds, did not.
-        /// A stub that answers 200 whatever it is handed cannot fail that way.
-        /// </para>
-        /// </remarks>
+        // Apollo's CSRF prevention refuses a GET with a simple or absent content type unless it sends
+        // x-apollo-operation-name or apollo-require-preflight; the client sends content-type: application/json on every GET
+        // modelled because this 400 killed the first live fetch and a stub answering 200 cannot fail that way
         private static bool Satisfied(IReadOnlyDictionary<string, string> headers) =>
             headers.ContainsKey("content-type")
             || headers.ContainsKey("x-apollo-operation-name")
@@ -175,7 +120,6 @@ public sealed class MediaMarktAdapterTests
         private static string Page() => """{"data":{"getCombinedOrders":[]}}""";
     }
 
-    /// <summary>Builds a page of <paramref name="count"/> orders from the fixture's first one.</summary>
     private static string PageOf(int count, int startingAt = 1)
     {
         var template = JsonNode.Parse(FixtureCatalog.Read("mediamarkt/orders-page.json"))!;
@@ -197,12 +141,6 @@ public sealed class MediaMarktAdapterTests
     private static (FakeJobContext Ctx, MediaMarktAdapter Adapter) Rig() =>
         (new FakeJobContext(), new MediaMarktAdapter(Options));
 
-    // ---- the counter -------------------------------------------------------
-
-    /// <summary>
-    /// The walk says how much it has gathered after every page, so a
-    /// consumer can show the number climbing (user request 2026-10-02).
-    /// </summary>
     [Fact]
     public async Task The_walk_counts_what_it_found_page_by_page()
     {
@@ -214,14 +152,8 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal([10, 20, 23], ctx.Counted);
     }
 
-    // ---- invoices ----------------------------------------------------------
-
-    /// <summary>
-    /// MediaMarkt was expected to carry its invoices (user, 2026-10-02): the
-    /// order's own page offers one, and it rides the receipt as a document.
-    /// A page that answers something other than a PDF - a sign-in page to a
-    /// link ending in .pdf - is not attached, and the receipt stays.
-    /// </summary>
+    // the order's own page offers an invoice, which rides the receipt as a document.
+    // a non-PDF answer (a sign-in page behind a .pdf link) is not attached
     [Fact]
     public async Task An_invoice_is_fetched_from_the_orders_own_page_and_rides_the_receipt()
     {
@@ -258,12 +190,8 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains(ctx.Notes, note => note.Contains("'00000003'", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// #430: "Factuur aanvragen" is offered on MediaMarkt's recent orders only
-    /// (the account holder, 2026-11-02), so an older order without one is
-    /// normal: no note per order reading like a page that changed, one line
-    /// that says what it is, and the purchase stays.
-    /// </summary>
+    // #430: "Factuur aanvragen" is offered on recent orders only, so an older order without one is normal:
+    // one line, no note per order
     [Fact]
     public async Task An_order_that_offers_no_invoice_is_normal_and_said_once()
     {
@@ -298,10 +226,7 @@ public sealed class MediaMarktAdapterTests
         Assert.All(result.Receipts, r => Assert.Empty(r.Documents));
     }
 
-    /// <summary>
-    /// Each invoice is a page of its own, so a first connect asks for the
-    /// newest ones only and says which it left for the next sync.
-    /// </summary>
+    // each invoice is a page of its own: a first connect asks for the newest only and says which it left
     [Fact]
     public async Task The_invoice_ceiling_leaves_the_oldest_without_one_and_says_so()
     {
@@ -315,13 +240,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains(ctx.Notes, note => note.Contains("invoice ceiling", StringComparison.Ordinal));
     }
 
-    // ---- paging ------------------------------------------------------------
-
-    /// <summary>
-    /// A page smaller than the one we asked for is the end, and the ONLY end
-    /// MediaMarkt states. The payload carries no total count anywhere - checked
-    /// across every captured response - so the walk either stops here or never.
-    /// </summary>
+    // the payload carries no total count anywhere (checked across every captured response): a short page is the only end
     [Fact]
     public async Task A_short_page_ends_the_walk()
     {
@@ -352,11 +271,8 @@ public sealed class MediaMarktAdapterTests
         Assert.True(result.Complete);
     }
 
-    /// <summary>
-    /// The part of the request that must survive a rewrite untouched. The hash
-    /// is MediaMarkt's, the channel config is MediaMarkt's, and this connector
-    /// deliberately does not understand either.
-    /// </summary>
+    // the hash and the channel config are MediaMarkt's and must survive a rewrite untouched.
+    // the connector deliberately understands neither
     [Fact]
     public async Task Paging_changes_the_variables_and_nothing_else()
     {
@@ -388,11 +304,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains(ctx.Notes, note => note.Contains("partial", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// A ten-year-old account is twenty pages a caller asked nothing about.
-    /// Checked page by page rather than after the walk, so the requests are not
-    /// spent in the first place.
-    /// </summary>
+    // checked page by page, so a ten-year-old account's twenty pages are never requested
     [Fact]
     public async Task A_page_entirely_before_the_window_ends_the_walk()
     {
@@ -410,13 +322,7 @@ public sealed class MediaMarktAdapterTests
         Assert.True(result.Complete);
     }
 
-    // ---- what a bad answer means -------------------------------------------
-
-    /// <summary>
-    /// The shape an expired session takes here. A signed-out browser never
-    /// fires the orders call at all, so the portal sees nothing rather than a
-    /// 401 - and "nothing" has to mean "sign in again", not "no orders".
-    /// </summary>
+    // a signed-out browser never fires the orders call: "nothing" must mean sign in again, not no orders
     [Fact]
     public async Task A_page_that_never_asks_for_orders_is_an_expired_session()
     {
@@ -429,11 +335,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
     }
 
-    /// <summary>
-    /// The other shape, and the reason the landing url is checked before the
-    /// status: a bounced request arrives as a perfectly successful 200 carrying
-    /// the login page.
-    /// </summary>
+    // a bounced request arrives as a successful 200 carrying the login page, so the landing url is checked before the status
     [Fact]
     public async Task An_answer_from_the_sign_in_page_is_an_expired_session()
     {
@@ -481,8 +383,6 @@ public sealed class MediaMarktAdapterTests
         Assert.Empty(portal.Asked);
     }
 
-    // ---- what comes out ----------------------------------------------------
-
     [Fact]
     public async Task Receipts_come_back_newest_first()
     {
@@ -496,10 +396,6 @@ public sealed class MediaMarktAdapterTests
             result.Receipts.Select(r => r.PurchasedAt));
     }
 
-    /// <summary>
-    /// The whole point of the four identities: a receipt built from this
-    /// payload reconciles, so the flag means something when it is false.
-    /// </summary>
     [Fact]
     public async Task Every_receipt_reconciles_against_its_own_lines()
     {
@@ -525,8 +421,7 @@ public sealed class MediaMarktAdapterTests
 
         Assert.All(result.Receipts, receipt => Assert.Empty(receipt.Items));
 
-        // And the total is still MediaMarkt's own figure rather than a sum of
-        // lines nobody asked for.
+        // the total stays MediaMarkt's own figure, not a sum of lines nobody asked for
         Assert.All(result.Receipts, receipt => Assert.False(receipt.TotalIsDerived));
     }
 
@@ -572,8 +467,6 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal("GetCombinedOrdersV3", result.Via);
     }
 
-    // ---- the login ---------------------------------------------------------
-
     private static StubLoginPage LoginForm() => StubLoginPage.Showing(
         "#userName", "#password", "#mms-login-form__login-button", "#required",
         "[data-test='pwa-consent-layer-save-settings']");
@@ -590,19 +483,8 @@ public sealed class MediaMarktAdapterTests
         Browser = new StubBrowserLease(null!) { StorageState = Jar },
     };
 
-    /// <summary>
-    /// THE REGRESSION THE FIRST LIVE RUN FOUND, and the reason this test exists
-    /// rather than a comment.
-    ///
-    /// The login used to submit the form and then navigate to the orders page
-    /// to check whether it had worked. A navigation on top of a sign-in still in
-    /// flight cancels it - so the browser arrived anonymous, was bounced back to
-    /// the form, never asked for orders, and the adapter told the account holder
-    /// their credentials were refused. They were not.
-    ///
-    /// After pressing the button the right thing to do is nothing: the form
-    /// carries redirectURL and MediaMarkt's own app navigates itself.
-    /// </summary>
+    // after submitting, do nothing: navigating over a sign-in in flight cancels it, so the browser arrived anonymous
+    // and the account holder was told their credentials were refused; the form carries redirectURL and the app navigates itself
     [Fact]
     public async Task The_login_waits_after_submitting_and_never_navigates_over_it()
     {
@@ -616,9 +498,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal(0, portal.Navigated);
         Assert.Equal(1, portal.Watched);
 
-        // Exactly one navigation in the whole login, and it is the opening one
-        // to the protected page - which is what makes MediaMarkt issue the
-        // redirectURL the app later follows.
+        // exactly one navigation, the opening one to the protected page, which makes MediaMarkt issue the redirectURL
         Assert.Equal(["https://www.mediamarkt.nl/nl/myaccount/orders"], page.Visited);
     }
 
@@ -636,10 +516,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains("#mms-login-form__login-button", page.Clicked);
     }
 
-    /// <summary>
-    /// The narrow answer, never "Alles accepteren". A connector signing in on
-    /// somebody's behalf has no business opting them into marketing tracking.
-    /// </summary>
+    // never "Alles accepteren": a connector signing in on someone's behalf must not opt them into marketing tracking
     [Fact]
     public async Task The_cookie_layer_is_answered_with_the_necessary_categories_only()
     {
@@ -655,25 +532,8 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains(ctx.Notes, note => note.Contains("necessary categories only", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// THE PAGE THIS CONNECTOR COMPOSES CARRIES THE CLIENT'S OWN HEADERS.
-    /// </summary>
-    /// <remarks>
-    /// The one live failure this adapter has had: page one - MediaMarkt's own
-    /// call - came back 200, and page two, the one built here, answered 400.
-    /// Apollo Server's CSRF prevention refuses a GET whose content type is
-    /// simple or absent, and MediaMarkt's client sends
-    /// <c>content-type: application/json</c> on every GET, which is exactly
-    /// what satisfies it.
-    /// <para>
-    /// <c>CarriedHeaders</c> was written to fix that and then went untested for
-    /// the plainest possible reason: the fixture's observed call had no headers
-    /// on it, so there was never anything to carry, and the stub answered 200
-    /// whatever it was handed. Both halves are fixed here - the fixture states
-    /// the client's headers, and it now refuses a call that arrives without one
-    /// the way the real server did.
-    /// </para>
-    /// </remarks>
+    // the one live failure: page two, built here, answered 400 until it carried the client's headers
+    // (content-type satisfies Apollo's CSRF check)
     [Fact]
     public async Task A_page_this_connector_composes_carries_the_header_the_api_refuses_it_without()
     {
@@ -682,25 +542,19 @@ public sealed class MediaMarktAdapterTests
 
         await new MediaMarktAdapter(Options).FetchAsync(ctx, Requests.Receipts(), portal, CancellationToken.None);
 
-        // It really did compose a second page, or there is nothing to assert.
         Assert.NotEmpty(portal.Asked);
 
         var carried = portal.AskedWith[0];
 
         Assert.Equal("application/json", carried["content-type"]);
 
-        // And the rest of the allowlist came with it, because what identifies
-        // the caller as MediaMarkt's own front end is the whole set.
+        // the whole allowlist is what identifies the caller as MediaMarkt's own front end
         Assert.Equal("NL", carried["x-mms-country"]);
         Assert.Equal("pwa-client", carried["apollographql-client-name"]);
     }
 
-    /// <summary>
-    /// Google and Apple sit beside the password form, and both hand off to an
-    /// identity provider this connector holds no credential for. A stray click
-    /// lands the browser on a consent screen nobody can answer - the same guard
-    /// Amazon's passkey nudge needed.
-    /// </summary>
+    // Google and Apple hand off to an identity provider we hold no credential for.
+    // a stray click lands on a consent screen nobody can answer
     [Fact]
     public async Task The_login_never_presses_a_social_sign_in_button()
     {
@@ -715,11 +569,7 @@ public sealed class MediaMarktAdapterTests
             forbidden => Assert.DoesNotContain(forbidden, page.Clicked));
     }
 
-    /// <summary>
-    /// A failure that names something. The first version of this message said
-    /// "either the credentials were refused or the form has changed", which is
-    /// the sort of sentence that costs a live sign-in to get past.
-    /// </summary>
+    // a failure that names something: "either refused or the form has changed" costs a live sign-in to get past
     [Fact]
     public async Task A_sign_in_that_goes_nowhere_quotes_what_the_page_is_showing()
     {
@@ -753,30 +603,16 @@ public sealed class MediaMarktAdapterTests
         Assert.Empty(page.Visited);
     }
 
-    // ---- what a page we build ourselves has to carry -----------------------
-
-    /// <summary>
-    /// The header whose absence broke the first live fetch.
-    ///
-    /// Page one is MediaMarkt's own call and answered 200; page two is the one
-    /// this connector builds, and answered 400. Apollo Server's CSRF prevention
-    /// refuses a GET whose content type is simple or absent unless it carries
-    /// one of two Apollo-specific headers - and MediaMarkt's client sends
-    /// `content-type: application/json` on every GET, which looks pointless on
-    /// a request with no body and is exactly what satisfies that check.
-    /// </summary>
+    // the header whose absence broke the first live fetch: Apollo's CSRF prevention refuses a GET with a simple
+    // or absent content type; MediaMarkt's client sends application/json on every GET
     [Fact]
     public void A_page_we_ask_for_carries_the_content_type_the_client_sends()
     {
         Assert.Contains("content-type", new MediaMarktOptions().CarriedHeaders, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// And still carries nothing that could sign anybody in. The session is the
-    /// browser's own cookie jar, spent by `credentials: 'same-origin'`; a
-    /// connector that started copying cookies into headers would have moved a
-    /// credential into this process for no reason at all.
-    /// </summary>
+    // the session is the browser's own cookie jar (credentials: 'same-origin').
+    // copying cookies into headers would move a credential into this process
     [Fact]
     public void No_carried_header_is_a_credential()
     {
@@ -788,11 +624,7 @@ public sealed class MediaMarktAdapterTests
                 forbidden, bad => header.Contains(bad, StringComparison.OrdinalIgnoreCase)));
     }
 
-    /// <summary>
-    /// A refusal has to arrive readable. "Page 2 answered 400 with 406
-    /// characters" was this adapter's first live fetch failure - 406 characters
-    /// that named the problem exactly and that nobody could read.
-    /// </summary>
+    // a refusal must arrive readable: the first live failure was "Page 2 answered 400 with 406 characters" nobody could read
     [Fact]
     public async Task A_refused_page_quotes_what_the_provider_said()
     {
@@ -813,8 +645,6 @@ public sealed class MediaMarktAdapterTests
             note => note.Contains("CSRF", StringComparison.Ordinal) && note.Contains("refused with", StringComparison.Ordinal));
     }
 
-    // ---- url rewriting -----------------------------------------------------
-
     [Fact]
     public void An_offset_is_written_into_the_variables_the_client_sent()
     {
@@ -829,15 +659,13 @@ public sealed class MediaMarktAdapterTests
     {
         Assert.True(MediaMarktCalls.IsOperation(FirstUrl, "GetCombinedOrdersV3", Options));
 
-        // The single-order call, whose name is a PREFIX of nothing but whose
-        // shape is one character away. Matching loosely here would hand the
-        // walk a payload with a different root field.
+        // the single-order call GetCombinedOrderV3 is one character away and has a different root field:
+        // loose matching would hand the walk the wrong payload
         var single = FirstUrl.Replace(
             "operationName=GetCombinedOrdersV3", "operationName=GetCombinedOrderV3", StringComparison.Ordinal);
 
         Assert.False(MediaMarktCalls.IsOperation(single, "GetCombinedOrdersV3", Options));
 
-        // And a call to something else entirely on the same endpoint.
         var user = FirstUrl.Replace(
             "operationName=GetCombinedOrdersV3", "operationName=GetUser", StringComparison.Ordinal);
 

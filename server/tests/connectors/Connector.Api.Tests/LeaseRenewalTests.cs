@@ -8,16 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The inline runner's lease renewal ends the way it started: told to
-/// stop, waited for, and only then is its stop source disposed.
-///
-/// GlitchTip #23/#29 (2026-10-06..09, 98 events in production): the source
-/// was disposed under a loop still awaiting it, the loop threw
-/// ObjectDisposedException into a task nobody awaited, and the finalizer
-/// reported it as an unobserved exception - once per inline job. These
-/// drive the loop against a queue double, with the ttl in milliseconds.
-/// </summary>
+// GlitchTip #23/#29: the stop source was disposed under a loop still awaiting it, which threw into an unobserved
+// task once per inline job; disposal must stop the loop and wait for it first
 public sealed class LeaseRenewalTests
 {
     private static readonly TimeSpan Ttl = TimeSpan.FromMilliseconds(60);
@@ -106,7 +98,6 @@ public sealed class LeaseRenewalTests
             .BuildServiceProvider()
             .GetRequiredService<IServiceScopeFactory>();
 
-    /// <summary>The queue as the renewal sees it: one method answered by the test, every other one out of bounds.</summary>
     private sealed class QueueDouble : ILeasedJobQueue
     {
         private int _renewals;

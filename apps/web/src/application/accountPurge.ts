@@ -3,18 +3,11 @@ import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 import { releaseAccountReferences } from './accountRelease';
+import { settleSpaceReimbursements } from './catalogMaintenance';
 
-/**
- * #279: deleting a global account used to end at engine.purgeSpace,
- * which is FEED-space-keyed — so two kinds of remnants survived in
- * member spaces: txMeta overlays for the feed's transactions (invisible
- * but syncing forever) and the member space's OWN transaction rows on
- * the account (statement imports without a feed write those; they kept
- * rendering with a dangling account). Tombstone both via the repo —
- * tombstones sync to other devices, where a raw local delete would
- * resurrect on the next pull. Run BEFORE the engine purge, while the
- * feed's transaction ids are still readable.
- */
+// #279: engine.purgeSpace is feed-space keyed, so member spaces kept txMeta overlays (syncing forever) and own rows on
+// the account. Tombstone both via the repo (a raw delete resurrects on the next pull), BEFORE the engine purge,
+// while the feed's transaction ids are still readable
 export async function purgeAccountRemnants(
   store: StorageBackend,
   repo: Repo,
@@ -39,7 +32,6 @@ async function purgeSpaceRemnants(
   accountId: string,
   feedTxIds: string[],
 ): Promise<void> {
-  // #544: the rows that named the account as their counterparty let go first
   await releaseAccountReferences(store, repo, spaceId, accountId);
   for (const txId of feedTxIds) {
     const metaId = txMetaId(spaceId, txId);
@@ -49,14 +41,12 @@ async function purgeSpaceRemnants(
   for (const tx of await store.bySpace('transaction', spaceId)) {
     if (tx.deleted === 0 && tx.accountId === accountId) await repo.remove('transaction', spaceId, tx.id);
   }
+  // #617: a reimbursement that named one of those rows is none any more
+  await settleSpaceReimbursements(store, repo, spaceId);
 }
 
-/**
- * #544 (user): a manual account's delete. The rows that named it let go
- * first — while it is still live, so the legs munni generated on it retire
- * with those links — then the account goes. The transactions recorded ON
- * it stay (the delete sheet says so).
- */
+// #544: a manual account's delete: references let go first while it is live, so generated legs retire with the links;
+// transactions recorded ON it stay
 export async function removeManualAccount(store: StorageBackend, repo: Repo, account: AccountRow): Promise<void> {
   await releaseAccountReferences(store, repo, account.spaceId, account.id);
   await repo.remove('account', account.spaceId, account.id);

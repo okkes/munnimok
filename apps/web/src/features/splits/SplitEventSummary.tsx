@@ -10,14 +10,8 @@ import { Icon } from '@/ui/Icon';
 import { adoptEventLinks, eventSuggestions } from './splitEvents';
 import { useSplitsApi } from './splitsCore';
 
-/**
- * The split a regular event is linked to, on the event's page (#538,
- * user): what the WHOLE thing cost — the event's own figure is my part of
- * it, and looking back at a wintersport with four people the total is
- * what one wants to see — with where I stand as the smaller line. Splits
- * are online-only, so this renders nothing offline, without an account,
- * or when no split of mine is linked to this event.
- */
+// #538: shows the WHOLE split's cost (the event's own figure is only my part), my standing as the smaller line;
+// renders nothing offline, without an account or without a linked split
 export function SplitEventSummary({ eventId }: Readonly<{ eventId: string }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();

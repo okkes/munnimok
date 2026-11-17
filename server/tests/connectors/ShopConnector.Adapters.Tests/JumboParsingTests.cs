@@ -8,15 +8,7 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// Jumbo's GraphQL responses, parsed.
-///
-/// Everything asserted here is CONFIRMED from <c>vghoost360/Jumbo-API</c>: the
-/// two response paths, the operation documents behind them, and - above all -
-/// the money format. This file's first job is to keep the money unit from
-/// being inverted a second time, which is why the wrong reading is asserted
-/// alongside the right one rather than merely avoided.
-/// </summary>
+// confirmed from vghoost360/Jumbo-API; the wrong money unit is asserted beside the right one so it cannot be inverted again
 public sealed class JumboParsingTests
 {
     private const string ListFixture = "jumbo/orders-and-receipts.json";
@@ -25,17 +17,8 @@ public sealed class JumboParsingTests
 
     private static TimeZoneInfo Dutch => RetailZones.For("NL");
 
-    // ---- the money unit: the bug this file exists to prevent ---------------
-
-    /// <summary>
-    /// The single most dangerous value in the adapter, pinned from source.
-    ///
-    /// <c>app.js</c> renders <c>order.totalToPayMoneyType.amount</c> with
-    /// <c>parseFloat(...)</c> and no division and defaults it to the string
-    /// <c>"0.00"</c>; the same file divides <c>d.price.price</c> by 100. Two
-    /// conventions, one schema. This adapter used to declare the order total
-    /// minor units, which made every Jumbo total a hundredth of the truth.
-    /// </summary>
+    // the order total is decimal euros (app.js parseFloat, no division) while d.price.price is divided by 100
+    // the adapter once declared it minor units, making every total a hundredth of the truth
     [Fact]
     public void An_order_total_is_decimal_euros_and_the_inverted_reading_is_a_hundredth_of_it()
     {
@@ -45,23 +28,16 @@ public sealed class JumboParsingTests
         var correct = JumboOrders.ParseSummary(row, Options, Dutch);
         Assert.NotNull(correct);
 
-        // "31.13" is 31 euros 13, which is 3113 minor units.
         Assert.Equal(3113, correct.Total.Value);
         Assert.Equal("EUR", correct.Total.Currency);
 
-        // What the old default did. Kept as an assertion rather than a comment
-        // because a silent hundredth is exactly the kind of wrong number no
-        // human reviewer spots in a list of groceries.
+        // the old default: a silent hundredth is a wrong number no reviewer spots
         var inverted = JumboOrders.ParseSummary(row, Options with { OrderTotalUnit = MoneyUnit.Minor }, Dutch);
         Assert.NotNull(inverted);
         Assert.Equal(31, inverted.Total.Value);
     }
 
-    /// <summary>
-    /// Both of Jumbo's conventions, written down where a change to either
-    /// breaks a test. Orders are euros; the catalogue is cents. Reading the
-    /// second and "correcting" the first is the mistake that was made once.
-    /// </summary>
+    // orders are euros, the catalogue is cents; "correcting" the first from the second was the mistake made once
     [Fact]
     public void The_two_money_conventions_are_declared_and_are_not_the_same()
     {
@@ -71,12 +47,9 @@ public sealed class JumboParsingTests
         Assert.Equal(MoneyUnit.MajorString, options.OrderLineUnit);
         Assert.Equal(MoneyUnit.MajorString, options.StoreReceiptUnit);
 
-        // Never read by this adapter, and recorded anyway: it is where the
-        // confusion came from.
+        // never read by the adapter; recorded because it is where the confusion came from
         Assert.Equal(MoneyUnit.Minor, options.CataloguePriceUnit);
     }
-
-    // ---- the confirmed response paths --------------------------------------
 
     [Fact]
     public void The_two_result_sets_are_read_from_their_confirmed_aliases()
@@ -111,8 +84,6 @@ public sealed class JumboParsingTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("data.onlineOrders.orders", error.Detail, StringComparison.Ordinal);
     }
-
-    // ---- order summaries ---------------------------------------------------
 
     [Fact]
     public void An_order_carries_its_id_branch_and_a_dated_offset()
@@ -199,17 +170,13 @@ public sealed class JumboParsingTests
         Assert.Equal(3113, summary.Total.Value);
     }
 
-    // ---- order detail: where the line items actually live ------------------
-
     [Fact]
     public void Order_lines_deposits_and_surcharges_all_reach_the_receipt()
     {
         using var document = Fixture.Doc("jumbo/order-detail.json");
         var detail = JumboOrders.ParseDetail(document.RootElement, Options, "EUR", "90211");
 
-        // Seven products, one deposit and one surcharge. Leaving the last two
-        // out is the difference between an order that reconciles and one that
-        // is short by the crate and the fee.
+        // seven products, one deposit, one surcharge: leaving the last two out leaves the order short
         Assert.Equal(9, detail.Items.Count);
         Assert.Contains(detail.Items, i => i.Name == "Statiegeld fles");
         Assert.Contains(detail.Items, i => i.Name == "SMALL_ORDER_FEE");
@@ -224,17 +191,12 @@ public sealed class JumboParsingTests
 
         Assert.Equal("ideal", detail.Payment.Method);
 
-        // Nothing in this document carries a card or IBAN tail, and an
-        // explicit null is what tells the consumer its match will be weaker.
+        // no card or IBAN tail in the document: an explicit null tells the consumer its match is weaker
         Assert.Null(detail.Payment.CardLast4);
         Assert.Null(detail.Payment.IbanTail);
     }
 
-    /// <summary>
-    /// A line's discount is the gap between its price before and after, both
-    /// of which Jumbo states. Reading <c>promotions[].discount</c> instead
-    /// would introduce a third number that has to agree with the other two.
-    /// </summary>
+    // a discount is the gap between the two stated prices; promotions[].discount would add a third number to agree with them
     [Fact]
     public void A_line_discount_is_the_gap_between_the_two_stated_prices_and_is_negative()
     {
@@ -249,8 +211,7 @@ public sealed class JumboParsingTests
         Assert.Equal(-100, discounted.Discount!.Amount.Value);
         Assert.Equal("2e halve prijs", discounted.Discount.Label);
 
-        // Every other line states the same price twice, and a zero gap is no
-        // discount rather than a discount of nothing.
+        // every other line states the same price twice: a zero gap is no discount
         Assert.Equal(8, detail.Items.Count(i => i.Discount is null));
     }
 
@@ -269,9 +230,7 @@ public sealed class JumboParsingTests
             "ses_test", "order-90211", JumboReceipts.Merchant(summary.StoreName),
             summary.PurchasedAt, summary.Total, detail.Payment, detail.Items);
 
-        // 32.13 in lines less a 1.00 promotion is the stated 31.13. The total
-        // comes from the list and the lines from the detail, so the two are a
-        // real pair rather than one number repeated back to itself.
+        // 32.13 in lines less a 1.00 promotion is the stated 31.13; total from the list, lines from the detail, so a real pair
         Assert.Equal(3213, detail.Items.Sum(i => i.Total.Value));
         Assert.Equal(3113, receipt.Total.Value);
         Assert.True(receipt.Reconciled);
@@ -306,8 +265,6 @@ public sealed class JumboParsingTests
         Assert.Contains("data.order", error.Detail, StringComparison.Ordinal);
     }
 
-    // ---- store receipt summaries -------------------------------------------
-
     [Fact]
     public void A_store_receipt_summary_states_a_moment_a_shop_and_no_total_at_all()
     {
@@ -322,16 +279,11 @@ public sealed class JumboParsingTests
         Assert.Equal("Jumbo Utrecht Amsterdamsestraatweg", till.StoreName);
         Assert.Equal(TimeSpan.FromHours(2), till.PurchasedAt.Offset);
 
-        // Not an online order's till record, so there is no order id in it.
         Assert.Null(till.OrderId);
     }
 
-    /// <summary>
-    /// An <c>ONLINE</c> receipt is the till record of an order the other half
-    /// of the same response already returned, and its transaction id begins
-    /// with that order's id. Recognising it is what keeps one shop from being
-    /// counted twice.
-    /// </summary>
+    // an ONLINE receipt is the till record of an order already returned; its transaction id begins with the order id
+    // recognising it keeps one shop from being counted twice
     [Fact]
     public void An_online_receipt_carries_the_order_id_it_belongs_to()
     {
@@ -372,11 +324,7 @@ public sealed class JumboParsingTests
         Assert.Contains("receiptImage", error.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A receipt rendered as a picture is a real answer from Jumbo, not a
-    /// shape change - so this reports "nothing to parse" and lets the adapter
-    /// decide, rather than deciding for it.
-    /// </summary>
+    // a receipt rendered as a picture is a real answer, not a shape change: report "nothing to parse" and let the adapter decide
     [Fact]
     public void A_receipt_image_that_is_not_the_json_layout_yields_nothing_to_parse()
     {

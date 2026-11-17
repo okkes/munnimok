@@ -25,13 +25,10 @@ import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { partEntries, partPickKey, suggestionKeysOf } from './EventDetailScreen';
 
-/** a split's part the add list offers: event money, not in this event yet */
 const isOpenPart = (tx: SpaceTx, part: TxSplit, eventId: string): boolean =>
   isEventMoney(part.txType ?? tx.txType) && (part.eventId ?? tx.eventId) !== eventId;
 
-/** #570: every transaction an event could take — event money not in it yet
- *  (rows filed under another event included: adding moves them), newest
- *  first; a split offers the parts that are not in the event */
+/** #570: rows filed under another event count too (adding moves them); a split offers its open parts */
 export function addableTxs<T extends SpaceTx>(txs: readonly T[], eventId: string): T[] {
   return txs
     .filter((tx) => {
@@ -43,7 +40,6 @@ export function addableTxs<T extends SpaceTx>(txs: readonly T[], eventId: string
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/** the pick keys a row offers: its open parts (a split) or itself */
 function offeredKeys(tx: SpaceTx, eventId: string, mode: 'range' | 'all'): { key: string; part?: TxSplit; ordinal?: number }[] {
   const entries = partEntries(tx);
   if (entries.length <= 1) return [{ key: tx.id }];
@@ -54,23 +50,12 @@ function offeredKeys(tx: SpaceTx, eventId: string, mode: 'range' | 'all'): { key
     .map((e) => ({ key: partPickKey(tx.id, e.idx), part: e.part, ordinal: e.ordinal }));
 }
 
-/** #570: adding from every transaction — the event's own add door, dated or not */
 export function EventAddScreen() {
   return <EventAttachScreen mode="all" />;
 }
 
-/**
- * #144 (user): attaching transactions to an event is a FULL SCREEN now,
- * not a cramped sheet — the list wears the transactions screen's look
- * (hairline dividers, the same rows) with one difference: a checkbox on
- * the left. Everything starts selected (excluding is the review), and
- * select/deselect-all does the whole list in one tap.
- *
- * #447 (user): the list offers money RECEIVED in the range too (a
- * reimbursement, a contribution) - only a movement between the person's
- * own accounts stays out. The button sums the picks as the event would:
- * what they cost, or the surplus with a plus.
- */
+// #447: money received in the range is offered too; only a movement between the person's own accounts stays out
+// #144: a full screen; the range review starts all selected (excluding is the review)
 export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' | 'all' }>) {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -82,8 +67,6 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [picked, setPicked] = useState<ReadonlySet<string> | null>(null);
   const [attaching, setAttaching] = useState(false);
-  // #570: the add list searches every transaction, a page at a time, and
-  // any row can be looked at before it is picked
   const [query, setQuery] = useState('');
   const [shownRows, setShownRows] = useState(PAGE_ROWS);
   const showMore = useCallback(() => setShownRows((n) => n + PAGE_ROWS), []);
@@ -108,11 +91,8 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
     () => (suggestions && mode === 'all' && query ? filterTxs(suggestions, { query }) : suggestions),
     [suggestions, mode, query],
   );
-  // the date-range review starts with everything selected — excluding is
-  // the review. Adopted at RENDER time the moment suggestions exist (null
-  // = not seeded yet): the rows and their checks land in the SAME commit,
-  // so no tap can slip in between; later emissions never re-seed (the
-  // LoanMatchSheet seed-once lesson). The add list starts empty.
+  // seeded at render time the moment suggestions exist (null = not yet) so rows and checks land in one commit and no tap
+  // slips in between; later emissions never re-seed (LoanMatchSheet lesson). The add list starts empty.
   if (picked === null && suggestions) setPicked(new Set(mode === 'range' ? suggestionKeysOf(suggestions) : []));
   const pickedSet: ReadonlySet<string> = picked ?? new Set<string>();
 
@@ -133,8 +113,7 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
     try {
       let n = 0;
       for (const tx of suggestions ?? []) {
-        // #143: multi-part rows attach PART BY PART — the picked parts
-        // get the event in one splits write; the container stays bare
+        // #143: multi-part rows attach part by part; the container stays bare
         const entries = partEntries(tx);
         if (entries.length > 1) {
           const idxs = new Set(entries.filter((e) => pickedSet.has(partPickKey(tx.id, e.idx))).map((e) => e.idx));
@@ -148,8 +127,7 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
         }
       }
       if (n > 0) void logActivity(store, repo, spaceId, 'txLink', `${event.name} +${n}`);
-      // replace, not back: the attach step vanishes from history — the
-      // browser back on the detail then leaves the event, not re-picks
+      // replace, not push: back from the detail then leaves the event instead of re-opening the picker
       void navigate({ to: '/events/$eventId', params: { eventId: event.id }, replace: true });
     } finally {
       setAttaching(false);
@@ -182,7 +160,6 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
       />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {mode === 'all' ? (
-          // #570: the whole history to pick from — nothing starts selected
           <div className="mb-2">
             <SearchField
               testId="eventpick-search"
@@ -195,7 +172,6 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
             />
           </div>
         ) : (
-          // #378: the one select-all row every transaction list wears
           <SelectAllRow
             total={allKeys.length}
             selected={picked?.size ?? 0}
@@ -206,9 +182,7 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
         )}
         <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventpick-list">
           {shown.flatMap((tx) =>
-            // #143: a split offers its PARTS, one checkbox each — the
-            // container itself is never a pick. #570: a tap on a row looks
-            // at it; the box picks it
+            // #143: a split offers its parts, never the container; #570: a tap on a row peeks at it, the box picks
             offeredKeys(tx, event.id, mode).map(({ key, part, ordinal }) => {
               const checked = pickedSet.has(key);
               const sign = tx.amountCents < 0 ? -1 : 1;
@@ -287,7 +261,6 @@ export function EventAttachScreen({ mode = 'range' }: Readonly<{ mode?: 'range' 
   );
 }
 
-/** the event a row (or part) is filed under now, when it is another one */
 function otherEventOf(tx: SpaceTx, part: TxSplit | undefined, eventId: string, events: readonly EventRow[]): EventRow | undefined {
   const current = part ? (part.eventId ?? tx.eventId) : tx.eventId;
   return current && current !== eventId ? events.find((e) => e.id === current) : undefined;

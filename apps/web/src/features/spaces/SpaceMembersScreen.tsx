@@ -7,11 +7,6 @@ import { SpaceMembersSection } from './SpaceSharing';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 
-/**
- * Members, roles and invites for one space, extracted from the
- * overloaded space-settings screen (user remark). Sharing is a synced
- * capability — demo/offline identities see why it's unavailable.
- */
 export function SpaceMembersScreen() {
   const { t } = useLang();
   const { store } = useData();

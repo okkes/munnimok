@@ -43,11 +43,6 @@ const tickStateOf = (checked: boolean, half: boolean): TickState => {
   return 'off';
 };
 
-/**
- * Create/edit a budget — a full screen, not a sheet: name, icon, amount,
- * cadence + anchor, the category checklist with exclusivity badges,
- * carry-over configuration and the warning threshold.
- */
 export function BudgetFormScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -57,20 +52,17 @@ export function BudgetFormScreen() {
   const ops = useBudgetOps();
   const cats = useCategories();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const canEdit = useCanEdit(); // #505
+  const canEdit = useCanEdit();
 
   const editing = budgets?.find((b) => b.id === budgetId);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(BUDGET_ICONS[0]);
-  // #373: the whole icon font by search (#534: icons only — no own pictures)
   const [iconQuery, setIconQuery] = useState('');
   const [amount, setAmount] = useState('');
   const [every, setEvery] = useState<BudgetEvery>('month');
   const [anchor, setAnchor] = useState(localToday());
-  // #371: monthly budgets may reset on a day other than the start date's
   const [resetDayText, setResetDayText] = useState('');
   const [catIds, setCatIds] = useState<string[]>([]);
-  // long list tamed (user request): search + fold, mains start collapsed
   const [catQuery, setCatQuery] = useState('');
   const [openCats, setOpenCats] = useState<ReadonlySet<string>>(new Set());
   const [carryOver, setCarryOver] = useState(false);
@@ -104,7 +96,6 @@ export function BudgetFormScreen() {
     setLoaded(true);
   }, [editing, loaded]);
 
-  // exclusivity: categories other budgets already claim get a badge
   const otherBudgets = useMemo(
     () => (budgets ?? []).filter((b): b is BudgetRow => b.id !== budgetId),
     [budgets, budgetId],
@@ -123,7 +114,6 @@ export function BudgetFormScreen() {
     () => categoryConflicts(conflictCandidates, otherBudgets, cats),
     [conflictCandidates, otherBudgets, cats],
   );
-  // a checked main claims its subs — the family covers them
   const ownFamily = useMemo(() => budgetFamily(catIds, cats), [catIds, cats]);
   // #374: a main whose subs are partly claimed elsewhere is still pickable — it takes the free subs
   const wholeMainOwner = (parentId: string) => otherBudgets.find((b) => b.catIds.includes(parentId))?.name;
@@ -153,9 +143,6 @@ export function BudgetFormScreen() {
   const capped = carryOver && carryMode === 'cap';
   const maxFits = !capped || (Number.isFinite(periodMaxCents) && periodMaxCents > amountCents);
   const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor && maxFits;
-  // #195: the save stays tappable — an invalid tap names the blocker.
-  // r2 (user): the note renders under the field it names — one
-  // (field, text) pair at a time, the note scrolls itself into view
   const [attempted, setAttempted] = useState(false);
   const [blockerField, blockerText] = ((): [string, string] => {
     if (!attempted || valid) return ['', ''];
@@ -163,10 +150,8 @@ export function BudgetFormScreen() {
     if (!Number.isFinite(amountCents) || amountCents <= 0) return ['amount', t('form.needAmount')];
     if (catIds.length === 0) return ['cats', t('form.needCategory')];
     if (!anchor) return ['anchor', t('form.needFields')];
-    return ['carrycap', t('budgets.carryCapNeedsRoom')]; // only the maximum is left to miss
+    return ['carrycap', t('budgets.carryCapNeedsRoom')];
   })();
-  // #164: edits guard the back arrow — the draft is dirty once any field
-  // moved away from the seeded state (creation counts from blank)
   const draftPrint = JSON.stringify([name, icon, amount, every, anchor, resetDayText, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
   const baselineRef = useRef<string | null>(null);
   if (baselineRef.current === null && (!budgetId || loaded)) baselineRef.current = draftPrint;
@@ -264,7 +249,7 @@ export function BudgetFormScreen() {
       {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col gap-3 pt-1">
-          {/* #534 (user): the name comes first — an icon search on top read as the thing to fill in */}
+          {/* #534: the name comes first: an icon search on top read as the thing to fill in */}
           <input
             data-testid="budgetform-name"
             value={name}
@@ -272,10 +257,8 @@ export function BudgetFormScreen() {
             placeholder={t('budgets.namePlaceholder')}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
-          {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={blockerField === 'name'} text={blockerText} testId="budgetform-blocker" />
 
-          {/* the curated icons lead, the whole font follows — to scroll or to search (#563) */}
           <div className="m-cap px-1">{t('budgets.icon')}</div>
           <IconPicker value={icon} onChange={setIcon} featured={BUDGET_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="budgetform-icon" />
 
@@ -360,7 +343,6 @@ export function BudgetFormScreen() {
               const matches = (id: string) => !q || catName(cats.byId(id), t).toLowerCase().includes(q);
               const anySub = subs.some((sub) => matches(sub.id));
               if (q && !matches(parent.id) && !anySub) return null;
-              // searching unfolds the hits; otherwise the fold state rules
               const open = q ? true : openCats.has(parent.id);
               return (
                 <div key={parent.id}>
@@ -391,7 +373,6 @@ export function BudgetFormScreen() {
           </div>
           <FormBlockerNote show={blockerField === 'cats'} text={blockerText} testId="budgetform-blocker" />
 
-          {/* carry-over */}
           <button
             data-testid="budgetform-carry"
             onClick={() => setCarryOver((v) => !v)}
@@ -438,15 +419,13 @@ export function BudgetFormScreen() {
                 />
               )}
               <FormBlockerNote show={blockerField === 'carrycap'} text={blockerText} testId="budgetform-carrycap-blocker" />
-              {/* #372 (user): the number needed a sentence, not a technical label */}
               <p className="w-full text-[11px] text-ink-4" data-testid="budgetform-carry-explain">
                 {carryMode === 'periods' ? t('budgets.carryPeriodsExplain', { n: Math.max(1, Number(carryPeriodsText) || 1) }) : t('budgets.carryCapExplain')}
               </p>
             </div>
           )}
 
-          {/* #534 (user): with notifications off a warning could never arrive — the
-              choice rests (a stored one is kept) and the info says why and how */}
+          {/* #534: with notifications off a warning never arrives: the choice rests (a stored one is kept), the info says why */}
           <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
             {t('budgets.notify')}
             {push !== 'on' && push !== null && <InfoHint text={t(NOTIFY_BLOCKED[push])} testId="budgetform-notify-why" />}

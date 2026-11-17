@@ -25,14 +25,7 @@ using Scalar.AspNetCore;
 
 namespace Connector.Kit.Hosting;
 
-/// <summary>
-/// The whole control plane, as four calls.
-///
-/// Both products' APIs are meant to be thin shells over this - register
-/// adapters, map the routes - so that everything a control plane does exists
-/// once. A behaviour that lived in one product's <c>Program.cs</c> would be a
-/// behaviour the other one silently lacks.
-/// </summary>
+/// both products' APIs are thin shells over this, so no behaviour lives in one Program.cs and is lacking in the other
 public static class ConnectorPlatform
 {
     public static IServiceCollection AddConnectorPlatform(
@@ -54,15 +47,8 @@ public static class ConnectorPlatform
 
         services.TryAddDefaults();
 
-        // The OpenAPI document, and only outside production. Registering the
-        // generator is harmless there too, but keeping the pair together means
-        // one rule to read rather than two halves to line up.
-        //
-        // The transformer publishes the normalised records. Minimal APIs
-        // describe a response from the handler's declared return type, and a
-        // fetch declares JsonArray - so without it the reference names every
-        // envelope and says nothing about the rows inside, which is the half a
-        // consumer is actually writing code against.
+        // the OpenAPI document only outside production; the transformer publishes the normalised records, since a fetch
+        // declares JsonArray and the reference would otherwise say nothing about the rows
         if (!options.IsProduction)
         {
             services.AddOpenApi(document => document.AddDocumentTransformer<RecordSchemaTransformer>());
@@ -70,13 +56,8 @@ public static class ConnectorPlatform
 
         services.AddDbContext<ConnectorDbContext>(builder => ConnectorDbContext.Configure(builder, options.Database));
 
-        // Raw payloads are a development affordance and the README says so:
-        // "connectors are pipes, not stores... raw provider payloads are off
-        // in production". Withholding it here rather than at the request means
-        // the catalogue never advertises what production would refuse.
-        // The operator's explore run (#441 L3): the manifest only, so the queue
-        // can hold its jobs and a fleet agent - which carries the adapter -
-        // can lease them. Left out of every consumer catalogue by its flag.
+        // raw payloads are development-only (connectors are pipes, not stores); withheld here so the catalogue never offers them
+        // the operator's explore run (#441 L3): manifest only, so the queue holds its jobs and a fleet agent leases them
         services.AddSingleton(Connector.Kit.Exploring.ExploreProvider.ManifestOnly);
 
         services.AddSingleton<IProviderRegistry>(sp =>
@@ -88,11 +69,7 @@ public static class ConnectorPlatform
 
         services.AddSingleton<ConnectorSignals>();
 
-        // A singleton because a streamed login's frames and its input have to
-        // meet in one place, and process memory is the only place either may
-        // be: a frame written to the database would put the provider's
-        // authenticated pixels at rest in the control plane, which is the
-        // custody problem streaming exists to remove.
+        // singleton: a streamed login's frames and input meet only in process memory; a frame in the database would rest pixels
         services.AddSingleton(sp => new LiveChannel(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<ITicketStore>(sp => new InMemoryTicketStore(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IIdempotencyStore>(sp => new InMemoryIdempotencyStore(sp.GetRequiredService<TimeProvider>()));
@@ -117,10 +94,7 @@ public static class ConnectorPlatform
         services.AddSingleton<AgentAuthFilter>();
         services.AddSingleton<ConnectorExceptionFilter>();
 
-        // Every outbound provider call goes through the politeness limiter.
-        // Registering it on the named client rather than leaving it to
-        // adapters is what makes "human-plausible cadence, never a firehose"
-        // a property of the platform.
+        // every outbound provider call passes the politeness limiter, registered on the named client, not left to adapters
         services.AddTransient<PolitenessHandler>();
         services.AddTransient(_ => new Connector.Kit.Tracing.TraceHttpHandler(() => Connector.Kit.Tracing.TraceScope.Book));
         services.AddHttpClient(InlineJobRunner.HttpClientName)
@@ -135,13 +109,8 @@ public static class ConnectorPlatform
         if (platform.RunInlineJobs) services.AddHostedService<InlineJobPump>();
         if (platform.RunExpiryService) services.AddHostedService<ExpiryService>();
 
-        // Tied to the expiry service rather than given its own switch: both are
-        // the "this host runs the background work" role, and a deployment that
-        // wanted one without the other has not been asked for. A test host
-        // turns both off and drives the sweep by hand.
-        // A singleton in its own right, so the operator's "run it now" reaches
-        // the same scheduler the timer drives (#441 L1); hosted only where the
-        // background work runs.
+        // tied to the expiry service: both are the "host runs background work" role; a test host turns both off
+        // a singleton so the operator's "run it now" reaches the scheduler the timer drives (#441 L1)
         services.AddSingleton<CanaryScheduler>();
         if (platform.RunExpiryService) services.AddHostedService(sp => sp.GetRequiredService<CanaryScheduler>());
 
@@ -154,16 +123,12 @@ public static class ConnectorPlatform
                     jwt.Audience = options.Auth.Audience;
                     jwt.RequireHttpsMetadata = options.Auth.RequireHttpsMetadata;
                     if (options.Auth.MetadataAddress is { Length: > 0 } metadata) jwt.MetadataAddress = metadata;
-                    // The claims as the token carries them: the scope check
-                    // reads "scope", and the legacy inbound map would rename
-                    // others for nobody's benefit.
+                    // the claims as the token carries them: the scope check reads "scope"
                     jwt.MapInboundClaims = false;
                 });
         }
 
-        // Responses written through ConnectorResults already carry the wire
-        // encoding; configuring it here as well means a host that adds its own
-        // endpoint gets the same one instead of camelCase by accident.
+        // a host adding its own endpoint gets the wire encoding instead of camelCase by accident
         services.ConfigureHttpJsonOptions(json =>
         {
             json.SerializerOptions.PropertyNamingPolicy = ConnectorJson.Options.PropertyNamingPolicy;
@@ -174,11 +139,6 @@ public static class ConnectorPlatform
         return services;
     }
 
-    /// <summary>
-    /// The public API: the catalogue, sessions, resources, jobs and agents,
-    /// all provider-namespaced and all served by one generic handler per
-    /// shape. Adding a provider never touches this method.
-    /// </summary>
     public static IEndpointRouteBuilder MapConnectorApi(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -186,30 +146,18 @@ public static class ConnectorPlatform
         var platform = app.ServiceProvider.GetRequiredService<ConnectorPlatformOptions>();
 
         var api = app.MapGroup("/v1")
-            // Order matters: the exception filter is outermost so an auth
-            // failure comes back as an envelope like everything else.
+            // the exception filter is outermost so an auth failure comes back as an envelope
             .AddEndpointFilter<ConnectorExceptionFilter>()
             .AddEndpointFilter<ConnectorAuthFilter>();
 
-        // Declared on the group because the filter above is on the group: every
-        // route under it fails into the same envelope, so documenting it here
-        // says once what would otherwise be twenty-four identical lines nobody
-        // keeps in step. The statuses are the ones a caller must actually
-        // branch on - the full code-to-status map is the error catalogue's,
-        // and reproducing it per route would describe the taxonomy rather
-        // than the route.
-        //
-        // WithMetadata rather than Produces because Produces is a
-        // RouteHandlerBuilder extension and this is the group; the metadata it
-        // adds is this same type either way.
+        // declared on the group: every route fails into the same envelope; only the statuses a caller must branch on
+        // WithMetadata because Produces is a RouteHandlerBuilder extension and this is the group
         api.WithMetadata(
             Envelope(StatusCodes.Status400BadRequest),
             Envelope(StatusCodes.Status401Unauthorized),
             Envelope(StatusCodes.Status500InternalServerError));
 
-        // The operator's routes: the kill switch, canaries, the whole fleet.
-        // A second filter on a nested group, so that adding an admin route
-        // means adding it here and nothing else.
+        // operator routes: a second filter on a nested group, so an admin route is added here and nowhere else
         var admin = api.MapGroup("/admin")
             .AddEndpointFilter<AdminScopeFilter>();
 
@@ -228,28 +176,11 @@ public static class ConnectorPlatform
         return app;
     }
 
-    /// <summary>The failure shape <see cref="ConnectorExceptionFilter"/> guarantees, at one status.</summary>
     private static ProducesResponseTypeMetadata Envelope(int status) =>
         new(status, typeof(ConnectorErrorEnvelope), ["application/json"]);
 
-    /// <summary>
-    /// The API reference: the OpenAPI document at <c>/openapi/v1.json</c> and
-    /// Scalar over it at <c>/scalar</c>. Development only, and silently absent
-    /// in production.
-    ///
-    /// Absent rather than authenticated, because there is no credential a
-    /// browser could sensibly present. Production <c>/v1/*</c> demands an
-    /// allowlisted client certificate AND an audience-checked M2M token; a
-    /// reference page that could be fetched from a browser would be describing
-    /// an API that browser cannot call, and the login form it would need to
-    /// become useful is a second way in to a service whose whole design is that
-    /// there is one.
-    ///
-    /// In development the same routes need nothing: dev mode accepts a shared
-    /// secret, and with none configured - which is what the local compose file
-    /// does - it accepts every caller. So this opens no door that is not
-    /// already open, on a stack that publishes to localhost only.
-    /// </summary>
+    /// development only, absent in production rather than authenticated: production /v1/* needs a client certificate
+    /// and an M2M token no browser can present; in dev it opens no door that is not already open (localhost-only stack)
     public static WebApplication MapConnectorReference(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -264,10 +195,7 @@ public static class ConnectorPlatform
         return app;
     }
 
-    /// <summary>
-    /// The agent protocol, on its own path and its own identity class. A
-    /// per-agent token reaches this and nothing else.
-    /// </summary>
+    /// its own path and identity class: a per-agent token reaches this and nothing else
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -275,10 +203,6 @@ public static class ConnectorPlatform
         return app;
     }
 
-    /// <summary>
-    /// Brings the schema up and gives every registered provider a health row.
-    /// Called once at start-up, before the first request.
-    /// </summary>
     public static WebApplication UseConnectorPlatform(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -299,8 +223,7 @@ public static class ConnectorPlatform
                 .SeedDevEnrollmentAsync(devCode, CancellationToken.None).GetAwaiter().GetResult();
         }
 
-        // The operator's fleet, anywhere: the platform's own secret, re-armed
-        // on every start so a pooled agent with a wiped state file comes back.
+        // re-armed on every start so a pooled agent with a wiped state file comes back
         if (options.FleetEnrollmentCode is { Length: > 0 } fleetCode)
         {
             scope.ServiceProvider.GetRequiredService<AgentAuth>()
@@ -308,8 +231,7 @@ public static class ConnectorPlatform
                 .GetAwaiter().GetResult();
         }
 
-        // Hosted private slots (#420 A2): the same standing-code rule, under
-        // a subject that serves nobody until the operator binds it.
+        // hosted private slots (#420 A2): the same standing-code rule, under a subject that serves nobody until bound
         if (options.PrivateEnrollmentCode is { Length: > 0 } privateCode)
         {
             scope.ServiceProvider.GetRequiredService<AgentAuth>()
@@ -335,42 +257,15 @@ public static class ConnectorPlatform
         services.AddRouting();
     }
 
-    /// <summary>
-    /// The start-up refusals.
-    ///
-    /// A production service that boots without real bundle keys would seal
-    /// every user's credentials under a key that dies with the process, and
-    /// would look completely healthy doing it. Refusing here is the only
-    /// place that failure is cheap.
-    ///
-    /// Most of what follows is about production, because most of what can be
-    /// missing is a secret or a piece of infrastructure a developer's machine
-    /// legitimately does not have. The heartbeat coupling is the exception and
-    /// is checked in every mode - see the comment on it.
-    /// </summary>
+    /// a production service without real bundle keys would seal credentials under a key that dies with the process
+    /// most checks are production-only; the heartbeat coupling is checked in every mode
     internal static void Validate(ConnectorOptions options)
     {
         var problems = new List<string>();
 
-        // BEFORE the production gate, and deliberately so.
-        //
-        // Every other refusal here describes a deployment that is missing
-        // something a local run is meant to be missing, which is why they sit
-        // behind IsProduction. This one describes a configuration that
-        // contradicts itself, and a contradiction is exactly as broken on a
-        // laptop as it is in production: AgentLiveness.OfflineAfterSeconds is
-        // a constant ninety seconds and is now a hard REFUSAL rather than a
-        // label on a listing, so an interval whose third beat lands outside
-        // that window means every agent in the fleet is judged offline for
-        // part of every cycle while running perfectly - logins refused with
-        // agent_unavailable, fetches refused the same way, intermittently and
-        // for no reason the logs explain.
-        //
-        // And local is where this number would be changed. Somebody slowing
-        // the beat down to quieten a dev log would get a stack that refuses
-        // work at random, diagnose it as a flaky agent, and ship the value;
-        // skipping the check outside production would hide it in the one mode
-        // where it is cheapest to find.
+        // before the production gate: a self-contradicting config is as broken on a laptop as in production
+        // a beat interval whose third beat lands past OfflineAfterSeconds (90) gets healthy agents refused work at random
+        // local is where the number gets changed (quieting a dev log), so skipping the check there would hide it
         if (options.Timeouts.HeartbeatSeconds * 3 > AgentLiveness.OfflineAfterSeconds)
         {
             problems.Add(
@@ -380,9 +275,7 @@ public static class ConnectorPlatform
                 + "silent; every agent would be refused work for part of every cycle while running normally");
         }
 
-        // A contradiction, so before the production gate for the same reason
-        // as the heartbeat: a private slot enrolled with the fleet's code IS
-        // the fleet, and serves everybody while claiming to serve one person.
+        // a contradiction too: a private slot enrolled with the fleet code is the fleet and serves everybody
         if (!string.IsNullOrWhiteSpace(options.PrivateEnrollmentCode)
             && string.Equals(options.PrivateEnrollmentCode, options.FleetEnrollmentCode, StringComparison.Ordinal))
         {
@@ -422,10 +315,7 @@ public static class ConnectorPlatform
             problems.Add("Connector:Database:Provider must be 'postgres' in production");
         }
 
-        // A fixed, reusable, never-expiring enrollment code is a password, and
-        // the one this option exists for is written in a compose file in the
-        // repository. Anything holding it could enroll an agent that leases
-        // real jobs and receives real credentials.
+        // a fixed, reusable, never-expiring code is a password, and this one sits in a checked-in compose file
         if (!string.IsNullOrWhiteSpace(options.DevEnrollmentCode))
         {
             problems.Add("Connector:DevEnrollmentCode must not be set in production");
@@ -434,11 +324,6 @@ public static class ConnectorPlatform
         Refuse(problems);
     }
 
-    /// <summary>
-    /// The one refusal message, raised from the two places <see cref="Validate"/>
-    /// can finish: after the mode-independent checks when this is not a
-    /// production host, and after all of them when it is.
-    /// </summary>
     private static void Refuse(List<string> problems)
     {
         if (problems.Count == 0) return;
@@ -455,9 +340,7 @@ public static class ConnectorPlatform
             return BundleKeyRing.FromBase64(options.Bundle.CurrentKid!, options.Bundle.Keys.AsReadOnly());
         }
 
-        // Development only, and unreachable in production - Validate has
-        // already refused to start. A restart invalidates every bundle, which
-        // is the correct local behaviour and an unacceptable deployed one.
+        // development only; a restart invalidates every bundle, fine locally and unacceptable deployed
         return BundleKeyRing.Ephemeral();
     }
 }

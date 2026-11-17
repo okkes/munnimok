@@ -4,12 +4,7 @@ import { hashPin, readLockConfig, verifyBiometric } from './lock';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 
-/**
- * #302 (user, generalizing #282's disarm): a protected action asks for
- * the app-lock PIN (auto-verifying from 4 digits, error after 8) or the
- * registered biometric. Hosts open it only when a lock config exists —
- * with none configured, the action is simply not protected.
- */
+/** #302: hosts open it only when a lock config exists; with none configured the action is simply not protected */
 export function PinChallengeSheet({
   open,
   onOpenChange,
@@ -47,7 +42,6 @@ export function PinChallengeSheet({
     if (!open) return;
     setPin('');
     setError(false);
-    // the registered biometric answers hands-free where it exists
     if (readLockConfig()?.credentialId) void tryBiometric();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

@@ -1,8 +1,4 @@
-/**
- * This browser's stable device id: the API stamps every authenticated
- * request's device (X-Munni-Device) and refuses requests that name none,
- * so the account's Logged-in devices screen can list and disconnect it.
- */
+/** the API refuses requests naming no device (X-Munni-Device); a stable id lets Logged-in devices disconnect it */
 const DEVICE_KEY = 'munni_lab_device';
 
 export function deviceId(): string {

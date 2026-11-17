@@ -15,30 +15,9 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The challenge relay's contract, guarded structurally rather than by review.
-///
-/// A challenge crosses four records on its way from the adapter that raises it
-/// to the human who answers it, and one of them - <see cref="ChallengePayload"/> -
-/// is the only thing the consumer ever sees:
-///
-/// <code>
-///   inline: Challenge -> ChallengePayload -> (PayloadJson) -> ChallengeView
-///   agent:  Challenge -> RaiseChallengeRequest ==wire==> AgentChallengeRequest
-///                     -> ChallengePayload -> (PayloadJson) -> ChallengeView
-/// </code>
-///
-/// Every hop is a hand-written copy, and a field dropped at any of them fails
-/// SILENTLY: the challenge still arrives, still renders, and simply means
-/// something else. That is exactly what happened to
-/// <see cref="Challenge.AnswerKind"/>, which reached the adapter boundary and
-/// stopped - so every browser-tier captcha, the only kind that ever needs taps,
-/// was relayed as a text box while every test passed.
-///
-/// This project is the only one that can see both <c>Connector.Kit</c> (what the
-/// agent SENDS) and <c>Connector.Kit.Hosting</c> (what the server BINDS), which
-/// is why the guard lives here rather than beside either record.
-/// </summary>
+/// a challenge crosses four hand-copied records and a dropped field fails silently (AnswerKind stopped at the adapter
+/// boundary: browser-tier captchas were relayed as text boxes);
+/// this project alone sees both what the agent SENDS and the server BINDS
 [Collection(ShopApiCollection.Name)]
 public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
 {
@@ -53,15 +32,8 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
 
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
-    /// <summary>
-    /// Fields of <see cref="Challenge"/> - what an adapter raises - that
-    /// deliberately do NOT appear in <see cref="ChallengePayload"/>.
-    ///
-    /// This list is the whole point of the guard: anything an adapter can say
-    /// about a challenge either reaches the consumer or is named here with a
-    /// reason. Weakening the check instead of adding an entry is how a field
-    /// goes missing without anyone deciding that it should.
-    /// </summary>
+    /// Challenge fields deliberately absent from ChallengePayload, each with a reason:
+    /// weakening the check instead of adding an entry loses fields
     private static readonly Dictionary<string, string> ChallengeFieldsNotInThePayload = new(StringComparer.Ordinal)
     {
         ["Type"] = "a column of its own on ChallengeRow, and its own field on ChallengeView",
@@ -72,30 +44,14 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
                    + "taps back to page pixels; it never leaves the machine driving the browser",
     };
 
-    /// <summary>
-    /// Fields on <see cref="RaiseChallengeRequest"/> (the agent's record) that
-    /// intentionally have no counterpart on <see cref="AgentChallengeRequest"/>
-    /// (the server's). Empty, and it should stay that way: a field the agent
-    /// serialises and the server does not bind is dropped without a trace.
-    /// </summary>
+    /// RaiseChallengeRequest fields with no AgentChallengeRequest counterpart; stays empty:
+    /// a sent-but-unbound field is dropped without a trace
     private static readonly Dictionary<string, string> SentButNeverBound = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// The reverse: fields the server binds that no agent can send. Also empty.
-    /// One of these is a field that is always its default in production, which
-    /// looks like a working feature in every test that constructs the record
-    /// directly.
-    /// </summary>
+    /// fields the server binds that no agent can send; stays empty: such a field is always default in production
     private static readonly Dictionary<string, string> BoundButNeverSent = new(StringComparer.Ordinal);
 
-    // ---------------------------------------------------------------- structure
-
-    /// <summary>
-    /// The structural guard. Two hand-synced records describe one wire shape:
-    /// the agent POSTs <see cref="RaiseChallengeRequest"/> and the server binds
-    /// <see cref="AgentChallengeRequest"/> from the same body. Nothing but this
-    /// test keeps them in step.
-    /// </summary>
+    /// two hand-synced records describe one wire shape; only this test keeps them in step
     [Fact]
     public void The_record_the_agent_sends_and_the_record_the_server_binds_expose_the_same_fields()
     {
@@ -150,13 +106,8 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             problems));
     }
 
-    /// <summary>
-    /// The same two records, checked one level lower: agreeing on C# names is
-    /// not agreeing on the wire. <see cref="RaiseChallengeRequest"/> spells its
-    /// fields with explicit <c>JsonPropertyName</c>s and
-    /// <see cref="AgentChallengeRequest"/> leans on the naming policy, so the
-    /// two agree only for as long as both keep producing the same string.
-    /// </summary>
+    /// agreeing on C# names is not agreeing on the wire:
+    /// explicit JsonPropertyNames versus the naming policy must give the same string
     [Fact]
     public void The_two_records_agree_on_every_wire_name_and_on_which_fields_are_required()
     {
@@ -193,15 +144,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             problems));
     }
 
-    /// <summary>
-    /// The relay chain itself: everything an adapter can say about a challenge
-    /// has to survive to the record the consumer is handed, or be named in
-    /// <see cref="ChallengeFieldsNotInThePayload"/>.
-    ///
-    /// This is the test that fails the day someone adds a field to
-    /// <see cref="Challenge"/> and stops there - which is precisely what
-    /// happened to <see cref="Challenge.AnswerKind"/>.
-    /// </summary>
+    /// everything an adapter can raise must reach the consumer's record or be named in ChallengeFieldsNotInThePayload
     [Fact]
     public void Every_field_an_adapter_can_raise_reaches_the_consumer_or_is_listed_with_a_reason()
     {
@@ -229,12 +172,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             problems));
     }
 
-    /// <summary>
-    /// And the two hops after the payload: it has to be settable by an agent
-    /// and readable by a consumer. A payload field with no field on the wire
-    /// can only ever be used by an inline adapter; one with no field on the
-    /// view is stored and never read.
-    /// </summary>
+    /// a payload field with no wire field is inline-only; one with no view field is stored and never read
     [Fact]
     public void Every_consumer_visible_field_exists_on_the_view_and_on_both_agent_records()
     {
@@ -275,14 +213,6 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             problems));
     }
 
-    // -------------------------------------------------------------- propagation
-
-    /// <summary>
-    /// Tier one: an inline adapter raises a tap challenge and the consumer is
-    /// told to draw a tappable picture. Every hop is the real one, including
-    /// the JSON column - <see cref="ChallengeService.RaiseAsync"/> stores
-    /// exactly this string.
-    /// </summary>
     [Fact]
     public void A_tap_challenge_raised_inline_reaches_the_consumer_as_taps()
     {
@@ -304,24 +234,13 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
 
         Assert.Equal(ChallengeAnswerKind.Taps, view.AnswerKind);
 
-        // The rest of the payload came through too - otherwise a payload that
-        // failed to deserialize wholesale would also read as its defaults.
         Assert.Equal("connect.challenge.captcha", view.PromptKey);
         Assert.Equal($"/v1/{Provider}/login/{SessionId}/challenges/{ChallengeId}/image", view.ImageUrl);
     }
 
-    /// <summary>
-    /// Tier two, and the one that matters: the agent's record is serialised
-    /// with the encoding the AGENT speaks and deserialised into the SERVER'S
-    /// record with the encoding the SERVER speaks - two separately built
-    /// options objects, crossed exactly as the real POST crosses them.
-    ///
-    /// Round-tripping a record through itself proves nothing here: both ends
-    /// would move together. Two option sets that were *described* as identical
-    /// and were not is the bug documented on <see cref="ConnectorWireJson"/>,
-    /// and it cost every agent-served fetch on every provider while every test
-    /// stayed green.
-    /// </summary>
+    /// the agent's record is serialised with the agent's options and bound with the server's,
+    /// crossed as the real POST crosses them; a round trip through one set moves both ends together
+    /// (the bug on ConnectorWireJson)
     [Fact]
     public void A_tap_challenge_raised_by_an_agent_survives_the_wire_and_reaches_the_consumer_as_taps()
     {
@@ -331,16 +250,11 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         Assert.NotNull(bound);
         Assert.Equal(ChallengeAnswerKind.Taps, bound.AnswerKind);
 
-        // Field by field, without naming them: what the server ends up holding
-        // has to serialise back to the body the agent sent. A field the server
-        // does not bind simply vanishes from this string.
+        // a field the server does not bind vanishes from this string
         Assert.Equal(
             Canonical(written),
             Canonical(JsonSerializer.Serialize(bound, ConnectorWireJson.Options)));
 
-        // The rest of the way, as AgentApiEndpoints does it: the bound request
-        // becomes the payload, the payload becomes the column, the column
-        // becomes the view.
         var payload = new ChallengePayload
         {
             AnswerKind = bound.AnswerKind,
@@ -360,15 +274,8 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         Assert.Equal("appie://login-exit*", view.ReturnPattern);
     }
 
-    /// <summary>
-    /// The same crossing, against the options the RUNNING HOST binds request
-    /// bodies with rather than the ones this test picked.
-    ///
-    /// <c>ConfigureHttpJsonOptions</c> copies the naming policy and the
-    /// converters out of <see cref="ConnectorJson"/> by hand, field by field.
-    /// That copy is a third definition of the same encoding, and the only thing
-    /// that catches it drifting is asking the host itself.
-    /// </summary>
+    /// ConfigureHttpJsonOptions copies the naming policy and converters from ConnectorJson by hand:
+    /// a third definition, caught only by asking the host
     [Fact]
     public void The_running_host_binds_an_agents_challenge_body_with_the_same_encoding()
     {
@@ -387,14 +294,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             Canonical(JsonSerializer.Serialize(bound, ConnectorWireJson.Options)));
     }
 
-    // ----------------------------------------------------------- compatibility
-
-    /// <summary>
-    /// A challenge raised before <c>answer_kind</c> existed still means what it
-    /// meant. <see cref="ChallengeAnswerKind.Text"/> is first in the enum and
-    /// therefore the default, which is the whole reason the field could be
-    /// added to a live wire at all.
-    /// </summary>
+    /// Text is first in the enum and therefore the default, which is why the field could be added to a live wire
     [Fact]
     public void A_challenge_without_an_answer_kind_still_means_text_everywhere()
     {
@@ -424,28 +324,19 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         Assert.Equal(ChallengeAnswerKind.Text, bound.AnswerKind);
         Assert.Equal("connect.challenge.mfa", bound.PromptKey);
 
-        // And a record nobody told about it: the default is the same in C# as
-        // it is on the wire, so an adapter that never heard of taps is safe.
+        // the default is the same in C# as on the wire, so an adapter that never heard of taps is safe
         Assert.Equal(ChallengeAnswerKind.Text, new ChallengePayload().AnswerKind);
         Assert.Equal(
             ChallengeAnswerKind.Text,
             new Challenge { Type = ChallengeType.MfaCode, ExpiresAt = DateTimeOffset.UtcNow }.AnswerKind);
     }
 
-    // ------------------------------------------------------------------- wire
-
-    /// <summary>
-    /// The spelling, at every place a consumer or an agent reads it. A consumer
-    /// codes against the JSON, not against the record: a C# round trip that
-    /// agrees with itself says nothing about what a client will find in the
-    /// body it was handed.
-    /// </summary>
+    /// a consumer codes against the JSON, not the record: a C# round trip agreeing with itself says nothing about the wire
     [Fact]
     public void The_wire_spells_the_field_answer_kind_and_the_value_taps()
     {
         var expires = DateTimeOffset.UtcNow.AddMinutes(5);
 
-        // What the agent POSTs.
         AssertAnswerKind(JsonSerializer.Serialize(
             new RaiseChallengeRequest
             {
@@ -455,7 +346,6 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             },
             ConnectorWireJson.Options));
 
-        // What the server holds after binding it.
         AssertAnswerKind(JsonSerializer.Serialize(
             new AgentChallengeRequest
             {
@@ -465,12 +355,10 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
             },
             ConnectorWireJson.Options));
 
-        // What is stored in ChallengeRow.PayloadJson.
         AssertAnswerKind(ConnectorJson.Serialize(
             new ChallengePayload { AnswerKind = ChallengeAnswerKind.Taps }));
 
-        // And what the consumer is handed - ConnectorResults.Json writes every
-        // response with exactly these options.
+        // ConnectorResults.Json writes every response with these options
         AssertAnswerKind(ConnectorJson.Serialize(new ChallengeView
         {
             Id = ChallengeId,
@@ -492,20 +380,12 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         Assert.Equal(JsonValueKind.String, value.ValueKind);
         Assert.Equal("taps", value.GetString());
 
-        // Snake case is the contract, not an accident of the C# name. A body
-        // carrying both spellings is worse than one carrying the wrong one:
-        // half the clients would work.
+        // snake case is the contract; a body carrying both spellings is worse than a wrong one: half the clients would work
         Assert.False(root.TryGetProperty("answerKind", out _), $"camelCase leaked onto the wire:\n{json}");
         Assert.False(root.TryGetProperty("AnswerKind", out _), $"the C# name leaked onto the wire:\n{json}");
     }
 
-    // ---------------------------------------------------------------- helpers
-
-    /// <summary>
-    /// Every field set, including ones no single challenge type would ever use
-    /// together. This is a contract round trip, not a scenario: a field left at
-    /// its default is a field the round trip cannot prove anything about.
-    /// </summary>
+    /// every field set, even combinations no challenge uses: a field left at its default proves nothing in a round trip
     private static RaiseChallengeRequest FullyPopulatedRaise() => new()
     {
         Type = ChallengeType.Image,
@@ -532,12 +412,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    /// <summary>
-    /// The settable public state of a record. A get-only property is derived
-    /// rather than carried - <see cref="Challenge.IsPassive"/> is a question
-    /// about <see cref="Challenge.Type"/>, not a field - so it has nothing to
-    /// propagate and nothing to lose.
-    /// </summary>
+    /// settable public state only: a get-only property (Challenge.IsPassive) is derived, with nothing to propagate
     private static Dictionary<string, Field> FieldsOf(Type type)
     {
         var nullability = new NullabilityInfoContext();
@@ -555,11 +430,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         return fields;
     }
 
-    /// <summary>
-    /// The same properties as the serializer sees them: the name that actually
-    /// goes on the wire once the naming policy and any explicit
-    /// <c>JsonPropertyName</c> have both had their say.
-    /// </summary>
+    /// the name that goes on the wire once the naming policy and any explicit JsonPropertyName have had their say
     private static Dictionary<string, WireField> WireFieldsOf(Type type)
     {
         var fields = new Dictionary<string, WireField>(StringComparer.Ordinal);
@@ -620,11 +491,7 @@ public sealed class ChallengeRelayContractTests(ShopApiFactory factory)
         return message.ToString();
     }
 
-    /// <summary>
-    /// Property order is a detail of the record; the SET of fields and their
-    /// values is the contract. Sorting first means a harmless reordering does
-    /// not read as a wire change.
-    /// </summary>
+    /// property order is not the contract: sorting keeps a harmless reordering from reading as a wire change
     private static string Canonical(string json)
     {
         using var document = JsonDocument.Parse(json);

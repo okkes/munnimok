@@ -21,7 +21,6 @@ const searchFor = (words?: string) => {
   fireEvent.click(screen.getByTestId('imagesearch-go'));
 };
 
-/** #521: searching the web for a picture */
 describe('the web picture search', () => {
   afterEach(() => {
     cleanup();

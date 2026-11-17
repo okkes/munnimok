@@ -8,19 +8,11 @@ export interface AmountSuggestion {
   cents: number;
 }
 
-/** one chip per amount (user 2026-10-21, #519): a later suggestion with the same money as an earlier one adds nothing */
+/** one chip per amount (#519): a later suggestion with the same money as an earlier one adds nothing */
 export const distinctAmounts = (items: readonly AmountSuggestion[]): AmountSuggestion[] =>
   items.filter((item, index) => items.findIndex((other) => other.cents === item.cents) === index);
 
-/**
- * Amounts a form can take over with one tap: a small label over the money,
- * the same face under the target field and in the funding sheet. They read
- * as buttons (user 2026-10-08: "it's not clear those are interactable, or
- * what they do") — a caption says what a tap does, an arrow leads each chip,
- * and the chip whose amount the field already holds lights up, so the
- * effect of a tap is visible. The callers list the most telling first (the
- * target before the spending), so a twin keeps that one.
- */
+/** callers list the most telling first (the target before the spending), so a twin keeps that one */
 export function AmountSuggestions({
   items,
   fmt,
@@ -33,7 +25,6 @@ export function AmountSuggestions({
   fmt: MoneyFmt;
   currency: string;
   testIdPrefix: string;
-  /** what the field holds now: the chip with that amount wears the pressed state */
   selectedCents?: number | null;
   onPick: (cents: number) => void;
 }>) {

@@ -3,7 +3,6 @@ import { useQuery } from '@/db/useQuery';
 import { logRowActivity } from './activity';
 import type { EventRow } from '@/db/types';
 
-/** the active space's events, active first then archived, newest range first */
 export function useEvents(): EventRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(

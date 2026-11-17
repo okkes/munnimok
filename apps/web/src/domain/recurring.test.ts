@@ -59,7 +59,7 @@ describe('recurring occurrences', () => {
   it('isDueWithin covers the home "upcoming week" block', () => {
     expect(isDueWithin(rec({ dueDay: 12 }), '2026-07-08', 7)).toBe(true);
     expect(isDueWithin(rec({ dueDay: 20 }), '2026-07-08', 7)).toBe(false);
-    expect(addDays('2026-07-28', 7)).toBe('2026-08-04'); // month rollover
+    expect(addDays('2026-07-28', 7)).toBe('2026-08-04');
   });
 });
 
@@ -95,10 +95,8 @@ describe('every-N and weekly cadences', () => {
       '2026-08-28',
     ]);
     expect(nextDueDate(biweekly, '2026-07-09')).toBe('2026-07-17');
-    expect(nextDueDate(biweekly, '2026-07-17')).toBe('2026-07-17'); // due today counts
-    // an anchorless weekly cadence has no occurrences at all
+    expect(nextDueDate(biweekly, '2026-07-17')).toBe('2026-07-17');
     expect(occurrencesBetween(rec({ every: 'week' }), '2026-07-01', '2026-08-31')).toEqual([]);
-    // until ends the stride
     expect(
       occurrencesBetween(rec({ every: 'week', since: '2026-07-03', until: '2026-07-15' }), '2026-07-01', '2026-08-31'),
     ).toEqual(['2026-07-03', '2026-07-10']);
@@ -113,7 +111,6 @@ describe('every-N and weekly cadences', () => {
     expect(cycleKeyOf(biweekly, '2026-07-04')).toBe(cycleKeyOf(biweekly, '2026-07-16'));
     expect(cycleKeyOf(biweekly, '2026-07-17')).not.toBe(cycleKeyOf(biweekly, '2026-07-16'));
 
-    // plain cadences keep calendar buckets (existing linking behavior)
     expect(cycleKeyOf(rec({}), '2026-07-15')).toBe('2026-07');
     expect(cycleKeyOf(rec({ every: 'year' }), '2026-07-15')).toBe('2026');
   });
@@ -167,13 +164,10 @@ describe('recurring amounts and summaries', () => {
     const { expected, paid } = monthlyRecurringSeries([rec({})], linked, 2026, '2026-07-08');
     expect(expected).toHaveLength(12);
     expect(paid).toHaveLength(12);
-    // a monthly estimate lands in every month…
     expect(expected.every((c) => c === 1399)).toBe(true);
-    // …while payments live only where they happened (abs cents)
     expect(paid[1]).toBe(1399);
     expect(paid[2]).toBe(1499);
     expect(paid[0]).toBe(0);
-    // inactive rows contribute nothing
     const off = monthlyRecurringSeries([rec({ active: 0 })], linked, 2026, '2026-07-08');
     expect(off.expected.every((c) => c === 0)).toBe(true);
     // the floor mutes pre-start months (#189 semantics carried over)
@@ -196,11 +190,8 @@ describe('detectRecurring', () => {
   });
 
   it('ignores irregular spending, dead subscriptions and excluded keys', () => {
-    // same merchant, but random gaps — no cadence
     expect(detectRecurring(monthly(['2026-05-01', '2026-05-04', '2026-07-02']), { today: '2026-07-08' })).toEqual([]);
-    // last charge two cycles ago — the subscription looks cancelled
     expect(detectRecurring(monthly(['2026-01-07', '2026-02-07', '2026-03-07']), { today: '2026-07-08' })).toEqual([]);
-    // dismissed/already-tracked merchants never resurface
     expect(
       detectRecurring(monthly(['2026-04-07', '2026-05-07', '2026-06-07', '2026-07-07']), {
         today: '2026-07-08',
@@ -278,9 +269,8 @@ describe('detectRecurring', () => {
     }));
     const found = detectRecurring([...onMain, ...onPaypal], { today: '2026-07-10' });
     expect(found).toHaveLength(1);
-    expect(found[0].accountId).toBe('main'); // 4 occurrences beat 3
-    // and a rhythm never forms ACROSS accounts: two half-series on two
-    // accounts (alternating months each) stay silent
+    expect(found[0].accountId).toBe('main');
+    // a rhythm never forms ACROSS accounts: two half-series on two accounts stay silent
     const altA = monthly(['2026-03-07', '2026-05-07', '2026-07-07'], -1399, 'SPLITSUB').map((t) => ({ ...t, accountId: 'a' }));
     const altB = monthly(['2026-04-07', '2026-06-07'], -1399, 'SPLITSUB').map((t) => ({ ...t, accountId: 'b' }));
     expect(detectRecurring([...altA, ...altB], { today: '2026-07-08' })).toEqual([]);

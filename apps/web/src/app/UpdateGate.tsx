@@ -19,19 +19,9 @@ export function useClientOutdated(): boolean {
   return outdated;
 }
 
-/**
- * The forced update (user ruling 2026-10-04: real users are on prod, no
- * backwards-compatible client code — a client the server no longer speaks
- * to is made to update, not kept running on stale rules). The handshake
- * (`lib/protocol.ts`) already made the engine refuse to sync; this takes
- * the screen as well, so nothing is edited on a build whose shapes the
- * server will reject. It sits on the router's root, above the data
- * provider: a fresh device stuck on its first sync is gated the same as a
- * device with data. A native shell gets its store; the web app reloads
- * into the build the server is serving, which is what the stale one is
- * not. The server being older than the app is the other way round and
- * stays a banner — nobody on the device can fix it.
- */
+// forced update (real users on prod, no backwards-compatible client code): the handshake stops sync, this takes the
+// screen too. Above the data provider, so a device stuck on its first sync is gated. A server older than the app
+// stays a banner: nobody on the device can fix it
 export function UpdateGate() {
   const { t } = useLang();
   const outdated = useClientOutdated();

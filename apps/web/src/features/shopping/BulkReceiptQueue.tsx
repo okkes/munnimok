@@ -14,7 +14,6 @@ import { ReceiptCaptureRungs } from './ReceiptCapture';
 import { ReceiptPickSheet } from './ReceiptPickSheet';
 import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, suggestionsFor } from './receiptPick';
 
-/** one sibling's turn: the picker for THIS transaction, its head naming it */
 function ReceiptQueueStep({
   tx,
   step,
@@ -35,10 +34,8 @@ function ReceiptQueueStep({
   const elsewhere = useMemo(() => attachedElsewhere(attachable?.attachedTo, tx.id), [attachable, tx.id]);
   const describeTx = useMemo(() => describeTxFor(txs, lang, tx.currency), [txs, lang, tx.currency]);
   const attached = entry?.data ?? null;
-  // the fit this transaction's own review card would have staged wears the check
   const auto = proposal || attached ? null : autoReceiptFor(tx, candidates);
 
-  /** one answer per turn: the write lands, then the walk moves on */
   const answer = async (work: () => Promise<void>) => {
     if (working.current) return;
     working.current = true;
@@ -51,7 +48,6 @@ function ReceiptQueueStep({
     }
     onAnswered();
   };
-  /** a pick: the proposal's own receipt is its yes, any other turns the proposal down; none lets it go */
   const pick = (row: ReceiptRow | null) =>
     answer(async () => {
       if (row && proposal && (proposal.receiptId ?? proposal.id) === row.id) {
@@ -115,20 +111,13 @@ function ReceiptQueueStep({
   );
 }
 
-/**
- * #495 (user): "just like how we go through each transaction to check the
- * counter transaction" — a bulk update settles the siblings without their
- * own review card, so the ones whose receipt wants a look (receiptsToVerify)
- * get the picker in turn: a look and Attach or the proposal's yes links it,
- * No receipt turns a proposal down, Skip leaves it as it is. Dismissing the
- * sheet stops the walk; the rest stay untouched.
- */
+// #495: a bulk update settles siblings without their own review card, so those whose receipt wants a look
+// (receiptsToVerify) get the picker in turn; dismissing the sheet stops the walk
 export function BulkReceiptQueue({
   queue,
   onDone,
 }: Readonly<{
   queue: readonly SpaceTx[];
-  /** fires once — the walk is through or was dismissed (every answer logged its own activity line) */
   onDone: () => void;
 }>) {
   const [index, setIndex] = useState(0);

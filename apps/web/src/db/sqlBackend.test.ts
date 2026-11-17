@@ -13,20 +13,14 @@ import { MunniDB } from './schema';
 import { READ_PAGE, SqlStorageBackend, initSqlSchema } from './sqlBackend';
 import type { SqlExecutor } from './sqlBackend';
 
-/**
- * E2 parity suite: the SQL backend must be indistinguishable from the
- * Dexie backend through the StorageBackend interface — every scenario
- * runs against BOTH and asserts the same observable results. The
- * executor here is sql.js in memory; on device it is SQLCipher, but the
- * backend code under test is identical.
- */
+// parity: every scenario runs against BOTH backends and asserts the same results;
+// on device the executor is SQLCipher, here sql.js
 
 let SQL: Awaited<ReturnType<typeof initSqlJs>>;
 beforeAll(async () => {
   SQL = await initSqlJs();
 });
 
-/** sql.js bridge — the same shape the capacitor executor implements */
 function sqlJsExecutor(db: Database): SqlExecutor {
   return {
     async run(sql, params = []) {
@@ -100,10 +94,9 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       const a1 = await store.get('account', 'a1');
       expect(a1, name).toMatchObject({ name: 'Checking', balanceCents: 2500, deleted: 0 });
       const a2 = await store.get('account', 'a2');
-      expect(a2?.deleted, name).toBe(1); // tombstoned, not gone
+      expect(a2?.deleted, name).toBe(1);
       expect((await store.bySpace('account', SPACE)).length, name).toBe(2);
       expect(await store.countBySpace('account', SPACE), name).toBe(2);
-      // outbox carries all four ops in HLC order
       const outbox = await store.outboxBySpace(SPACE);
       expect(outbox.length, name).toBe(4);
       expect([...outbox].sort((x, y) => x.hlc.localeCompare(y.hlc)), name).toEqual(outbox);
@@ -121,7 +114,6 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
 
   it('the joined read model works unchanged on both backends', async () => {
     for (const { name, store, repo } of await bothBackends()) {
-      // a feed space raw row + this space's overlay + an attachment
       await repo.upsert('transaction', 'feed1', 'raw1', {
         accountId: 'acc1',
         date: '2026-01-15',
@@ -155,7 +147,6 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       await store.outboxDelete(ops.map((o) => o.opId));
       expect((await store.outboxAll()).length, name).toBe(0);
 
-      // purge (engine 403 path): entity rows by space + meta key
       await store.transact(['category', 'space', 'meta'], async () => {
         await store.deleteBySpace('category', SPACE);
         await store.deleteRow('space', SPACE);
@@ -200,7 +191,7 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
         });
 
       let settled = nextEmit();
-      await settled; // initial emission (0 rows)
+      await settled;
       settled = nextEmit();
       await repo.upsert('budget', SPACE, 'b1', { name: 'Food', amountCents: 100, every: 'month', anchor: '2026-01-01', catIds: [], active: 1 });
       await settled;
@@ -211,7 +202,7 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       const count = seen.length;
       await repo.upsert('budget', SPACE, 'b2', { name: 'Fun', amountCents: 200, every: 'month', anchor: '2026-01-01', catIds: [], active: 1 });
       await new Promise((resolve) => setTimeout(resolve, 25));
-      expect(seen.length, name).toBe(count); // unsubscribed: no more emissions
+      expect(seen.length, name).toBe(count);
     }
   });
 
@@ -228,11 +219,8 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
   });
 });
 
-/**
- * #554: the native shells' live queries re-ran every query on every write
- * (the matcher's first pass: 26 s). Now a write wakes only the queries
- * that read what it touched, and a burst reaches each once.
- */
+// #554: a write wakes only the queries that read what it touched, and a burst reaches each once
+// (native re-ran every query on every write: 26 s on the matcher's first pass)
 describe('SqlStorageBackend live queries', () => {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const sqlStore = async () => {
@@ -256,7 +244,6 @@ describe('SqlStorageBackend live queries', () => {
       store.subscribe(async () => (await store.metaGet('flag'))?.value, (v) => flags.push(v)),
       store.subscribe(async () => (await store.outboxAll()).length, (n) => pending.push(n)),
     ];
-    // one write each settles what the first (side-by-side) runs read
     await repo.upsert('transaction', 's', 't1', row(1));
     await store.metaPut('flag', 'on');
     await untilSeen(rows, 1);
@@ -271,7 +258,7 @@ describe('SqlStorageBackend live queries', () => {
     expect(rows).toHaveLength(before.rows);
     expect(flags).toHaveLength(before.flags + 1);
 
-    await store.outboxDelete((await store.outboxAll()).map((o) => o.opId)); // a push landed
+    await store.outboxDelete((await store.outboxAll()).map((o) => o.opId));
     await untilSeen(pending, 0);
     await sleep(LIVE_QUERY_QUIET_MS * 3);
     expect(rows).toHaveLength(before.rows);
@@ -330,8 +317,7 @@ describe('SqlStorageBackend live queries', () => {
 
 describe('transaction serialization (SQLCipher regression)', () => {
   it('concurrent un-awaited transactions serialize instead of nesting', async () => {
-    // the real bug: a manual tx + its balance delta both fired without
-    // awaiting → connection-wide BEGIN inside BEGIN on SQLCipher
+    // a manual tx + its balance delta fired without awaiting: BEGIN inside BEGIN on SQLCipher
     const backend = (await bothBackends())[1].store;
     const writes = Array.from({ length: 6 }, (_, i) =>
       backend.transact(['account'], async () => {
@@ -358,7 +344,6 @@ describe('transaction serialization (SQLCipher regression)', () => {
 });
 
 describe('what a pulled page costs the native store (#594)', () => {
-  /** every executor call is one round trip into native code on a phone */
   function counted(executor: SqlExecutor): { executor: SqlExecutor; calls: () => number } {
     let n = 0;
     const count = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => (...args: A) => {
@@ -377,7 +362,6 @@ describe('what a pulled page costs the native store (#594)', () => {
     };
   }
 
-  /** a page as the server hands it out: a thousand changes over six hundred rows of two kinds, some rows written twice */
   function page(): Op[] {
     const server = new HlcClock('server', undefined, () => 1_800_000_000_000);
     return Array.from({ length: 1000 }, (_, i) => {
@@ -400,7 +384,6 @@ describe('what a pulled page costs the native store (#594)', () => {
 
     // two per change kept a new phone on "Fetching your spaces — 0 of 24" for minutes
     expect(calls()).toBeLessThanOrEqual(12);
-    // and it is the same store a change-by-change apply leaves: the later write of a row wins
     expect(await store.countBySpace('transaction', SPACE)).toBe(300);
     expect(await store.countBySpace('txMeta', SPACE)).toBe(300);
     expect((await store.get('transaction', 't-0'))?.merchant).toBe('Shop 600');
@@ -409,11 +392,9 @@ describe('what a pulled page costs the native store (#594)', () => {
 });
 
 describe('a whole table never crosses to the web layer in one piece (#594)', () => {
-  /** rows of the transaction table, as the bulk write lays them down */
   const rowsFor = (count: number, space = SPACE) =>
     Array.from({ length: count }, (_, i) => ({ id: `t-${String(i).padStart(5, '0')}`, spaceId: space, merchant: `Shop ${i}`, fieldVersions: {}, deleted: 0 as const }));
 
-  /** the executor, telling how many rows each read handed over and running `between` once after the first read of a table */
   function watched(executor: SqlExecutor, between?: () => Promise<void>): { executor: SqlExecutor; reads: number[] } {
     const reads: number[] = [];
     let pending = between;

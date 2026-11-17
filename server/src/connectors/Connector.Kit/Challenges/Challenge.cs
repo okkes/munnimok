@@ -6,109 +6,48 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Challenges;
 
-/// <summary>
-/// A question the provider asked that only the human who owns the account
-/// can answer. Relaying these - never solving them - is the line between
-/// acting as a user's agent and abuse.
-/// </summary>
+// questions only the account's owner can answer: relayed, never solved - the line between acting as a user's agent and abuse
 [JsonConverter(typeof(JsonStringEnumConverter<ChallengeType>))]
 public enum ChallengeType
 {
-    /// <summary>A visual challenge, including a CAPTCHA. Relayed to the human, never solved.</summary>
     Image,
 
-    /// <summary>A QR the human scans with the provider's own app.</summary>
     QrDisplay,
 
-    /// <summary>A code WE show that the human types into their device or app.</summary>
     CodeDisplay,
 
-    /// <summary>A code the human received out of band and types back to us.</summary>
     MfaCode,
 
-    /// <summary>Nothing to type - the human approves in an app and we wait.</summary>
     AppApproval,
 
-    /// <summary>The human picks from a list, e.g. which profile or account.</summary>
     SelectOption,
 
-    /// <summary>The human logs in on the provider's own site and hands back the redirect.</summary>
     Redirect,
 
-    /// <summary>
-    /// The provider's own page, live, driven by the human on their own device.
-    ///
-    /// The others are one question with one answer. This is a conversation:
-    /// pictures go out many times a second and pointer and key events come
-    /// back, until the login is done or nobody is there any more. It rides the
-    /// challenge machinery anyway because everything that machinery provides -
-    /// an expiry, a parked job budget, a renderer chosen by the consumer, a
-    /// visible degradation when the consumer has never heard of it - is
-    /// exactly what this needs too.
-    ///
-    /// Passive in the same sense as <see cref="AppApproval"/>: there is no
-    /// string to type back. What ends it is the login completing, which the
-    /// adapter watches for itself.
-    ///
-    /// The reason it exists is custody. A provider served this way declares no
-    /// credential fields at all, so nothing is typed into a form of ours,
-    /// nothing is written to a job's inputs, and there is no password at rest
-    /// anywhere in the platform - the human types it into the provider's own
-    /// page, exactly as they would on their own laptop.
-    /// </summary>
+    // a conversation (frames out, pointer and key events back) riding the challenge machinery for expiry, parked job budget,
+    // consumer renderer and visible degradation; passive: the adapter watches for the login completing. Exists for custody:
+    // the provider declares no credential fields, so no password is typed into our form or rests anywhere in the platform
     LiveView,
 }
 
-/// <summary>
-/// What the human's answer will BE, which is not implied by
-/// <see cref="ChallengeType"/>: an <see cref="ChallengeType.Image"/> is a
-/// picture with a box beside it at one provider and a grid of tiles at the
-/// next, and those are answered with two different things.
-/// </summary>
+// what the answer will BE is not implied by the type: an Image is a box at one provider and a tile grid at the next
 [JsonConverter(typeof(JsonStringEnumConverter<ChallengeAnswerKind>))]
 public enum ChallengeAnswerKind
 {
-    /// <summary>
-    /// A string the human types, or an empty one for a passive challenge.
-    ///
-    /// First, and therefore the default: a payload that omits the field, a
-    /// challenge raised before this kind existed, and a consumer that has
-    /// never heard of it all keep meaning exactly what they meant.
-    /// </summary>
+    // first, so the default: a payload omitting the field, or a challenge raised before this kind existed, keeps its meaning
     Text,
 
-    /// <summary>
-    /// Points on the relayed image that the human tapped, carried as
-    /// <see cref="TapAnswer"/>.
-    ///
-    /// An image grid cannot be answered in text, and this is the whole of
-    /// what we do about that: the picture goes out, the taps come back, and
-    /// the human - not us - is the one who solved it.
-    /// </summary>
+    // points tapped on the relayed image (TapAnswer): the human, not us, solves it
     Taps,
 }
 
-/// <summary>
-/// What an adapter raises. The platform owns everything that happens next:
-/// redaction, upload, webhook, the consumer's UI, and the answer coming
-/// back.
-/// </summary>
+// the platform owns redaction, upload, webhook, the consumer's UI and the answer coming back
 public sealed record Challenge
 {
     public required ChallengeType Type { get; init; }
 
-    /// <summary>
-    /// What the answer must contain, so a consumer knows to render a tappable
-    /// image rather than a text box.
-    ///
-    /// Defaults to <see cref="ChallengeAnswerKind.Text"/>, which is what every
-    /// challenge already raised means and what a payload without the field
-    /// deserialises to. A consumer that ignores it degrades to a text box over
-    /// the picture: the human types something, <see cref="TapAnswer.TryParse"/>
-    /// refuses it, and the adapter reports a challenge nobody answered. That is
-    /// harmless. Inferring taps from whatever string came back would not be -
-    /// it would click a live page at coordinates no human chose.
-    /// </summary>
+    // defaults to Text; a consumer that ignores it gets a text box that TapAnswer.TryParse refuses (harmless), whereas
+    // inferring taps from any returned string would click a live page at coordinates no human chose
     [JsonPropertyName("answer_kind")]
     public ChallengeAnswerKind AnswerKind { get; init; } = ChallengeAnswerKind.Text;
 
@@ -116,53 +55,35 @@ public sealed record Challenge
     [JsonPropertyName("prompt_key")]
     public string? PromptKey { get; init; }
 
-    /// <summary>
-    /// Mandatory. A challenge holds a live browser hostage; a stale one must
-    /// fail the job cleanly and release its agent rather than pinning it for
-    /// the full job timeout.
-    /// </summary>
+    // mandatory: a challenge holds a live browser, so a stale one must fail the job and release its agent, not pin it
     [JsonPropertyName("expires_at")]
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>For <see cref="ChallengeType.CodeDisplay"/>: the code the human must enter elsewhere.</summary>
     public string? Code { get; init; }
 
     /// <summary>For <see cref="ChallengeType.MfaCode"/>: <c>sms</c>, <c>totp</c>, <c>email</c>, <c>app</c>.</summary>
     public string? Delivery { get; init; }
 
-    /// <summary>For <see cref="ChallengeType.MfaCode"/>: expected length, when known.</summary>
     public int? Length { get; init; }
 
-    /// <summary>For <see cref="ChallengeType.SelectOption"/>.</summary>
     public IReadOnlyList<ChallengeOption>? Options { get; init; }
 
-    /// <summary>For <see cref="ChallengeType.Redirect"/>: where to send the human.</summary>
     public string? Url { get; init; }
 
-    /// <summary>
-    /// For <see cref="ChallengeType.Redirect"/>: the pattern the human's
-    /// browser will be sent to but cannot open, e.g. <c>appie://login-exit*</c>.
-    /// </summary>
+    // the pattern the human's browser is sent to but cannot open, e.g. appie://login-exit*
     [JsonPropertyName("return_pattern")]
     public string? ReturnPattern { get; init; }
 
-    /// <summary>
-    /// PNG bytes, already redacted. Never populated while a field marked
-    /// secret holds content - see <see cref="ScreenshotRedactor"/>.
-    /// </summary>
+    // PNG bytes, already redacted; never populated while a secret field holds content (ScreenshotRedactor)
     [JsonIgnore]
     public byte[]? Image { get; init; }
 
-    /// <summary>
-    /// The region of the page the challenge occupies. Everything outside it
-    /// is obscured before the image leaves the agent.
-    /// </summary>
+    // everything outside the region is obscured before the image leaves the agent
     [JsonIgnore]
     public CropRegion? Crop { get; init; }
 
     public bool IsExpired(DateTimeOffset now) => ExpiresAt <= now;
 
-    /// <summary>True when the human types nothing and we simply wait.</summary>
     [JsonIgnore]
     public bool IsPassive => Type is ChallengeType.AppApproval or ChallengeType.LiveView;
 }
@@ -176,30 +97,11 @@ public sealed record ChallengeOption
 
 public readonly record struct CropRegion(int X, int Y, int Width, int Height);
 
-/// <summary>
-/// One tap on the relayed image, in NORMALISED coordinates - a fraction of
-/// the image's width and height, never pixels.
-///
-/// This is the decision the whole feature rests on. Nobody agrees on the size
-/// of that picture: the agent captures it at the browser's device scale
-/// factor, and the client renders it at whatever its screen allows, so a
-/// phone scales a 400px tile grid into a 360pt column. A pixel coordinate
-/// measured on the client's copy therefore lands in the wrong square once the
-/// agent maps it back. A fraction lands in the same square whatever either
-/// end did to the bitmap.
-/// </summary>
+// NORMALISED coordinates (fraction of the image, never pixels): the agent captures at the device scale factor and the
+// client renders at its own size, so a pixel measured on the client's copy lands in the wrong square
 public readonly record struct Tap
 {
-    /// <summary>
-    /// The wire's precision, and so the type's.
-    ///
-    /// 1/10 000 of the image is far finer than anything a finger can express -
-    /// a tile in a 3x3 grid is 0.33 wide - and pinning it here is what makes a
-    /// formatted tap survive its own round trip: a coordinate carrying more
-    /// digits in memory than the wire can hold would compare unequal to the
-    /// value it was just parsed from, and the two ends would be "agreeing" on
-    /// numbers that are not the same.
-    /// </summary>
+    // the wire's precision (1/10 000), pinned so a formatted tap round-trips equal to its parsed value
     private const int Digits = 4;
 
     public Tap(double x, double y)
@@ -214,16 +116,8 @@ public readonly record struct Tap
     /// <summary>0 is the image's top edge, 1 its bottom.</summary>
     public double Y { get; }
 
-    /// <summary>
-    /// This tap in page pixels, for the region the relayed image was cropped
-    /// from - what the agent hands to the mouse.
-    ///
-    /// Lives here rather than on the agent so the mapping cannot disagree with
-    /// the encoding: the crop's origin is part of the answer's meaning, and an
-    /// agent that forgot to add it would click the top-left of the viewport
-    /// with perfectly valid coordinates. When a whole page was relayed rather
-    /// than a crop, pass the viewport as <c>new CropRegion(0, 0, w, h)</c>.
-    /// </summary>
+    // lives here so the mapping cannot disagree with the encoding: the crop's origin is part of the meaning.
+    // for a whole page pass new CropRegion(0, 0, w, h)
     public (double X, double Y) ToPagePixels(CropRegion region) =>
         (region.X + (X * region.Width), region.Y + (Y * region.Height));
 
@@ -231,10 +125,7 @@ public readonly record struct Tap
 
     private static double Normalised(double value, [CallerArgumentExpression(nameof(value))] string? name = null)
     {
-        // Written as a range test rather than two comparisons because it is
-        // also the NaN check: every comparison against NaN is false, so a
-        // coordinate that arrived as one is rejected here instead of becoming
-        // a click at an undefined point.
+        // a range test doubles as the NaN check: every comparison against NaN is false, so NaN is rejected
         if (value is not (>= 0 and <= 1))
         {
             throw new ArgumentOutOfRangeException(name, value,
@@ -245,45 +136,19 @@ public readonly record struct Tap
     }
 }
 
-/// <summary>
-/// The human's taps, and the one encoding they ride
-/// <see cref="ChallengeAnswer.Value"/> in.
-///
-/// Two decisions are frozen here, because the agent and the client each
-/// implement one half of them and a disagreement is a click in the wrong
-/// square:
-///
-/// <b>The list is ordered.</b> Some grids ask for tiles in a given sequence,
-/// and order is information the client already has and cannot be recovered
-/// once dropped. Replaying taps in the order they were made is also simply
-/// what a human did, which is the safest thing to reproduce.
-///
-/// <b>"Submit" is a terminal marker in the same answer, not a second
-/// challenge.</b> A separate submit round would double the relay latency for
-/// every grid - and an image captcha's token goes stale while we wait - but
-/// the deciding reason is that a bare list cannot express one legal answer:
-/// a grid where NOTHING matches, which the human answers by pressing verify
-/// with nothing selected. With a marker, an empty tap list and an empty tap
-/// list that is finished are different sentences. A client that wants to send
-/// taps now and finish later simply leaves the marker off.
-/// </summary>
+// frozen on both sides: the list is ordered, as a human made the taps; "submit" is a terminal marker in the same answer,
+// since a bare list cannot say "nothing matches" (verify pressed with nothing selected) and a separate submit round
+// would double relay latency while a captcha token goes stale
 public sealed record TapAnswer
 {
-    /// <summary>
-    /// What makes a tap answer unmistakable inside a field that also carries
-    /// SMS codes and redirect URLs, and versioned so a second grammar can be
-    /// added without guessing which one a string is.
-    /// </summary>
+    // marks a tap answer inside a field that also carries SMS codes and redirect URLs; versioned for a second grammar
     public const string Prefix = "tap.v1:";
 
     private const string SubmitMarker = "submit";
 
     private const char Separator = ';';
 
-    /// <summary>
-    /// Ordered, and empty by default - which is a real answer, not a missing
-    /// one. See <see cref="Submit"/>.
-    /// </summary>
+    // ordered; empty is a real answer, not a missing one (see Submit)
     public IReadOnlyList<Tap> Taps { get; init; } = [];
 
     /// <summary>
@@ -292,7 +157,6 @@ public sealed record TapAnswer
     /// </summary>
     public bool Submit { get; init; }
 
-    /// <summary>The encoded form, for <see cref="ChallengeAnswer.Value"/>.</summary>
     public string Format()
     {
         var builder = new StringBuilder(Prefix);
@@ -312,16 +176,8 @@ public sealed record TapAnswer
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Reads an encoded tap answer, or says no.
-    ///
-    /// Deliberately strict about everything except surrounding whitespace: a
-    /// lenient parser here would accept a producer that is wrong about the
-    /// format and turn the disagreement into clicks. False means "this is not
-    /// a tap answer" - which is exactly what a text answer from a consumer
-    /// that ignored <see cref="Challenge.AnswerKind"/> is, and the adapter
-    /// treats it as a challenge nobody answered.
-    /// </summary>
+    // strict on purpose: a lenient parser would turn a producer's format error into clicks; false means "not a tap answer",
+    // e.g. a text answer from a consumer that ignored AnswerKind
     public static bool TryParse(string? value, [NotNullWhen(true)] out TapAnswer? answer)
     {
         answer = null;
@@ -346,12 +202,9 @@ public sealed record TapAnswer
         return true;
     }
 
-    /// <summary>One token of the payload: the submit marker, or a tap. False is a malformed answer.</summary>
     private static bool TryTakePart(string part, List<Tap> taps, ref bool submit)
     {
-        // Terminal means terminal: a tap after the marker is one the page can
-        // no longer receive, so the producer is wrong about the format rather
-        // than merely untidy.
+        // a tap after the marker can no longer reach the page, so the producer is wrong about the format
         if (submit) return false;
 
         var token = part.Trim();
@@ -369,34 +222,18 @@ public sealed record TapAnswer
         return true;
     }
 
-    /// <summary>
-    /// Invariant culture, always. Half of Europe writes <c>0,5</c>, and a
-    /// client that formatted a coordinate in its own locale would either be
-    /// rejected here or - worse, if the separator were anything but the one
-    /// splitting the pair - parse as a different point.
-    /// </summary>
+    // invariant culture always: half of Europe writes 0,5, and a locale-formatted coordinate would be rejected or misparsed
     private static bool TryCoordinate(string token, out double value) =>
         double.TryParse(token.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value)
         && value is >= 0 and <= 1;
 }
 
-/// <summary>The human's answer travelling back to a waiting adapter.</summary>
 public sealed record ChallengeAnswer
 {
     [JsonPropertyName("challenge_id")]
     public required string ChallengeId { get; init; }
 
-    /// <summary>
-    /// Empty for a passive challenge - the answer is simply that the human
-    /// acted somewhere we cannot observe.
-    ///
-    /// A string for every answer kind, including taps: a wire type that
-    /// changed shape for one challenge kind would change a payload every
-    /// consumer already parses, for a case almost none of them will ever
-    /// raise. Taps are encoded by <see cref="TapAnswer.Format"/> and read back
-    /// by <see cref="TapAnswer.TryParse"/>, so an empty string still means "no
-    /// answer" while <c>tap.v1:</c> means an answer that contains no taps -
-    /// which is a different thing.
-    /// </summary>
+    // empty for a passive challenge. A string for every kind, so the wire shape does not change per kind: "" is no answer,
+    // "tap.v1:" is an answer with no taps
     public string Value { get; init; } = string.Empty;
 }

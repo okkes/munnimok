@@ -8,13 +8,8 @@ using Connector.Kit.Jobs;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Every route that names something a user owns - a session, a job, a
-/// ticket, an agent - answers only that user, named by the subject header.
-/// Somebody else gets the answer a thing that does not exist gets, and a
-/// relay that forgot the header is told so on its first call rather than
-/// handed everybody's data.
-/// </summary>
+// routes naming something a user owns answer only the subject header's user; anyone else gets the not-found answer
+// a relay that forgot the header is told so on its first call
 [Collection(ShopApiCollection.Name)]
 public sealed class SessionBindingTests(ShopApiFactory factory)
 {
@@ -46,7 +41,6 @@ public sealed class SessionBindingTests(ShopApiFactory factory)
         await AssertUnknownAsync(theirs.DeleteAsync($"/v1/{Provider}/sessions/{connection.SessionId}"));
         await AssertHeaderRequiredAsync(forgetful.GetAsync($"/v1/{Provider}/login/{connection.SessionId}"));
 
-        // none of which touched it
         using var after = await mine.GetAsync($"/v1/{Provider}/login/{connection.SessionId}");
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
         Assert.Equal("active", (await after.JsonAsync()).Text("state"));

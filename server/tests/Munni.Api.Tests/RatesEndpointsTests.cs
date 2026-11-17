@@ -11,8 +11,7 @@ using Munni.Api.Rates;
 
 namespace Munni.Api.Tests;
 
-/// <summary>ECB stand-in: daily file, 90-day window, full history —
-/// weekend gaps included so the ≤-lookup is actually exercised.</summary>
+/// <summary>ECB stand-in with weekend gaps, so the <=-lookup is exercised</summary>
 internal sealed class FakeEcbHandler : HttpMessageHandler
 {
     public int DailyCalls;
@@ -127,7 +126,6 @@ public class RatesEndpointsTests : IClassFixture<RatesApiFactory>
     [Fact]
     public async Task Weekend_dates_resolve_to_the_previous_fixing()
     {
-        // Saturday the 18th → Friday the 17th's rates, date says so honestly
         var payload = await Client().GetFromJsonAsync<JsonElement>("/rates?date=2026-07-18");
         Assert.Equal("2026-07-17", payload.GetProperty("date").GetString());
         Assert.Equal(1.0800m, payload.GetProperty("rates").GetProperty("USD").GetDecimal());
@@ -154,7 +152,7 @@ public class RatesEndpointsTests : IClassFixture<RatesApiFactory>
         await Client().GetFromJsonAsync<JsonElement>("/rates?date=2026-07-20");
         var before = _factory.Ecb.Hist90Calls;
         await Client().GetFromJsonAsync<JsonElement>("/rates?date=2026-07-21");
-        Assert.Equal(before, _factory.Ecb.Hist90Calls); // second day served from cache
+        Assert.Equal(before, _factory.Ecb.Hist90Calls);
         Assert.True(before >= 1);
     }
 }

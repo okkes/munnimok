@@ -1,10 +1,4 @@
-/** #168 r3 (user): monotone cubic interpolation (Fritsch–Carlson).
- *  The Catmull-Rom smoothing overshot — a drop into a flat stretch
- *  dipped below the data ("looked negative for a bit"). Tangents are
- *  flattened at local extrema and across equal neighbours, then clamped
- *  to the Fritsch–Carlson region, so every segment stays inside its
- *  endpoints' range: equal values draw dead flat, monotone runs never
- *  over/undershoot. */
+/** monotone cubic (Fritsch–Carlson): Catmull-Rom overshot — a drop into a flat stretch dipped below the data (#168) */
 
 export interface ChartPt {
   x: number;
@@ -13,7 +7,6 @@ export interface ChartPt {
 
 const coords = (x: number, y: number) => `${x.toFixed(1)},${y.toFixed(1)}`;
 
-/** secant slope of each consecutive pair */
 function secants(pts: readonly ChartPt[]): number[] {
   const d: number[] = [];
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -23,24 +16,20 @@ function secants(pts: readonly ChartPt[]): number[] {
   return d;
 }
 
-/** per-point dy/dx tangents (exported for the unit tests) */
 export function monotoneTangents(pts: readonly ChartPt[]): number[] {
   if (pts.length < 2) return pts.map(() => 0);
   const d = secants(pts);
   const m: number[] = [d[0]];
   for (let i = 1; i + 1 < pts.length; i++) {
-    // a sign change (or a flat side) is a local extremum — flatten it
     m.push(d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2);
   }
   m.push(d.at(-1)!);
   for (let i = 0; i + 1 < pts.length; i++) {
     if (d[i] === 0) {
-      // a flat segment keeps BOTH endpoint tangents at zero
       m[i] = 0;
       m[i + 1] = 0;
       continue;
     }
-    // α²+β² ≤ 9 (the FC circle) keeps the Hermite segment monotone
     const alpha = m[i] / d[i];
     const beta = m[i + 1] / d[i];
     const size = Math.hypot(alpha, beta);
@@ -52,11 +41,7 @@ export function monotoneTangents(pts: readonly ChartPt[]): number[] {
   return m;
 }
 
-/**
- * The curve's point at a fractional index `t` (0 … n−1): the same Hermite
- * segment monotonePath draws there, so a marker moved along `t` rides on
- * the stroke (#500) instead of cutting across it.
- */
+/** the Hermite point monotonePath draws at fractional index `t`, so a marker rides the stroke (#500) */
 export function monotonePointAt(pts: readonly ChartPt[], t: number): ChartPt {
   if (pts.length < 2) return pts[0] ?? { x: 0, y: 0 };
   const at = Math.min(pts.length - 1, Math.max(0, t));
@@ -75,7 +60,6 @@ export function monotonePointAt(pts: readonly ChartPt[], t: number): ChartPt {
   return { x: p1.x + u * dx, y };
 }
 
-/** SVG path — the Hermite segments emitted as cubic beziers */
 export function monotonePath(pts: readonly ChartPt[]): string {
   if (pts.length < 2) return '';
   const m = monotoneTangents(pts);

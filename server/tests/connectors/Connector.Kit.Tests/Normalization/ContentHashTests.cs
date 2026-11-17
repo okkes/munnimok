@@ -3,13 +3,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Two properties, both load-bearing: the hash must not move when a
-/// provider reorders or adds something we ignore, and it must move when any
-/// meaningful value changes. That is what makes re-fetch overlap free,
-/// which is what lets every adapter widen its window to catch late-settling
-/// rows without duplicating them.
-/// </summary>
+// stable on ignored fields, moving on meaningful ones: that makes re-fetch overlap free, so adapters can widen their window
+// for late-settling rows without duplicating them
 public sealed class ContentHashTests
 {
     private static Transaction Tx() => Make.Tx("t-1", -4_231, resultingBalance: 10_000) with
@@ -39,8 +34,6 @@ public sealed class ContentHashTests
     [Fact]
     public void Is_deterministic_across_calls()
     {
-        // Not a tautology: a hash that folded in a timestamp, a GUID or a
-        // dictionary iteration order would fail here and nowhere else.
         Assert.Equal(ContentHash.Of(Tx()), ContentHash.Of(Tx()));
         Assert.Equal(
             ContentHash.Of(Make.Rcp(1_000, Make.Item("Kaas", 1_000))),
@@ -52,9 +45,8 @@ public sealed class ContentHashTests
     {
         var baseline = ContentHash.Of(Tx());
 
-        // The platform-minted id, the value date, the classification and the
-        // running balance all move without the transaction changing. Folding
-        // them in would churn the hash on every re-fetch and defeat dedupe.
+        // id, value date, classification and running balance move without the transaction changing.
+        // hashing them churns every re-fetch and defeats dedupe
         Assert.Equal(baseline, ContentHash.Of(Tx() with { Id = Ids.New(Ids.Transaction) }));
         Assert.Equal(baseline, ContentHash.Of(Tx() with { ValueAt = new DateOnly(2026, 8, 1) }));
         Assert.Equal(baseline, ContentHash.Of(Tx() with { ValueAt = null }));
@@ -72,8 +64,7 @@ public sealed class ContentHashTests
     [Fact]
     public void Changes_when_the_currency_changes()
     {
-        // -4231 EUR and -4231 USD are not the same fact, and a hash that
-        // said they were would silently dedupe one away.
+        // -4231 EUR and -4231 USD are different facts; equal hashes would dedupe one away
         Assert.NotEqual(ContentHash.Of(Tx()), ContentHash.Of(Tx() with { Amount = new Money(-4_231, "USD") }));
     }
 
@@ -105,7 +96,6 @@ public sealed class ContentHashTests
     [Fact]
     public void Field_boundaries_cannot_be_rearranged_into_a_collision()
     {
-        // The case named in the kit's own comment.
         var ab_c = Make.Tx("ab", 100) with { AccountId = "c" };
         var a_bc = Make.Tx("a", 100) with { AccountId = "bc" };
 
@@ -115,12 +105,9 @@ public sealed class ContentHashTests
     [Fact]
     public void A_separator_inside_a_value_cannot_forge_a_field_boundary()
     {
-        // The case a separator alone does not survive: concatenating
-        // "ab<sep>c" + sep + "d" and "ab" + sep + "c<sep>d" produces
-        // identical bytes. Only the length prefix separates them, so this is
-        // the test that actually exercises it.
-        // Numeric escape, as the kit writes it: source carrying an invisible
-        // control character is source nobody can review.
+        // a separator alone fails: "ab<sep>c"+sep+"d" and "ab"+sep+"c<sep>d" are identical bytes.
+        // only the length prefix separates them
+        // numeric escape, as the kit writes it: an invisible control character in source cannot be reviewed
         const char separator = (char)0x1F;
 
         var left = Make.Tx($"ab{separator}c", 100) with { AccountId = "d" };
@@ -135,8 +122,7 @@ public sealed class ContentHashTests
         var summary = Make.Rcp(1_000);
         var detailed = Make.Rcp(1_000, Make.Item("Kaas", 1_000));
 
-        // The summary and the detailed record are genuinely different
-        // content, so the second fetch must not be deduped away as a repeat.
+        // summary and detailed record are different content, so the second fetch must not be deduped away
         Assert.NotEqual(ContentHash.Of(summary), ContentHash.Of(detailed));
     }
 
@@ -155,8 +141,7 @@ public sealed class ContentHashTests
     [Fact]
     public void A_receipt_hash_moves_when_items_are_reordered()
     {
-        // Item order is content: two lines of the same product at different
-        // prices are not interchangeable on a printed receipt either.
+        // item order is content
         var one = Make.Rcp(1_000, Make.Item("A", 400), Make.Item("B", 600));
         var other = Make.Rcp(1_000, Make.Item("B", 600), Make.Item("A", 400));
 
@@ -166,9 +151,7 @@ public sealed class ContentHashTests
     [Fact]
     public void A_receipt_hash_is_offset_independent()
     {
-        // The same instant written +02:00 or in UTC is the same purchase.
-        // A provider that switches representation must not re-emit
-        // everything it ever sold us.
+        // the same instant as +02:00 or UTC is one purchase; a provider switching representation must not re-emit everything
         var local = Make.Rcp(1_000, Make.Item("Kaas", 1_000));
         var utc = local with { PurchasedAt = local.PurchasedAt.ToUniversalTime() };
 
@@ -195,8 +178,7 @@ public sealed class ContentHashTests
             Balance = account.Balance! with { AsOf = TestTime.Anchor.AddHours(6) },
         };
 
-        // as_of moves on every single fetch. Folding it in would make every
-        // account row look new, forever.
+        // as_of moves on every fetch; hashing it would make every account row look new forever
         Assert.Equal(ContentHash.Of(account), ContentHash.Of(later));
     }
 
@@ -226,8 +208,7 @@ public sealed class ContentHashTests
     [Fact]
     public void An_absent_optional_reads_the_same_as_an_empty_one()
     {
-        // Providers differ on null versus "" for a counterparty, and a
-        // provider that switches between them has not changed the fact.
+        // providers differ on null vs "" for a counterparty; switching between them is not a changed fact
         var absent = Tx() with { Counterparty = null, Description = null };
         var empty = Tx() with
         {
@@ -238,25 +219,14 @@ public sealed class ContentHashTests
         Assert.Equal(ContentHash.Of(absent), ContentHash.Of(empty));
     }
 
-    /// <summary>
-    /// The as-of date alone moves a student debt's hash.
-    ///
-    /// Written as a unit rather than through the DUO reader because the reader
-    /// cannot express it: there, the date is READ from the history, so any
-    /// change to it also changes a history entry and the hash moves for that
-    /// reason instead. Mutating the date out of the hash therefore broke
-    /// nothing, which is exactly the shape of a guarantee nobody is actually
-    /// holding - and the day the date arrives from a second source, that
-    /// redundancy would quietly become a record that never reports a change.
-    /// </summary>
+    // a unit test, not via the DUO reader: there the date is read from history, so changing it also changes a history entry
+    // and the hash moves for that reason; dropping the date from the hash would break nothing there
     [Fact]
     public void A_student_debt_recalculated_to_a_new_date_hashes_differently()
     {
         var july = Debt(new DateOnly(2026, 7, 1));
         var august = Debt(new DateOnly(2026, 8, 1));
 
-        // Identical in every other respect - same figure, same components,
-        // same history. Only the day the provider calculated interest to.
         Assert.Equal(july.Total, august.Total);
         Assert.NotEqual(ContentHash.Of(july), ContentHash.Of(august));
     }

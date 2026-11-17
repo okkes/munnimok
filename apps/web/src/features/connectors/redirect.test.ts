@@ -5,7 +5,6 @@ import { openPartyPage } from './redirect';
 
 type Started = { url: string; callbackScheme: string };
 
-/** the shell as the page sees it: iOS or Android, with the plugins each registers */
 function shell(platform: 'ios' | 'android', plugins: Record<string, unknown>) {
   (globalThis as { Capacitor?: unknown }).Capacitor = {
     isNativePlatform: () => true,

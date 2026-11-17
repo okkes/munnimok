@@ -2,22 +2,10 @@ using System.Collections.Concurrent;
 
 namespace Connector.Kit.Agent.Networking;
 
-/// <summary>
-/// The agent-wide pacing state: one gate per provider, shared by every job
-/// running in this process.
-///
-/// Two properties, and both are per PROVIDER rather than per job. Serialising
-/// only within a job would let two concurrent sessions for the same provider
-/// double the call rate that provider sees, which is exactly the cadence a
-/// bot-protection system is looking for. The gap is honoured across jobs for
-/// the same reason.
-/// </summary>
+// per PROVIDER, not per job: two concurrent sessions for one provider would double its call rate
 public sealed class PolitenessGate
 {
-    /// <summary>
-    /// Jitter as a fraction of the configured gap. A fleet whose calls land on
-    /// an exact interval is more machine-shaped than one that does not.
-    /// </summary>
+    // jitter as a fraction of the gap: calls on an exact interval look machine-shaped
     private const double JitterFraction = 0.5;
 
     private readonly ConcurrentDictionary<string, Slot> _slots = new(StringComparer.Ordinal);
@@ -25,11 +13,7 @@ public sealed class PolitenessGate
 
     public PolitenessGate(TimeProvider? time = null) => _time = time ?? TimeProvider.System;
 
-    /// <summary>
-    /// Waits for this provider's turn, then for the remaining gap. The returned
-    /// ticket must be disposed when the call completes: disposal is what stamps
-    /// the next allowed time and releases the next caller.
-    /// </summary>
+    // disposing the ticket stamps the next allowed time and releases the next caller
     public async Task<IDisposable> EnterAsync(string providerId, TimeSpan minGap, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
@@ -55,11 +39,7 @@ public sealed class PolitenessGate
         return new Ticket(this, slot, minGap < TimeSpan.Zero ? TimeSpan.Zero : minGap);
     }
 
-    /// <summary>
-    /// Pushes the next allowed time out further than the normal gap - what a
-    /// provider's own <c>Retry-After</c> asked for. Backing off when told to is
-    /// the difference between a rate limit and a block.
-    /// </summary>
+    // what a provider's own Retry-After asked for: backing off when told to is the difference between a rate limit and a block
     public void Penalise(string providerId, TimeSpan delay)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);

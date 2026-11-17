@@ -135,7 +135,6 @@ describe('insight detectors', () => {
     expect(smallHabit(base({ txs: coffees.slice(0, 5) }))).toHaveLength(0);
     // a coffee abroad in another currency never adds to the euros
     expect(smallHabit(base({ txs: coffees.map((c) => ({ ...c, currency: 'USD' })) }))).toHaveLength(0);
-    // a weekly space counts a period 52 times a year
     const weekly = smallHabit(base({ txs: coffees, space: { periodType: 'week', periodDay: 1 } }));
     expect(weekly[0].impactCents).toBe(9 * 350 * 52);
   });
@@ -159,20 +158,17 @@ describe('insight detectors', () => {
     expect(hits[0].params.suggested).toEqual({ money: 15_000 });
     expect(hits[0].impactCents).toBe(5_000 * 12);
 
-    // one good month breaks the streak
     const mixed = overshoots.slice(0, 2).concat(tx({ catId: 'consumption', amountCents: -5_000, date: '2026-06-05' }));
     expect(budgetRealityCheck(base({ budgets: [budget], txs: mixed }))).toHaveLength(0);
   });
 
   it('debt acceleration: a round extra in proportion to the payment, walked by the payoff planner', () => {
-    // v2: the loan IS a liability account — remaining is its balance
     const loan = loanOf({});
     const hits = debtAcceleration(base({ loans: [loan] }));
     expect(hits).toHaveLength(1);
     // €300 a month: a fifth is €60 — the round step under it is €50
     expect(hits[0]).toMatchObject({ kind: 'debtacc', topic: 'debt', severity: 'win', actionTo: '/debts/plan' });
     expect(hits[0].params.extra).toEqual({ money: 5_000, currency: 'EUR' });
-    // the same walk the planner draws: the debt alone, with and without the extra
     const [debt] = toPlanDebts([{ account: loan, remainingCents: 2_500_000 }]);
     const without = simulateDebtAlone(debt, 0);
     const withExtra = simulateDebtAlone(debt, 5_000);
@@ -180,7 +176,6 @@ describe('insight detectors', () => {
     expect(hits[0].impactCents).toBe(without.interestCents - withExtra.interestCents);
 
     expect(debtAcceleration(base({ loans: [loanOf({ paymentCents: undefined })] }))).toHaveLength(0);
-    // a rate of 0% or an unknown one saves no interest
     expect(debtAcceleration(base({ loans: [loanOf({ interestPctYear: 0 })] }))).toHaveLength(0);
     expect(debtAcceleration(base({ loans: [loanOf({ interestPctYear: undefined })] }))).toHaveLength(0);
     // the planner counts a weekly payment per month: €70 a week is about €303 a month
@@ -208,13 +203,9 @@ describe('insight detectors', () => {
     expect(hits[0]).toMatchObject({ id: 'debtclear:small', kind: 'debtclear', severity: 'win', detailKey: 'ins.debtclear.detail' });
     expect(hits[0].params).toMatchObject({ name: 'Klarna', amount: { money: 34_000, currency: 'EUR' }, months: 7, freed: { money: 5_000, currency: 'EUR' } });
 
-    // one debt is no "smaller one"
     expect(debtClear(base({ loans: [small] }))).toHaveLength(0);
-    // the next payment ends it anyway — no nudge
     expect(debtClear(base({ loans: [big, { ...small, balanceCents: -4_000 }] }))).toHaveLength(0);
-    // not small: €5,000 is ten payments
     expect(debtClear(base({ loans: [big, { ...small, balanceCents: -500_000 }] }))).toHaveLength(0);
-    // no payment known: the amount alone
     const plain = debtClear(base({ loans: [big, { ...small, paymentCents: undefined }] }));
     expect(plain[0].detailKey).toBe('ins.debtclear.detailPlain');
     expect(plain[0].params.months).toBeUndefined();

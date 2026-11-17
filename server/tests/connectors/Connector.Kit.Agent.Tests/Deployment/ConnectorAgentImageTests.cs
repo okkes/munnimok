@@ -9,43 +9,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Connector.Kit.Agent.Tests.Deployment;
 
-/// <summary>
-/// THE IMAGE A PERSON INSTALLS — and the operator's pooled fleet runs the
-/// same one: what <c>Connector.Agent</c> ships as it stands, before any
-/// compose file touches it.
-///
-/// <para>
-/// The three per-connector agent images default to <c>pooled</c>, because most
-/// of their instances are the operator's fleet. Most instances of this one are
-/// somebody's house, and a pooled agent there is a quiet wrong answer in three
-/// directions at once: it wipes the browser profile between jobs, signs itself
-/// out to tidy up after a failure, and advertises the tiers its configuration
-/// lists rather than the ones its adapters need. The sign-in the account
-/// holder did once is simply gone, and nothing says why.
-/// </para>
-///
-/// <para>
-/// In the style of <see cref="ByoAgentRuntimesTests"/>: the deployment is the
-/// thing under test and a one-line edit to a shipped file is what breaks it.
-/// What this cannot reach is whether the CONTAINER then runs - that is Docker,
-/// and there is none here - so it reads the files that decide what the
-/// container is.
-/// </para>
-/// </summary>
+// the per-connector images default to pooled; pooled in a house wipes the profile, signs out after failures and
+// advertises config tiers, so the sign-in is gone without a word. No Docker here: reads the shipped files
 public sealed partial class ConnectorAgentImageTests
 {
     private static string ProjectDirectory => ByoCompose.AgentProject;
 
-    /// <summary>
-    /// The settings in the image are a BYO agent that runs one job at a time
-    /// and derives its tiers from its adapters.
-    /// </summary>
-    /// <remarks>
-    /// Bound through <c>AddConnectorAgent</c>, the same call this image's
-    /// <c>Program.cs</c> makes, with only a control plane added - which is
-    /// per-deployment and comes from the environment. So what is asserted is
-    /// what the image IS, not what a compose file over it could make it.
-    /// </remarks>
     [Fact]
     public void The_shipped_settings_are_a_BYO_agent_at_one_job_at_a_time()
     {
@@ -54,31 +23,17 @@ public sealed partial class ConnectorAgentImageTests
         Assert.Equal(AgentClass.Byo, options.Class);
         Assert.Equal(1, options.MaxConcurrency);
 
-        // No Runtimes list, ever. A BYO agent's tiers come from its adapters:
-        // a list here cannot add one, is refused if it takes one away, and so
-        // can only turn a working agent into one that will not start.
+        // no Runtimes list: tiers come from the adapters; a list cannot add one and is refused if it drops one
         Assert.Empty(options.Runtimes);
 
-        // And it advertises the persistent tier - the one this whole image
-        // exists for - without being told to.
         var capabilities = options.BuildCapabilities([PersistentAdapter.Manifest]);
 
         Assert.Equal([ProviderRuntime.BrowserPersistent], capabilities.Runtimes);
         Assert.Equal(AgentClass.Byo, capabilities.Class);
     }
 
-    /// <summary>
-    /// The shipped file configures no connector, and one process's worth of
-    /// directories.
-    /// </summary>
-    /// <remarks>
-    /// The connectors are per-deployment: an address and a one-time code
-    /// belong to the household, not to the image. A control plane baked in
-    /// here would be an agent that enrolls somewhere nobody chose, and an
-    /// agent with nowhere to call refuses to boot rather than idling as a
-    /// healthy-looking instance that never picks up work - which is why this
-    /// asserts the absence rather than leaving it to chance.
-    /// </remarks>
+    // connectors are per-deployment: a baked-in control plane enrolls somewhere nobody chose, and an agent with
+    // nowhere to call refuses to boot instead of idling healthy-looking; hence the absence is asserted
     [Fact]
     public void The_shipped_settings_name_no_connector_and_no_code()
     {
@@ -93,23 +48,8 @@ public sealed partial class ConnectorAgentImageTests
         Assert.Empty(section.GetSection("Connections").GetChildren());
     }
 
-    /// <summary>
-    /// IT CARRIES EVERY PRODUCT'S ADAPTERS, which is the whole reason this
-    /// image exists.
-    /// </summary>
-    /// <remarks>
-    /// One container for the household instead of three is only true if the
-    /// binaries for all three are in it. Dropping a reference here would
-    /// produce an image that builds, enrolls, heartbeats and looks completely
-    /// healthy while being unable to serve a third of what somebody connected
-    /// - the same shape of failure as the registry agent that was pointed at
-    /// the shopping image and advertised fifteen shop providers and no BKR.
-    /// <para>
-    /// Read from the project file rather than by referencing the adapters:
-    /// this suite is the KIT's, and a kit test project that depends on three
-    /// products would invert the direction everything else here depends in.
-    /// </para>
-    /// </remarks>
+    // one container for the household is true only if all three adapter sets are in it; a missing one looks healthy
+    // read from the csproj: a kit test project referencing three products would invert the dependency direction
     [Fact]
     public void The_home_agent_references_every_products_adapters()
     {
@@ -119,9 +59,7 @@ public sealed partial class ConnectorAgentImageTests
         Assert.Contains("ShopConnector.Adapters.csproj", project, StringComparison.Ordinal);
         Assert.Contains("RegistryConnector.Adapters.csproj", project, StringComparison.Ordinal);
 
-        // And registers each set, which is a separate thing from referencing
-        // it: an adapter library that is linked and never added is an agent
-        // that advertises nothing from it.
+        // referencing is not registering: a linked adapter library that is never added advertises nothing
         var program = File.ReadAllText(Path.Combine(ProjectDirectory, "Program.cs"));
 
         Assert.Contains("BankAdapters.All(", program, StringComparison.Ordinal);
@@ -129,19 +67,7 @@ public sealed partial class ConnectorAgentImageTests
         Assert.Contains("RegistryAdapters.All(", program, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The image's own Dockerfile mounts the three directories the settings
-    /// name, and holds the enrollments where a volume can keep them.
-    /// </summary>
-    /// <remarks>
-    /// The per-connector images carried <c>Agent__ProfileRoot</c> and
-    /// <c>Agent__WorkRoot</c> for a while, which bound to nothing: the agent
-    /// used a home-directory default while the compose file dutifully mounted
-    /// volumes that nothing ever wrote to, and the first restart after a
-    /// sign-in was a sign-in again. The keys are asserted here in full,
-    /// because that failure is invisible until somebody has already lost a
-    /// session.
-    /// </remarks>
+    // the per-connector images once set Agent__ProfileRoot/WorkRoot, which bound to nothing: a restart lost the sign-in
     [Fact]
     public void The_dockerfile_points_the_agent_at_the_directories_it_mounts()
     {
@@ -151,61 +77,26 @@ public sealed partial class ConnectorAgentImageTests
         Assert.Contains("ConnectorAgent__WorkRootDirectory=/work", dockerfile, StringComparison.Ordinal);
         Assert.Contains("ConnectorAgent__StateFilePath=/state/agent-state.json", dockerfile, StringComparison.Ordinal);
 
-        // The entrypoint starts an Xvfb so the browser can be genuinely
-        // headed, and runs as pwuser: a browser rendering a hostile page must
-        // never be root.
+        // Xvfb so the browser is genuinely headed; pwuser because a browser rendering a hostile page must never be root
         Assert.Contains("agent-entrypoint.sh", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER pwuser", dockerfile, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The image is published, and it is rebuilt when anything it is built
-    /// from changes.
-    /// </summary>
-    /// <remarks>
-    /// <b>An image nobody publishes is an absent provider, and this repository
-    /// has already paid for that once.</b> The release workflow's paths filter
-    /// omitted <c>registry-connector/src</c> and its matrices named bank and
-    /// shop, so <c>registry-connector-agent</c> had never existed on the day
-    /// <c>deploy/byo</c> started naming it - and that is the one connector the
-    /// file ships live, so a household following the README had nothing to
-    /// start at all.
-    /// The compose file beside this test now names <c>Connector.Agent</c> in the
-    /// same way.
-    /// <para>
-    /// The paths half is the quieter failure of the two. A missing filter
-    /// entry does not fail anything: it means a change to one of the three
-    /// adapter libraries this image links produces a push that rebuilds the
-    /// three per-connector agents and leaves the household's one sitting at
-    /// the previous build, which then differs from the connector it talks to
-    /// in whichever way the adapter changed. So the filter is checked against
-    /// the project's own references rather than against a list written here -
-    /// a fourth reference added to the csproj is held to this on the day it
-    /// lands.
-    /// </para>
-    /// </remarks>
+    // an unpublished image is an absent provider: registry-connector-agent was missing from the paths filter and matrices
+    // a missing paths entry fails nothing: per-connector agents rebuild, this one stays behind; checked against the csproj
     [Fact]
     public void The_release_workflow_publishes_the_image_and_rebuilds_it_when_its_sources_change()
     {
         var workflow = File.ReadAllText(
             Path.Combine(ByoCompose.RepoRoot(), ".github", "workflows", "release-images.yml"));
 
-        // Built from its own Dockerfile, and merged into the channel tag a
-        // host actually pulls - `:latest`, which the manifest job mints. A
-        // build with no manifest entry publishes only an arch-suffixed tag
-        // that nothing in deploy/ names.
-        // Built from its own Dockerfile out of the `server` context, and
-        // merged into the channel tag a host actually pulls — `:latest` /
-        // `:dev`, which the manifest job mints from the one architecture the
-        // agent has.
+        // built from its own Dockerfile and merged into the `:latest`/`:dev` tag a host pulls; no manifest entry: arch tag only
         Assert.Contains("file: server/src/connectors/Connector.Agent/Dockerfile", workflow, StringComparison.Ordinal);
         Assert.Contains("munni-connector-agent:$CHANNEL-$BUILD-amd64", workflow, StringComparison.Ordinal);
         Assert.Contains("-t \"$REGISTRY/munni-connector-agent:$CHANNEL\"", workflow, StringComparison.Ordinal);
 
-        // munni's image workflow runs only for the paths it lists, so every
-        // directory this image is built from must fall under one of them — a
-        // change to an adapter library that rebuilt nothing would leave the
-        // agent behind the control plane it talks to.
+        // the workflow runs only for the paths it lists: every directory this image is built from must fall under one,
+        // or a change there leaves the agent behind
         var filter = PathFilterEntry().Matches(workflow).Select(match => match.Groups["path"].Value).ToArray();
         foreach (var referenced in ReferencedProjectDirectories())
         {
@@ -218,11 +109,6 @@ public sealed partial class ConnectorAgentImageTests
         }
     }
 
-    /// <summary>
-    /// Where each project <c>Connector.Agent.csproj</c> references lives, relative to
-    /// the repository root and written with forward slashes, which is how the
-    /// workflow spells a path.
-    /// </summary>
     private static IEnumerable<string> ReferencedProjectDirectories()
     {
         var project = File.ReadAllText(Path.Combine(ProjectDirectory, "Connector.Agent.csproj"));
@@ -241,14 +127,9 @@ public sealed partial class ConnectorAgentImageTests
     [GeneratedRegex(@"<ProjectReference\s+Include=""(?<include>[^""]+)""")]
     private static partial Regex ProjectReference();
 
-    /// <summary>One <c>- 'server/**'</c> under the push filter.</summary>
     [GeneratedRegex(@"^\s+- '(?<path>[^']+)'\s*$", RegexOptions.Multiline)]
     private static partial Regex PathFilterEntry();
 
-    /// <summary>
-    /// The shipped settings, bound the way <c>Program.cs</c> binds them, with
-    /// the one per-deployment value the environment supplies.
-    /// </summary>
     private static ConnectorAgentOptions Bind()
     {
         var configuration = new ConfigurationBuilder()
@@ -265,10 +146,6 @@ public sealed partial class ConnectorAgentImageTests
         return services.BuildServiceProvider().GetRequiredService<ConnectorAgentOptions>();
     }
 
-    /// <summary>
-    /// The shape of provider this image exists for: a persistent tier, agent
-    /// custody, unattended.
-    /// </summary>
     private sealed class PersistentAdapter : IProviderAdapter
     {
         public static ProviderManifest Manifest { get; } = new()

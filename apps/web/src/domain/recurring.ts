@@ -1,9 +1,6 @@
 import type { RecurringRow } from '@/db/types';
 
-/**
- * Recurring-cost math. All date arithmetic is calendar-based (year /
- * month / day), never millisecond diffs — DST already burned us once.
- */
+// all date arithmetic is calendar-based (year/month/day), never millisecond diffs: DST burned us once
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const toIso = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
@@ -26,8 +23,7 @@ const stepN = (rec: Pick<RecurringRow, 'everyN'>): number => Math.max(1, rec.eve
 /** ISO date strings parse as UTC midnights — day diffs come out exact */
 const daysBetween = (a: string, b: string): number => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 
-/** the recurring's occurrence in a given calendar month, or null.
- *  every-N cadences (N > 1) anchor their cycle on `since`. */
+/** every-N cadences (N > 1) anchor their cycle on `since` */
 function occurrenceIn(rec: CadenceFields, y: number, m: number): string | null {
   const n = stepN(rec);
   if (rec.every === 'year') {
@@ -43,7 +39,6 @@ function occurrenceIn(rec: CadenceFields, y: number, m: number): string | null {
 const withinLifetime = (rec: Pick<RecurringRow, 'since' | 'until'>, date: string): boolean =>
   (!rec.since || date >= rec.since) && (!rec.until || date <= rec.until);
 
-/** weekly cadences step in exact 7×N-day strides from their anchor */
 function weeklyOccurrencesBetween(rec: CadenceFields, from: string, to: string): string[] {
   const anchor = rec.since;
   if (!anchor) return [];
@@ -56,7 +51,6 @@ function weeklyOccurrencesBetween(rec: CadenceFields, from: string, to: string):
   return out;
 }
 
-/** every occurrence date within [from, to], honoring since/until */
 export function occurrencesBetween(rec: CadenceFields, from: string, to: string): string[] {
   if (rec.every === 'week') return weeklyOccurrencesBetween(rec, from, to);
   const [fy, fm] = parts(from);
@@ -69,7 +63,6 @@ export function occurrencesBetween(rec: CadenceFields, from: string, to: string)
   return out;
 }
 
-/** the next occurrence on/after today, or null (inactive / ended) */
 export function nextDueDate(rec: Pick<RecurringRow, 'active'> & CadenceFields, today: string): string | null {
   if (rec.active !== 1) return null;
   if (rec.every === 'week') {
@@ -129,12 +122,7 @@ export const isDueWithin = (
   return next !== null && next <= addDays(today, days);
 };
 
-/**
- * The amount is the USER'S hard value (redesign ruling 2026-07-24): the
- * system never rewrites it — it only detects drift (detectPriceChange)
- * and offers a one-tap update on the detail screen. The old behavior
- * silently replaced the value with the 3-payment average.
- */
+// the amount is the USER's hard value: the system never rewrites it, it only detects drift (detectPriceChange)
 export function effectiveAmountCents(rec: Pick<RecurringRow, 'amountCents'>): number {
   return Math.abs(rec.amountCents);
 }
@@ -146,9 +134,7 @@ export interface LinkedTx {
 
 export interface RecurringComputed {
   rec: RecurringRow;
-  /** occurrences in range × effective amount */
   expectedCents: number;
-  /** abs sum of linked transactions inside the range */
   paidCents: number;
   occurrences: number;
   paid: boolean;
@@ -156,10 +142,7 @@ export interface RecurringComputed {
   effectiveCents: number;
 }
 
-/** per-recurring numbers for a date range (a budget period or a year).
- *  #189 (user): `floor` is the space's start date — an occurrence before
- *  it is unknowable (its payment is older than the space shows), so it
- *  neither counts as expected nor reads as "not paid yet". */
+/** #189: `floor` is the space's start date; an earlier occurrence is unknowable: neither expected nor "not paid yet" */
 export function computeRange(
   recs: readonly RecurringRow[],
   linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,
@@ -194,8 +177,6 @@ export interface RecurringSummary {
   luxuryCents: number;
 }
 
-/** #168: the year chart's twelve months — expected (estimate) vs paid
- *  (actual), summed over the active recurrings per calendar month. */
 export function monthlyRecurringSeries(
   recs: readonly RecurringRow[],
   linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,

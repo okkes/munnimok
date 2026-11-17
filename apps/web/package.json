@@ -12,9 +12,6 @@
     "perf": "vitest bench --run",
     "test": "playwright test",
     "shots": "playwright test -c playwright.shots.config.ts",
-    "gallery": "playwright test && playwright test -c playwright.shots.config.ts && node tests/generate-gallery.mjs && node tests/generate-failures.mjs",
-    "gallery:html": "node tests/generate-gallery.mjs",
-    "failures:html": "node tests/generate-failures.mjs",
     "guide": "node tests/generate-guide.mjs"
   },
   "dependencies": {
@@ -28,7 +25,7 @@
     "@tanstack/react-router": "^1.170.18",
     "dexie": "^4.4.4",
     "flag-icons": "^7.5.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "^6.5.438",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

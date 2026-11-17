@@ -1,4 +1,3 @@
-// Ported from apps/legacy/src/shared/i18n.jsx
 import type { TranslationKey } from './en';
 
 export const nl: Partial<Record<TranslationKey, string>> = {
@@ -661,6 +660,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'act.budgetEdit': '{actor} bewerkte budget {detail}',
   'act.budgetRemove': '{actor} verwijderde budget {detail}',
   'act.catAdd': '{actor} maakte categorie {detail}',
+  'act.catCopyDecline': '{actor} wees het kopiëren van categorie {detail} uit een andere ruimte af',
   'act.catEdit': '{actor} bewerkte categorie {detail}',
   'act.catRemove': '{actor} verwijderde categorie {detail}',
   'act.recAdd': '{actor} voegde vaste last {detail} toe',
@@ -880,6 +880,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.kickedTitle': 'Verwijderd uit space',
   'space.kickedBody': 'Je bent geen lid meer van "{space}" — de gegevens zijn van dit apparaat verdwenen.',
   'space.kickedSwitched': 'Je kijkt nu naar "{to}".',
+  'space.goneTitle': 'Space verwijderd',
+  'space.goneBody': '"{space}" is door de eigenaar verwijderd — de gegevens zijn van dit apparaat verdwenen.',
   'space.memberPerm': 'Toegangsniveau',
   'space.sharedAcct': 'Gedeeld via',
   'space.addedBy': 'Toegevoegd door',
@@ -1052,8 +1054,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.archivedEverywhere': 'Gearchiveerd — tik om opnieuw te verbinden',
   'acct.archived': 'Gearchiveerd',
   'acct.archivedReconnect': 'Gearchiveerd — tik om opnieuw te verbinden',
-  // #314 (user): de twee segmenten van het accountsoverzicht + de reden
-  // op een gearchiveerde rij
   'acct.inSpacesCap': 'In je ruimtes',
   'acct.noLongerSharedBy': '{name} deelt deze rekening niet meer',
   'acct.noLongerShared': 'Niet meer gedeeld',
@@ -1182,7 +1182,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'txform.addTitle': 'Transactie toevoegen',
   'txform.reimbExpense': 'Terugbetaling koppelen',
   'txform.reimbCredit': 'Koppel de uitgave die dit terugbetaalt',
-  'txform.reimbAfterSave': 'Slaat de transactie op en opent dan het koppelen',
+  'txform.reimbOnAdd': 'Kies nu — gekoppeld zodra je de transactie toevoegt',
+  'txform.reimbStaged': '{n} gekozen · {amount} — gekoppeld bij toevoegen',
+  'txform.reimbNeedsAmount': 'Vul eerst het bedrag in: de koppeling hangt ervan af.',
+  'txform.reimbUnstage': '{name} weghalen',
+  'txform.reimbOver': 'De gekozen terugbetalingen komen op {amount} — meer dan het bedrag. Haal er een weg of verhoog het bedrag.',
   'txform.editTitle': 'Transactie bewerken',
   'txform.amount': 'Bedrag',
   'txform.expense': 'Uitgave',
@@ -1280,6 +1284,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cats.copyInto': 'Staat hier al — voegt de ontbrekende subcategorieën toe',
   'cats.copyCommit': 'Kopieer {n}',
   'cats.copyNone': 'Elke eigen categorie uit je andere ruimtes staat hier al.',
+  'cats.copyDecline': 'Niet nodig',
+  'cats.copyHidden': '{n} voorstellen die je afwees zijn verborgen — ze komen terug als hun categorie een subcategorie erbij krijgt.',
+  'cats.copyHiddenOne': '1 voorstel dat je afwees is verborgen — het komt terug als de categorie een subcategorie erbij krijgt.',
+  'cats.copyRestore': 'Toon ze weer',
   'cats.iconTaken': 'Een andere subcategorie onder deze hoofdcategorie gebruikt dit icoon al — kies een ander.',
   'cats.noDropLocked': 'neemt geen subcategorieën',
   'cats.noDropIcon': 'een subcategorie hier heeft dit icoon',
@@ -1410,18 +1418,13 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.sharedBadge': 'Gedeeld',
   'space.inviteUnlockTitle': 'Uitnodigingen inschakelen',
   'space.inviteUnlockBody': 'Voer je app-pincode in om deze space open te stellen voor uitnodigingen.',
-  // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Vriendschapsverzoek in behandeling — ze doen mee zodra ze accepteren',
-  // #292: the signed-in user's own member row
   'space.me': 'Ik',
-  // #304: ONE members-screen door — friends list + friend request share a sheet
   'space.inviteSomeone': 'Iemand uitnodigen',
   'space.inviteFromFriends': 'Uit je vrienden',
   'space.inviteRequestLead': 'Iemand niet gevonden? Stuur hier direct een vriendschapsverzoek.',
-  // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Uitnodiging intrekken?',
   'space.cancelInviteBody': '{name} kan deze uitnodiging daarna niet meer accepteren.',
-  // #302: the locked note links straight to the switch that lifts the lock
   'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'Je bent offline — inloggen heeft verbinding nodig. Demo en offline-modus werken wel.',
@@ -1453,6 +1456,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'notif.title': 'Meldingen',
   'notif.empty': 'Je bent helemaal bij.',
   'notif.clear': 'Alles wissen',
+  'notif.groupGeneral': 'Algemeen',
+  'notif.groupSpace': 'Deze ruimte',
   'notif.someone': 'Iemand',
   'notif.friendRequest': '{name} heeft je een vriendschapsverzoek gestuurd',
   'notif.spaceInvite': '{name} heeft je uitgenodigd voor “{space}”',
@@ -1620,7 +1625,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cashflow.setAsideSub': 'Zet aan wat onaangeroerd moet blijven',
   'cashflow.setAsideNoPlan': 'Plan deze periode, dan kan het geld voor je doelen, evenementen en meer hier ook onaangeroerd blijven.',
   'cashflow.openPlanning': 'Plannen openen',
-  'cashflow.safeUntil': 'Vrij tot {date}',
+  'cashflow.legendDue': 'Nog te betalen',
+  'cashflow.legendAside': 'Apart gehouden',
+  'cashflow.legendFree': 'Vrij te besteden',
+  'cashflow.sumAccounts': 'Samen',
+  'cashflow.sumOff': 'Gaat eraf',
   'cashflow.pickTitle': 'Rekeningen om van te besteden',
   'cashflow.pickHint': 'Kies de rekeningen waar je dagelijkse uitgaven vanaf gaan. Hun saldi worden opgeteld; bij een creditcard gaat eraf wat erop openstaat.',
   'cashflow.pickNone': 'Kies minstens één rekening.',
@@ -1821,7 +1830,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.matchApply': '{n} betalingen koppelen',
   'debts.matchOldCaption': 'Betalingen ouder dan de saldodatum worden gekoppeld zonder het saldo te verlagen — dat bevat ze al. De schakelaar Telt mee trekt zo een betaling alsnog af.',
   'debts.matchCounts': 'Telt mee',
-  // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Trekt af',
   'debts.matchDeductCaption': 'Trekt af verlaagt wat er nog openstaat op deze lening.',
   'debts.matchSelected': '{n} geselecteerd',
@@ -1981,7 +1989,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.adjustNote': 'Bij het opslaan wordt het verschil vastgelegd als een correctietransactie ({delta}).',
   'review.addCategory': 'Categorie toevoegen',
   'review.bulkCount': '{n} vergelijkbare transacties',
-  'review.bulkNoneSelected': 'Vergelijkbare gevonden — geen geselecteerd', // #325
+  'review.bulkNoneSelected': 'Vergelijkbare gevonden — geen geselecteerd',
   'review.bulkSelectAll': 'Alles selecteren',
   'select.all': 'Alles selecteren',
   'select.none': 'Alles deselecteren',
@@ -2657,6 +2665,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.approved': 'Ik heb goedgekeurd',
   'connect.codeEntered': 'Ik heb hem ingevoerd',
   'connect.approval.waiting': 'Wachten op je goedkeuring in de app van de partij…',
+  'connect.check.waiting': 'Wachten op de controle in dat venster…',
+  'connect.check.done': 'Ik heb hem opgelost',
   'connect.taps.hint': 'Tik op elke passende afbeelding en bevestig daarna.',
   'connect.taps.submit': 'Bevestigen',
   'connect.taps.none': 'Geen enkele past',
@@ -2842,7 +2852,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'conn.noAccountsYet': 'Nog geen rekeningen — synchroniseer om ze op te halen.',
   'conn.uncoveredTitle': 'Wordt niet meer opgehaald',
   'conn.uncoveredBody': 'Geen enkele verbinding haalt deze rekeningen nog op. De bank opnieuw verbinden behoudt de rekening en haar geschiedenis.',
-  // #527: banken koppel je en beheer je bij Alle rekeningen
   'conn.bankConnections': 'Bankkoppelingen',
   'conn.addBank': 'Een bank koppelen',
   'conn.addBankSub': 'Open banking of munni’s eigen connector. De rekeningen die het ophaalt koppel je zelf aan elke gewenste ruimte.',
@@ -2857,15 +2866,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'bankpick.note': 'Een bankkoppeling is van jou, niet van een ruimte: koppel de rekeningen aan de ruimtes die ze mogen zien.',
   'acct.showArchived': 'Gearchiveerde rekeningen tonen ({n})',
   'acct.hideArchived': 'Gearchiveerde rekeningen verbergen',
-  // #528: opnieuw koppelen zegt waarom, en leidt naar de koppeling
   'acct.consentEnded': 'De koppeling met {party} heeft geen toestemming meer: er wordt niets opgehaald tot je opnieuw koppelt.',
-  // #548: snel synchroniseren vanaf Home
   'quicksync.open': 'Koppelingen synchroniseren',
   'quicksync.title': 'Nu synchroniseren',
   'quicksync.intro': 'Deze koppelingen hebben jou nodig bij elke synchronisatie. De rest synchroniseert vanzelf.',
   'quicksync.sync': 'Synchroniseren',
   'quicksync.never': 'Nog niet gesynchroniseerd',
-  // #543: de inlog van de bank, bewaard op dit apparaat
   'connect.savedLogin': 'Je bewaarde inlog wordt gebruikt: niets te typen.',
   'connect.savedLoginOther': 'Een andere inlog gebruiken',
   'acct.uncovered': 'Wordt sinds {date} niet meer opgehaald — verbind {party} opnieuw om verder te gaan.',
@@ -2951,7 +2957,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.return.continue': 'Doorgaan',
   'connect.return.signedOut': 'Log eerst in bij munni en begin de koppeling dan opnieuw vanuit Alle rekeningen.',
   'connect.field.lookup': 'Kies uit de lijst',
-  // #413: de aflosplanner
   'debtplan.title': 'Aflosplanner',
   'debtplan.card': 'Aflosplanner',
   'debtplan.toolBadge': 'Hulpmiddel',
@@ -3038,7 +3043,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.debts.4t': 'Plan de weg eruit',
   'tour.debts.4b':
     'De aflosplanner vergelijkt Lawine, Sneeuwbal en Tsunami en laat zien wat extra per maand je oplevert — voor alle schulden samen, met de cijfers en de doorbetaal-schakelaar, en per schuld op zichzelf: sleep de schuif (of kies de maand waarin het klaar moet zijn), lees de cijfers en pas het extra toe op de lening zelf.',
-  // ── planning (#128) ─────────────────────────────────────────────────
   'tab.planning': 'Plannen',
   'plan.title': 'Plannen',
   'plan.toAllocate': 'nog een taak te geven',
@@ -3137,6 +3141,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'plan.fund.chipTarget': 'Doel',
   'plan.fund.chipSpent': 'Uitgegeven',
   'plan.fund.fill': 'Vul tot doelbedrag',
+  'plan.fund.empty': 'Terug naar de pot',
   'plan.fund.snooze': 'Deze periode overslaan',
   'plan.fund.unsnooze': 'Deze periode meetellen',
   'plan.fund.edit': 'Onderwerp bewerken',
@@ -3204,7 +3209,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'plan.home.red': '{n} in het rood',
   'plan.reorder.title': '{segment} ordenen',
   'plan.reorder.hint': 'De volgorde is de vulvolgorde: het eerste onderwerp wordt het eerst gevuld.',
-  // ── planning, de ronde van 2026-10-21/23 (#494 #504 #517 #532 #535 #557) ──
   'plan.overlapRow': 'Deelt categorieën met {name} — die tellen daar',
   'plan.overlapNote': '{name} was er eerst en telt {cats}.',
   'plan.overlapTake': 'Neem ze over van {name}',
@@ -3237,6 +3241,24 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'act.planStart': '{actor} startte het plan',
   'act.planFund': '{actor} verplaatste plangeld',
   'act.planEdit': '{actor} wijzigde het plan',
+  'act.planSet': '{actor} zette {amount} opzij voor {detail} (was {from})',
+  'act.planEmpty': '{actor} nam {amount} terug van {detail}',
+  'act.planFill': '{actor} vulde {detail} aan met {amount}',
+  'act.planFillMany': '{actor} gaf {amount} aan {detail} onderwerpen van het plan',
+  'act.planCover': '{actor} verplaatste {amount} van {detail2} naar {detail}',
+  'act.planWithdraw': '{actor} nam al het plangeld terug ({amount})',
+  'act.planSubjectAdd': '{actor} voegde {detail} toe aan het plan',
+  'act.planSubjectEdit': '{actor} bewerkte planonderwerp {detail}',
+  'act.planSubjectRemove': '{actor} haalde {detail} uit het plan',
+  'act.planTarget': '{actor} zette het totaal voor {detail} op {amount}',
+  'act.planSkip': '{actor} sloeg {detail} over voor deze periode',
+  'act.planUnskip': '{actor} telt {detail} deze periode weer mee',
+  'act.planClear': '{actor} begon het plan opnieuw',
+  'act.planSegments': '{actor} wijzigde de segmenten van het plan',
+  'act.planPool': '{actor} wijzigde de rekeningen van de geldpot',
+  'act.planToAhead': '{actor} kopieerde het plan naar de periodes vooruit',
+  'act.planAheadBack': '{actor} nam {amount} terug uit een periode vooruit',
+  'act.planAheadFund': '{actor} zette {amount} opzij voor een periode vooruit',
   'act.planAhead': '{actor} vulde een periode vooruit',
   'act.planBlueprint': '{actor} wijzigde een blauwdruk',
   'act.planSandbox': '{actor} werkte in de zandbak',
@@ -3253,7 +3275,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.plan.4b': 'Een onderwerp in het rood leent van een met ruimte — de keuzes van munni eerst; “in het rood” loopt ze één voor één met je door. Wat een vaste last, een schuld of een evenement vasthoudt en niet besteedt gaat mee naar de volgende periode, en een nieuwe periode begint vanzelf vanuit het vorige plan.',
   'tour.plan.5t': 'Blauwdrukken en de zandbak',
   'tour.plan.5b': 'Bewaar de vorm van een plan als blauwdruk en pas die later toe; de zandbak is een kopie om in te proberen — maak het het plan als het klopt.',
-  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
   'conn.pending.signingIn': 'Bezig met inloggen… — sluiten laat het doorgaan',
   'conn.pending.asking': 'De partij wacht op jou — ga verder met inloggen',
   'conn.pending.failed': 'Het inloggen is niet afgerond',
@@ -3263,7 +3284,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'conn.state.waitUntil': 'De partij vroeg munni te wachten — probeer het na {time} opnieuw',
   'connect.progress.closeNote': 'Je kunt dit sluiten: het inloggen gaat door en de kaart van de koppeling laat zien hoe het ervoor staat.',
   'connect.progress.close': 'Voorlopig sluiten',
-  // ── planning round 19 (2026-10-02) ──────────────────────────────────
   'plan.segment.unplanned': 'Ongepland',
   'plan.unplannedHint': 'Deze periode buiten je onderwerpen uitgegeven — vul het alleen voor deze periode, of plan het.',
   'plan.unplannedPlan': 'Plan het',
@@ -3300,15 +3320,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipt.itemsTitle': 'Artikelen',
   'receipt.linkedTitle': 'Transactie',
   'receipt.unreconciled': 'De regels van de partij tellen niet op tot het totaal.',
-  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
   'receipt.attachedTo': 'Gekoppeld aan {tx}',
   'receipt.attachedToN': 'Gekoppeld aan {n} transacties',
   'receipt.linkedTitleN': 'Transacties',
   'receipt.detachOne': 'Van deze transactie loskoppelen',
   'tour.conn.7t': 'Opgehaalde bonnen',
   'tour.conn.7b': 'Alles wat je winkels hebben aangeleverd, per koppeling, met de gedekte datums — en een teller die oploopt terwijl het ophalen loopt. Een winkel bereikt een space pas als jij die kiest.',
-  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
-  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
   'conn.relogin': 'Opnieuw inloggen',
   'conn.reloginSub': 'Wachtwoord veranderd? Vul hier de nieuwe gegevens in.',
   'conn.report.ask': 'Deze storing melden?',

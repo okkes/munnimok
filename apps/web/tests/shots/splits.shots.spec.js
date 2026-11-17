@@ -1,15 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
 
-// Guide capture (npm run shots — never in CI): splits are an online-only
-// feature, and joining through a real invite LINK (a real path the OS app
-// links can match, bounced into the hash router) across two users is
-// something only a real API and two browsers can prove. It produces the
-// guide screenshots 67-split-detail, 68-splits-list and 69-split-join.
-// The ledger math and the screens are unit-tested (features/splits/*).
-//
-// Splits SP1 against the real API: create a split, add manual expenses,
-// read the ledger. Online-only feature — skips when the stack is down.
+// guide capture (npm run shots, never in CI): splits are online-only, and joining by invite LINK across two users
+// needs a real API and two browsers; produces 67-split-detail, 68-splits-list, 69-split-join (math and screens unit-tested)
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
@@ -22,12 +15,11 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { userSub: sub });
 
-    await page.click('[data-testid="tab-settings"]'); // splits live on space Settings now
+    await page.click('[data-testid="tab-settings"]');
     await page.click('[data-testid="settings-splits-row"]');
     await page.waitForSelector('[data-testid="screen-splits"]');
     await page.waitForSelector('[data-testid="splits-empty"]');
 
-    // create
     await page.click('[data-testid="splits-add"]');
     await page.fill('[data-testid="split-name"]', 'Barcelona trip');
     await page.click('[data-testid="split-create"]');
@@ -46,7 +38,6 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="split-ledger"]')).toBeVisible();
     await shot(page, k('67-split-detail'));
 
-    // back to the list: counts reflect the entries
     await page.click('[data-testid="split-back"]');
     await page.waitForSelector('[data-testid="screen-splits"]');
     await expect(page.locator('[data-testid^="split-row-"]')).toContainText('Barcelona trip');
@@ -60,10 +51,9 @@ for (const V of VARIANTS) {
     test.setTimeout(240_000);
     const stamp = Date.now();
 
-    // host creates a split and mints the share link
     const host = await createPage(browser, V);
     await base(host.page, V, { userSub: `e2e-split-host-${stamp}` });
-    await host.page.click('[data-testid="tab-settings"]'); // splits live on space Settings now
+    await host.page.click('[data-testid="tab-settings"]');
     await host.page.click('[data-testid="settings-splits-row"]');
     await host.page.click('[data-testid="splits-add"]');
     await host.page.fill('[data-testid="split-name"]', 'Ski trip');
@@ -90,7 +80,6 @@ for (const V of VARIANTS) {
     await guest.page.click('[data-testid="split-people-row"]');
     await expect(guest.page.locator('[data-testid="split-members"]')).toContainText('Owner');
 
-    // the host sees the new member after reopening
     await host.page.reload();
     await host.page.click('[data-testid="split-people-row"]');
     await expect(host.page.locator('[data-testid="split-members"] [data-testid^="split-member-"]')).toHaveCount(2);

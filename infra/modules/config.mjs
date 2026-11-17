@@ -1,23 +1,6 @@
-/**
- * The platform configuration as DATA on GitHub (#416, 2026-10-01).
- *
- * One repository variable per platform — `MUNNI_PLATFORM_<ID>` — holds the
- * platform file and every environment file as one JSON document. The
- * wizard's helper writes it on every save (Save settings, Add environment,
- * the platform card, a cleanup); every workflow reads it at the start of a
- * job (`infra/ci/materialize.mjs` writes the files the modules read). The
- * repository holds no platform config: `infra/platforms/<id>/` is ignored
- * by git — the wizard's local copy on this computer, the run's copy in CI.
- *
- * What a run APPLIED is a second variable, `MUNNI_APPLIED`, on the stack's
- * GitHub environment: the config the Bootstrap or Deploy ran with. The
- * wizard's pending strip compares it with what is configured now — no
- * commit, no branch, no sha involved.
- *
- * Which branch a stack's runs check out is the platform's `branch`, else
- * the stack's image channel decides (`latest` = master releases, `dev` =
- * the dev branch) — `loadStack(...).branch`.
- */
+// platform config is DATA on GitHub (#416): variable `MUNNI_PLATFORM_<ID>` holds platform + env files as one JSON document
+// infra/platforms/<id>/ is git-ignored: the wizard's local copy, the run's copy in CI
+// MUNNI_APPLIED on a stack's GitHub environment holds what its last run applied; branch = platform's, else by image channel
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,20 +13,17 @@ export const VARIABLE_LIMIT_BYTES = 48 * 1024;
 
 export const platformVariable = (id) => `${PLATFORM_VARIABLE_PREFIX}${String(id).toUpperCase()}`;
 
-/** the platform id a variable name stands for, or null for any other name */
 export function platformOfVariable(name) {
   if (typeof name !== 'string' || !name.startsWith(PLATFORM_VARIABLE_PREFIX)) return null;
   const id = name.slice(PLATFORM_VARIABLE_PREFIX.length);
   return /^[A-Z][A-Z0-9]*$/.test(id) ? id.toLowerCase() : null;
 }
 
-/** the platform as config: every reader's normalized shape without the file it came from */
 const asConfig = (platform) => {
   const { file: _file, ...rest } = platform;
   return rest;
 };
 
-/** the document the variable holds: the platform and its environments, normalized like every reader normalizes them */
 export function platformDocument(id) {
   return {
     platform: asConfig(loadPlatform(id)),
@@ -51,11 +31,6 @@ export function platformDocument(id) {
   };
 }
 
-/**
- * The config a run applies for a stack, in the shape the pending verdict
- * compares: `{ ...env, platform }` for an environment, `{ platform }` for
- * the shared stack.
- */
 export function stackConfig(stackName) {
   const parsed = parseStackName(stackName);
   if (!parsed) throw new Error(`"${stackName}" is not a stack name`);
@@ -63,7 +38,6 @@ export function stackConfig(stackName) {
   return parsed.env ? { ...loadEnv(parsed.platform, parsed.env), platform } : { platform };
 }
 
-/** the same slice of a published document — null when the document does not know the environment */
 export function documentStackConfig(doc, stackName) {
   const parsed = parseStackName(stackName);
   if (!parsed || !doc?.platform) return null;
@@ -72,11 +46,7 @@ export function documentStackConfig(doc, stackName) {
   return env ? { ...env, platform: doc.platform } : null;
 }
 
-/**
- * Write a document's files where the modules read them: the platform file
- * and ONLY the environments the document lists (an environment the
- * document dropped is removed — a cleanup publishes without it).
- */
+/** writes a document's files; an environment the document dropped is removed (a cleanup publishes without it) */
 export function materializePlatform(id, doc) {
   if (!doc || typeof doc !== 'object' || !doc.platform || doc.platform.platform !== id) {
     throw new Error(`${platformVariable(id)}: not a platform document for "${id}"`);
@@ -97,7 +67,6 @@ export function materializePlatform(id, doc) {
   return { platform: id, envs: [...listed].sort() };
 }
 
-/** every `MUNNI_PLATFORM_*` in the environment → files; the ids written (none: nothing published yet) */
 export function materializeFromEnv(env = process.env) {
   const ids = [];
   for (const [name, value] of Object.entries(env)) {
@@ -111,8 +80,6 @@ export function materializeFromEnv(env = process.env) {
   return ids.sort();
 }
 
-/* ── GitHub, through gh ─────────────────────────────────────────────── */
-
 // windowsHide: the wizard's helper may run without a console (restarted from the page) — gh must not open one
 const run = (args, { execImpl = execFileSync, env = process.env } = {}) =>
   execImpl('gh', args, { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
@@ -120,7 +87,7 @@ const repoArgs = (repo) => (repo ? ['--repo', repo] : []);
 const errorText = (e) => `${e?.stderr ?? ''}${e?.message ?? e}`;
 const isMissing = (e) => /not found|HTTP 404|was not found/i.test(errorText(e));
 
-/** a variable's value as GitHub holds it (parsed), or null when it is not there — `environment` is the GitHub environment, `env` the process environment gh runs in */
+/** a variable's parsed value, or null when absent; `environment` = GitHub environment, `env` = gh's process environment */
 function getVariable(name, { environment = null, repo = null, execImpl, env } = {}) {
   let out;
   try {
@@ -134,14 +101,9 @@ function getVariable(name, { environment = null, repo = null, execImpl, env } = 
   try { return JSON.parse(text); } catch { throw new Error(`${name} on GitHub is not JSON`); }
 }
 
-/** the platform's document on GitHub, or null when nothing was published yet */
 export const fetchPlatformVariable = (id, opts = {}) => getVariable(platformVariable(id), opts);
 
-/**
- * Publish the platform's current files as its variable. Returns what was
- * written (name, size, environments). Refuses a document GitHub would
- * refuse (its 48 KB ceiling) before any call.
- */
+/** refuses a document over GitHub's 48 KB variable ceiling before any call */
 export function publishPlatform(id, { repo = null, execImpl, env, now = new Date() } = {}) {
   const doc = platformDocument(id);
   const body = JSON.stringify({ ...doc, publishedAt: now.toISOString() });
@@ -162,7 +124,6 @@ export function pullPlatform(id, opts = {}) {
   return { ...materializePlatform(id, doc), publishedAt: doc.publishedAt ?? null };
 }
 
-/** record what a run applied for a stack: the config it ran with, on the stack's GitHub environment */
 export function writeApplied(stack, { by, run: runId = null, repo = null, execImpl, env, now = new Date() }) {
   const record = { at: now.toISOString(), by, run: runId, stack: stack.stack, config: stackConfig(stack.stack) };
   const body = JSON.stringify(record);
@@ -174,5 +135,4 @@ export function writeApplied(stack, { by, run: runId = null, repo = null, execIm
   return record;
 }
 
-/** what the last run applied for a stack, or null when no run recorded one */
 export const readApplied = (stack, opts = {}) => getVariable(APPLIED_VARIABLE, { ...opts, environment: stack.githubEnvironment });

@@ -68,7 +68,6 @@ describe('Your own computer — the household agents (§10.4)', () => {
     expect(screen.getByTestId('agent-profiles-agt_1').textContent).toContain('asn-persistent');
     expect(screen.getByTestId('agent-health-agt_2').textContent).toBe('Needs an update');
 
-    // enrol: a name, then the line to paste — with the code in it
     fireEvent.click(screen.getByTestId('agents-add-open'));
     fireEvent.click(await screen.findByTestId('agents-enrol'));
     await screen.findByTestId('agents-name-blocker');
@@ -80,7 +79,6 @@ describe('Your own computer — the household agents (§10.4)', () => {
     expect(screen.getByTestId('agents-code-note').textContent).toContain('ENR-KITCHEN-1');
     fireEvent.click(screen.getByTestId('agents-enrol-done'));
 
-    // revoke: the shared danger sheet with the profile warning, then the agent is gone
     fireEvent.click(screen.getByTestId('agent-revoke-agt_1'));
     expect((await screen.findByTestId('agent-revoke-body')).textContent).toContain('the kitchen laptop');
     fireEvent.click(screen.getByTestId('agent-revoke-confirm'));
@@ -129,7 +127,6 @@ describe('Your own computer — the household agents (§10.4)', () => {
     expect(screen.getByTestId('agent-hosted-agt_slot').textContent).toBe('Hosted by munni');
     expect(screen.getByTestId('agent-revoke-agt_slot').textContent).toBe('Give back');
 
-    // giving it back: the warning says the next person gets it clean, then it is gone from the list
     fireEvent.click(screen.getByTestId('agent-revoke-agt_slot'));
     expect((await screen.findByTestId('agent-revoke-body')).textContent).toContain('clean');
     fireEvent.click(screen.getByTestId('agent-revoke-confirm'));

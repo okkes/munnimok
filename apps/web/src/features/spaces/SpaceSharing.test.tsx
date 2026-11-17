@@ -29,14 +29,11 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the switch replaces every invite tool — no invite door (#304:
-    // the one members-add button included)
     const toggle = await screen.findByTestId('space-invite-toggle');
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(screen.queryByTestId('space-members-add')).toBeNull();
     expect(screen.queryByTestId('space-addfriend-input')).toBeNull();
 
-    // opening invitations writes the space and the invite door appears
     fireEvent.click(toggle);
     expect(await screen.findByTestId('space-members-add', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByTestId('space-invite-toggle').getAttribute('aria-checked')).toBe('true');
@@ -73,34 +70,28 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // #304: ONE action button opens the combined invite sheet
     fireEvent.click(await screen.findByTestId('space-members-add'));
     await screen.findByTestId('space-invite-sheet');
     await screen.findByTestId(`space-invite-row-${CARA}`);
     fireEvent.change(screen.getByTestId('space-invite-search'), { target: { value: 'bo' } });
     await waitFor(() => expect(screen.queryByTestId(`space-invite-row-${CARA}`)).toBeNull());
 
-    // expanding shows the FULL id + the role picker (contributor default)
     fireEvent.click(screen.getByTestId(`space-invite-row-${BOB}`));
     expect((await screen.findByTestId('space-invite-full-id')).textContent).toBe(BOB);
     fireEvent.click(screen.getByTestId('space-invite-role-reader'));
     fireEvent.click(screen.getByTestId('space-invite-send'));
 
-    // real feedback: sent note + a pending row with a cancel control
     expect(await screen.findByTestId('space-invite-sent')).toBeTruthy();
     const pendingRow = (await screen.findByTestId('space-invite-revoke-inv1')).closest('div')!;
     expect(sentBodies[0]).toMatchObject({ toUserId: BOB, role: 'reader', spaceName: 'Personal' });
-    // #303: the pending row names the role the invite was sent with
     expect(pendingRow.textContent).toContain('Reader');
 
-    // #303: the X asks first — dismissing keeps the invite alive
     fireEvent.click(screen.getByTestId('space-invite-revoke-inv1'));
     expect((await screen.findByTestId('space-revoke-body')).textContent).toContain('Bob');
     fireEvent.click(screen.getByTestId('space-revoke-cancel'));
     expect(revoked).toBe(0);
     expect(screen.getByTestId('space-invite-revoke-inv1')).toBeTruthy();
 
-    // confirming cancels it server-side and the row vanishes
     fireEvent.click(screen.getByTestId('space-invite-revoke-inv1'));
     fireEvent.click(await screen.findByTestId('space-revoke-confirm'));
     await waitFor(() => expect(screen.queryByTestId('space-invite-revoke-inv1')).toBeNull());
@@ -134,18 +125,15 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the inline select and X are gone — the row opens the member sheet
     expect(screen.queryByTestId(`space-role-${BOB}`)).toBeNull();
     expect(screen.queryByTestId(`space-kick-${BOB}`)).toBeNull();
     fireEvent.click(await screen.findByTestId(`member-row-${BOB}`));
     expect((await screen.findByTestId('member-sheet-id')).textContent).toBe(BOB);
     expect(screen.getByTestId('member-sheet-since').textContent).toContain('2026');
 
-    // owner changes the role from the sheet — the space name rides along
     fireEvent.click(screen.getByTestId('member-sheet-role-reader'));
     await waitFor(() => expect(roleChanges).toEqual([{ role: 'reader', spaceName: 'Personal' }]));
 
-    // kicking still asks first; the DELETE carries the name for the push
     fireEvent.click(screen.getByTestId('member-sheet-remove'));
     expect((await screen.findByTestId('space-kick-body')).textContent).toContain('Bob');
     fireEvent.click(screen.getByTestId('space-kick-confirm'));
@@ -169,16 +157,13 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // #304: the request door lives INSIDE the one invite sheet now
     fireEvent.click(await screen.findByTestId('space-members-add'));
     await screen.findByTestId('space-invite-sheet');
 
-    // #195: an empty send is refused with the blocker, nothing posted
     fireEvent.click(await screen.findByTestId('space-addfriend-send'));
     expect(await screen.findByTestId('space-addfriend-blocker')).toBeTruthy();
     expect(friendRequests).toEqual([]);
 
-    // the note says what accepting will do; the role picker rides along
     expect(screen.getByTestId('space-addfriend-autonote').textContent).toContain('Personal');
     fireEvent.change(screen.getByTestId('space-addfriend-input'), { target: { value: 'some-user-id' } });
     fireEvent.click(screen.getByTestId('space-addfriend-role-reader'));
@@ -200,7 +185,6 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the settings screen learns the role through useMyRole now
     expect(await screen.findByTestId('space-reader-note')).toBeTruthy();
   }, 15_000);
 
@@ -220,13 +204,11 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // #304: the countdown danger sheet, on the settings surface too
     fireEvent.click(await screen.findByTestId('space-edit-leave'));
     fireEvent.click(await screen.findByTestId('space-edit-leave-sheet-confirm'));
 
     await screen.findByTestId('screen-spaces', {}, { timeout: 5000 });
     expect(removals).toEqual([ME]);
-    // the local copy of the space is gone (feed access ends server-side)
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(async () => expect(await db.spaces.get('s-user')).toBeUndefined());
@@ -234,7 +216,6 @@ describe('SpaceSharing (user identity, scripted server)', () => {
   }, 15_000);
 
   it('a reader sees no invite tools on the members screen', async () => {
-    // reached from Settings now — the space-settings doors are gone
     renderAppAsUser('/spaces/s-user/members', {
       api: {
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
@@ -248,8 +229,6 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     await screen.findByTestId('screen-space-members');
     await waitFor(() => expect(screen.queryByTestId('space-addfriend-input')).toBeNull());
     expect(screen.queryByTestId('space-members-add')).toBeNull();
-    // #172: rows still open the sheet, but it is read-only info — no
-    // role control, no remove door
     fireEvent.click(await screen.findByTestId(`member-row-${BOB}`));
     await screen.findByTestId('member-sheet');
     expect(await screen.findByTestId('member-sheet-rolelabel')).toBeTruthy();
@@ -263,8 +242,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     ];
     const responses: string[] = [];
     renderAppAsUser('/spaces', {
-      // the joined space syncs in still claiming kind personal — the
-      // owner-side flip never reached this device
+      // the joined space syncs in still claiming kind personal: the owner-side flip never reached this device
       spaces: [
         { id: 's-user', name: 'Personal' },
         { id: 's-new', name: 'Big Family' },
@@ -287,8 +265,6 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     await waitFor(() => expect(screen.queryByTestId('space-invites')).toBeNull());
     expect(responses).toEqual(['accept']);
 
-    // #277 r2 (user): the JOINER's copy now wears the badge too — the
-    // accept path stamped kind shared + the inviter as the creator line
     expect(await screen.findByTestId('space-shared-badge-s-new', {}, { timeout: 8000 })).toBeTruthy();
     expect(screen.getByTestId('space-row-s-new').textContent).toContain('Bob');
   }, 15_000);
@@ -313,11 +289,10 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     await waitFor(async () => {
       const row = await db.spaces.get('s-user');
       expect(row?.kind).toBe('shared');
-      expect(row?.createdByName).toBe('Bob'); // the payload's owner
+      expect(row?.createdByName).toBe('Bob');
     });
     db.close();
 
-    // the spaces list reads the healed fact: badge + creator line
     cleanup();
     renderAppAsUser('/spaces', { spaces: [{ id: 's-user', name: 'Family' }], api: membersApi });
     expect(await screen.findByTestId('space-shared-badge-s-user', {}, { timeout: 5000 })).toBeTruthy();
@@ -336,8 +311,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
         'POST /friends/requests': (body) => {
           const to = (body as { toUserId: string }).toUserId;
           if (to === 'ghost') return new Response('', { status: 404 });
-          // #291 r2: ToUserId is a Guid server-side — a malformed id dies
-          // in model binding as a 400 before the 404 branch can answer
+          // ToUserId is a Guid server-side: a malformed id dies in model binding as a 400 before the 404 branch
           if (to === 'not-a-guid') return new Response('', { status: 400 });
           sent = [
             { id: 's1', toUserId: BOB, toName: 'Bob', spaceName: 'Personal' },
@@ -348,26 +322,21 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // #304: the request fields live inside the one invite sheet
     fireEvent.click(await screen.findByTestId('space-members-add'));
     await screen.findByTestId('space-invite-sheet');
 
-    // an id nobody owns: field-level error, no "sent" claim, id kept
     fireEvent.change(await screen.findByTestId('space-addfriend-input'), { target: { value: 'ghost' } });
     fireEvent.click(screen.getByTestId('space-addfriend-send'));
     expect(await screen.findByTestId('space-addfriend-notfound')).toBeTruthy();
     expect(screen.queryByTestId('space-addfriend-sent')).toBeNull();
     expect((screen.getByTestId('space-addfriend-input') as HTMLInputElement).value).toBe('ghost');
 
-    // #291 r2: a malformed (non-guid) id gets the SAME friendly answer —
-    // the server's 400 used to leave the field silent
     fireEvent.change(screen.getByTestId('space-addfriend-input'), { target: { value: 'not-a-guid' } });
     await waitFor(() => expect(screen.queryByTestId('space-addfriend-notfound')).toBeNull());
     fireEvent.click(screen.getByTestId('space-addfriend-send'));
     expect(await screen.findByTestId('space-addfriend-notfound')).toBeTruthy();
     expect(screen.queryByTestId('space-addfriend-sent')).toBeNull();
 
-    // typing clears the error; a real send pends IN the members surface
     fireEvent.change(screen.getByTestId('space-addfriend-input'), { target: { value: BOB } });
     await waitFor(() => expect(screen.queryByTestId('space-addfriend-notfound')).toBeNull());
     fireEvent.click(screen.getByTestId('space-addfriend-send'));
@@ -391,17 +360,13 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the genuine self row: authenticated-id match → "Me" + the mark;
-    // #304 (user): the real-name suffix is gone, the mark FOLLOWS the name
     const selfRow = await screen.findByTestId(`member-row-${ME}`);
     const mark = await within(selfRow).findByTestId('member-me-icon');
     expect(selfRow.textContent).toContain('Me');
     expect(selfRow.textContent).not.toContain('Okkes');
     const name = within(selfRow).getByText('Me');
-    // DOCUMENT_POSITION_FOLLOWING (4): the mark comes after the name
     expect(name.compareDocumentPosition(mark) & 4).toBe(4);
 
-    // the impostor renders his NAME, unmarked
     const bobRow = screen.getByTestId(`member-row-${BOB}`);
     expect(within(bobRow).queryByTestId('member-me-icon')).toBeNull();
     expect(bobRow.textContent).toContain('Me');
@@ -424,17 +389,13 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the door only opens the confirm — nothing happens yet
     fireEvent.click(await screen.findByTestId('space-leave'));
     expect(await screen.findByTestId('space-leave-body')).toBeTruthy();
     expect(removals).toEqual([]);
 
-    // dismissing keeps the membership
     fireEvent.click(screen.getByTestId('space-leave-cancel'));
     expect(removals).toEqual([]);
 
-    // confirming (cooldown is 0 in tests) leaves: server removal, then
-    // the members screen hands off to the Spaces list
     fireEvent.click(screen.getByTestId('space-leave'));
     fireEvent.click(await screen.findByTestId('space-leave-confirm'));
     await screen.findByTestId('screen-spaces', {}, { timeout: 5000 });
@@ -447,8 +408,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/invites': () => [],
         'GET /spaces/s-user/members': () => [member(ME, 'Me', 'owner')],
-        // the same person shows up in BOTH sources — the richer space
-        // invite must be the only row (CARA has just the friend request)
+        // the same person is in BOTH sources: the richer space invite must be the only row
         'GET /friends': () => ({
           friends: [],
           sentPending: [
@@ -461,10 +421,8 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // Bob: the space-invite row (with its cancel) — no duplicate
     await screen.findByTestId('space-invite-revoke-inv1');
     expect(screen.queryByTestId(`space-friendpending-${BOB}`)).toBeNull();
-    // Cara still pends as a friend request (no space invite for her)
     expect(await screen.findByTestId(`space-friendpending-${CARA}`)).toBeTruthy();
   }, 15_000);
 });

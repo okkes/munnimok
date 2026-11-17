@@ -8,7 +8,6 @@ import { renderApp } from '@/test/harness';
 async function createBigDebt() {
   renderApp('/debts');
   await screen.findByTestId('screen-debts');
-  // loans v2: the "+" opens the account chooser — the loan IS an account
   fireEvent.click(await screen.findByTestId('debts-add'));
   fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
   fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Student loan' } });
@@ -56,10 +55,8 @@ describe('Insights (demo identity)', () => {
     expect(body.textContent).toMatch(/months earlier/);
 
     fireEvent.click(screen.getByTestId('insight-dismiss'));
-    // synced dismissal: gone now, still gone on a fresh mount. Other
-    // detectors (weekend spending) may legitimately fire depending on how
-    // the demo seed's relative dates land on the calendar — only the
-    // dismissed finding must stay away, not the whole screen.
+    // other detectors (weekend spending) may fire depending on the seed's calendar dates
+    // only the dismissed finding must stay away
     await waitFor(() => expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeNull());
     cleanup();
     renderApp('/insights');
@@ -93,11 +90,9 @@ describe('Insights (demo identity)', () => {
     renderApp('/insights');
     const head = await screen.findByTestId('insight-head-group:overlap', {}, { timeout: 5000 });
     expect(head.textContent).toMatch(/Overlapping subscriptions in 2 categories/);
-    // the card sums what the two pairs cost a year: (13.99 + 9.99 + 29.99 + 34.99) × 12
     expect(screen.getByTestId('insight-sub-group:overlap').textContent).toMatch(/€1,067[.,]52 per year/);
     fireEvent.click(head);
     const lines = await screen.findByTestId('insight-lines-group:overlap');
-    // each line names its category and the subscriptions in it
     expect(lines.textContent).toMatch(/Streaming: Disney\+ \+ Netflix · €23[.,]98 per month/);
     expect(lines.textContent).toContain('Basic-Fit + SportCity');
 
@@ -148,7 +143,6 @@ describe('Insights (demo identity)', () => {
     await screen.findByTestId('screen-insights');
     await waitFor(() => expect(shown).toHaveLength(1), { timeout: 5000 });
 
-    // same ISO week, fresh mount: quiet
     cleanup();
     renderApp('/insights');
     await screen.findByTestId('screen-insights');
@@ -161,13 +155,11 @@ describe('Insights (demo identity)', () => {
 
     cleanup();
     renderApp('/home');
-    // the TOP insight may be the calendar-dependent weekend detector
-    // instead of the seeded debt — the block just has to surface one
+    // the top insight may be the calendar-dependent weekend detector rather than the seeded debt
     const block = await screen.findByTestId('home-insight', {}, { timeout: 5000 });
     expect(block.textContent?.length).toBeGreaterThan(0);
     fireEvent.click(block);
     await screen.findByTestId('screen-insights');
-    // …and the debt finding is on the full screen either way
     await waitFor(() => expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeTruthy(), {
       timeout: 5000,
     });

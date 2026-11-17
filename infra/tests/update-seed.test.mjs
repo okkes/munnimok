@@ -1,7 +1,3 @@
-// The NAS-side scripts against a fake docker on PATH: deploy/update.sh's
-// seeds (what reaches psql / the GlitchTip shell, the pending markers)
-// and deploy/nas/apply.sh (stamps → bundles → update.sh, removals, seed
-// retries).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,7 +8,6 @@ import { execFileSync } from 'node:child_process';
 const UPDATE = new URL('../../deploy/update.sh', import.meta.url);
 const APPLY = new URL('../../deploy/nas/apply.sh', import.meta.url);
 
-/** a bin dir first on PATH: a docker that records every call (and answers Logto's readiness query with FAKE_READY), a sleep and a flock that return at once */
 function fakeBin(dir) {
   const bin = join(dir, 'bin');
   mkdirSync(bin, { recursive: true });
@@ -39,7 +34,6 @@ exit 0
 const ENV_COMPOSE = 'services:\n  postgres-prod:\n    image: postgres\n  web-prod:\n    image: web\n  logto-prod:\n    image: svhd/logto\n';
 const SHARED_COMPOSE = 'services:\n  glitchtip-db:\n    image: postgres\n  glitchtip:\n    image: glitchtip/glitchtip\n';
 
-/** run `update.sh` in APPLY mode (pull + up) in a folder shaped like a deployed stack */
 function apply({ token = '' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'munni-apply-'));
   copyFileSync(UPDATE, join(dir, 'update.sh'));
@@ -51,7 +45,6 @@ function apply({ token = '' } = {}) {
   return { dir, out, calls: fake.calls() };
 }
 
-/** run `update.sh --seed` in a folder shaped like a deployed stack */
 function seed({ ready = true, admin = true, shared = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'munni-seed-'));
   copyFileSync(UPDATE, join(dir, 'update.sh'));
@@ -111,7 +104,7 @@ test('logto seed: without the admin credential only the default tenant is seeded
 test('glitchtip seed (the shared stack): once the migrations are applied, the admin and the minted API token are created inside the container by a Django shell — idempotent, values by env, never on the command line', () => {
   const { dir, out, raw, calls } = seed({ shared: true });
   assert.match(out, /glitchtip seed: admin \+ API token in place/);
-  const started = calls.filter((c) => c.startsWith('compose ')); // the Django script spans lines; a call starts with the compose prefix
+  const started = calls.filter((c) => c.startsWith('compose '));
   assert.ok(started.length >= 2 && started.every((c) => c.includes(' glitchtip ')), 'the shared stack seeds GlitchTip only — it runs no Logto');
   assert.match(raw, /exec -T glitchtip \.\/manage\.py migrate --check/, 'readiness = migrations applied');
   assert.match(raw, /exec -T -e GT_ADMIN_EMAIL -e GT_ADMIN_PASSWORD -e GT_TOKEN glitchtip \.\/manage\.py shell -c/, 'the values ride the environment');
@@ -122,14 +115,11 @@ test('glitchtip seed (the shared stack): once the migrations are applied, the ad
   assert.equal(existsSync(join(dir, '.glitchtip-seed-pending')), false);
 });
 
-/* ── apply.sh: the poller ── */
-
 const stampOf = (stack) => `VERSION_${stack.replace(/^munni-/, '').replace(/-/g, '_').toUpperCase()}`;
 // like the real update.sh, the fake works from its own folder (apply.sh runs it by path) and logs that folder + its arguments
 const OK_UPDATE = '#!/bin/sh\ncd "$(dirname "$0")"\nprintf "update %s %s\\n" "$(basename "$(pwd)")" "$*" >> "$FAKE_LOG"\nexit 0\n';
 const FAILING_UPDATE = '#!/bin/sh\ncd "$(dirname "$0")"\nprintf "update %s %s\\n" "$(basename "$(pwd)")" "$*" >> "$FAKE_LOG"\necho boom\nexit 1\n';
 
-/** a live dir (<root>/munni-nas with apply.sh + published/) as the poller sees it */
 function liveDir() {
   const root = mkdtempSync(join(tmpdir(), 'munni-apply-'));
   const live = join(root, 'munni-nas');
@@ -142,11 +132,9 @@ function liveDir() {
   const env = fake.env({ MUNNI_LIVE_DIR: posix(live), MUNNI_PUBLISHED_DIR: posix(published), TAR_OPTIONS: '--force-local' });
   return {
     root, live, published, fake,
-    /** one poller cycle: {out, rc} */
     run: () => {
       try { return { out: execFileSync('sh', ['./apply.sh'], { cwd: live, env, encoding: 'utf8' }).trim(), rc: 0 }; } catch (e) { return { out: String(e.stdout).trim(), rc: e.status }; }
     },
-    /** a bundle as CI publishes it: update.sh + compose + .env, gzipped tar */
     bundle: (stack, updateScript = OK_UPDATE) => {
       const stage = join(root, `stage-${stack}-${Date.now()}`);
       mkdirSync(stage, { recursive: true });
@@ -179,9 +167,8 @@ test('apply.sh: a new stamp unpacks its bundle next to the live dir and runs its
   assert.match(nas.log(), /munni-nas-staging FAILED/);
   assert.match(nas.log(), /munni-nas-shared ok/);
 
-  // the same stamps again: nothing to do
   nas.fake.clear();
-  nas.bundle('munni-nas-staging'); // a fixed bundle under the same stamp
+  nas.bundle('munni-nas-staging');
   const second = nas.run();
   assert.equal(second.rc, 0);
   assert.deepEqual(nas.fake.calls(), ['update munni-nas-staging docker-compose.munni-nas-staging.yml'], 'only the stack whose marker does not match its stamp');
@@ -190,7 +177,6 @@ test('apply.sh: a new stamp unpacks its bundle next to the live dir and runs its
   assert.equal(nas.run().rc, 0);
   assert.deepEqual(nas.fake.calls(), [], 'a quiet cycle runs nothing');
 
-  // a new deploy of one environment
   nas.stamp('munni-nas-prod', 'def456.8');
   assert.equal(nas.run().rc, 0);
   assert.deepEqual(nas.fake.calls(), ['update munni-nas-prod docker-compose.munni-nas-prod.yml']);
@@ -215,7 +201,6 @@ test('apply.sh: a stamp reading "remove" stops the stack\'s containers with its 
   assert.equal(existsSync(join(nas.published, stampOf(stack))), false);
   assert.equal(nas.marker(stack), 'removed');
   assert.match(nas.log(), /munni-nas-staging removed/);
-  // a second cycle: the marker says removed and the stamp is gone — nothing happens
   nas.fake.clear();
   assert.equal(nas.run().out, 'cycle done rc=0 munni-nas-staging=removed');
   assert.deepEqual(nas.fake.calls(), []);

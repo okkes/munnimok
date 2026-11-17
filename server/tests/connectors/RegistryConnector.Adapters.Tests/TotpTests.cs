@@ -5,56 +5,36 @@ using Xunit;
 
 namespace RegistryConnector.Adapters.Tests;
 
-/// <summary>
-/// Six digits, checked against somebody else's clock.
-///
-/// The vectors below are RFC 6238 Appendix B, verbatim. That is the entire
-/// reason this suite is worth having: a TOTP implementation that agrees only
-/// with its own tests is worthless, because the one property it needs is
-/// agreeing with a server nobody here controls. Every expected value in the
-/// first test came from the RFC, not from running the code.
-/// </summary>
+// RFC 6238 Appendix B vectors verbatim: an implementation agreeing only with its own tests is worthless
+// against a server nobody controls
 public sealed class TotpTests
 {
-    /// <summary>
-    /// The RFC's seeds. It uses ASCII strings whose bytes are the secret -
-    /// "12345678901234567890" for SHA1, extended for the wider hashes.
-    /// </summary>
     private static byte[] Seed(int length)
     {
         var seed = new byte[length];
         for (var i = 0; i < length; i++) seed[i] = (byte)('1' + (i % 10 == 9 ? -1 + 10 : i % 10));
 
-        // The RFC's seed is "12345678901234567890..." - digits 1..9 then 0.
         var ascii = Encoding.ASCII.GetBytes("12345678901234567890123456789012345678901234567890123456789012345678901234567890");
         return ascii[..length];
     }
 
-    /// <summary>
-    /// RFC 6238 Appendix B. Times in seconds since the epoch, 8-digit codes,
-    /// three hash algorithms.
-    /// </summary>
     [Theory]
-    // SHA1, 20-byte seed
     [InlineData(59L, "Sha1", 20, "94287082")]
     [InlineData(1111111109L, "Sha1", 20, "07081804")]
     [InlineData(1111111111L, "Sha1", 20, "14050471")]
     [InlineData(1234567890L, "Sha1", 20, "89005924")]
     [InlineData(2000000000L, "Sha1", 20, "69279037")]
     [InlineData(20000000000L, "Sha1", 20, "65353130")]
-    // SHA256, 32-byte seed
     [InlineData(59L, "Sha256", 32, "46119246")]
     [InlineData(1111111109L, "Sha256", 32, "68084774")]
     [InlineData(2000000000L, "Sha256", 32, "90698825")]
-    // SHA512, 64-byte seed
     [InlineData(59L, "Sha512", 64, "90693936")]
     [InlineData(1111111109L, "Sha512", 64, "25091201")]
     [InlineData(2000000000L, "Sha512", 64, "38618901")]
     public void The_rfc_6238_vectors_are_reproduced_exactly(
         long unixSeconds, string algorithm, int seedLength, string expected)
     {
-        // Named rather than typed, so the enum stays internal: a test is not a
-        // reason to widen an API.
+        // named so the enum stays internal
         var code = Totp.Generate(
             Seed(seedLength),
             DateTimeOffset.FromUnixTimeSeconds(unixSeconds),
@@ -65,16 +45,10 @@ public sealed class TotpTests
         Assert.Equal(expected, code);
     }
 
-    /// <summary>
-    /// The six-digit case every real provider uses, and the padding that goes
-    /// with it: a code whose numeric value is short is still six characters,
-    /// and a provider comparing strings would reject "12345".
-    /// </summary>
+    // a short code is still six characters: a provider comparing strings would reject "12345"
     [Fact]
     public void A_six_digit_code_is_padded_to_six_characters()
     {
-        // Walk enough steps to find a code that needs padding; with a uniform
-        // distribution one in ten does.
         var secret = Seed(20);
         var padded = 0;
 
@@ -91,18 +65,12 @@ public sealed class TotpTests
         Assert.True(padded > 0, "200 steps produced no code with a leading zero, which is statistically impossible");
     }
 
-    /// <summary>
-    /// The code holds for the whole step and changes at the boundary. This is
-    /// what makes a stored seed usable at all: the connector and the provider
-    /// only agree because both floor the clock the same way.
-    /// </summary>
     [Fact]
     public void A_code_holds_for_its_step_and_changes_at_the_boundary()
     {
         var secret = Seed(20);
 
-        // 1_700_000_010 is exactly divisible by 30, so it IS a step boundary
-        // and its step runs to ...039 inclusive.
+        // 1_700_000_010 is divisible by 30, so it is a step boundary and its step runs to ...039 inclusive
         var atStart = Totp.Generate(secret, DateTimeOffset.FromUnixTimeSeconds(1_700_000_010));
         var atEnd = Totp.Generate(secret, DateTimeOffset.FromUnixTimeSeconds(1_700_000_039));
         var afterwards = Totp.Generate(secret, DateTimeOffset.FromUnixTimeSeconds(1_700_000_040));
@@ -111,12 +79,9 @@ public sealed class TotpTests
         Assert.NotEqual(atStart, afterwards);
     }
 
-    // ---- what the user actually pastes ---------------------------------------
-
     [Fact]
     public void A_bare_base32_secret_is_read_with_spaces_and_any_casing()
     {
-        // The same secret written the three ways providers print it.
         var plain = TotpSecretReader.Read("JBSWY3DPEHPK3PXP");
         var spaced = TotpSecretReader.Read("jbsw y3dp ehpk 3pxp");
         var padded = TotpSecretReader.Read("JBSWY3DPEHPK3PXP=");
@@ -142,12 +107,7 @@ public sealed class TotpTests
         Assert.Equal("Example", read.Issuer);
     }
 
-    /// <summary>
-    /// Counter-based codes have no clock to derive from, and a stored counter
-    /// would desynchronise on the first retry. Refused by name rather than
-    /// silently treated as time-based, which would generate wrong codes
-    /// forever and look like a bad secret.
-    /// </summary>
+    // counter-based codes have no clock and a stored counter would desync on retry; refused by name, else wrong codes forever
     [Fact]
     public void A_counter_based_uri_is_refused_by_name()
     {
@@ -158,27 +118,12 @@ public sealed class TotpTests
         Assert.Contains("not time-based", error.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A payload that is not a migration export is REFUSED, never crashed on.
-    /// </summary>
-    /// <remarks>
-    /// The length prefix in a protobuf field is a 64-bit varint, and this
-    /// walker cast it to <c>int</c> before checking it against the buffer. A
-    /// length above <c>int.MaxValue</c> - which any random base64 will produce
-    /// sooner or later - becomes NEGATIVE, sails through a bounds guard written
-    /// as <c>index + length &gt; buffer.Length</c>, and throws
-    /// <see cref="ArgumentOutOfRangeException"/> on the slice.
-    /// <para>
-    /// This reader's whole contract is that it refuses what it cannot read, and
-    /// a paste box is exactly where somebody puts the wrong thing.
-    /// </para>
-    /// </remarks>
+    // a protobuf length is a 64-bit varint: cast to int it goes negative above int.MaxValue,
+    // passes the bounds guard and throws on the slice
     [Theory]
-    // A field 2 (wire type 2) whose length varint is 0xFFFFFFFF - four bytes
-    // of payload claimed to be four billion.
+    // length varint 0xFFFFFFFF: four bytes of payload claiming four billion
     [InlineData(new byte[] { 0x12, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x01, 0x02, 0x03, 0x04 })]
-    // And the same shape one bit past int.MaxValue, which is the boundary the
-    // cast turns negative.
+    // one bit past int.MaxValue, the boundary where the cast turns negative
     [InlineData(new byte[] { 0x12, 0x80, 0x80, 0x80, 0x80, 0x08, 0x01 })]
     public void A_paste_that_is_not_an_export_is_refused_rather_than_crashed_on(byte[] blob)
     {
@@ -190,12 +135,7 @@ public sealed class TotpTests
         Assert.Equal(ErrorCode.InvalidRequest, error.Code);
     }
 
-    // ---- the export, and the line it must not cross --------------------------
-
-    /// <summary>
-    /// Google Authenticator will not show a user their secret; its export QR
-    /// is the only way most people can get one out. So the format is read.
-    /// </summary>
+    // Google Authenticator never shows the secret; its export QR is the only way out, so the format is read
     [Fact]
     public void A_single_account_export_is_read()
     {
@@ -208,16 +148,8 @@ public sealed class TotpTests
         Assert.Equal("BKR Consumenten", read.Issuer);
     }
 
-    /// <summary>
-    /// The line. That blob is the "transfer accounts" QR, and it carries
-    /// every account the person ticked - their bank, their mail, their
-    /// employer. A form that silently kept the one it wanted would have
-    /// collected all of them.
-    ///
-    /// Refused BY COUNT and never by issuer: naming what else was in there
-    /// would mean reading it, and this refuses precisely so that it is not
-    /// read.
-    /// </summary>
+    // the export QR carries every account the person ticked (bank, mail, employer):
+    // refused BY COUNT, never by issuer, so none is read
     [Fact]
     public void A_multi_account_export_is_refused_without_naming_what_else_was_in_it()
     {
@@ -233,20 +165,14 @@ public sealed class TotpTests
         Assert.Equal(ErrorCode.InvalidRequest, error.Code);
         Assert.Contains("3 accounts", error.Detail, StringComparison.Ordinal);
 
-        // The other issuers are not repeated back. Reading them out would be
-        // the very thing being refused.
+        // the other issuers are not repeated back: reading them out is what is refused
         Assert.DoesNotContain("A Bank", error.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain("Mail", error.Detail, StringComparison.Ordinal);
 
-        // And it says what to do instead, or the refusal is just a wall.
         Assert.Contains("only this one account", error.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Builds a Google Authenticator migration payload, so the reader is
-    /// tested against the format rather than against a fixture somebody
-    /// copied out of a real phone.
-    /// </summary>
+    // builds the payload so the reader is tested against the format, not a fixture copied from a real phone
     private static string Migration(IReadOnlyList<(string Secret, string Issuer, int Digits)> accounts)
     {
         var payload = new List<byte>();
@@ -258,9 +184,9 @@ public sealed class TotpTests
             Bytes(entry, 1, TotpSecretReader_Base32(secret));
             Bytes(entry, 2, Encoding.UTF8.GetBytes($"user@{issuer.Replace(' ', '-')}.test"));
             Bytes(entry, 3, Encoding.UTF8.GetBytes(issuer.Replace(' ', '+')));
-            Varint(entry, 4, 1);                       // SHA1
-            Varint(entry, 5, digits == 8 ? 2ul : 1ul); // SIX / EIGHT
-            Varint(entry, 6, 2);                       // TOTP
+            Varint(entry, 4, 1);
+            Varint(entry, 5, digits == 8 ? 2ul : 1ul);
+            Varint(entry, 6, 2);
 
             Bytes(payload, 1, [.. entry]);
         }

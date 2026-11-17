@@ -164,6 +164,18 @@ sequenceDiagram
 Editing presence ("Alice is reviewing — view only") rides the same SSE
 channel, so two people rarely collide in the first place.
 
+**Deleting a space erases it (#615).** A delete of the space's own row is
+the one op the server reads: pushed by an owner, and standing by the merge's
+rule (an edit made after it keeps the space), it takes the space out of
+reach in the same save — no members, no account attachments, no
+invitations — and removes its rows and ops right after (`Sync/SpaceErasure`).
+Only the id stays (`ErasedSpaces`), so a device that still held the space
+cannot give birth to an empty one with its next push: every door answers it
+403 with `space-deleted`, and it drops its copy saying the space was deleted.
+The device that deleted it drops its copy once the server stops listing the
+space. Anybody else's delete of that row is not applied. An erase a restart
+cut short is finished at the next start.
+
 ## 5. Bank data path (the connector platform)
 
 Raw bank transactions are **stored once, in Postgres**, as ops in the

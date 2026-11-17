@@ -7,7 +7,6 @@ import { MunniDB } from './schema';
 
 vi.mock('@/lib/platform', () => ({ isNativeApp: () => true }));
 
-/** the same fake raw plugin the executor tests use */
 const makePlugin = () => ({
   isSecretStored: vi.fn().mockResolvedValue({ result: true }),
   setEncryptionSecret: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +40,7 @@ describe('E4: native always opens the encrypted store', () => {
     setPlugin(makePlugin());
     const backend = await openStorageBackend('munni_fresh');
     expect(activeStoreBackend()).toBe('sqlcipher');
-    expect(localStorage.getItem(FLAG_KEY)).toBeNull(); // no decision to record
+    expect(localStorage.getItem(FLAG_KEY)).toBeNull();
     backend.close();
   });
 
@@ -50,11 +49,10 @@ describe('E4: native always opens the encrypted store', () => {
     plugin.open.mockRejectedValue(new Error('plugin config broken'));
     setPlugin(plugin);
     const backend = await openStorageBackend('munni_broken');
-    expect(activeStoreBackend()).toBe('dexie'); // never brick the app
+    expect(activeStoreBackend()).toBe('dexie');
     expect(localStorage.getItem(FLAG_KEY)).toBe('0');
     backend.close();
 
-    // and the fallback is stable on the next launch
     setPlugin(makePlugin());
     const backend2 = await openStorageBackend('munni_broken');
     expect(activeStoreBackend()).toBe('dexie');

@@ -34,16 +34,10 @@ const ACTIVE_SPACE_KEY = 'activeSpaceId';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** the identity's non-deleted spaces */
 const liveSpaces = async (store: StorageBackend) => (await store.allRows('space')).filter((s) => s.deleted === 0);
 
-/**
- * First-run bootstrap for syncing identities — FAIL CLOSED: a personal
- * space is only ever created after the server CONFIRMED this account has
- * no spaces. Network/auth failures retry with backoff instead of
- * spawning an empty duplicate space (an early bug that stranded devices
- * on a blank copy). Existing local data always loads without a server.
- */
+/** fail closed: network/auth failures retry with backoff, never spawn an empty duplicate space;
+ * local data loads without a server */
 export async function bootstrapUserSpaces(
   store: StorageBackend,
   engine: SyncEngine,
@@ -55,32 +49,22 @@ export async function bootstrapUserSpaces(
 
   for (let attempt = 0; ; attempt++) {
     await engine.syncAll().catch(() => undefined);
-    // the ROUND, not the status: a refused token leaves the status idle
-    // (user ss 2026-10-07, no "Offline" at sign-in) while the server has
-    // confirmed nothing yet — fail closed on the round reaching its end
+    // the round, not the status: a refused token leaves the status idle while the server confirmed nothing
     if (engine.lastRoundOk()) break; // server confirmed our spaces
     if (await hasLocalSpaces()) return; // offline but usable — local-first
-    // brand-new device with nothing local: keep trying, capped backoff —
-    // and tell the UI, so a broken server/proxy is visible, not a spinner
+    // brand-new device with nothing local: keep trying (capped backoff) and tell the UI, so a broken server is visible
     onAttemptFailed?.(attempt + 1);
     await sleep(Math.min(baseRetryMs * 2 ** attempt, baseRetryMs * 8));
     if (isCancelled()) return;
   }
 
-  // a CANCELLED instance must never write: StrictMode/HMR double-mounts
-  // run two bootstraps against the SAME database, and the stale one's
-  // slow first sync used to re-set needsOnboarding AFTER the user had
-  // already finished onboarding — ambushing the app mid-use
+  // a cancelled instance must never write: a StrictMode/HMR double-mount's stale bootstrap
+  // re-set needsOnboarding after onboarding finished
   if (isCancelled()) return;
 
   if (!(await hasLocalSpaces())) {
-    // server confirmed: brand-new user. NO space is created any more
-    // (Mina tutorial, user ruling): the ≥1-space rule is suspended until
-    // the tutorial's create-step (or its skip path) provides one.
-    // RE-ENTRANCY GUARD: without a created space this branch used to
-    // fire again on every start (and on a slow first confirm AFTER the
-    // user already finished onboarding — the ambush bug, second coming);
-    // any Mina marker means the first-run is already owned.
+    // a confirmed brand-new user gets no space (the Mina tutorial's create-step provides one); any Mina marker means the
+    // first-run is owned, so this does not re-fire on every start (the ambush bug)
     if (!(await minaMarkerExists(store))) {
       await store.metaPut('needsOnboarding', true);
       await store.metaPut('minaTutorialPending', true);
@@ -88,7 +72,6 @@ export async function bootstrapUserSpaces(
   }
 }
 
-/** any Mina meta marker: the first-run is already owned/ran/finished */
 async function minaMarkerExists(store: StorageBackend): Promise<boolean> {
   for (const key of ['minaTutorialPending', 'minaTutorialState', 'minaTutorialDone']) {
     if ((await store.metaGet(key))?.value) return true;
@@ -96,15 +79,13 @@ async function minaMarkerExists(store: StorageBackend): Promise<boolean> {
   return false;
 }
 
-/** zero spaces is LEGAL only while the Mina tutorial owns the first-run
- *  (user ruling) — anything else stays a hard bug */
+/** zero spaces is legal only while the Mina tutorial owns the first-run; anything else is a hard bug */
 async function minaOwnsFirstRun(store: StorageBackend): Promise<boolean> {
   if ((await store.metaGet('minaTutorialPending'))?.value) return true;
   const state = (await store.metaGet('minaTutorialState'))?.value as { active?: boolean } | undefined;
   return !!state?.active;
 }
 
-/** OIDC restore → fail-closed bootstrap → periodic sync (user identities) */
 async function restoreAndSync(
   store: StorageBackend,
   engine: SyncEngine,
@@ -127,10 +108,8 @@ async function restoreAndSync(
   engine.start();
 }
 
-/**
- * Whether the first sync round of this boot reached its end. The boot heals wait for it: a one-way
- * fold stamped on a copy older than the server's overwrites what another device did since.
- */
+/** whether the first sync round of this boot reached its end; the heals wait for it:
+ * a one-way fold on a copy older than the server's overwrites other devices */
 export function firstRoundOf(engine: SyncEngine): { finished: Promise<boolean>; release: () => void } {
   let settle: (ok: boolean) => void = () => undefined;
   const finished = new Promise<boolean>((resolve) => {
@@ -156,7 +135,6 @@ function copyConfirmedBy(engine: SyncEngine | null): { finished: Promise<boolean
   return engine ? firstRoundOf(engine) : { finished: Promise.resolve(true), release: () => undefined };
 }
 
-/** the heals as their own transaction (they outlive the boot span), once the copy's state is known; none after a cancelled boot */
 function healOnceKnown(copyConfirmed: Promise<boolean>, cancelled: () => boolean, store: StorageBackend, upkeep: Repo): Promise<unknown> {
   return copyConfirmed
     .then((confirmed) => (cancelled() ? undefined : measure('app.boot.heal', () => bootHeals(store, upkeep, confirmed), undefined, { parent: null })))
@@ -165,23 +143,17 @@ function healOnceKnown(copyConfirmed: Promise<boolean>, cancelled: () => boolean
 
 /** the every-boot heals, in order; the one-way folds only on a copy the server confirmed in this boot */
 async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean): Promise<void> {
-  // #228: reimbursement on a SPLIT transaction stays on the split.
-  // Every boot: links name their parts (a row split after it was
-  // linked) and each side's settle bookkeeping is recomputed
+  // #228: reimbursement on a split transaction stays on the split
   const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
   await normalizeReimbursements(store, upkeep);
-  // #546: the retired family defaults leave their spaces (every boot
-  // until none is left — a default pulled later retires next boot)
+  // #546: the retired family defaults leave their spaces; a default pulled later retires on the next boot
   const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
   if (confirmed) await retireDefaultAccounts(store, upkeep);
   // #544: rows still naming an account their space lost let go of it
   const { repairDanglingCounterparties } = await import('@/application/accountRelease');
   if (confirmed) await repairDanglingCounterparties(store, upkeep);
-  // #133 ruling 3 / #546: bare movement rows link the account their
-  // text names (the ATM pair: the cash wallet) — balances move via the
-  // mirror lifecycle. Every boot: the server keeps writing predicted
-  // movement categories with no counterparty, so this heals continuously.
-  // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
+  // #133/#546: bare movement rows link the account their text names (the ATM pair: the cash wallet); every boot, as the server
+  // keeps writing predicted movement categories. #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
   const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
   // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
   if (confirmed) await migrateBareSpecialRows(store, upkeep);
@@ -189,12 +161,10 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // #509: a loan typed at its original amount counts every payment linked to it, its date's included
   const { settlePristineLoans } = await import('@/application/loanBalance');
   if (confirmed) await settlePristineLoans(store, upkeep);
-  // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
-  // a linked row a fetch's overlay re-filed takes it back every boot
+  // the recurring owns the category: a linked row a fetch's overlay re-filed takes it back every boot
   const { realignRecurringCategories } = await import('@/application/recurring');
   await realignRecurringCategories(store, upkeep);
-  // transfers are ONE event with two legs — pair them within each
-  // space's own books (never across: funding covers that case)
+  // transfers are one event with two legs: paired within each space's books, never across (funding covers that)
   const { linkTransferPairs } = await import('@/application/transferMatch');
   await linkTransferPairs(store, upkeep);
   // #533: a reserved charge the bank booked hands its story to the booked row
@@ -205,7 +175,6 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   await rekeyMerchantKeys(store, upkeep);
 }
 
-/** a user identity's first sync once the boot opened its store (S3776: out of the boot) */
 async function startFirstSync(
   store: StorageBackend,
   engine: SyncEngine,
@@ -215,21 +184,15 @@ async function startFirstSync(
 ): Promise<void> {
   const finishSync = () => restoreAndSync(store, engine, isCancelled, onAttempts);
   if ((await liveSpaces(store)).length > 0) {
-    // returning device: local-first — render from what's stored NOW;
-    // auth restore + first sync catch up in the background. A dead
-    // server or unreachable OIDC endpoint must never block the UI
-    // (it did: a hanging fetch kept users on the connecting screen
-    // despite a fully usable local database).
+    // returning device: render from what is stored now, auth restore and first sync catch up;
+    // a hanging server must never block the UI
     void finishSync().catch(() => undefined);
   } else {
-    // brand-new device: nothing to show — wait for the server to
-    // confirm the account state (fail-closed bootstrap)
     boot.setAttribute('boot.waited_for_server', true);
     await finishSync();
   }
 }
 
-/** the sync stack of a signed-in user identity (token mirroring included) */
 function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: StorageBackend, repo: Repo, access: SpaceAccess): SyncEngine {
   const key = identityKey(identity);
   const backend = new ApiSyncBackend({
@@ -240,8 +203,7 @@ function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: S
         return { testSub: identity.sub };
       }
       const bearer = await getAccessToken();
-      // mirror the fresh token for the worker's background sync
-      // (push-triggered pull + Android outbox flush, app killed)
+      // mirrored for the worker's background sync (push-triggered pull, Android outbox flush with the app killed)
       if (bearer) {
         mirrorSessionForSw({
           apiUrl: config.apiUrl,
@@ -257,10 +219,8 @@ function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: S
   return new SyncEngine(store, repo, backend, getDeviceId(), { access, frozen: () => adoptedStoreKeys().has(key) });
 }
 
-/** what the boot does with each engine status (S2004: out of the boot's nested callbacks) */
 function onEngineStatus(status: SyncStatus, store: StorageBackend, upkeep: Repo): void {
-  // pushes failing (offline / server away) — arm the background
-  // flush so the outbox drains even if the app is killed meanwhile
+  // failing pushes arm the background flush, so the outbox drains even if the app is killed
   if (status === 'offline' || status === 'error') requestOutboxSync();
   // #533: a cycle that pulled a booking hands the reserved row's story on
   if (status === 'idle') {
@@ -274,10 +234,8 @@ function onEngineStatus(status: SyncStatus, store: StorageBackend, upkeep: Repo)
 }
 
 interface DataContextValue {
-  /** the storage seam (E1) — all reads/writes go through this */
   store: StorageBackend;
   repo: Repo;
-  /** the currently active space */
   spaceId: string;
   setActiveSpace: (spaceId: string) => Promise<void>;
   /** present only for syncing (user) identities */
@@ -288,11 +246,6 @@ interface DataContextValue {
 
 const DataContext = createContext<DataContextValue | null>(null);
 
-/**
- * Opens the identity's database (seeding demo data on first use), resolves
- * the active space, and provides db/repo to the screens. Renders nothing
- * until ready so screens never flash empty state.
- */
 export function DataProvider({ children }: { children: ReactNode }) {
   const identity = useSession((s) => s.identity);
   const [state, setState] = useState<{
@@ -308,7 +261,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!identity) {
       setState(null);
-      clearSwSession(); // signed out: background sync stops immediately
+      clearSwSession();
       return;
     }
     // an identity that never syncs leaves the worker nothing to do: the mirror of the account before it must go
@@ -324,19 +277,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let engine: SyncEngine | null = null;
     let openedStore: StorageBackend | null = null;
     let releaseHeals: () => void = () => undefined;
-    // #363: the remount cache is per identity — a sign-in after a wipe
-    // must never seed a screen with the last user's rows
+    // #363: the remount cache is per identity; a sign-in after a wipe must never seed a screen with the last user's rows
     clearQueryCache();
     useBootStep.getState().set({ step: 'opening' });
 
-    // the boot span (user 2026-10-09, docs/observability.md): the store
-    // open, the demo seed, the first queries and — on a brand-new device —
-    // the server's confirmation, up to the first screen; the kind of
-    // identity and the number of spaces ride along, never an id
+    // boot span (docs/observability.md): store open to first screen; identity kind and space count ride along, never an id
     void measure('app.boot', async (boot) => {
       boot.setAttribute('boot.identity', identity.kind);
-      // E2: the backend is chosen here — Dexie, or SQLCipher when the
-      // native dev flag is on (openStore.ts) — hence the async open
+      // the backend is chosen here: Dexie, or SQLCipher with the native dev flag (openStore.ts)
       const store = await measure('app.boot.open', () => openStorageBackend(identityDbName(identityKey(identity))), undefined, { parent: boot });
       if (cancelled) {
         store.close();
@@ -346,8 +294,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       openedStore = store;
       liveStore = store;
       const syncing = identity.kind === 'user';
-      // #505: the roles the server named last — known before the first
-      // write, so a reader's space refuses writes from the start, offline too
+      // #505: the roles the server named last, known before the first write, so a reader's space refuses writes offline too
       const access = new SpaceAccess(syncing ? store : null);
       await access.hydrate();
       const repo = new Repo(store, getClock(), {
@@ -358,8 +305,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // the app's own upkeep leaves the spaces this identity only reads alone
       const upkeep = repo.upkeep();
       if (syncing) {
-        // operator catalog: cheap ETag revalidation, then apply any
-        // tombstones exactly once per version — all fire-and-forget
+        // operator catalog: ETag revalidation, tombstones applied once per version; fire-and-forget
         void (async () => {
           const { cachedCatalog, refreshCatalog } = await import('@/sync/catalogSync');
           await refreshCatalog(store);
@@ -377,12 +323,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         })().catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo, access);
         engine.onStatus((status) => onEngineStatus(status, store, upkeep));
-        // remote-wipe: if this account was deleted (or went offline) on
-        // ANOTHER device, the /me binding mismatch wipes this copy too
+        // remote wipe: an account deleted or taken offline on another device wipes this copy (the /me binding mismatch)
         void enforceAccountBinding(store, identity).catch(() => undefined);
-        // remote disconnect (logged-in devices, user ruling: disconnect =
-        // wipe): the api choke point saw a 410 device-revoked — erase
-        // this copy exactly like the binding wipe would
+        // remote disconnect = wipe: a 410 device-revoked at the api choke point erases this copy like the binding wipe
         revokedWipeIdentity = identity;
         globalThis.removeEventListener('munni:device-revoked', onDeviceRevoked);
         globalThis.addEventListener('munni:device-revoked', onDeviceRevoked);
@@ -392,34 +335,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await measure('app.boot.seed', () => seedDemoIfNeeded(repo), undefined, { parent: boot });
-      // boot maintenance chain: the every-boot heals (ALL identities —
-      // demo/offline data too); each is idempotent and cheap — timed as
-      // its own transaction (parent null), since it outlives the boot span.
-      // #505: through the upkeep view — a space this identity only reads is
-      // healed by the devices of those who may write it
-      // The heals wait for the first round: a one-way fold on a copy the server did not confirm undoes
-      // what another device did since. An identity that never syncs holds the only copy there is.
+      // the every-boot heals run for all identities, through the upkeep view (#505: a read-only space is healed by its writers)
+      // they wait for the first round: a one-way fold on an unconfirmed copy undoes another device's work
+      // a non-syncing identity holds the only copy
       const firstRound = copyConfirmedBy(engine);
       releaseHeals = firstRound.release;
       const bootChain = healOnceKnown(firstRound.finished, () => cancelled, store, upkeep);
-      // test seam: the chain writes fire-and-forget, and a test that
-      // deletes the database while a PREVIOUS boot's chain still holds
-      // the connection boots the next app on a dying handle (its live
-      // queries collapse mid-test). Tests drain this before deleting.
+      // test seam: tests drain this before deleting the database, else a previous boot's chain
+      // boots the next app on a dying handle
       if (import.meta.env.VITEST) (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain = bootChain;
       void bootChain;
-      // bank-connect completions attach server-side from an anonymous
-      // page — mirror any link no device ever saw being made (also heals
-      // the historic "connected but shows up nowhere" danglers)
+      // bank-connect completions attach server-side from an anonymous page: mirror any link no device saw being made
       if (identity.kind === 'user') void mirrorSpaceLinks(store, upkeep).catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
-        // fully local profile, same Mina flow as online (user ruling):
-        // no auto-created space — the tutorial's create-step (or its
-        // skip path) provides the first one
+        // fully local profile: the same Mina flow as online, no auto-created space
         await store.metaPut('needsOnboarding', true);
         await store.metaPut('minaTutorialPending', true);
       }
-      // country of use tunes the category predictor (onboarding stores it)
       {
         const profile = (await store.metaGet('profile'))?.value as { country?: string } | undefined;
         setPredictionCountry(profile?.country);
@@ -455,9 +387,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [state],
   );
 
-  // #173 (user): an eviction of the ACTIVE space hops to a surviving one
-  // right away — before this, screens just read undefined until the next
-  // full boot silently preselected spaces[0]
+  // #173: an eviction of the active space hops to a surviving one at once; before, screens read undefined until the next boot
   const evicted = useEvicted((s) => s.evicted);
   useEffect(() => {
     if (!evicted || !state || evicted.spaceId !== state.spaceId) return;
@@ -477,7 +407,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
-/** server links → local accountLink mirrors, every member space in turn */
 async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void> {
   const { reconcileSpaceLinks } = await import('@/application/accountAttach');
   for (const space of await liveSpaces(store)) {
@@ -485,13 +414,8 @@ async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void
   }
 }
 
-/**
- * Shown while the database opens (instant) or a brand-new device waits
- * for the server during bootstrap (can take a while offline) — the
- * message only appears once it's clearly the latter. After repeated
- * failed rounds the screen names the problem (broken API/proxy is a
- * config error, not a loading state) and offers a way out.
- */
+// the connecting screen names a broken API/proxy after repeated failed rounds
+// (a config error, not a loading state) and offers a way out
 const REHEAL_KEY = 'munni_auth_reheal';
 
 /** how long the connecting screen stays calm, and how long its diagnosis waits for the server (a test seam) */
@@ -504,7 +428,6 @@ const STEP_LABEL = {
   spaces: 'sync.step.spaces',
 } as const;
 
-/** the steps of a first start, the one under way marked — with the count while the spaces come in */
 function BootSteps() {
   const { t } = useLang();
   const at = useBootStep((s) => s.at);
@@ -540,11 +463,8 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     if (identity?.kind === 'user') void disablePush({ server: false }).catch(() => undefined);
     logout();
   };
-  // SELF-HEAL (iOS field 401, 2026-07-29): signed-in user + 401s + NO
-  // mintable token = the client-side Logto keys are gone while the IdP
-  // session cookie usually survives — a silent re-sign-in round-trip
-  // re-mints them. Capped per tab so a dead IdP session cannot loop; at
-  // the cap the screen keeps its Sign out / Diagnose exits.
+  // self-heal (iOS 401): a signed-in user with 401s and no mintable token lost the client Logto keys
+  // while the IdP cookie lives; a silent re-sign-in re-mints them. Capped per tab so a dead IdP session cannot loop
   useEffect(() => {
     if (identity?.kind !== 'user' || identity.testAuth) return;
     if (!(errorDetail ?? '').includes('401')) return;
@@ -565,12 +485,8 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     const timer = setTimeout(() => setSlow(true), 1_500);
     return () => clearTimeout(timer);
   }, []);
-  // 401s during a fresh sign-in are the auth path's business (token
-  // mirroring/JIT settle within seconds and it recovers on its own) —
-  // flashing "can't reach the server" + a Sign out button at a brand-new
-  // user was scary enough to get clicked (user report). But patience has
-  // an END: on iOS the 401s never settled and this screen sat forever
-  // (user ss 2026-07-28) — past 20s the truth beats the calm.
+  // 401s during a fresh sign-in settle on their own, and "can't reach the server" at a new user got Sign out clicked;
+  // but patience ends: on iOS the 401s never settled and the screen sat forever, so past 20 s the truth wins
   const [patienceOver, setPatienceOver] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setPatienceOver(true), connectTuning.patienceMs);
@@ -581,14 +497,10 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   // #594: nothing failed because nothing ever answered — the exits are owed all the same
   const waiting = patienceOver && failedAttempts === 0;
   const exits = unreachable || waiting;
-  // the stuck platform is iOS-only, where DevTools are out of reach — a
-  // built-in probe produces a copyable report instead (user: "I don't
-  // know how to provide you info")
+  // the stuck platform is iOS-only, where DevTools are out of reach: a built-in probe produces a copyable report
   const [report, setReport] = useState<string | null>(null);
   const diagnose = async () => {
-    // key SUFFIXES only (idToken/refreshToken/accessToken/signInSession) —
-    // discriminates "exchange never persisted" vs "refresh gone" vs
-    // "signInSession stranded"; never values
+    // key suffixes only, never values: tells "exchange never persisted" from "refresh gone" from "signInSession stranded"
     const logtoSuffixes = (store: Storage) => {
       const names = Object.keys(store)
         .filter((k) => k.startsWith('logto:'))
@@ -621,8 +533,7 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       const detail = err instanceof Error ? err.name : String(err);
       lines.push(`lsWrite threw: ${detail}`);
     }
-    // the definitive probe: can the auth SDK mint a token AT ALL? (the
-    // iOS field report showed logtoKeys:0 — evicted client auth storage)
+    // the definitive probe: can the auth SDK mint a token at all? (iOS field report: logtoKeys 0, client auth storage evicted)
     try {
       const token = await getAccessToken();
       const state = token ? `present (${token.length} chars)` : 'ABSENT';
@@ -702,12 +613,7 @@ export function useData(): DataContextValue {
   return ctx;
 }
 
-/** Demo logout = wipe the database so next login reseeds pristine state. */
-/** remote-wipe enforcement: mismatch → wipe this device + back to login */
-// remote disconnect (user ruling: disconnect = wipe): the api choke
-// point saw a 410 device-revoked — erase this copy exactly like the
-// account-binding wipe would. One module-level listener; the identity
-// it wipes follows the active DataProvider.
+// one module-level listener; the identity it wipes follows the active DataProvider
 let revokedWipeIdentity: Identity | null = null;
 
 async function wipeRevokedDevice(identity: Identity): Promise<void> {
@@ -739,11 +645,8 @@ async function enforceAccountBinding(store: StorageBackend, identity: Identity):
 let liveStore: StorageBackend | null = null;
 
 export async function destroyIdentityData(identity: Identity): Promise<void> {
-  // #363: an open connection blocks the database delete — the "wiped"
-  // identity's accounts and imported rows then greeted the next sign-up
-  // (a reconcile offer on an account with nothing attached). Close the
-  // live handle first, forget the cached rows, and let the delete be
-  // verified (destroyStorage throws when the database survived).
+  // #363: an open connection blocks the database delete, and wiped accounts greeted the next sign-up: close the live handle,
+  // forget cached rows, verify the delete (destroyStorage throws when the database survived)
   liveStore?.close();
   liveStore = null;
   clearQueryCache();

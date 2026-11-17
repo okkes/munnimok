@@ -11,24 +11,13 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The relay with a control plane that waits for no fetch at all: every pass
-/// becomes a job, so a two-resource party has to chain through the job path.
-/// </summary>
 public sealed class JobWalkApiFactory : ConnectorApiFactory
 {
     protected override int FetchWaitSeconds => 0;
 }
 
-/// <summary>
-/// A sync walks the manifest's resources in order. A pass that becomes a job
-/// pauses the walk; collecting the job resumes it from the resource after,
-/// and that pass may become a job of its own. Prod, 2026-10-04: a bank's
-/// accounts pass took a second longer than its window and the transactions
-/// were never asked for - the balance moved, the list did not, sync after
-/// sync. Here every fetch becomes a job (a zero window), so the mock bank's
-/// two resources - accounts, then transactions - have to chain.
-/// </summary>
+/// Prod 2026-10-04: a bank's accounts pass outran its window and transactions were never asked for
+/// (balance moved, list did not). Every fetch is a job here (zero window), so the two resources must chain.
 public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWalkApiFactory>
 {
     private const string MockBank = "mock-bank-simple";
@@ -52,8 +41,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         Assert.True(sync.StatusCode == HttpStatusCode.Accepted, accepted!.ToJsonString());
         var first = accepted["jobId"]!.GetValue<string>();
 
-        // the accounts pass landed, and the walk went on: the transactions
-        // pass became the next job, answered with ITS view
         await AwaitJobAsync(client, first, "succeeded");
         using var collect = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{first}/collect", new { bundle });
         var next = await collect.Content.ReadFromJsonAsync<JsonObject>();
@@ -63,7 +50,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         Assert.True(next["ingested"]!["accounts"]!.GetValue<int>() > 0, next.ToJsonString());
         Assert.Equal(0, next["ingested"]!["transactions"]!.GetValue<int>());
 
-        // the last pass collected: the walk is done, and the sum is the walk's
         await AwaitJobAsync(client, second, "succeeded");
         using var last = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
         var done = await last.Content.ReadFromJsonAsync<JsonObject>();
@@ -72,22 +58,16 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         Assert.True(done["ingested"]!["transactions"]!.GetValue<int>() > 0, done.ToJsonString());
         Assert.True(done["complete"]!.GetValue<bool>(), done.ToJsonString());
 
-        // and the rows are there: the feed holds the bank's transactions
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
         var feedId = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id).FeedSpaceId);
         Assert.True(factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "transaction")) > 0);
 
-        // the session is active again, as after any finished sync
         var sessionId = accepted["sessionId"]!.GetValue<string>();
         Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
     }
 
-    /// <summary>
-    /// #508: a transactions pass that outran the window and was collected as
-    /// a job never settled the pending mirror - its page always carries an
-    /// ack cursor - so a reserved row the bank had since booked stayed beside
-    /// its booked twin. A complete pass collected as a job settles like any.
-    /// </summary>
+    /// #508: a transactions pass collected as a job never settled the pending mirror (its page always carries an ack
+    /// cursor), so a reserved row the bank had since booked stayed beside its twin.
     [Fact]
     public async Task A_transactions_pass_collected_as_a_job_settles_the_reserved_rows_the_bank_no_longer_reports()
     {
@@ -101,7 +81,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         using var collect = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{first}/collect", new { bundle });
         var second = (await collect.Content.ReadFromJsonAsync<JsonObject>())!["jobId"]!.GetValue<string>();
 
-        // the accounts landed; a row an earlier pass mirrored as reserved, which this bank no longer reports
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
         var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id && !a.AccountRef.StartsWith("CONN:")));
         var reservedId = await ReserveAsync(reference, "pending:WALK-1");
@@ -134,7 +113,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         using var last = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
         Assert.Equal(HttpStatusCode.OK, last.StatusCode);
 
-        // a reserved row another pass mirrors after this page was acknowledged
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
         var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id && !a.AccountRef.StartsWith("CONN:")));
         var reservedId = await ReserveAsync(reference, "pending:WALK-2");
@@ -153,7 +131,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         using var client = factory.ClientFor(sub);
         var (sessionId, bundle) = await LoginAsync(client, "conn-walk-scheduled");
 
-        // kept custody, modelled as the schedule suite models it
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -174,8 +151,6 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         var feedId = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id).FeedSpaceId);
         Assert.True(factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "transaction")) > 0);
     }
-
-    // ── helpers ──────────────────────────────────────────────────────────
 
     /// <summary>A reserved row in the account's feed, tracked by the reference as a pass that mirrored it leaves it; its entity id.</summary>
     private async Task<string> ReserveAsync(ConnectorAccountRef reference, string externalId)

@@ -3,7 +3,6 @@ import type { NavFeatureId } from './navFeatures';
 // No imports beyond the type: the identity wipes (app/data, the offline profile registry) call in here, and the registry is loaded by the session itself.
 const CACHE_KEY = 'munni_nav_tabs';
 
-/** per identity, per space: the bar this device drew last */
 type NavCache = Record<string, Record<string, string[]>>;
 
 function readCache(): NavCache {

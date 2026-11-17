@@ -2,20 +2,13 @@ import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { isRetiredDefault } from './defaultAccounts';
 import { nextDueDate } from './recurring';
 
-/**
- * Loan math (loans v2, 2026-08-01) — all pure, interest informational.
- * The liability ACCOUNT is the debt: its balance is the remaining truth
- * and the story fields (interest, original, payment plan) live on it.
- */
+// loans v2: the liability ACCOUNT is the debt: its balance is the remaining truth and the story fields live on it;
+// interest is informational
 
 export const DEBT_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set(['loan', 'mortgage', 'credit']);
 
-/**
- * Debts-screen membership: the explicit toggle wins; absent, loans and
- * mortgages are in by nature while a credit card only joins when the
- * user gave it a debt story (mature-app ruling: a card paid off monthly
- * is an account with a balance, not a payoff journey).
- */
+// membership: the explicit toggle wins; else loans and mortgages are in, a credit card only with a debt story
+// (a card paid off monthly is an account with a balance, not a payoff journey)
 export function isDebtTracked(
   account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'> &
     Partial<Pick<AccountRow, 'defaultFor' | 'balanceCents'>>,
@@ -41,7 +34,6 @@ export function loanProgress(account: Pick<AccountRow, 'originalCents'>, remaini
   return Math.min(1, Math.max(0, 1 - remainingCents / original));
 }
 
-/** payments per year for a recurring-shaped cadence; absent = monthly */
 export function paymentsPerYear(every?: RecurringEvery, everyN?: number): number {
   const base = { week: 52, month: 12, year: 1 }[every ?? 'month'];
   return base / Math.max(1, everyN ?? 1);
@@ -49,20 +41,13 @@ export function paymentsPerYear(every?: RecurringEvery, everyN?: number): number
 
 export interface PayoffProjection {
   months: number;
-  /** yyyy-mm of the final payment */
   endMonth: string;
   totalInterestCents: number;
 }
 
 const MAX_STEPS = 2600; // 50 years of weekly payments — beyond that the payment isn't working
 
-/**
- * Amortization walk: fixed payment per period against per-period
- * compounding of the (informational) APR — the period follows the
- * loan's cadence (arc 3: a weekly payer is done ~4× sooner than the
- * old monthly assumption claimed). Null when there's no payment or the
- * payment doesn't beat the interest.
- */
+/** the period follows the loan's cadence; null when there is no payment or it does not beat the interest */
 export function projectPayoff(
   remainingCents: number,
   paymentCents: number | undefined,
@@ -78,7 +63,7 @@ export function projectPayoff(
   const maxSteps = Math.min(MAX_STEPS, Math.ceil(perYear * 50));
   while (balance > 0 && steps < maxSteps) {
     const interest = Math.round(balance * periodRate);
-    if (paymentCents <= interest) return null; // never pays off
+    if (paymentCents <= interest) return null;
     totalInterest += interest;
     balance = balance + interest - paymentCents;
     steps++;
@@ -95,11 +80,8 @@ export function projectPayoff(
 }
 
 export interface PaymentEstimate {
-  /** median |amount| of the attached payments */
   paymentCents: number;
-  /** median gap between payments, whole days */
   everyDays: number;
-  /** payments-per-year equivalent, for the projection */
   perYear: number;
 }
 
@@ -111,14 +93,8 @@ const median = (values: number[]): number => {
 
 const DAY_MS = 86_400_000;
 
-/**
- * "Estimated from payments" (arc 3): median interval and median amount
- * of the attached payments — never stored, used wherever the explicit
- * frequency/value fields are empty. Medians shrug off the odd extra
- * payment or double month; a mirrored pair (both legs in the history)
- * collapses to one event by date+size. Fewer than 3 payments claim
- * nothing.
- */
+// "estimated from payments": never stored, used where the explicit frequency/value fields are empty;
+// medians shrug off odd extras, a mirrored pair (both legs) collapses to one event; under 3 payments claim nothing
 export function estimatePaymentPlan(payments: readonly { date: string; amountCents: number }[]): PaymentEstimate | null {
   const events = new Map<string, { date: string; abs: number }>();
   for (const p of payments) {
@@ -140,7 +116,6 @@ export function estimatePaymentPlan(payments: readonly { date: string; amountCen
   };
 }
 
-/** the loan's explicit payment as a monthly figure (cadence-normalized) */
 /** #266: the loan plan in the recurring cadence shape, so it rides the
  *  same date math. Anchorless weekly plans have no derivable date → null. */
 export function debtPaymentCadence(loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN' | 'paymentDay'>) {
@@ -156,7 +131,6 @@ export function debtPaymentCadence(loan: Pick<AccountRow, 'paymentCents' | 'paym
   };
 }
 
-/** the loan plan's next due date */
 export function nextDebtPaymentDate(
   loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN' | 'paymentDay'>,
   today: string,

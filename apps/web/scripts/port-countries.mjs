@@ -1,5 +1,4 @@
-// One-shot port of the legacy country list + currency map to TS.
-// Usage: node scripts/port-countries.mjs
+// one-shot port of the legacy country list + currency map
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';

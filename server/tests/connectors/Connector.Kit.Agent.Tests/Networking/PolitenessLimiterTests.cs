@@ -5,12 +5,6 @@ using Connector.Kit.Agent.Networking;
 
 namespace Connector.Kit.Agent.Tests.Networking;
 
-/// <summary>
-/// The handler that keeps one provider's traffic polite: a minimum gap
-/// between calls, and a pause the provider itself asked for when it answers
-/// 429 or 503 — its <c>Retry-After</c> when it gave one, a fixed penalty when
-/// it did not.
-/// </summary>
 public sealed class PolitenessLimiterTests
 {
     private sealed class Scripted(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler

@@ -28,14 +28,12 @@ interface Draft {
   name: string;
   icon: string;
   color: string;
-  /** the chosen categories: mains and/or subs */
   catIds: Set<string>;
   /** subs of a chosen main that are left out */
   excludeIds: Set<string>;
   target: string;
 }
 
-/** a subject suggested by the plan itself (an unplanned main, its spending as the target) */
 export interface EditorPreset {
   name: string;
   icon?: string;
@@ -57,13 +55,11 @@ const draftOf = (subject: PlanSubjectRow | null, preset: EditorPreset | null): D
 };
 
 
-/** a main's tick: chosen itself, half when only some of its subs are, off otherwise */
 const mainTick = (draft: Draft, main: Cat, subs: readonly Cat[]): TickState => {
   if (draft.catIds.has(main.id)) return 'checked';
   return subs.some((s) => draft.catIds.has(s.id)) ? 'half' : 'off';
 };
 
-/** a sub's tick: chosen directly, or through its main unless excluded */
 const subTick = (draft: Draft, main: Cat, sub: Cat): TickState => {
   if (draft.catIds.has(sub.id)) return 'checked';
   if (draft.catIds.has(main.id) && !draft.excludeIds.has(sub.id)) return 'checked';
@@ -199,19 +195,13 @@ type Blocker = 'name' | 'cats' | 'target' | null;
 const blockerOf = (draft: Draft, target: number | null): Blocker => {
   if (!draft.name.trim()) return 'name';
   if (draft.catIds.size === 0) return 'cats';
-  // 0 is an answer (user 2026-10-07): "I don't know yet what this will take"
+  // 0 is an answer: "I don't know yet what this will take"
   if (target === null || target < 0) return 'target';
   return null;
 };
 const BLOCKER_KEY = { name: 'plan.subject.blockerName', cats: 'plan.subject.blockerCats', target: 'plan.subject.blockerTarget' } as const;
 
-/**
- * An expense subject's own shape (#128): a name, a face, the categories
- * it answers for — a main claims its subs, future ones too, an unticked
- * sub under it is an exclusion — and the target, with last period and the
- * average as chips. A category another expense subject already answers
- * for can be taken over from here.
- */
+// a main claims its subs, future ones too; an unticked sub under it is an exclusion
 export function SubjectEditor({
   open,
   onOpenChange,
@@ -225,9 +215,7 @@ export function SubjectEditor({
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** null = a new subject */
   subject: PlanSubjectRow | null;
-  /** a new subject that starts filled in */
   preset?: EditorPreset | null;
   plan: PlanRow;
   model: PlanningModel;
@@ -256,7 +244,7 @@ export function SubjectEditor({
       catIds.delete(main.id);
     } else {
       catIds.add(main.id);
-      for (const sub of subs) catIds.delete(sub.id); // the main speaks for its subs now
+      for (const sub of subs) catIds.delete(sub.id);
     }
     for (const sub of subs) excludeIds.delete(sub.id);
     patch({ catIds, excludeIds });
@@ -265,7 +253,6 @@ export function SubjectEditor({
     const catIds = new Set(draft.catIds);
     const excludeIds = new Set(draft.excludeIds);
     if (catIds.has(main.id)) {
-      // under a chosen main a sub toggles its exclusion
       if (excludeIds.has(sub.id)) excludeIds.delete(sub.id);
       else excludeIds.add(sub.id);
     } else if (catIds.has(sub.id)) {
@@ -306,7 +293,6 @@ export function SubjectEditor({
       }
     >
       <div className="flex flex-col gap-3" data-testid="plan-editor">
-        {/* #563: the subject suggestions lead, the whole icon font follows — to scroll or to search */}
         <IconPicker value={draft.icon} onChange={(icon) => patch({ icon })} featured={SUBJECT_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="plan-editor-icon" />
         <ColorPicker colors={SUBJECT_COLORS} value={draft.color} onChange={(color) => patch({ color })} testIdPrefix="plan-editor-color" customLabel={t('plan.subject.customColor')} />
         <input
@@ -340,7 +326,7 @@ export function SubjectEditor({
           placeholder="0.00"
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && blocker === 'target')}`}
         />
-        {/* the note keeps its room (user 2026-10-07): when it went away the field jumped under the caret */}
+        {/* the note keeps its room: when it went away the field jumped under the caret */}
         <div className="min-h-[18px]">
           <FormBlockerNote show={attempted && blocker === 'target'} text={t(BLOCKER_KEY.target)} testId="plan-editor-blocker" />
         </div>

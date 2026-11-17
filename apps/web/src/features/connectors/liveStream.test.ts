@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { frameOf, readLiveStream } from './liveStream';
 import type { LiveFrame } from './types';
 
-/** a body that hands out the given chunks, then either ends or goes quiet */
 function bodyOf(chunks: string[], then: 'end' | 'quiet' = 'end'): Response {
   const encoder = new TextEncoder();
   const queue = chunks.map((chunk) => encoder.encode(chunk));

@@ -3,28 +3,9 @@ import { CENTER_FOCUS, SCALE_MAX, SCALE_MIN, clampScale, coverOverflow, focusSty
 import type { ImageFocus, Size } from '@/lib/imageFocus';
 import { Icon } from './Icon';
 
-/**
- * #446 (user): "allow the user to drag the showable area". A frame in the
- * shape the picture will be shown in; the picture sits in it cover-fitted
- * and the person drags it to choose which part stays visible. What is
- * stored is a FOCUS — two object-position percentages, and since
- * 2026-10-06 (user) a zoom around that point — not a cut-out, so the hero,
- * the card, the Home tile and every round avatar crop the same picture at
- * their own sizes and every renderer applies the same focus to its frame.
- *
- * A `circle` frame is the avatar's square with the circle drawn over it,
- * so the person sees exactly what the round picture will keep; `zoom`
- * adds a slider and a two-finger pinch.
- *
- * NATIVE pointer listeners that stop the event themselves, like the color
- * wheel's, so the sheet library's drag never arms under a pan. The frame
- * is marked `data-sheet-own-gesture`: the Sheet's capture guard stands
- * down for it (a stop there happens at React's root and would never let
- * the pointer reach these listeners - the `data-sheet-no-drag` answer is
- * for content that has no handlers of its own). Touch events are kept
- * from the sheet the same way, and `touch-none` keeps the page from
- * scrolling under a vertical pan.
- */
+// stores a focus (object-position % + zoom), not a cut-out: every renderer crops the picture at its own size (#446)
+// native pointer listeners stop the event themselves; `data-sheet-own-gesture` makes the Sheet's capture guard stand down
+// (a stop at React's root would starve them; `data-sheet-no-drag` is for content with no handlers of its own)
 export function ImageFocusFrame({
   src,
   focus,
@@ -40,22 +21,17 @@ export function ImageFocusFrame({
   /** the stored focus; undefined/null = the centre at 1× */
   focus: ImageFocus | null | undefined;
   onFocus: (next: ImageFocus) => void;
-  /** the one-line instruction shown on the frame (localized by the caller) */
   hint: string;
   testId: string;
   className?: string;
-  /** the shape the picture will be shown in: the wide rectangle, or the avatar's circle */
   shape?: 'rect' | 'circle';
-  /** a slider under the frame and a two-finger pinch change the scale */
   zoom?: boolean;
   zoomLabel?: string;
 }>) {
-  // the element via state (callback ref), so the listeners bind once it exists
   const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
   const current = focus ?? CENTER_FOCUS;
   const scale = clampScale(current.scale);
-  // the listeners read the LATEST focus and callback through refs — they
-  // are bound once per element, not once per render
+  // listeners are bound once per element, so they read the latest focus and callback through refs
   const focusRef = useRef(current);
   focusRef.current = current;
   const onFocusRef = useRef(onFocus);
@@ -69,7 +45,6 @@ export function ImageFocusFrame({
     if (!el) return;
     const pointers = new Map<number, { x: number; y: number }>();
     let drag: { pointerId: number; x: number; y: number; start: ImageFocus } | null = null;
-    // two fingers: the distance between them scales the picture
     let pinch: { distance: number; scale: number } | null = null;
     const distance = () => {
       const [a, b] = [...pointers.values()];
@@ -153,7 +128,6 @@ export function ImageFocusFrame({
           style={focusStyle(current)}
           data-testid={`${testId}-img`}
         />
-        {/* the circle the avatar keeps: everything outside it dims */}
         {shape === 'circle' && (
           <span
             aria-hidden
@@ -162,7 +136,7 @@ export function ImageFocusFrame({
           />
         )}
       </div>
-      {/* the hint stands under the picture (user 2026-10-07): on it, it hid the face being framed */}
+      {/* the hint stands under the picture: on it, it hid the face being framed */}
       <p className="flex items-center justify-center gap-1 px-1 text-center text-[11px] text-ink-3" data-testid={`${testId}-hint`}>
         <Icon name="cursor-move" size={12} color="var(--m-ink-4)" />
         {hint}

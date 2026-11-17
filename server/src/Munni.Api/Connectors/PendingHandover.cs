@@ -6,23 +6,14 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// A reserved row is only ever taken out by the settle of the connection
-/// that tracks it (§15). When that tracking goes — a reconnect supersedes the
-/// connection, a session or a feed is disconnected — the row must not be
-/// left behind untracked: nothing would settle it, and once the bank books
-/// it the reserved row stands beside its booked twin for good (#508). Another
-/// live reference to the same feed account takes the tracking over, and its
-/// next complete pass settles the row; with none left, the row is tombstoned.
-/// </summary>
+// a reserved row is only taken out by the settle of the connection that tracks it (§15): untracked, it stands
+// beside its booked twin for good (#508); another live reference to the feed account adopts it, else it is tombstoned
 public static class PendingHandover
 {
     private const string TransactionEntity = "transaction";
 
-    /// <summary>One reserved row as it lies in its feed.</summary>
     public sealed record Reserved(string FeedSpaceId, string AccountEntityId, string EntityId);
 
-    /// <summary>The tracking of references that are going away, handed over or settled; the caller removes the references and saves.</summary>
     public static async Task<int> HandOverAsync(AppDbContext db, IReadOnlyCollection<ConnectorAccountRef> leaving, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
@@ -40,12 +31,7 @@ public static class PendingHandover
         return await AdoptOrSettleAsync(db, rows, ids, $"{DateTimeOffset.UtcNow.Ticks}", ct);
     }
 
-    /// <summary>
-    /// Reserved rows nobody tracks: each one goes to every live reference of
-    /// its feed account (outside <paramref name="leavingIds"/>), or is
-    /// tombstoned when there is none. Returns how many were tombstoned.
-    /// <paramref name="seed"/> keys the tombstone ops.
-    /// </summary>
+    // seed keys the tombstone ops
     public static async Task<int> AdoptOrSettleAsync(
         AppDbContext db, IReadOnlyList<Reserved> rows, IReadOnlyCollection<string> leavingIds, string seed, CancellationToken ct)
     {

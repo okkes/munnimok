@@ -2,40 +2,12 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Browsing;
 
-/// <summary>
-/// The rule that stops <c>catch (PlaywrightException)</c> coming back.
-///
-/// Playwright for .NET raises <see cref="System.TimeoutException"/> - a BCL
-/// type, unrelated to <c>PlaywrightException</c> - when a wait expires. So a
-/// helper written to return false on a miss does no such thing: the timeout
-/// escapes the catch, escapes the adapter, and reaches the caller as
-/// <c>internal</c>. A page that simply did not have the button takes the whole
-/// job down.
-///
-/// <para>
-/// <see cref="Connector.Kit.Browsing.PageOps.IsSelectorMiss"/> has said this in
-/// a comment since the first live Albert Heijn attempt. A comment did not stop
-/// it: an audit found the bare catch in twenty-one places across four adapters
-/// and the redactor, and one of them - ASN's select-all - failed live on a real
-/// bank account, having passed a green suite on the way out.
-/// </para>
-///
-/// <para>
-/// So the comment becomes a rule. By reading sources rather than by reflection,
-/// because what is forbidden is the shape of a catch clause and no assembly
-/// records that.
-/// </para>
-/// </summary>
+// Playwright .NET raises System.TimeoutException, not a PlaywrightException, on an expired wait: catching only
+// PlaywrightException lets it escape as `internal` and takes the job down
+// a comment did not stop it (21 bare catches, one failed live on a bank), so this reads sources
 public sealed class SelectorMissRuleTests
 {
-    /// <summary>
-    /// The catch that does not catch what it looks like it catches.
-    /// </summary>
-    /// <remarks>
-    /// Both spellings, with and without naming the exception. Anything that
-    /// also mentions <c>TimeoutException</c> on the same line has already made
-    /// the choice deliberately and is left alone.
-    /// </remarks>
+    // both spellings; a line that also mentions TimeoutException made the choice deliberately
     private static readonly string[] Banned =
     [
         "catch (PlaywrightException)",
@@ -58,11 +30,8 @@ public sealed class SelectorMissRuleTests
             {
                 if (lines[i].Contains("TimeoutException", StringComparison.Ordinal)) continue;
 
-                // Prose about the rule is not a breach of it. PageOps' own
-                // remarks quote the banned clause in order to forbid it, and
-                // the first run of this test duly reported the warning as the
-                // offence. A line that STARTS in a comment is documentation; a
-                // trailing comment on a real statement is still scanned.
+                // prose quoting the banned clause is not a breach: a line that starts in a comment is skipped,
+                // a trailing comment on a statement is still scanned
                 if (IsComment(lines[i])) continue;
 
                 foreach (var clause in Banned.Where(c => lines[i].Contains(c, StringComparison.Ordinal)))
@@ -72,8 +41,7 @@ public sealed class SelectorMissRuleTests
             }
         }
 
-        // A sweep that finds nothing because it looked nowhere is how a rule
-        // like this dies without anybody noticing.
+        // a sweep that looked nowhere would die unnoticed
         Assert.True(scanned > 100, $"only {scanned} source files were scanned; the sweep is not reaching them");
 
         Assert.True(
@@ -94,15 +62,7 @@ public sealed class SelectorMissRuleTests
                || trimmed.StartsWith('*');
     }
 
-    /// <summary>
-    /// And the exemption for prose does not exempt code with a comment on it.
-    /// </summary>
-    /// <remarks>
-    /// The narrow escape this rule nearly shipped with. Skipping any line that
-    /// MENTIONS a comment would have let a real catch clause hide behind a
-    /// trailing <c>// best effort</c> - which is exactly the sort of line one
-    /// of these sits on.
-    /// </remarks>
+    // skipping any line that mentions a comment would let a real catch hide behind a trailing // best effort
     [Fact]
     public void The_exemption_covers_prose_and_not_a_statement_with_a_note_on_it()
     {
@@ -113,38 +73,22 @@ public sealed class SelectorMissRuleTests
         Assert.False(IsComment("        catch (PlaywrightException)"));
     }
 
-    /// <summary>
-    /// And the predicate the rule points at has to actually cover the timeout.
-    /// </summary>
-    /// <remarks>
-    /// Asserted against the real type rather than trusted, because the whole
-    /// rule above rests on this one being right - and it is the sort of claim
-    /// that reads as obviously true and is obviously true in the wrong
-    /// direction. <see cref="System.TimeoutException"/> is not assignable to
-    /// <c>PlaywrightException</c>, which is exactly why the bare catch fails.
-    /// </remarks>
+    // asserted against the real types: TimeoutException is not assignable to PlaywrightException,
+    // which is why the bare catch fails
     [Fact]
     public void The_predicate_this_rule_points_at_covers_a_timeout()
     {
         Assert.True(Connector.Kit.Browsing.PageOps.IsSelectorMiss(new System.TimeoutException("Timeout 10000ms exceeded.")));
         Assert.True(Connector.Kit.Browsing.PageOps.IsSelectorMiss(new Microsoft.Playwright.PlaywrightException("gone")));
 
-        // The trap itself, stated as an assertion: catching one never catches
-        // the other.
         Assert.False(typeof(Microsoft.Playwright.PlaywrightException).IsAssignableFrom(typeof(System.TimeoutException)));
 
-        // And it is not a catch-all - a real fault still travels.
         Assert.False(Connector.Kit.Browsing.PageOps.IsSelectorMiss(new InvalidOperationException("a real fault")));
     }
 
-    /// <summary>
-    /// Every connector's own source, minus the build output - which carries
-    /// generated copies, so a clause deleted from the tree would go on being
-    /// found in <c>obj/</c> for ever.
-    /// </summary>
+    // minus build output: obj/ holds generated copies that would keep finding a clause deleted from the tree
     private static IEnumerable<string> Sources()
     {
-        // every connector project — the kit, the hosting library, the agent runtime and the adapter packs
         var source = Path.Combine(RepoRoot(), "server", "src", "connectors");
         foreach (var file in Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories))
         {
@@ -155,7 +99,6 @@ public sealed class SelectorMissRuleTests
         }
     }
 
-    /// <summary>The monorepo's root: the parent of the directory holding <c>Munni.slnx</c>.</summary>
     private static string RepoRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

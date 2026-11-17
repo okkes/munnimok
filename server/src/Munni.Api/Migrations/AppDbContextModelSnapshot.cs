@@ -17,7 +17,7 @@ namespace Munni.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -336,6 +336,19 @@ namespace Munni.Api.Migrations
                     b.HasKey("SpaceId", "Entity", "EntityId");
 
                     b.ToTable("EntityRows");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.ErasedSpace", b =>
+                {
+                    b.Property<string>("SpaceId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ErasedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("SpaceId");
+
+                    b.ToTable("ErasedSpaces");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.Space", b =>
@@ -752,6 +765,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<DateTimeOffset?>("NotificationsClearedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NotificationsClearedScopes")
+                        .HasColumnType("text");
 
                     b.Property<string>("Picture")
                         .HasColumnType("text");

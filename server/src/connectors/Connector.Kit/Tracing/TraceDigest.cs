@@ -5,14 +5,8 @@ using System.Text.Json.Nodes;
 
 namespace Connector.Kit.Tracing;
 
-/// <summary>
-/// The page an adapter author reads first: <c>digest.md</c>, rendered from
-/// a trace. The pages visited in order, the calls worth reading grouped by
-/// host with the SHAPE of every JSON answer (keys and array lengths, never
-/// the values), the forms posted (field names only), the cookie jar at the
-/// end, the console's complaints. Everything an adapter needs to know to
-/// reproduce the run by hand is here; nothing a person typed is.
-/// </summary>
+// digest.md for the adapter author: JSON answers as shape only (keys, array lengths, never values),
+// forms as field names only
 public static class TraceDigest
 {
     private const int MaxListed = 200;
@@ -63,11 +57,6 @@ public static class TraceDigest
         return sb.ToString();
     }
 
-    /// <summary>
-    /// The shape of a JSON document: keys with the type of each value, an
-    /// array as its length and the shape of its first element. Three levels
-    /// deep, twelve keys wide, and never a value.
-    /// </summary>
     public static string Shape(string json)
     {
         ArgumentNullException.ThrowIfNull(json);

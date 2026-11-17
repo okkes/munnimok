@@ -8,23 +8,10 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The control plane and the agent must encode the agent protocol
-/// identically, and a comment saying so is not enough.
-///
-/// They once diverged - snake_case on one side, web defaults on the other -
-/// and it hid almost perfectly. Every DTO in the protocol carries explicit
-/// [JsonPropertyName] attributes that both sides honoured, EXCEPT
-/// <see cref="ResourceRequest"/>. A login job leaves Request null, so logins
-/// worked; a fetch job populates it, so every agent-served fetch failed to
-/// deserialize and sat queued until it expired. On every provider.
-///
-/// These tests exist so the next person to add an options object has to
-/// break something visible.
-/// </summary>
+// control plane and agent must encode the protocol identically: ResourceRequest lacked [JsonPropertyName], so every
+// agent-served fetch failed to deserialize and sat queued, while logins (Request null) kept working
 public sealed class WireJsonRoundTripTests
 {
-    /// <summary>The shape whose missing attributes made the divergence invisible.</summary>
     [Fact]
     public void ResourceRequest_round_trips_through_the_canonical_encoding()
     {
@@ -50,10 +37,6 @@ public sealed class WireJsonRoundTripTests
         Assert.Equal(["savings", "credit_card"], back.Accounts);
     }
 
-    /// <summary>
-    /// The property name is the whole point: the agent asked for "resourceId"
-    /// against a payload that said "resource_id".
-    /// </summary>
     [Fact]
     public void The_wire_uses_snake_case_for_properties_without_an_explicit_name()
     {
@@ -64,7 +47,6 @@ public sealed class WireJsonRoundTripTests
         Assert.DoesNotContain("\"resourceId\"", json, StringComparison.Ordinal);
     }
 
-    /// <summary>A whole leased fetch job, the exact payload that could not be read.</summary>
     [Fact]
     public void A_leased_fetch_job_round_trips()
     {
@@ -100,10 +82,6 @@ public sealed class WireJsonRoundTripTests
         Assert.Equal("NL", back.Config["country"]);
     }
 
-    /// <summary>
-    /// A login job is the case that kept working and therefore kept the bug
-    /// hidden. It stays covered so the asymmetry is documented in code.
-    /// </summary>
     [Fact]
     public void A_leased_login_job_carries_no_request()
     {
@@ -125,7 +103,6 @@ public sealed class WireJsonRoundTripTests
         Assert.Equal("u", back.Inputs["username"]);
     }
 
-    /// <summary>Enums cross the wire in the documented snake_case form.</summary>
     [Theory]
     [InlineData(JobState.AwaitingInput, "awaiting_input")]
     [InlineData(JobState.Succeeded, "succeeded")]
@@ -143,10 +120,7 @@ public sealed class WireJsonRoundTripTests
             JsonSerializer.Deserialize<ProviderRuntime>(json, ConnectorWireJson.Options));
     }
 
-    /// <summary>
-    /// Dictionary keys are data - adapter inputs, provider config, provider
-    /// ids. Renaming them would corrupt a payload rather than fail it.
-    /// </summary>
+    // dictionary keys are data (adapter inputs, provider config, provider ids): renaming them would corrupt a payload
     [Fact]
     public void Dictionary_keys_are_left_exactly_as_written()
     {

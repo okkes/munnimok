@@ -5,10 +5,7 @@ namespace RegistryConnector.Adapters.Tests;
 
 internal static class Requests
 {
-    /// <summary>
-    /// No date range, because a register has none to give: it states what is
-    /// true now.
-    /// </summary>
+    // no date range: a register has none to give
     public static ResourceRequest Credits() => new()
     {
         ResourceId = MockRegistryAdapter.CreditsResource,

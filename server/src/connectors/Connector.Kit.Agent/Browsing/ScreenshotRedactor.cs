@@ -8,35 +8,13 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// The last thing that runs before an image leaves this machine.
-///
-/// Three layers, in order of strength:
-///
-/// 1. <b>Refuse.</b> If any field the manifest declares <c>secret</c>, or any
-///    password input at all, still holds content, no image is produced. This
-///    is a check on the live DOM, not on adapter discipline - a field being
-///    marked secret is what makes redaction possible, which is why the
-///    manifest validator refuses a password field that is not marked.
-/// 2. <b>Mask.</b> Those same elements are blacked out by the renderer even
-///    when they are empty, in every frame, so a value that appears between the
-///    check and the capture is still not in the pixels.
-/// 3. <b>Clip.</b> When the adapter declares a crop region, only that region
-///    is rendered at all. Everything outside it is absent rather than merely
-///    obscured.
-///
-/// Anything it cannot verify produces NO image. An empty result is the safe
-/// answer, never an error.
-/// </summary>
+// last step before an image leaves the machine: refuse while a secret or password field holds content, mask, clip
+// anything it cannot verify yields NO image (empty), never an error
 public sealed class ScreenshotRedactor
 {
     private const float CaptureTimeoutMs = 10_000;
 
-    /// <summary>
-    /// Reports which secret-bearing elements currently hold content. Walks
-    /// shadow roots because a modern login form is frequently inside one, and
-    /// <c>document.querySelectorAll</c> does not pierce them.
-    /// </summary>
+    // walks shadow roots: modern login forms sit in them and querySelectorAll does not pierce them
     private const string SecretProbeScript = @"
 (keys) => {
   const roots = [document];
@@ -70,19 +48,8 @@ public sealed class ScreenshotRedactor
   return dirty;
 }";
 
-    /// <summary>
-    /// Marks a secret-bearing element invisible for the duration of one
-    /// capture, remembering whatever inline visibility it had so the page can
-    /// be handed back exactly as it was found.
-    ///
-    /// <c>visibility:hidden</c> and never <c>display:none</c>: hidden keeps the
-    /// element's box, so nothing on the page moves. A reflow here would shift
-    /// the very widget the crop was measured against, and every tap answered
-    /// against that picture would land at the difference.
-    ///
-    /// Returns the number of elements it could not conceal. Anything above
-    /// zero means the caller must fall back to masking.
-    /// </summary>
+    // visibility:hidden, never display:none: it keeps the box, so no reflow shifts the widget the crop was measured against
+    // returns how many elements would not hide; above zero the caller falls back to masking
     private const string ConcealScript = @"
 (keys) => {
   const roots = [document];
@@ -119,12 +86,7 @@ public sealed class ScreenshotRedactor
   return missed;
 }";
 
-    /// <summary>
-    /// Re-checks, after the shutter, that every secret-bearing element was
-    /// still concealed AND still empty. A page that re-rendered mid-capture and
-    /// restored its own styling is the one way a dropped mask could have let
-    /// something through, so the bytes are thrown away rather than trusted.
-    /// </summary>
+    // re-check after the shutter: a mid-capture re-render could restore styling and let a value through, so drop the bytes
     private const string ConcealedProbeScript = @"
 (keys) => {
   const roots = [document];
@@ -159,7 +121,6 @@ public sealed class ScreenshotRedactor
   return bad;
 }";
 
-    /// <summary>Puts back exactly the inline visibility each element arrived with.</summary>
     private const string RevealScript = @"
 () => {
   const roots = [document];
@@ -187,12 +148,7 @@ public sealed class ScreenshotRedactor
   }
 }";
 
-    /// <summary>
-    /// A structural skeleton of the page. Only its HASH ever leaves the agent,
-    /// so it may be as detailed as it likes - but it deliberately carries no
-    /// text and no attribute values, because a digest that changed whenever an
-    /// account number did would be useless for spotting a shape change.
-    /// </summary>
+    // only the hash leaves the agent; no text or attribute values, so an account number cannot change the digest
     private const string SkeletonScript = @"
 () => {
   const parts = [];
@@ -211,10 +167,7 @@ public sealed class ScreenshotRedactor
   return parts.join('\n');
 }";
 
-    /// <summary>
-    /// Masked on every page, whatever the manifest declares: the inputs a form
-    /// itself marks as holding a password, by type or by autofill hint.
-    /// </summary>
+    // masked on every page, whatever the manifest declares
     private static readonly string[] PasswordInputSelectors =
     [
         "input[type=password]",
@@ -223,11 +176,7 @@ public sealed class ScreenshotRedactor
 
     private readonly ILogger _logger;
 
-    /// <summary>
-    /// <c>[key, selector]</c> pairs. Passed as plain arrays rather than objects
-    /// so the shape does not depend on how Playwright happens to name
-    /// properties when it serialises an argument.
-    /// </summary>
+    // [key, selector] pairs as plain arrays: independent of how Playwright serialises object properties
     private readonly string[][] _probes;
 
     private readonly string _maskSelector;
@@ -249,12 +198,7 @@ public sealed class ScreenshotRedactor
         _maskSelector = string.Join(", ", PasswordInputSelectors.Concat(_probes.Select(p => p[1])));
     }
 
-    /// <summary>
-    /// Whether the page can be photographed right now. Used both before a
-    /// capture and again before any adapter-supplied image is posted, because
-    /// the adapter holds a real <see cref="IPage"/> and could have produced
-    /// those bytes by any route.
-    /// </summary>
+    // also run before an adapter-supplied image is posted: the adapter holds a real IPage and could produce bytes by any route
     public async Task<bool> IsSafeToCaptureAsync(IPage page, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -295,10 +239,7 @@ public sealed class ScreenshotRedactor
         return true;
     }
 
-    /// <summary>
-    /// A redacted PNG, or an empty array when the page could not be verified.
-    /// Callers treat empty as "no image"; it is never an error.
-    /// </summary>
+    // empty means "no image", never an error
     public async Task<byte[]> CaptureAsync(IPage page, CropRegion? crop, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -311,28 +252,8 @@ public sealed class ScreenshotRedactor
             return [];
         }
 
-        // Conceal rather than mask, when the page lets us.
-        //
-        // A mask is painted by Playwright into the browser's TOP LAYER - an
-        // `x-pw-glass` element declared `popover: manual` - from the target's
-        // `getBoundingClientRect()`. Nothing on the page can be stacked above
-        // it. So when a provider fronts its login with an overlay, as Albert
-        // Heijn's hCaptcha does, the mask for the password field UNDERNEATH
-        // that overlay is painted straight across the question the human is
-        // being asked, and the challenge arrives unanswerable.
-        //
-        // Hiding the element ourselves reaches the same end by a route that
-        // does not paint: an element with `visibility: hidden` contributes no
-        // pixels of its own, whatever appears in it and whoever is stacked
-        // above it. That is a property we set and then re-check, not one
-        // inferred from a hit test - `elementFromPoint` answers "what is
-        // topmost and hit-testable", which a translucent modal backdrop
-        // satisfies while remaining perfectly see-through, so it can never
-        // license dropping a mask.
-        //
-        // Masking stays as the fallback for any page that will not be
-        // concealed. An unreadable challenge is a bad answer; a photographed
-        // password is not an answer at all.
+        // conceal rather than mask when the page lets us: a mask is painted into the top layer, so over an overlay
+        // (AH hCaptcha) it hides the challenge; elementFromPoint cannot license dropping a mask; masking stays the fallback
         var concealed = await ConcealAsync(page, ct).ConfigureAwait(false);
 
         try
@@ -372,11 +293,7 @@ public sealed class ScreenshotRedactor
                 return [];
             }
 
-            // The shutter and the checks around it are not one instant. A page
-            // that re-rendered mid-capture could have restored its own styling
-            // and filled a field in the same tick, and with the masks dropped
-            // there would be nothing else standing between that value and the
-            // picture. Cheaper to throw the bytes away than to be wrong.
+            // the shutter and the checks are not one instant: a mid-capture re-render could fill a field, so discard the bytes
             if (concealed && !await StillConcealedAsync(page, ct).ConfigureAwait(false)) return [];
 
             return png;
@@ -387,10 +304,7 @@ public sealed class ScreenshotRedactor
         }
     }
 
-    /// <summary>
-    /// Hides every secret-bearing element on the page. False when even one
-    /// frame or one element would not go, which puts the caller back on masks.
-    /// </summary>
+    // false when any frame or element would not hide: the caller falls back to masks
     private async Task<bool> ConcealAsync(IPage page, CancellationToken ct)
     {
         var all = true;
@@ -420,9 +334,6 @@ public sealed class ScreenshotRedactor
         return all;
     }
 
-    /// <summary>
-    /// True when every secret-bearing element is still both hidden and empty.
-    /// </summary>
     private async Task<bool> StillConcealedAsync(IPage page, CancellationToken ct)
     {
         foreach (var frame in page.Frames)
@@ -453,10 +364,7 @@ public sealed class ScreenshotRedactor
         return true;
     }
 
-    /// <summary>
-    /// Hands the page back as it was found. Never takes the caller's token:
-    /// a cancelled capture must still leave a usable login form behind.
-    /// </summary>
+    // never takes the caller's token: a cancelled capture must still leave a usable login form
     private async Task RevealAsync(IPage page)
     {
         foreach (var frame in page.Frames)
@@ -472,10 +380,6 @@ public sealed class ScreenshotRedactor
         }
     }
 
-    /// <summary>
-    /// A hash of the page's shape, for failure artifacts. Null when the page
-    /// cannot be read.
-    /// </summary>
     public async Task<string?> DomDigestAsync(IPage page, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -507,11 +411,7 @@ public sealed class ScreenshotRedactor
         return masks;
     }
 
-    /// <summary>
-    /// The attributes a field key plausibly appears under. Adapters name their
-    /// fields after the provider's own inputs, so this hits far more often
-    /// than not - and the password-input rule covers the rest.
-    /// </summary>
+    // adapters name fields after the provider's own inputs; the password-input rule covers the rest
     private static string SelectorFor(FieldSpec field)
     {
         var key = Escape(field.Key);

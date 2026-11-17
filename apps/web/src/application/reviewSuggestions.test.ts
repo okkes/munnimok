@@ -6,7 +6,7 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
-import { prepareReviewSuggestions, prepareSpaceSuggestions, suggestionFor, suggestionInputFingerprint } from './reviewSuggestions';
+import { createSuggestPasses, prepareReviewSuggestions, prepareSpaceSuggestions, suggestionFor, suggestionInputFingerprint } from './reviewSuggestions';
 import type { ReviewSuggestions } from './reviewSuggestions';
 
 const SPACE = 'sp';
@@ -31,10 +31,8 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     await repo.upsert('event', SPACE, 'ev1', { name: 'Holiday', from: '2026-10-01' });
     await repo.upsert('recurring', SPACE, 'rec1', { name: 'Netflix', amountCents: 1599, every: 'month', dueDay: 1, active: 1, merchantKey: 'netflix', kind: 'subscription', catId: 'subs' });
     const row = { accountId: 'chk', currency: 'EUR' };
-    // the person's own history: the same till, groceries, on the holiday
     await repo.upsert('transaction', SPACE, 'h1', { ...row, date: '2026-10-20', amountCents: -1200, merchant: 'Albert Heijn 1842 >S-GRAVENH20.10.2026 9', catId: 'groceries', needsReview: 0, eventId: 'ev1' });
     await repo.upsert('transaction', SPACE, 'h2', { ...row, date: '2026-10-25', amountCents: -900, merchant: 'Albert Heijn 1842 >S-GRAVENH25.10.2026 1', catId: 'groceries', needsReview: 0, eventId: 'ev1' });
-    // what just landed
     await repo.upsert('transaction', SPACE, 'q1', { ...row, date: '2026-10-30', amountCents: -1309, merchant: AH, catId: 'uncategorized', needsReview: 1 });
     await repo.upsert('transaction', SPACE, 'q2', { ...row, date: '2026-10-30', amountCents: 50000, merchant: 'Oranje spaarrekening', counterIban: 'NL11 INGB 0001 2345 67', catId: 'uncategorized', needsReview: 1 });
     await repo.upsert('transaction', SPACE, 'q3', { ...row, date: '2026-10-30', amountCents: -6324, merchant: 'ING BANK NV', catId: 'uncategorized', needsReview: 1 });
@@ -45,13 +43,12 @@ describe('#565 the review suggestions are prepared when rows land', () => {
   it('every row in the review gets its whole suggestion: category with its reason, event, counterparty, loan, recurring cost', async () => {
     const { store } = await seed();
     const map = await prepareSpaceSuggestions(store, SPACE);
-    expect(Object.keys(map).sort()).toEqual(['q1', 'q2', 'q3', 'q4']); // the reviewed rows get none
+    expect(Object.keys(map).sort()).toEqual(['q1', 'q2', 'q3', 'q4']);
     expect(map.q1).toMatchObject({ draft: { catId: 'groceries' }, predictedCatId: 'groceries', source: 'history-amount', evidence: 2, eventId: 'ev1' });
     // #564: money back from the own savings account is a Withdraw, linked to the pot
     expect(map.q2.draft).toMatchObject({ linkedAccountId: 'sav', catId: 'savingWithdraw' });
     // #556/#565: three loans paid to one bank — the plan the amount fits names it
     expect(map.q3.draft).toMatchObject({ linkedAccountId: 'l2', catId: 'loanRepayment' });
-    // the recurring cost owns its category: the card opens filed by it
     expect(map.q4).toMatchObject({ recurringId: 'rec1', draft: { catId: 'subs' } });
   });
 
@@ -61,7 +58,6 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     const stored = (await store.metaGet(`reviewSuggest:${SPACE}`))?.value as { byTx: ReviewSuggestions };
     const q1 = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'q1')!;
     expect(suggestionFor(stored.byTx, q1)?.predictedCatId).toBe('groceries');
-    // another device filed it meanwhile: the suggestion no longer speaks for it
     await repo.upsert('transaction', SPACE, 'q1', { catId: 'household' });
     const moved = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'q1')!;
     expect(suggestionFor(stored.byTx, moved)).toBeUndefined();
@@ -94,14 +90,11 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     const { store, repo } = await seed();
     expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 1, rows: 4 });
     const stored = (await store.metaGet(`reviewSuggest:${SPACE}`))?.value;
-    // a Confirm takes a row out of the review: nothing new to prepare
     await repo.upsert('transaction', SPACE, 'q1', { needsReview: 0, catId: 'groceries' });
     expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 0, rows: 0 });
     expect((await store.metaGet(`reviewSuggest:${SPACE}`))?.value).toEqual(stored);
-    // a row lands: the space is prepared again, whole
     await repo.upsert('transaction', SPACE, 'q5', { accountId: 'chk', currency: 'EUR', date: '2026-10-31', amountCents: -500, merchant: 'Kiosk', needsReview: 1 });
     expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 1, rows: 4 });
-    // an input changes (a new recurring cost): every row is prepared again
     await repo.upsert('recurring', SPACE, 'rec2', { name: 'Kiosk', amountCents: 500, every: 'month', dueDay: 1, active: 1, merchantKey: 'kiosk', kind: 'subscription', catId: 'subs' });
     expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 1, rows: 4 });
     const map = ((await store.metaGet(`reviewSuggest:${SPACE}`))?.value as { byTx: ReviewSuggestions }).byTx;
@@ -120,11 +113,31 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))?.predictedCatId).not.toBe('groceries');
 
     await repo.upsert('transaction', SPACE, 'k1', { catId: 'groceries', needsReview: 0 });
-    // nobody asked for this space: the map stands (the pass over every space stays cheap)
     expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 0, rows: 0 });
     expect(await prepareReviewSuggestions(store, [SPACE])).toMatchObject({ prepared: 1 });
 
     expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries', draft: { catId: 'groceries' } });
+  });
+
+  it('an ask by name that meets a waiting pass over every space is still served: what the card taught is not lost', async () => {
+    const { store, repo } = await seed();
+    const kiosk = { accountId: 'chk', currency: 'EUR', merchant: 'Zorro Kiosk', catId: 'uncategorized', needsReview: 1 as const };
+    await repo.upsert('transaction', SPACE, 'k1', { ...kiosk, date: '2026-10-30', amountCents: -500 });
+    await repo.upsert('transaction', SPACE, 'k2', { ...kiosk, date: '2026-10-31', amountCents: -730 });
+    await prepareReviewSuggestions(store);
+    await repo.upsert('transaction', SPACE, 'k1', { catId: 'groceries', needsReview: 0 });
+
+    const heard: string[] = [];
+    const passes = createSuggestPasses(store, async (fingerprint) => void heard.push(fingerprint), { delayMs: 5, idle: (callback) => callback() });
+    // a pass over every space is waiting (a row landed somewhere) when the Confirm asks for this space by name:
+    // the scheduler folds the two, and a pass over every space leaves a space alone while its inputs look current
+    passes.request();
+    passes.request(SPACE);
+    await passes.settled();
+    passes.dispose();
+
+    expect(heard).toHaveLength(1);
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries' });
   });
 
   it('an edited recurring cost moves the fingerprint and its row is prepared again; a balance that moved does not', async () => {
@@ -133,11 +146,9 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     expect((await storedMap(store)).q4.recurringId).toBe('rec1');
     const before = await suggestionInputFingerprint(store);
 
-    // a bank sync moves a balance: no suggestion reads it
     await repo.upsert('account', SPACE, 'chk', { balanceCents: 12_345 });
     expect(await suggestionInputFingerprint(store)).toBe(before);
 
-    // the subscription's price is corrected: the waiting charge no longer is that recurring cost
     await repo.upsert('recurring', SPACE, 'rec1', { amountCents: 900 });
     expect(await suggestionInputFingerprint(store)).not.toBe(before);
     expect(await prepareReviewSuggestions(store)).toMatchObject({ prepared: 1 });

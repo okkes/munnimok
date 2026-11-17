@@ -3,13 +3,7 @@ import type { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { merchantKey } from '@/domain/merchantKey';
 
-/**
- * Title memory (user request): renaming a transaction teaches the app —
- * the next arrival of the same merchant gets the preferred title
- * automatically, exactly like category memory. The bank's original
- * merchant is never touched; the rename lives in the transformation
- * overlay and the detail screen always shows the original underneath.
- */
+// like category memory: a rename teaches the app; the bank's merchant stays, the rename lives in the transformation overlay
 
 /** merchantKey → the title the user most often renames this merchant to */
 export function buildTitleMemory(
@@ -33,8 +27,7 @@ export function buildTitleMemory(
   return memory;
 }
 
-/** idempotent pass over the space: remembered renames land on rows that
- *  have none yet — runs beside the counterparty/PayPal linkers */
+/** idempotent: remembered renames land only on rows that have none; runs beside the counterparty/PayPal linkers */
 export async function applyTitleMemory(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const txs = await visibleTransactions(store, spaceId);
   const memory = buildTitleMemory(txs);

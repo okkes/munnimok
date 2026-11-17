@@ -7,11 +7,8 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Validation;
 
-/// <summary>
-/// The relay's stable connection id (#367) is opaque to us, so only its
-/// shape is policed — and by ONE rule, because bodies (validators) and
-/// route segments (connection sync) both have to agree on it.
-/// </summary>
+/// the relay's connection id (#367) is opaque: only its shape is policed, by ONE rule,
+/// since bodies and route segments must agree
 public static partial class ConnectionIds
 {
     public const int MaxLength = 64;
@@ -65,7 +62,7 @@ public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendReq
     public SendFriendRequestValidator()
     {
         RuleFor(r => r.ToUserId).NotEmpty();
-        // #169: the optional space piggyback (ownership is checked in the handler)
+        // #169: ownership of the piggybacked space is checked in the handler
         RuleFor(r => r.SpaceId).MaximumLength(64);
         RuleFor(r => r.Role).Must(role => SpaceRoles.Assignable.Contains(role!)).When(r => !string.IsNullOrEmpty(r.Role))
             .WithMessage("role must be owner, contributor or reader");
@@ -102,11 +99,8 @@ public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
         RuleFor(o => o.OpId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.SpaceId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.Entity).NotEmpty().Must(Entities.Contains).WithMessage("unknown entity");
-        // 128, not 64: composite ids are legitimate — a plan is
-        // `plan:{space-uuid}:{kind}:{period}` (~60 for real spaces) and a
-        // mirrored plan subject adds `psub:…:{segment}:{uuid}` on top. A too-tight
-        // limit 400s the push and POISONS the outbox: everything queued
-        // after the op (a hundred store receipts, say) never syncs again
+        // 128, not 64: composite ids are legitimate (`plan:{space-uuid}:{kind}:{period}`, a mirrored `psub:…` on top); too tight
+        // a limit 400s the push and POISONS the outbox: everything queued after the op never syncs again
         RuleFor(o => o.EntityId).NotEmpty().MaximumLength(128);
         RuleFor(o => o.Hlc).NotEmpty().MaximumLength(64);
         RuleFor(o => o.Fields).NotNull();
@@ -139,7 +133,6 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
         RuleFor(r => r.Kind).Must(k => k is "webpush" or "fcm").WithMessage("kind must be webpush or fcm");
         RuleFor(r => r.Lang).Must(l => l is null or "en" or "nl" or "tr").WithMessage("lang must be en, nl or tr");
         RuleFor(r => r.Endpoint).NotEmpty().MaximumLength(4096);
-        // browser subscriptions: a real push-service URL plus its key pair
         When(r => r.Kind == "webpush", () =>
         {
             RuleFor(r => r.Endpoint)
@@ -152,13 +145,8 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
     }
 }
 
-/// <summary>
-/// The relay's request bodies (#367). Bundles are sealed material a browser
-/// profile can make large, so their cap is generous; everything else is a
-/// name, a key or a typed value. Input VALUES are never inspected beyond
-/// their length: what a user typed into a provider's form is the provider's
-/// business, sealed before it rests anywhere.
-/// </summary>
+/// bundles are sealed material a browser profile can make large, so their cap is generous; input VALUES are never
+/// inspected beyond their length: what a user typed into a provider's form is the provider's business
 public sealed class ConnectorLoginRequestValidator : AbstractValidator<Connectors.ConnectorLoginRequest>
 {
     public ConnectorLoginRequestValidator()
@@ -257,12 +245,8 @@ public sealed class ConnectionCipherRequestValidator : AbstractValidator<Connect
     }
 }
 
-/// <summary>
-/// user 2026-10-07: invitation-only sign-up — the operator types an address
-/// into the admin portal: one real address, no display-name form, no
-/// whitespace inside, 254 characters at most (RFC 5321's path limit). The
-/// handler trims and lower-cases it; Logto keys the magic link on the exact string.
-/// </summary>
+/// invitation-only sign-up: one real address, no display-name form, no whitespace, 254 chars at most (RFC 5321 path limit);
+/// the handler trims and lower-cases it, Logto keys the magic link on the exact string
 public sealed class CreateInvitationRequestValidator : AbstractValidator<Admin.CreateInvitationRequest>
 {
     public CreateInvitationRequestValidator()

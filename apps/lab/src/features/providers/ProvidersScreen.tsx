@@ -11,7 +11,6 @@ import { StateChip } from './StateChip';
 
 const KIND_ORDER: Record<string, number> = { bank: 0, store: 1, registry: 2 };
 
-/** every party the control plane serves, with what it is and the kill switch */
 export function ProvidersScreen({ call, busy, act }: Readonly<ScreenProps>) {
   const [catalogue, setCatalogue] = useState<Catalogue | null | 'unreachable' | 'loading'>('loading');
   const [query, setQuery] = useState('');

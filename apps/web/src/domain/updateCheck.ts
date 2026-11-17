@@ -1,5 +1,5 @@
-// The hosted web and the bundle inside a shell both carry the git commit count of their build: hosted above
-// bundled means an update sits on the store. The store's own build number is a timestamp — never compare it.
+// hosted above bundled commit count means an update sits on the store;
+// the store's own build number is a timestamp: never compare it
 
 export interface UpdateCheckState {
   lastCheckedAt?: number;
@@ -21,9 +21,7 @@ export function updateAvailable(bundledBuild: number, remoteBuild: number, dismi
 // every environment is its own app in the stores: the page is the shell's own id, and without one no page beats another app's
 export function storeUrlOf(platform: string | undefined, appId: string | null): string | null {
   if (platform === 'android') return appId ? `market://details?id=${appId}` : null;
-  // both iOS channels ship via TestFlight today — the deep link opens the
-  // TestFlight app where the update sits. Swap the production branch to
-  // https://apps.apple.com/app/id6791102793 at public App Store launch.
+  // both iOS channels ship via TestFlight: the deep link opens it; swap to the App Store URL (id6791102793) at public launch
   if (platform === 'ios') return 'itms-beta://';
   return null;
 }

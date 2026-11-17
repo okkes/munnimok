@@ -10,13 +10,8 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// The 2026-10-09 repair: a row the prediction overlay alone marked reviewed
-/// goes back to the review, once; whatever a device said about the flag
-/// stands — a review, an auto-link's materialised flag, a value the 10-05
-/// repair restored. Counted per space: the test database is shared with
-/// the other repair specs, which run alongside.
-/// </summary>
+// a row only the prediction overlay marked reviewed goes back to review, once; a device's word on the flag stands
+// counted per space: the test database is shared with the other repair specs, which run alongside
 public class NeedsReviewRepairTests : IClassFixture<FeedsApiFactory>
 {
     private readonly FeedsApiFactory _factory;
@@ -37,7 +32,7 @@ public class NeedsReviewRepairTests : IClassFixture<FeedsApiFactory>
     private static SyncOpDto Device(string spaceId, string entityId, string hlc, params (string Name, object Value)[] fields) =>
         new(Guid.NewGuid().ToString("N"), spaceId, "txMeta", entityId, Fields(fields), hlc);
 
-    /// <summary>A server-side op on a space: the ingest's prediction overlay (floor stamp today, live clock before 2026-10-05) or a repair's.</summary>
+    // a server-side op: the ingest's prediction overlay (floor stamp now, live clock before 2026-10-05) or a repair's
     private async Task ServerOpAsync(string spaceId, string entityId, string opId, string hlc, params (string Name, object Value)[] fields)
     {
         using var scope = _factory.Services.CreateScope();
@@ -100,7 +95,6 @@ public class NeedsReviewRepairTests : IClassFixture<FeedsApiFactory>
 
         Assert.Equal(2, await RepairAsync(spaceId));
 
-        // the prediction's marks are back to review, the suggested category untouched
         foreach (var id in new[] { predicted, liveClock })
         {
             var row = Row(spaceId, id);
@@ -108,26 +102,22 @@ public class NeedsReviewRepairTests : IClassFixture<FeedsApiFactory>
             Assert.Contains("\"catId\":\"groceries\"", row.DataJson);
             Assert.EndsWith($"-{ServerHlc.DeviceId}", VersionOf(row, "needsReview"));
         }
-        // a device's word stands, whichever way it got there
         Assert.Contains("\"needsReview\":0", Row(spaceId, reviewed).DataJson);
         Assert.Contains("\"needsReview\":0", Row(spaceId, autoLinked).DataJson);
         Assert.Contains("\"needsReview\":0", Row(spaceId, restored).DataJson);
         Assert.Contains("\"catId\":\"transport\"", Row(spaceId, restored).DataJson);
         Assert.Contains("\"needsReview\":1", Row(spaceId, unreviewed).DataJson);
 
-        // the devices pull the repair as ordinary ops
         var pull = await client.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
         var repairOp = Assert.Single(pull!.Ops, o => o.EntityId == predicted && o.Fields.ContainsKey("needsReview") && o.Fields["needsReview"].GetInt32() == 1);
         Assert.Equal(ImportIds.OpId($"repair:needs-review:{spaceId}:{predicted}"), repairOp.OpId);
         Assert.EndsWith($"-{ServerHlc.DeviceId}", repairOp.Hlc);
-        Assert.Single(repairOp.Fields);   // only the flag moves
+        Assert.Single(repairOp.Fields);
 
-        // a later word from the person outranks the repair, as any device op does
         var laterStamp = ServerHlc.Encode(DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds(), 0).Replace($"-{ServerHlc.DeviceId}", "-dev1");
         await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Device(spaceId, predicted, laterStamp, ("needsReview", 0))]));
         Assert.Contains("\"needsReview\":0", Row(spaceId, predicted).DataJson);
 
-        // idempotent: the second pass finds nothing to do
         Assert.Equal(0, await RepairAsync(spaceId));
     }
 

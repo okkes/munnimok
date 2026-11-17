@@ -12,15 +12,8 @@ import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
-/**
- * Brand logo picker for recurring costs, accounts, … Two labelled
- * segments: the vendored simpleicons set leads (public/brands —
- * precached, instant, works fully offline and for demo/offline
- * identities) and, when the server has logo.dev configured and the
- * identity may use the network, an online section follows with far
- * wider coverage. Local hits never disappear when the online answer
- * lands (user bug: they used to be deduped away).
- */
+// vendored simpleicons lead (precached, work offline); logo.dev follows when configured and the identity may go online
+// local hits must never disappear when the online answer lands
 
 interface BrandEntry {
   slug: string;
@@ -42,9 +35,7 @@ export interface PickedLogo {
 
 /** #520: a host whose face can be an icon of its own (a recurring cost) offers the icon font beside the logos */
 export interface IconChoice {
-  /** the icon the host shows when no logo is set */
   value: string;
-  /** its suggestions, shown first */
   featured: readonly string[];
   /** the face now: a logo, the host's default icon, or an icon picked before (the sheet then opens on the icons) */
   face: 'logo' | 'default' | 'own';
@@ -76,7 +67,6 @@ interface BrandIconPickerProps {
   onPick: (picked: PickedLogo) => void;
   /** prefill (e.g. the cost's name); the first tap on the field clears it */
   initialQuery?: string;
-  /** #520: offer the whole icon font as well — an Icon | Logo switch heads the sheet */
   icons?: IconChoice;
 }
 
@@ -93,12 +83,9 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
   }, [open]);
   const prefilled = useRef(false);
   const uploadRef = useRef<HTMLInputElement>(null);
-  // #160: desktop-only webcam door under the upload row
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
 
-  // search starts from the name the user already typed — usually exactly
-  // the brand they want; one tap on the field starts a fresh query
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery.trim());
@@ -113,8 +100,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
   };
   const [index, setIndex] = useState<BrandEntry[]>([]);
   const [remote, setRemote] = useState<RemoteLogo[]>([]);
-  // 'unavailable' = offline or server not configured — say so instead of
-  // silently showing only the vendored set (looked like a broken search)
+  // 'unavailable' = offline or unconfigured: say so, or the vendored-only list looks like a broken search
   const [remoteState, setRemoteState] = useState<'idle' | 'searching' | 'ok' | 'unavailable'>('idle');
   const searchSeq = useRef(0);
 
@@ -122,9 +108,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
     if (open) void loadBrandIndex().then(setIndex);
   }, [open]);
 
-  // live logo.dev search, debounced — the primary source when it answers.
-  // Local-only identities skip it entirely (their choice, not an outage,
-  // so no 'unavailable' note either).
+  // local-only identities skip the live search and show no 'unavailable' note: their choice, not an outage
   useEffect(() => {
     const q = query.trim();
     if (!open || tab !== 'logo' || q.length < 2 || readSessionIdentity()?.kind !== 'user') {
@@ -163,23 +147,19 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
     onOpenChange(false);
   };
 
-  // one downscale path for all three photo doors (input, native, webcam):
-  // undecodable files (HEIC on desktop…) reject — swallow like the
-  // sibling upload sites; the picker simply stays open
+  // undecodable files (HEIC on desktop) reject: swallowed like the sibling upload sites, the picker stays open
   const applyPhoto = (file: File): void => {
     void downscaleImage(file, 256, 0.85)
       .then((dataUrl) => pick(dataUrl))
       .catch(() => undefined);
   };
 
-  // #521: the web search starts from what the sheet is looking for — "<name> logo"
   const searchWords = (query || initialQuery).trim();
   const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource(applyPhoto, () => uploadRef.current?.click(), searchWords ? `${searchWords} logo` : '');
 
   return (
     <>
-    {/* #344: steady — search results and conditional sections toggle per
-        keystroke, and the growing dialog pumped between sizes */}
+    {/* #344: steady — results and sections toggle per keystroke and a growing dialog pumped between sizes */}
     <Sheet open={open} onOpenChange={onOpenChange} title={t(icons ? 'recurring.faceTitle' : 'recurring.iconTitle')} size="tall" steady dragHandle>
       <div className="flex flex-col gap-3 pt-1">
         {icons && (
@@ -201,7 +181,6 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
             ))}
           </div>
         )}
-        {/* #520 (user): the whole icon font, the custom categories' picker — no ring while a logo is the face */}
         {icons && tab === 'icon' ? (
           <IconPicker
             value={icons.value}
@@ -214,8 +193,6 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
           />
         ) : (
         <>
-        {/* the field arrives prefilled with the cost's name — #234: the
-            shared SearchField (this picker's pattern, generalized) */}
         <SearchField
           testId="brandpicker-search"
           value={query}
@@ -238,9 +215,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
             {t('recurring.iconNone')}
           </button>
         )}
-        {/* own image (user request 2026-08-01): third source beside the
-            vendored set and logo.dev — downscaled like event pictures so
-            it syncs as a field */}
+        {/* own image: third source beside vendored and logo.dev, downscaled like event pictures so it syncs as a field */}
         <button
           data-testid="brandpicker-upload"
           onClick={pickPhoto}
@@ -249,7 +224,6 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
           <Icon name="image-plus-outline" size={18} color="var(--m-accent)" />
           {t('recurring.iconUpload')}
         </button>
-        {/* #160: desktop webcam snapshot — same downscale as the upload */}
         {webcamDoor && (
           <button
             data-testid="brandpicker-webcam"
@@ -280,8 +254,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
           </p>
         )}
 
-        {/* the vendored set leads and never disappears; captions only when
-            both segments are on screen, so the plain browse view stays calm */}
+        {/* captions only when both segments are on screen, so the plain browse view stays calm */}
         {remoteShown.length > 0 && localShown.length > 0 && (
           <div className="m-cap px-1">{t('recurring.iconBuiltin')}</div>
         )}
@@ -327,7 +300,6 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
         )}
       </div>
     </Sheet>
-    {/* #160: snapshot feeds the same downscale-then-pick path */}
     <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={applyPhoto} />
     </>
   );

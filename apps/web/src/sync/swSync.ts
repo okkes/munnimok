@@ -7,18 +7,8 @@ import type { SyncBackend } from './backend';
 import { drainPull } from './drain';
 import { readSpaceRoles } from './spaceAccess';
 
-/**
- * Background sync for the service worker (app killed or in the
- * background): a Web Push wakes the worker, which pulls new ops into
- * the same IndexedDB the app reads — so the next open starts hot.
- * On Android the one-shot Background Sync event also flushes the
- * outbox when connectivity returns.
- *
- * The worker cannot read localStorage, so the app mirrors what's needed
- * (API url, identity, current access token + expiry) into the tiny
- * munni_sw IDB store. When the mirrored token has expired the worker
- * simply skips — the app syncs on next open; nothing is ever lost.
- */
+// a Web Push wakes the worker to pull into the app's IndexedDB; Android Background Sync also flushes the outbox
+// the worker cannot read localStorage: the app mirrors url, identity and token + expiry into munni_sw; expired = skip
 
 const SW_DB = 'munni_sw';
 
@@ -66,30 +56,18 @@ export async function readSwSession(now = Date.now()): Promise<SwSession | null>
   return raw;
 }
 
-/**
- * How long one wake pages through spaces before it leaves the rest to the
- * next pull: a browser ends a worker's event soon (on some platforms within
- * half a minute), and the budget alerts still run after the pull.
- */
+// a browser ends a worker's event soon (on some platforms within 30 s), and the budget alerts still run after the pull
 export const SW_PULL_BUDGET_MS = 20_000;
 
 interface SwSyncDeps {
-  /** injectable for tests */
   backend?: SyncBackend;
   session?: SwSession | null;
-  /** the worker's clock and its pull budget, for tests */
   now?: () => number;
   budgetMs?: number;
 }
 
-/**
- * Pull new ops for one space (push payload) or every reachable space.
- * Merge-by-LWW makes replays harmless; cursors keep it cheap. Each space
- * is paged until drained (sync/drain.ts): the head stamp after one page
- * this used to write skipped everything past the first thousand ops for
- * good. A wake that runs out of budget stops at the last page it applied,
- * and the next pull — the app's or the next push's — goes on from there.
- */
+// each space is paged until drained (sync/drain.ts); a wake out of budget stops at its last applied page,
+// and the next pull goes on from there
 export async function backgroundPull(spaceId?: string, deps: SwSyncDeps = {}): Promise<number> {
   // 'in' on purpose: tests inject an explicit null to mean "no session"
   const session = 'session' in deps ? deps.session : await readSwSession();
@@ -118,11 +96,7 @@ export async function backgroundPull(spaceId?: string, deps: SwSyncDeps = {}): P
   return applied;
 }
 
-/**
- * Flush queued local ops (Android Background Sync: fires when
- * connectivity returns, even with the app killed). Deterministic op ids
- * make a double-flush with the app harmless.
- */
+// Android Background Sync flushes queued ops when connectivity returns; deterministic op ids make a double flush harmless
 export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
   // 'in' on purpose: tests inject an explicit null to mean "no session"
   const session = 'session' in deps ? deps.session : await readSwSession();

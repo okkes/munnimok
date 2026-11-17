@@ -21,7 +21,6 @@ export interface SessionRow {
   stale: boolean;
 }
 
-/** DELETE /admin/bank-connections/{id}: the party's side and what was forgotten here */
 export interface DisconnectOutcome {
   sessionId: string;
   provider: string;
@@ -47,7 +46,6 @@ const STEPS: readonly (readonly [number, string])[] = [
   [12, 'y'],
 ];
 
-/** "3 h ago" (or "in 25 min") beside the absolute moment: a glance says whether a row is alive */
 export function relativeText(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return 'never';
   const ms = Date.parse(iso) - now;
@@ -64,7 +62,6 @@ export function relativeText(iso: string | null | undefined, now = Date.now()): 
   return ms > 0 ? `in ${text}` : `${text} ago`;
 }
 
-/** what a disconnect came to, in one line for the notice strip */
 export function outcomeLine(outcome: DisconnectOutcome): string {
   const who = `${partyLabel(outcome.provider)} connection ${shortId(outcome.connectionId)}`;
   const forgotten = outcome.accountsForgotten === 1 ? '1 account reference forgotten' : `${outcome.accountsForgotten} account references forgotten`;
@@ -90,12 +87,10 @@ const STATE_CLASS: Record<string, string> = {
   disabled: 'danger-chip',
 };
 
-/** the state as a colour: alive green, a sign-in wanted amber, the dead ones red, anything else grey */
 export function StateBadge({ state }: Readonly<{ state: string }>) {
   return <span className={`chip ${STATE_CLASS[state] ?? ''}`}>{state}</span>;
 }
 
-/** an id kept short, the whole of it on hover and one click away in the clipboard */
 export function IdChip({ id, testId }: Readonly<{ id: string; testId?: string }>) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -115,7 +110,6 @@ export function IdChip({ id, testId }: Readonly<{ id: string; testId?: string }>
   );
 }
 
-/** a destructive act asks once, inline: the button turns into the question with its yes and no */
 export function ConfirmButton({
   label,
   question,
@@ -154,7 +148,6 @@ export function ConfirmButton({
   );
 }
 
-/** the scheduler's last word on a row: when it ran, what it hit, when it may run again */
 function ScheduleCell({ row, now }: Readonly<{ row: SessionRow; now: number }>) {
   const paused = row.scheduleNotBefore && Date.parse(row.scheduleNotBefore) > now;
   return (
@@ -171,11 +164,6 @@ function ScheduleCell({ row, now }: Readonly<{ row: SessionRow; now: number }>) 
   );
 }
 
-/**
- * The sessions table the Users diagnosis and the Bank connections dashboard
- * share: party, state, connection, the moments, the scheduler's word, the
- * bundle, the accounts — and a Disconnect that asks once.
- */
 export function SessionsTable({
   rows,
   busy,

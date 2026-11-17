@@ -15,7 +15,6 @@ describe('what a connection says about renewing it (#528)', () => {
 
   it('a consent the relay no longer keeps has ended — but only once the relay was heard', () => {
     expect(renewalOf({ status: 'ok' }, { state: 'active' }, undefined, true, consent).ended).toBe(true);
-    // offline: this device's row and the synced status speak instead
     expect(renewalOf({ status: 'ok' }, { state: 'active' }, undefined, false, consent).ended).toBe(false);
     expect(renewalOf({ status: 'expired' }, { state: 'active' }, undefined, false, consent).ended).toBe(true);
   });

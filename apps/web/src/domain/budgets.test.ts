@@ -76,7 +76,6 @@ describe('budget periods', () => {
     expect(budgetPeriodAt(b, 0)).toEqual({ start: '2026-06-15', end: '2026-06-30' });
     expect(budgetPeriodAt(b, 1)).toEqual({ start: '2026-07-01', end: '2026-07-31' });
     expect(currentBudgetPeriod(b, '2026-08-20')).toEqual({ start: '2026-08-01', end: '2026-08-31' });
-    // before the start date, the first period
     expect(currentBudgetPeriod(b, '2026-06-10')).toEqual({ start: '2026-06-15', end: '2026-06-30' });
   });
 
@@ -151,7 +150,6 @@ describe('carry-over replay', () => {
     // limit 100/week: week0 spends 40 (leftover 60), week1 spends 0
     const txs = [tx('2026-06-02', -4000)];
     const withOne = budget({ carryOver: 1, carryMode: 'periods', carryPeriods: 1 });
-    // in week1 the 60 from week0 is available…
     expect(carriedCents(withOne, txs, budgetFamily(['groceries'], catalog), '2026-06-10')).toBe(6000);
     // …but with N=1, by week2 only week1's (untouched full) leftover counts
     expect(carriedCents(withOne, txs, budgetFamily(['groceries'], catalog), '2026-06-17')).toBe(10_000);

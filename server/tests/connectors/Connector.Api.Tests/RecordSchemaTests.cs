@@ -8,22 +8,10 @@ using ShopConnector.Adapters.Mock;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The three decisions behind what a service publishes as its record models,
-/// tested where the generated document cannot reach them.
-///
-/// <see cref="ApiDocumentTests"/> proves the wiring against a real host, but a
-/// shop connector only ever returns receipts - so the document it produces can
-/// show that the wrong shapes are EXCLUDED and never that the right ones are
-/// included. The registry connector, whose whole reference now rests on
-/// <c>credit_registration</c> arriving here, has no API suite of its own.
-/// </summary>
+// ApiDocumentTests can only show wrong shapes are excluded (a shop returns only receipts); the registry connector's
+// shapes, which no API suite covers, are checked here
 public sealed class RecordSchemaTests
 {
-    /// <summary>
-    /// The registry connector's case: a service whose providers return a shape
-    /// no shop ever will. This is the half a shop-shaped document cannot show.
-    /// </summary>
     [Fact]
     public void A_service_publishes_the_shapes_its_providers_actually_return()
     {
@@ -32,11 +20,7 @@ public sealed class RecordSchemaTests
         Assert.Equal([ResourceShape.CreditRegistration], shapes);
     }
 
-    /// <summary>
-    /// Two providers returning the same shape publish it once, and the order is
-    /// the platform's own rather than whichever provider happened to register
-    /// first - so a document does not churn because a provider was renamed.
-    /// </summary>
+    // order follows the platform's own list, not provider registration, so the document does not churn on a rename
     [Fact]
     public void Shapes_are_deduplicated_and_ordered_by_the_platforms_own_list()
     {
@@ -50,7 +34,6 @@ public sealed class RecordSchemaTests
             [ResourceShape.Account, ResourceShape.Receipt, ResourceShape.CreditRegistration],
             RecordSchemaTransformer.Shapes(registry));
 
-        // The declaration order in the enum, which is what RecordShapes walks.
         Assert.Equal(
             [
                 ResourceShape.Account, ResourceShape.Transaction, ResourceShape.Receipt,
@@ -59,11 +42,6 @@ public sealed class RecordSchemaTests
             RecordShapes.All.Keys);
     }
 
-    /// <summary>
-    /// Every shape has a record. A member added to the enum without one would
-    /// be a resource a manifest could declare, a consumer could see in the
-    /// catalogue, and nothing anywhere could describe.
-    /// </summary>
     [Fact]
     public void Every_resource_shape_has_a_record_behind_it()
     {
@@ -74,32 +52,20 @@ public sealed class RecordSchemaTests
         }
     }
 
-    // ---- what a row is -----------------------------------------------------
-
     [Fact]
     public void One_shape_is_stated_flatly_and_several_are_a_choice()
     {
         var receipt = new OpenApiSchemaReference("Receipt");
         var credit = new OpenApiSchemaReference("CreditRegistration");
 
-        // A oneOf of one puts the model behind a chooser in a reference
-        // browser, for a service that never makes the choice.
+        // a oneOf of one puts the model behind a chooser in a reference browser
         Assert.Same(receipt, RecordSchemaTransformer.Rows([receipt]));
 
         var several = Assert.IsType<OpenApiSchema>(RecordSchemaTransformer.Rows([receipt, credit]));
         Assert.Equal([receipt, credit], several.OneOf);
     }
 
-    // ---- whether there are any ---------------------------------------------
-
-    /// <summary>
-    /// Nullability is carried over from the schema being replaced, and this
-    /// generator writes it two ways. A nullable reference to a component comes
-    /// out as a <c>oneOf</c> beside a null - which is the form BOTH of these
-    /// properties are actually in, so a check that only read the type flag
-    /// would silently report every one of them as non-null and promise rows on
-    /// a job that has not run yet.
-    /// </summary>
+    // this generator writes a nullable reference as a oneOf beside a null: a check reading only the type flag calls it non-null
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -118,26 +84,15 @@ public sealed class RecordSchemaTests
 
         Assert.True(RecordSchemaTransformer.Nullable(nullable));
 
-        // And the shape either form is distinguished FROM: a plain array, which
-        // is what DataResponse carries and what must stay required.
+        // a plain array is what DataResponse carries and must stay required
         Assert.False(RecordSchemaTransformer.Nullable(new OpenApiSchema { Type = JsonSchemaType.Array }));
         Assert.False(RecordSchemaTransformer.Nullable(new OpenApiSchemaReference("JsonArray")));
     }
 
-    /// <summary>
-    /// A registry of providers returning exactly the given shapes, built out of
-    /// the real <see cref="ProviderRegistry"/> so the manifests go through
-    /// <c>ManifestValidator</c> on the way in - a stub that skipped it could
-    /// declare a resource no service could ever serve.
-    /// </summary>
+    // built on the real ProviderRegistry so the manifests pass ManifestValidator
     private static ProviderRegistry Registry(params ResourceShape[] shapes) =>
         new ProviderRegistry(shapes.Select((shape, index) => (IProviderAdapter)new ShapedAdapter(shape, index)));
 
-    /// <summary>
-    /// The mock store, renamed and with its resource's shape swapped. Built
-    /// from a shipped manifest rather than written from scratch so it stays a
-    /// valid provider without this file having to know what makes one.
-    /// </summary>
     private sealed class ShapedAdapter(ResourceShape shape, int index) : IProviderAdapter
     {
         public ProviderManifest Describe()

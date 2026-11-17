@@ -14,8 +14,7 @@ on:
       - '.github/workflows/release-images.yml'
   workflow_dispatch:
 
-# GHCR: the Synology registry is LAN-only (GH runners time out reaching it),
-# so images live in GitHub's registry and the NAS pulls from ghcr.io.
+# GHCR, not the Synology registry: that one is LAN-only and GH runners time out reaching it
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
@@ -25,11 +24,10 @@ permissions:
 
 jobs:
   api-tests:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
-    # the hosts pull the moving channel tag: a newer push of this branch cancels the older build before it can move the tag back
+    # hosts pull the moving channel tag: a newer push cancels the older build before it can move the tag back
     concurrency:
       group: images-${{ github.ref }}-tests
       cancel-in-progress: true
@@ -39,14 +37,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet build server/Munni.slnx
-      # the connector agent's live-view and redaction tests drive a real
-      # headless Chromium; the Playwright package ships the installer
+      # the connector agent's tests drive a real headless Chromium
       - name: Chromium for the agent's browser tests
         run: pwsh server/tests/connectors/Connector.Kit.Agent.Tests/bin/Debug/net10.0/playwright.ps1 install chromium --with-deps
       - run: dotnet test server/Munni.slnx --no-build --collect:"XPlat Code Coverage" --results-directory coverage
-      # Munni.Api is gated by MSBuild (server/tests/Directory.Build.props);
-      # the connector assemblies are covered by several suites each, so
-      # their 85 % floor is the union over every report of this run
+      # Munni.Api is gated by MSBuild (Directory.Build.props); the connector assemblies by the union of all reports
       - name: Coverage gate
         run: |
           status=0
@@ -55,13 +50,9 @@ jobs:
           { echo '### Server line coverage (floor 85 % per assembly)'; echo; sed 's/^coverage gate: /- /' gate.txt; } >> "$GITHUB_STEP_SUMMARY"
           exit $status
 
-  # PI1: one native build per architecture (no QEMU — full-speed .NET
-  # and Vite builds), merged into one multi-arch tag by the manifest
-  # job below. The NAS (amd64) and a Raspberry Pi (arm64) pull the
-  # same :dev/:latest tag and get their own layers.
+  # one native build per architecture (no QEMU), merged into one multi-arch tag by the manifest job
   images:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     needs: api-tests
     strategy:
@@ -72,15 +63,14 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    # per architecture: in one group the two legs of a run would cancel each other
+    # per architecture: in one group the two legs would cancel each other
     concurrency:
       group: images-${{ github.ref }}-${{ matrix.arch }}
       cancel-in-progress: true
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       build: ${{ steps.meta.outputs.build }}
-    # the images are stack-agnostic: every stack configures them through the
-    # runtime overlay (MUNNI_* env at container start) — nothing is baked
+    # stack-agnostic: every stack configures the images through the runtime overlay (MUNNI_* env), nothing is baked
     steps:
       - uses: actions/checkout@v7
         with:
@@ -90,7 +80,6 @@ jobs:
         id: meta
         run: |
           echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
-          # master -> latest, dev -> dev (the platform config picks a channel per environment)
           if [ "${GITHUB_REF_NAME}" = "dev" ]; then
             echo "channel=dev" >> $GITHUB_OUTPUT
           else
@@ -118,8 +107,7 @@ jobs:
           context: server
           file: server/src/Munni.Api/Dockerfile
           push: true
-          # arch-suffixed staging tag only — the channel tags are minted
-          # by the manifest job once BOTH arches exist
+          # staging tag only: the manifest job mints the channel tags once both arches exist
           tags: ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
           cache-from: type=gha,scope=api-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
@@ -146,8 +134,6 @@ jobs:
           cache-from: type=gha,scope=admin-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=admin-${{ matrix.arch }}
 
-      # the connector lab (#441): the operator's workbench beside the admin
-      # portal, in every environment; configured through the runtime overlay
       - name: Build & push lab
         uses: docker/build-push-action@v7
         with:
@@ -158,9 +144,6 @@ jobs:
           cache-from: type=gha,scope=lab-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=lab-${{ matrix.arch }}
 
-      # the shared-services cockpit — a separate app from the env admin
-      # dashboard. Nothing is baked: every stack that runs it configures
-      # it through the runtime overlay (MUNNI_* env at container start).
       - name: Build & push control
         uses: docker/build-push-action@v7
         with:
@@ -171,8 +154,6 @@ jobs:
           cache-from: type=gha,scope=control-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=control-${{ matrix.arch }}
 
-      # the connector control plane of an environment (#367): every provider
-      # pack, no browser — arch-agnostic like the api
       - name: Build & push connector-api
         uses: docker/build-push-action@v7
         with:
@@ -184,9 +165,7 @@ jobs:
           cache-from: type=gha,scope=connector-api-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=connector-api-${{ matrix.arch }}
 
-      # the agent carries Chromium (Playwright's image) — amd64 only until
-      # Chromium under Playwright on arm64 is verified; the manifest job
-      # tags it from the one architecture
+      # amd64 only until Chromium under Playwright on arm64 is verified (#367)
       - name: Build & push connector-agent
         if: matrix.arch == 'amd64'
         uses: docker/build-push-action@v7
@@ -199,14 +178,12 @@ jobs:
           cache-from: type=gha,scope=connector-agent-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=connector-agent-${{ matrix.arch }}
 
-  # merge the per-arch pushes into the channel tags the hosts pull
   manifest:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     needs: images
     runs-on: ubuntu-latest
-    # never cancelled: stopped between two images the channel would point at a mix of two builds — a second one waits its turn
+    # never cancelled: stopped between two images the channel would mix two builds
     concurrency:
       group: images-${{ github.ref }}-manifest
       cancel-in-progress: false
@@ -230,7 +207,7 @@ jobs:
             echo "### $image:$CHANNEL" >> $GITHUB_STEP_SUMMARY
             docker buildx imagetools inspect "$REGISTRY/$image:$CHANNEL" | grep -E 'Platform|Digest' | head -6 >> $GITHUB_STEP_SUMMARY
           done
-          # the agent exists for amd64 only (#367): its channel tags point at that one build
+          # the agent is amd64 only (#367): its channel tags point at that one build
           docker buildx imagetools create \
             -t "$REGISTRY/munni-connector-agent:$CHANNEL" \
             -t "$REGISTRY/munni-connector-agent:$CHANNEL-$BUILD" \

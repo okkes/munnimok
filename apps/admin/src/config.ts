@@ -1,10 +1,5 @@
-/**
- * Admin console configuration: runtime overlay first, baked Vite env
- * second — the same contract as the web app (apps/web/src/app/config.ts).
- * /runtime-config.js is rewritten per deployment by the nginx entrypoint
- * (deploy/nginx/40-runtime-config.sh) so one public image serves every
- * stack; the committed stub sets nothing and the baked config applies.
- */
+// runtime overlay (/runtime-config.js, written per deployment by deploy/nginx/40-runtime-config.sh) beats the baked
+// Vite env, so one public image serves every stack
 type RuntimeKey = 'API_URL' | 'LOGTO_ENDPOINT' | 'LOGTO_APP_ID' | 'LOGTO_RESOURCE' | 'GLITCHTIP_DSN' | 'LAB_URL';
 
 const runtime = (key: RuntimeKey): string | undefined => {
@@ -18,7 +13,6 @@ export const config = {
   logtoEndpoint: runtime('LOGTO_ENDPOINT') ?? (import.meta.env.VITE_LOGTO_ENDPOINT as string | undefined) ?? '',
   logtoAppId: runtime('LOGTO_APP_ID') ?? (import.meta.env.VITE_LOGTO_APP_ID as string | undefined) ?? '',
   logtoResource: runtime('LOGTO_RESOURCE') ?? (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
-  // the connector lab (#441) beside this portal: the Connectors tab hands over to it
   labUrl: runtime('LAB_URL') ?? (import.meta.env.VITE_LAB_URL as string | undefined) ?? 'http://localhost:5177',
 };
 export type AdminConfig = typeof config;

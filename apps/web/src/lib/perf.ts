@@ -8,16 +8,8 @@ import { reportWarning } from './report';
 export type TransactionEvent = Parameters<NonNullable<BrowserOptions['beforeSendTransaction']>>[0];
 type SpanJSON = NonNullable<TransactionEvent['spans']>[number];
 
-/**
- * Performance instrumentation (user 2026-10-09: "3–4 seconds on Confirm,
- * sometimes nothing"): the next slow path must be visible with numbers,
- * in production and on the developer's machine. One protocol, one place —
- * spans ride the Sentry SDK into GlitchTip's Performance view beside the
- * errors (docs/observability.md); in development the same spans warn in
- * the console when they overrun their budget. Every helper is a no-op
- * without a Sentry client (no DSN; the demo/offline gates in main.tsx),
- * and nothing here carries contents: names, counts and durations only.
- */
+// spans ride the Sentry SDK into GlitchTip's Performance view; dev warns in the console when one overruns its budget
+// every helper is a no-op without a Sentry client; nothing here carries contents: names, counts and durations only
 
 /** what a hot path may take, in ms, before it is a finding: the dev
  *  console warns and the span is tagged `munni.over_budget` */
@@ -39,10 +31,7 @@ export const perfBudget: Readonly<Record<string, number>> = Object.freeze({
 export type PerfAttributes = Record<string, string | number | boolean>;
 
 export interface MeasureOptions {
-  /** nest under this span instead of the scope's current one — async
-   *  code that interleaves with the UI's own spans names its parent;
-   *  `null` = a root of its own (a transaction) even while another span
-   *  is active, for work that outlives the span it was started from */
+  /** nest under this span instead of the current one; `null` = own root transaction, for work that outlives its starter */
   parent?: Span | null;
 }
 
@@ -51,8 +40,7 @@ export const opFor = (name: string): string => `munni.${name.split('.')[0]}`;
 
 type SlowSink = (message: string, detail: { name: string; ms: number; budget: number }) => void;
 
-// the dev server's console; silent in production builds and under the
-// test runner (a slow CI box is not a finding) — tests install their own
+// dev server console only: silent in production and under the test runner (a slow CI box is not a finding)
 let slowSink: SlowSink | null = import.meta.env.DEV && !import.meta.env.VITEST ? (message) => console.warn(message) : null;
 
 /** where budget overruns go (tests); null silences them */
@@ -60,7 +48,6 @@ export function setSlowLogSink(sink: SlowSink | null): void {
   slowSink = sink;
 }
 
-/** the dev-time catch: true when `ms` overran the budget (and the sink was told) */
 export function slowLog(name: string, ms: number, budget: number | undefined = perfBudget[name]): boolean {
   if (budget === undefined || ms <= budget) return false;
   slowSink?.(`[perf] ${name} took ${Math.round(ms)} ms (budget ${budget} ms)`, { name, ms, budget });
@@ -81,11 +68,7 @@ function settle(span: Span, name: string, started: number): void {
   slowLog(name, ms, budget);
 }
 
-/**
- * Time `fn` as a span named `name` (op `munni.<area>`): a root span is a
- * transaction in GlitchTip, a nested one a row in its parent's waterfall.
- * Sync or async — the result (or the rejection) passes through untouched.
- */
+/** a root span is a GlitchTip transaction, a nested one a row in its parent's waterfall; the result passes through */
 export function measure<T>(name: string, fn: (span: Span) => T, attributes?: PerfAttributes, options: MeasureOptions = {}): T {
   return Sentry.startSpan({ name, op: opFor(name), attributes, parentSpan: options.parent }, (span) => {
     const started = performance.now();
@@ -113,21 +96,16 @@ export function measure<T>(name: string, fn: (span: Span) => T, attributes?: Per
   });
 }
 
-/** a cheap custom number on the active transaction (a phase inside a
- *  span, a count that explains a duration) + the same dev-time budget check */
 export function mark(name: string, ms: number): void {
   Sentry.setMeasurement(name, ms, 'millisecond');
   Sentry.getActiveSpan()?.setAttribute(`munni.${name}_ms`, Math.round(ms));
   slowLog(name, ms);
 }
 
-/** the active space's period type on every event and transaction (never
- *  an id): the period math scales with it (user 2026-10-09) */
+/** the active space's period type on every event and transaction (never an id): the period math scales with it */
 export function tagSpacePeriod(periodType: string | undefined): void {
   Sentry.setTag('space.period', periodType ?? 'none');
 }
-
-/* ── what leaves: routes, never rows ──────────────────────────────────── */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -138,11 +116,7 @@ const isIdSegment = (segment: string): boolean =>
 
 const scrubSegments = (path: string): string => path.split('/').map((s) => (isIdSegment(s) ? ':id' : s)).join('/');
 
-/**
- * Ids, queries and fragments out of a URL (financial app, user
- * 2026-10-09: a span names the ROUTE, never the row). The hash router's
- * path survives as a pattern: `https://app/#/transactions/:id`.
- */
+// a span names the ROUTE, never the row (financial app): ids, queries and fragments go; the hash path survives as a pattern
 export function scrubUrl(raw: string): string {
   const [beforeHash, ...hashParts] = raw.split('#');
   const base = beforeHash.split('?')[0];
@@ -178,9 +152,6 @@ function scrubSpan(span: SpanJSON): void {
   scrubBag(span.data);
 }
 
-/** the same scrub over everything an event carries: its own url, its
- *  trace data, its breadcrumbs (fetches, navigations) and, on a
- *  transaction, every span */
 export function scrubEvent<E extends SentryEvent>(event: E): E {
   scrubBag(event.request as Record<string, unknown> | undefined);
   scrubBag(event.contexts?.trace?.data);
@@ -189,11 +160,7 @@ export function scrubEvent<E extends SentryEvent>(event: E): E {
   return event;
 }
 
-/**
- * A sync round that moved nothing and stayed under budget is a heartbeat,
- * not a finding — one every 10 s per open tab would drown the Performance
- * view. A SLOW empty round still ships: that is the finding.
- */
+// an empty sync round under budget is a heartbeat (one per 10 s per tab would drown the Performance view); a SLOW one ships
 export function isIdleSyncRound(event: TransactionEvent): boolean {
   if (event.transaction !== 'sync.round') return false;
   const data = event.contexts?.trace?.data ?? {};
@@ -206,15 +173,9 @@ export function isIdleSyncRound(event: TransactionEvent): boolean {
 export const transactionFilter = (event: TransactionEvent): TransactionEvent | null =>
   isIdleSyncRound(event) ? null : scrubEvent(event);
 
-/**
- * The responses the app holds open for minutes - the sync stream, a live
- * view's pushed frames (#429) - are never a span: one still open keeps the
- * pageload or navigation it started under waiting until its deadline, and
- * reads as the slowest request there is. The API leaves them out the same way.
- */
+// held-open responses (sync stream, live view #429) are never a span: an open one keeps its pageload/navigation waiting
+// until the deadline and reads as the slowest request; the API leaves them out the same way
 export const isHeldStream = (url: string): boolean => /\/(?:sync\/events|live\/stream)(?:\?|$)/.test(url);
-
-/* ── the interaction the person felt ─────────────────────────────────── */
 
 export interface InpSummary {
   /** the page's worst interaction, ms from the tap to the next frame */
@@ -257,18 +218,11 @@ export function summarizeInp(metric: INPMetricWithAttribution): InpSummary {
   };
 }
 
-// one GlitchTip issue per element: the message names the target, the
-// numbers ride as extra on each event
+// one GlitchTip issue per element: the message names the target, the numbers ride as extra
 const reportInp = (summary: InpSummary): void => reportWarning('web-vitals', `INP poor: ${summary.target}`, { ...summary });
 
-/**
- * INP is the number behind "Confirm feels slow": the tap to the next
- * frame. The tracing integration ships it as a standalone span GlitchTip
- * has no page for, so a POOR interaction (over 500 ms, web-vitals' own
- * threshold) becomes a warning event with its attribution instead — the
- * element, the three phases and the longest script — once per page life
- * (the browser reports the worst interaction when the page hides).
- */
+// the tracing integration ships INP as a standalone span GlitchTip has no page for: a POOR one (over 500 ms) becomes a
+// warning event with its attribution, once per page life
 export function installWebVitals(report: (summary: InpSummary) => void = reportInp, subscribe: typeof onINP = onINP): void {
   let sent = false;
   subscribe((metric) => {

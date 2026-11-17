@@ -4,30 +4,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Transport;
 
-/// <summary>
-/// The enrollment state file: one entry per connector this machine serves.
-///
-/// It exists so that an agent enrolls exactly once per connector: an
-/// enrollment code is one-time and HMAC-signed, so a restart that re-enrolled
-/// would leave a BYO user unable to bring their agent back without asking for
-/// a new code - a human, at a keyboard, for every recreate.
-/// </summary>
-/// <remarks>
-/// <b>Keyed by CONTROL PLANE rather than by connection name</b>, because that
-/// is what a token actually belongs to: it is scoped to one connector's
-/// <c>/agent/v1/*</c> and is meaningless anywhere else. Two consequences are
-/// worth having. Renaming a connection in a compose file is free - the
-/// enrollment is found by the address, not the label - and pointing one at a
-/// different connector still forces a fresh enrollment rather than sending one
-/// service's token to another, which is the rule this file has always had.
-/// <para>
-/// <b>It reads the old single-object format</b>, which is what every running
-/// agent has on its state volume today. Losing it would cost each of them a
-/// fresh one-time code and somebody present to redeem it, which is precisely
-/// the thing this file exists to prevent, so the upgrade is silent and the
-/// entry keeps the control plane it was issued by.
-/// </para>
-/// </remarks>
+/// one entry per connector, so an agent enrolls once: the one-time code would need a human per recreate
+/// keyed by control plane, not connection name: a token belongs to one connector, a changed address re-enrolls
+/// reads the old single-object format so running agents keep their enrollment
 public sealed class AgentStateStore
 {
     private readonly string _path;
@@ -45,13 +24,7 @@ public sealed class AgentStateStore
 
     public string FilePath => _path;
 
-    /// <summary>
-    /// Returns the enrollment this control plane issued, or null when there is
-    /// none, the file is unreadable, or the only enrollments in it belong to
-    /// other connectors. A corrupt file is treated as "not enrolled" rather
-    /// than fatal - the agent can always re-enroll with a fresh code, and
-    /// refusing to boot helps nobody.
-    /// </summary>
+    /// unreadable or corrupt counts as not enrolled: the agent can re-enroll, and refusing to boot helps nobody
     public AgentEnrollment? Load(string controlPlane)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controlPlane);
@@ -62,10 +35,7 @@ public sealed class AgentStateStore
         var mine = stored.FirstOrDefault(entry => Same(entry.ControlPlane, controlPlane));
         if (mine is not null) return mine;
 
-        // Named, because the commonest way to see this is an agent pointed at
-        // a new address - a moved connector, a renamed host - and "we have a
-        // token, but for somewhere else" is the sentence that explains why it
-        // is asking for a code again.
+        // named: the usual cause is an agent pointed at a new address
         _logger.LogWarning(
             "agent state at {Path} holds enrollments for {Stored} and none for {Configured}; " +
             "this connector needs a fresh enrollment",
@@ -76,12 +46,7 @@ public sealed class AgentStateStore
         return null;
     }
 
-    /// <summary>
-    /// Records this connector's enrollment, leaving every other connector's
-    /// alone. The whole file is rewritten, so the read and the write are one
-    /// locked operation: two connectors enrolling at the same moment on a
-    /// first start is the ordinary case, not a rare one.
-    /// </summary>
+    /// read and write are one locked operation: two connectors enrolling at once on first start is the ordinary case
     public void Save(AgentEnrollment enrollment)
     {
         ArgumentNullException.ThrowIfNull(enrollment);
@@ -93,16 +58,7 @@ public sealed class AgentStateStore
         }
     }
 
-    /// <summary>
-    /// Forgets this connector's enrollment and nothing else.
-    /// </summary>
-    /// <remarks>
-    /// SURGICAL, because a revoke is one connector's verdict. A bank connector
-    /// restored from a backup taken before this agent enrolled answers 401 to
-    /// everything; clearing the whole file there would have cost the registry
-    /// connector beside it its enrollment too, and DUO has no pooled fleet to
-    /// fall back to while somebody mints another code.
-    /// </remarks>
+    /// clears only this connector's entry: a revoke is per connector, and DUO has no pooled fleet to fall back on
     public void Clear(string controlPlane)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controlPlane);
@@ -128,16 +84,7 @@ public sealed class AgentStateStore
         }
     }
 
-    /// <summary>
-    /// Every enrollment on disk, in either format.
-    /// </summary>
-    /// <remarks>
-    /// The old format is a bare <see cref="AgentEnrollment"/> object, which is
-    /// what one agent serving one connector wrote for the whole life of the
-    /// platform so far. It is told apart by what it has rather than by a
-    /// version number: an object with <c>agent_id</c> at the top is one
-    /// enrollment, an object with <c>connections</c> is the list.
-    /// </remarks>
+    /// the old format is a bare AgentEnrollment (agent_id at the top); the new one is an object with connections
     private IReadOnlyList<AgentEnrollment> Read()
     {
         if (!File.Exists(_path)) return [];
@@ -177,8 +124,6 @@ public sealed class AgentStateStore
             temp,
             JsonSerializer.Serialize(new AgentStateFile { Connections = connections }, AgentJson.Options));
 
-        // The file holds a bearer token, so it is owner-only where the platform
-        // has a notion of that.
         OwnerOnlyFile.Restrict(temp, _logger);
 
         File.Move(temp, _path, overwrite: true);
@@ -188,10 +133,6 @@ public sealed class AgentStateStore
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>
-/// The state file as it is written from now on: one enrollment per connector,
-/// each carrying the control plane that issued it.
-/// </summary>
 internal sealed record AgentStateFile
 {
     [JsonPropertyName("connections")]

@@ -1,17 +1,11 @@
 import { configure } from '@testing-library/react';
 import { afterAll, beforeEach } from 'vitest';
 
-// coverage instrumentation slows liveQuery round-trips well past RTL's
-// 1s default — every findBy*/waitFor gets headroom instead of piecemeal
-// per-test timeouts (repeated flake source)
+// coverage instrumentation slows liveQuery round-trips past RTL's 1s default: headroom for every findBy*/waitFor
 configure({ asyncUtilTimeout: 5000 });
 
-// The boot chain (heals + linkers, app/data.tsx) writes
-// fire-and-forget. A test that deletes the database while the PREVIOUS
-// test's chain still holds the connection blocks the delete and boots
-// the next app on a dying handle — its live queries collapse mid-test
-// (EventsScreen 'detail suggests', typed-splits v2). Drain the previous
-// boot's chain before every test body runs its own deleteDatabase.
+// the boot chain writes fire-and-forget: a delete while the previous test's chain holds the connection blocks, and
+// the next app boots on a dying handle whose live queries collapse — drain the chain before each test
 beforeEach(async () => {
   const g = globalThis as { __munniBootChain?: Promise<unknown>; __munniSuggestPass?: Promise<unknown> };
   if (g.__munniBootChain) {
@@ -25,19 +19,7 @@ beforeEach(async () => {
   }
 });
 
-/**
- * Global vitest setup. Unmounting a screen closes the per-identity
- * Dexie database while its liveQuery observables may still be
- * in-flight; Dexie rejects those with DatabaseClosedError. That is
- * expected teardown noise in tests (production keeps the db open for
- * the app's lifetime), so it must not fail the run as an unhandled
- * rejection.
- *
- * Vitest only reports process-level rejections when its own listener is
- * the single one registered — a user listener takes responsibility. So
- * this filter swallows the known teardown noise and rethrows everything
- * else as an uncaught exception, which vitest still fails the run on.
- */
+/** DatabaseClosedError after unmount is teardown noise and swallowed; any other rejection is rethrown so vitest fails */
 const isTeardownNoise = (reason: unknown): boolean =>
   (reason as { name?: string } | undefined)?.name === 'DatabaseClosedError';
 
@@ -55,21 +37,14 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// react-modal-sheet's open transition polls document for its container
-// class (waitForElement: 50ms × 20 ticks) from a fire-and-forget async —
-// a sheet opened near the end of a file leaves that interval ticking
-// into environment teardown, where `document` no longer exists
-// (unhandled ReferenceError fails the run). Let every DOM file's
-// teardown wait out the poll so it self-terminates in a live document.
+// react-modal-sheet polls document for 50ms × 20 ticks from a fire-and-forget async; a sheet opened late in a file
+// ticks into environment teardown (ReferenceError): wait the poll out
 if (typeof window !== 'undefined') {
   afterAll(() => new Promise((resolve) => setTimeout(resolve, 1200)));
 }
 
-// happy-dom's default viewport is 1024×768 — exactly the lg breakpoint,
-// which would silently flip every unit test into desktop mode (side-panel
-// sheets, master–detail panes, duplicate pane testids). Tests run as the
-// phone by default; desktop behavior is opted into per test by stubbing
-// matchMedia. (Domain tests run in node env — no window there.)
+// happy-dom's default 1024×768 is exactly the lg breakpoint and would flip every test into desktop mode;
+// tests run as the phone, desktop is opted into per test by stubbing matchMedia
 if (typeof window !== 'undefined') {
   (window as unknown as { happyDOM?: { setViewport?: (v: { width: number; height: number }) => void } }).happyDOM?.setViewport?.({
     width: 390,

@@ -26,9 +26,9 @@ describe('catalog refresh (AC1)', () => {
     await refreshCatalog(store);
     expect(await cachedCatalog(store)).toEqual(doc);
 
-    await refreshCatalog(store); // second pass rides the etag
+    await refreshCatalog(store);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(await cachedCatalog(store)).toEqual(doc); // 304 keeps the cache
+    expect(await cachedCatalog(store)).toEqual(doc);
 
     store.close();
   });

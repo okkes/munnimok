@@ -1,6 +1,3 @@
-// Rendering a stack: the shared compose per platform, an environment's
-// compose with its own Logto and Postgres, the env template's
-// placeholders, the family Caddyfile and pgAdmin's servers.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -12,7 +9,6 @@ const { renderStack, templatePlaceholders, sharedNet } = await import('../module
 const { loadStack, loadPlatform, savePlatform } = await import('../modules/stack.mjs');
 test.after(() => fx.cleanup());
 
-/* ── tiny compose readers (no yaml dependency): top-level services, one service's block, its environment/ports lists ── */
 const servicesOf = (compose) => [...compose.split(/^services:$/m)[1].split(/^volumes:$/m)[0].matchAll(/^  ([a-z-]+):$/gm)].map((m) => m[1]);
 const block = (compose, service) => new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:$|^volumes:$)`, 'm').exec(compose)?.[1] ?? assert.fail(`service ${service} not rendered`);
 function under(svc, key) {
@@ -20,7 +16,6 @@ function under(svc, key) {
   const start = lines.findIndex((l) => new RegExp(`^    ${key}:`).test(l));
   if (start < 0) return [];
   const out = [];
-  // the block's direct children (deeper lines, like depends_on's conditions, belong to them)
   for (const l of lines.slice(start + 1)) { if (!/^      /.test(l)) break; if (/^      \S/.test(l)) out.push(l.slice(6)); }
   return out;
 }
@@ -67,7 +62,6 @@ test('shared stack on lcl: glitchtip with its own database, vault, control, pgad
   assert.match(block(compose, 'pgadmin'), /pgadmin-servers\.json:\/pgadmin4\/servers\.json:ro/);
   const servers = JSON.parse(read('pgadmin-servers.json')).Servers;
   assert.deepEqual(Object.values(servers).map((s) => [s.Name, s.Host, s.MaintenanceDB, s.Group]), [['prod', 'postgres-prod', 'munni', 'munni lcl'], ['dev', 'postgres-dev', 'munni', 'munni lcl'], ['glitchtip (shared)', 'glitchtip-db', 'glitchtip', 'munni lcl']]);
-  // the env file carries real values on lcl
   assert.match(env, /^POSTGRES_PASSWORD=pg-1$/m);
   assert.match(env, /^GLITCHTIP_SEED_EMAIL=admin@munni\.lcl$/m);
   assert.match(env, /^GLITCHTIP_SEED_TOKEN=tok$/m);
@@ -168,7 +162,6 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(portsOf(block(compose, 'web-prod')), ['8380:80']);
   assert.equal(envOf(block(compose, 'admin-prod')).MUNNI_LOGTO_APP_ID, '${ADMIN_LOGTO_APP_ID}');
   assert.equal(envOf(block(compose, 'admin-prod')).MUNNI_LAB_URL, `https://munni-prod-nas-lab.${DOMAIN}`, 'the portal hands its Connectors tab over to the lab (#441)');
-  // the lab (#441): its own app id and crash project, the same api and identity provider
   assert.deepEqual(envOf(block(compose, 'lab-prod')), { MUNNI_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, MUNNI_LOGTO_APP_ID: '${LAB_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${LAB_GLITCHTIP_DSN}' });
   assert.deepEqual(portsOf(block(compose, 'lab-prod')), ['8388:80']);
   assert.match(env, /^LAB_LOGTO_APP_ID=\$\{VITE_LOGTO_APP_ID_LAB\}$/m);
@@ -182,7 +175,6 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
-  // performance tracing (2026-10-09): the environment's share rides beside the DSN — a fifth on production by default
   assert.equal(api.Sentry__Dsn, '${API_SENTRY_DSN:-}');
   assert.equal(api.Sentry__TracesSampleRate, '"0.2"');
   assert.deepEqual(portsOf(block(compose, 'api-prod')), ['8382:8080']);
@@ -203,7 +195,6 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   }
   assert.equal(new Set(templatePlaceholders(stack)).size, templatePlaceholders(stack).length, 'each placeholder named once');
 
-  // another environment: its own slot ports, image channel and app channel; the cockpit is not its guest
   const staging = render('munni-nas-staging');
   assert.deepEqual(servicesOf(staging.compose), ['postgres-staging', 'web-staging', 'admin-staging', 'lab-staging', 'api-staging', 'logto-staging']);
   assert.deepEqual(portsOf(block(staging.compose, 'web-staging')), ['8480:80']);
@@ -243,10 +234,9 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
   assert.match(plain.env, /^ENABLEBANKING_PRIVATE_KEY_PEM='its a key'$/m, 'a single quote would end the quoted value — stripped');
   assert.match(plain.env, /^PUSH_VAPID_SUBJECT=mailto:admin@localhost$/m);
   assert.match(plain.env, /^LOGODEV_SECRET_KEY=$/m);
-  // #521: the Brave key rides the same road — empty where the feature is off, and the api reads it by its own name
+  // #521: the Brave key is empty where the feature is off; the api reads it by its own name
   assert.match(plain.env, /^BRAVE_SEARCH_API_KEY=$/m);
   assert.match(plain.compose, /ImageSearch__BraveKey: \$\{BRAVE_SEARCH_API_KEY:-\}/);
-  // #567: the receipt reader's key the same way
   assert.match(plain.env, /^RECEIPT_AI_API_KEY=$/m);
   assert.match(plain.compose, /ReceiptAi__ApiKey: \$\{RECEIPT_AI_API_KEY:-\}/);
   assert.doesNotMatch(plain.env, /\$\{/);

@@ -24,11 +24,10 @@ export interface LabAppProps {
   config: LabConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
-  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  /** absent in test-auth mode; a freshly granted admin role rides on the next token */
   signOut?: () => void;
 }
 
-/** what every screen gets: the api door, the action runner, and whether one is running */
 export interface ScreenProps {
   call: Call;
   busy: boolean;
@@ -36,10 +35,8 @@ export interface ScreenProps {
   act: (fn: () => Promise<Response>) => Promise<boolean>;
 }
 
-// 'denied' = the api really said 403; 'unreachable' = the ping never got
-// an answer (network/CORS/5xx) — one shared message made a blocked request
-// read as "not an admin"; 'disconnected' = this browser's device was
-// revoked from the account (410) — the next load registers anew
+// 'denied' = api said 403; 'unreachable' = no answer (network/CORS/5xx): a blocked request must not read as "not an admin";
+// 'disconnected' = api said 410: this device was revoked from the account, the next load registers anew
 type Gate = 'loading' | 'ok' | 'denied' | 'unreachable' | 'disconnected';
 
 const NAV: readonly (readonly [string, string])[] = [
@@ -54,13 +51,7 @@ const NAV: readonly (readonly [string, string])[] = [
 
 const SUB_KEY = 'munni_lab_sub';
 
-/**
- * munni lab (#441): the connector workbench — what every party and agent
- * is doing, the kill switch, the fleet, the canaries; later the test
- * bench, the recorder and the retention checks. Talks to /lab/* on the
- * environment's api (the admin scope, relayed to the control plane).
- * Deliberately shares no runtime code with the member app.
- */
+/** talks to /lab/* (admin scope, relayed to the control plane); deliberately shares no runtime code with the member app */
 export function LabApp({ config, getToken, signOut }: Readonly<LabAppProps>) {
   const [sub, setSub] = useState(() => localStorage.getItem(SUB_KEY) ?? '');
   const call = useMemo(() => createCall(config.apiUrl, { getToken, sub }), [config.apiUrl, getToken, sub]);

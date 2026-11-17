@@ -5,41 +5,15 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.MediaMarkt;
 
-/// <summary>
-/// MediaMarkt's catalogue entry.
-///
-/// This provider was researched on 2026-07-28 and written up as
-/// <b>"do not build"</b>, on two blockers that were both real and both
-/// correctly observed: a Cloudflare interactive challenge served to the first
-/// unauthenticated API request, and <c>isPersistedQueryManifestActive: true</c>
-/// forbidding a query of our own. Re-checked on 2026-08-11 from a browser, both
-/// turned out to be walls against the wrong kind of client rather than walls
-/// around the data:
-/// <list type="number">
-/// <item>The challenge is for non-browsers. The same endpoint answered 403 with
-/// <c>cf-mitigated: challenge</c> to a plain POST and 200 to all twenty-two
-/// calls a real Chromium made minutes later, signed in and out.</item>
-/// <item>The manifest forbids OUR queries, not MediaMarkt's own. The adapter
-/// asks the page to load and reads the answer to the question the page's own
-/// javascript asked - so the hash is never ours to know or to keep current.
-/// See <see cref="IMediaMarktPortal.ObserveAsync"/>.</item>
-/// </list>
-/// What is left is the cheapest fetch of any shop here: ONE operation, ten
-/// orders a call, line items and totals included.
-/// </summary>
+/// Rechecked 2026-08-11 after a "do not build": the Cloudflare challenge (403 to a plain POST, 200 to 22 Chromium calls)
+/// is for non-browsers, and the persisted-query manifest forbids OUR queries only: the hash is never ours to keep.
+/// One operation, ten orders a call, items and totals included.
 internal static class MediaMarktManifest
 {
     public const int Version = 1;
 
-    /// <summary>
-    /// The copy key. It names what a consumer has to plan for, which here is
-    /// not cost but CONSENT: the browser meets a cookie wall on its first visit
-    /// and this connector answers it with the necessary categories only.
-    ///
-    /// A key, never prose: the connector cannot know the reader's language, and
-    /// an English literal that reaches a screen becomes an untranslatable
-    /// de-facto API the moment a consumer matches on it.
-    /// </summary>
+    /// the copy key names what a consumer plans for: CONSENT (the cookie wall is answered with necessary categories only)
+    /// a key, never prose: an English literal reaching a screen becomes an untranslatable de-facto API
     public const string NotesKey = "connect.mediamarkt.notes.consent";
 
     public static ProviderManifest Build() => new()
@@ -47,40 +21,23 @@ internal static class MediaMarktManifest
         Id = MediaMarktAdapter.ProviderId,
         Name = "MediaMarkt",
         Kind = ProviderKind.Store,
-        // MediaMarktSaturn trades across Europe, and only www.mediamarkt.nl has
-        // been read. One country, stated honestly, rather than a continent
-        // claimed.
+        // only www.mediamarkt.nl has been read: one country, not a continent claimed
         Country = "NL",
         ManifestVersion = Version,
-        // The browser is not just for the login. Every page of orders is read
-        // through the signed-in page's own fetch, because the session is a
-        // cookie jar and the persisted-query hash belongs to the page.
+        // the browser reads every page through the signed-in page's own fetch: the session is a cookie jar, the hash the page's
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = new AgentRequirement
         {
             Required = true,
             Class = AgentClass.Pooled,
-            // DESKTOP, and this is a decision rather than a default.
-            //
-            // The agent otherwise emulates a Pixel 5, and every figure this
-            // adapter was built from came from a desktop capture - down to the
-            // `"captureChannel": "DESKTOP"` MediaMarkt's own client puts in the
-            // extensions of every call. Running a phone against a contract read
-            // off a desktop is precisely the mismatch that hid DigiD's
-            // app-on-another-device screen for three captures.
+            // DESKTOP is a decision: the agent emulates a Pixel 5 otherwise, but every figure came from a desktop capture
+            // ("captureChannel": "DESKTOP"); a phone against a desktop-read contract
+            // is what hid DigiD's other-device screen for three captures
             DesktopBrowser = true,
-            // Cloudflare fronts this site, so the egress is worth stating - but
-            // 'any' rather than 'residential': the challenge that was observed
-            // fires on the CLIENT being a non-browser, and a real Chromium
-            // passed it from an ordinary connection. Demanding a residential
-            // line would buy real operational cost against a wall that was not
-            // the wall.
+            // 'any' not 'residential': the observed challenge fires on non-browsers; a real Chromium passed from an ordinary connection
             Egress = new EgressRequirement { Country = "NL", Kind = "any" },
         },
-        // FALSE. The fetch spends a session cookie inside a browser, and
-        // nothing can renew it headlessly - the same situation as bol and
-        // Coolblue, and the same honest answer. Promising unattended sync
-        // would promise a nightly job that works until it quietly stops.
+        // FALSE: the session cookie is spent inside a browser and nothing can renew it headlessly (as bol, Coolblue)
         UnattendedFetch = false,
         LoginNeedsHeadedAgent = true,
         SecretCustody = SecretCustody.Client,
@@ -89,9 +46,7 @@ internal static class MediaMarktManifest
         NotesKey = NotesKey,
         Auth = new AuthSpec
         {
-            // One screen, two boxes, CONFIRMED live: #userName and #password
-            // are on the same form with one submit button, and no second factor
-            // was offered on a real sign-in.
+            // one screen, two boxes (#userName, #password), one submit; no second factor on a real sign-in (confirmed live)
             Flow = AuthFlow.Password,
             Steps =
             [
@@ -114,9 +69,7 @@ internal static class MediaMarktManifest
                         {
                             Key = "password",
                             Type = FieldType.Password,
-                            // An unmarked password is logged and screenshotted:
-                            // redaction keys off exactly this flag, and the
-                            // validator refuses the manifest without it.
+                            // redaction keys off this flag and the validator refuses the manifest without it
                             Secret = true,
                             Required = true,
                             LabelKey = MessageKeys.FieldPassword,
@@ -125,32 +78,18 @@ internal static class MediaMarktManifest
                     ],
                 },
             ],
-            // Declared against the evidence rather than for it: no captcha
-            // appeared on the login form, and no challenge appeared on any of
-            // the twenty-two API calls. But this site IS behind Cloudflare Bot
-            // Management, a challenge is exactly what it would serve if it ever
-            // stopped believing the browser, and a consumer with no UI for one
-            // strands its user at the worst moment. AppApproval is the
-            // interactive widget - only a human at the browser can pass it.
+            // no captcha was seen, but the site is behind Cloudflare Bot Management and a consumer with no UI for a challenge
+            // strands its user; AppApproval is the interactive widget only a human at the browser can pass
             Challenges = [ChallengeType.Image, ChallengeType.AppApproval],
             Session = new SessionSpec
             {
-                // UNCONFIRMED and deliberately conservative. Nothing states the
-                // lifetime of MediaMarkt's session cookie, so this errs in the
-                // only safe direction: under-promising makes a consumer offer a
-                // reconnect slightly early, where over-promising makes it
-                // promise months of silent syncing and then fail daily.
+                // UNCONFIRMED, conservative: the cookie's lifetime is not stated, and under-promising only costs an early reconnect offer
                 TtlSeconds = 2_592_000,
-                // Nothing to refresh. No token of any kind is issued to the
-                // browser - the authenticated calls carry no authorization
-                // header at all, which was checked across every captured
-                // request rather than assumed.
+                // no token is issued: authenticated calls carry no authorization header (checked across every captured request)
                 Refreshable = false,
                 RotatesOnUse = false,
             },
-            // A reauth is the whole browser login again - an agent, a page, a
-            // password. Telling the platform otherwise invites it to retry on a
-            // schedule against a form that can lock an account.
+            // a reauth is the whole browser login again; claiming it cheap would invite scheduled retries against a lockable form
             Reauth = new ReauthSpec { Cheap = false, TriggerCodes = ["session_expired"] },
         },
         Resources =
@@ -163,12 +102,8 @@ internal static class MediaMarktManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    // 'invoice' is the PDF MediaMarkt issues on an order's own
-                    // page ("Factuur aanvragen", then "Download de factuur" -
-                    // the user's walk-through, 2026-10-02). The list payload
-                    // carries no document link, so each one costs a page of
-                    // its own; MediaMarktOptions.MaxDocumentOrdersPerFetch
-                    // bounds that.
+                    // 'invoice' is the PDF on an order's own page ("Factuur aanvragen", then "Download de factuur"); the list has no document
+                    // link, so each costs a page, bounded by MediaMarktOptions.MaxDocumentOrdersPerFetch
                     new ParamSpec
                     {
                         Key = "include",
@@ -177,19 +112,10 @@ internal static class MediaMarktManifest
                         Multi = true,
                     },
                 ],
-                // TWENTY YEARS. The captured account's oldest order is from
-                // April 2015 and MediaMarkt served it in the ordinary list, so
-                // a decade is demonstrably kept. The number is large for the
-                // reason Coolblue's is: ParamBinder.Widen CLAMPS a caller's
-                // `since` to this, silently, so a cap set from whatever a
-                // capture happened to show turns "my 2015 order" into "that
-                // order does not exist". Nothing rides on it - the page count
-                // and the record cap below bound the work.
+                // large because ParamBinder.Widen silently CLAMPS a caller's `since` to this, so a cap from one capture would turn
+                // "my 2015 order" into "does not exist"; page count and record cap bound the work
                 MaxHistoryDays = 7_300,
-                // Ten orders a call, one call a page, a second apart, and every
-                // figure included. A first connect walks the whole history (user
-                // request 2026-10-02): two thousand orders is two hundred calls,
-                // and the invoices, when asked for, a page each on top.
+                // ten orders a call, a second apart; a first connect walks all history: 2,000 orders is 200 calls, plus a page per invoice
                 TypicalDurationSeconds = 180,
                 MaxRecordsPerFetch = 2_000,
             },
@@ -199,13 +125,9 @@ internal static class MediaMarktManifest
             MinIntervalSeconds = 21_600,
             Concurrency = 1,
             MaxHistoryDays = 7_300,
-            // An electronics order is placed on one day and stays dated that
-            // day; nothing settles late the way a card transaction does.
+            // an electronics order stays dated on its day; nothing settles late like a card transaction
             SettlementLagDays = 0,
-            // A second between pages. Cloudflare sits in front of this endpoint
-            // and the one thing that would make it look again at a browser it
-            // has already accepted is a burst no shopper produces. A stated
-            // preference, not a measurement - nobody publishes a threshold.
+            // a second between pages: a burst no shopper makes could make Cloudflare re-examine an accepted browser (a preference)
             MinRequestGapMs = 1_000,
         },
     };

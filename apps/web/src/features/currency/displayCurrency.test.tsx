@@ -19,12 +19,10 @@ describe('display currency lens (demo identity, manual rates)', () => {
   it('profile picks TRY, pins a manual EUR rate, and the balance band renders ≈ in TRY', async () => {
     renderApp('/profile');
 
-    // default is "as recorded" — the picker offers it first
     fireEvent.click(await screen.findByTestId('profile-display-currency'));
     fireEvent.click(await screen.findByTestId('display-currency-TRY'));
 
-    // demo accounts are EUR → exactly one manual pair input appears
-    // (offline identities have no rate feed by design)
+    // demo accounts are EUR: exactly one manual pair input (offline identities have no rate feed by design)
     const rate = await screen.findByTestId('manual-rate-EUR');
     fireEvent.change(rate, { target: { value: '40' } });
     fireEvent.blur(rate);
@@ -34,7 +32,6 @@ describe('display currency lens (demo identity, manual rates)', () => {
     cleanup();
     renderApp('/home');
     const band = await screen.findByTestId('home-total-balance');
-    // converted totals are marked ≈ and rendered in the display currency
     await waitFor(
       () => {
         expect(band.textContent).toContain('≈');
@@ -42,7 +39,7 @@ describe('display currency lens (demo identity, manual rates)', () => {
       },
       { timeout: 5000 },
     );
-    expect(fetchSpy).not.toHaveBeenCalled(); // the local-first law holds
+    expect(fetchSpy).not.toHaveBeenCalled();
   }, 15_000);
 
   it('the balance-band quick toggle sets and clears the lens without visiting the profile', async () => {
@@ -51,7 +48,6 @@ describe('display currency lens (demo identity, manual rates)', () => {
     fireEvent.click(await screen.findByTestId('band-display-toggle'));
     fireEvent.click(await screen.findByTestId('band-lens-TRY'));
 
-    // preference persists to the profile meta and shows on the toggle
     await waitFor(() => expect(screen.getByTestId('band-display-toggle').textContent).toContain('TRY'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
@@ -60,7 +56,6 @@ describe('display currency lens (demo identity, manual rates)', () => {
       expect(profile?.displayCurrency).toBe('TRY');
     });
 
-    // back to "as recorded" clears it
     fireEvent.click(screen.getByTestId('band-display-toggle'));
     fireEvent.click(await screen.findByTestId('band-lens-off'));
     await waitFor(async () => {

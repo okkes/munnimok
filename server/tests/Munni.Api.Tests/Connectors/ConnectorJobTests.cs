@@ -6,13 +6,6 @@ using Munni.Api.Accounts;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// A sync the provider cannot finish inside the window, or that stops to
-/// ask something, is a job the app follows: it polls the view, answers the
-/// question, and collects the result with the bundle it holds — the relay
-/// ingests the page and acknowledges it then, and hands back the bundle
-/// the job rotated.
-/// </summary>
 public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string SlowStore = "mock-store-slow";
@@ -38,12 +31,10 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.NotNull(accepted["sessionId"]);
         Assert.Equal(0, accepted["ingested"]!["records"]!.GetValue<int>());
 
-        // followed to its end: the view, in the app's casing, never carrying the page
         var job = await AwaitJobAsync(client, SlowStore, jobId, "succeeded");
         Assert.Null(job["data"]);
         Assert.NotNull(job["progress"]!["stepsDone"]);
 
-        // collected with the bundle: the page lands, the rows are acknowledged
         using var collect = await client.PostAsJsonAsync($"/connectors/{SlowStore}/jobs/{jobId}/collect", new { bundle });
         var collected = await collect.Content.ReadFromJsonAsync<JsonObject>();
         Assert.True(collect.StatusCode == HttpStatusCode.OK, collected!.ToJsonString());
@@ -55,7 +46,6 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
             collected["ingested"]!["receipts"]!.GetValue<int>(),
             factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "receipt")));
 
-        // collecting again re-reads the same job: nothing new lands
         using var again = await client.PostAsJsonAsync($"/connectors/{SlowStore}/jobs/{jobId}/collect", new { bundle });
         Assert.True(again.IsSuccessStatusCode, await again.Content.ReadAsStringAsync());
     }
@@ -66,7 +56,6 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         const string sub = "two-factor-syncer";
         using var client = factory.ClientFor(sub);
 
-        // the login itself asks the code once
         using var login = await client.PostAsJsonAsync($"/connectors/{TwoFactorRegistry}/login", new { connectionId = "conn-2fa", inputs = Credentials });
         var started = await login.Content.ReadFromJsonAsync<JsonObject>();
         var sessionId = started!["sessionId"]!.GetValue<string>();
@@ -78,7 +67,6 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync());
         var bundle = await AwaitBundleAsync(client, TwoFactorRegistry, sessionId);
 
-        // and every sync asks it again: the fetch parks on the question
         using var sync = await client.PostAsJsonAsync($"/connectors/{TwoFactorRegistry}/sync", new { connectionId = "conn-2fa", bundle });
         var accepted = await sync.Content.ReadFromJsonAsync<JsonObject>();
         Assert.True(sync.StatusCode == HttpStatusCode.Accepted, accepted!.ToJsonString());
@@ -118,15 +106,8 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.Equal(HttpStatusCode.BadRequest, grab.StatusCode);
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// #441 L1: what a failed run left behind is the person's to give. The
-    /// picture is seeded on a job of theirs (an agent would have sent it);
-    /// yes relays the share under their subject and the operator may then
-    /// read it through the lab, no deletes it, and somebody else's yes is
-    /// refused the way an unknown job is.
-    /// </summary>
+    /// <summary>#441 L1: the picture is seeded on the person's job (an agent would have sent it);
+    /// somebody else's yes is refused like an unknown job.</summary>
     [Fact]
     public async Task A_failed_runs_picture_is_shared_or_declined_by_the_person_it_belongs_to()
     {
@@ -143,7 +124,6 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 1, 2, 3 };
         await factory.ControlPlane.KeepPendingArtifactsAsync(jobId, sessionId, SlowStore, png);
 
-        // pending: the lab sees that something waits, and no picture
         var pending = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{jobId}");
         Assert.Equal("pending", pending!["artifacts"]!.GetValue<string>());
         Assert.False(pending["hasScreenshot"]!.GetValue<bool>());
@@ -152,14 +132,12 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
             Assert.Equal(HttpStatusCode.BadRequest, hidden.StatusCode);
         }
 
-        // somebody else cannot give it away
         using var stranger = factory.ClientFor("a-stranger");
         using (var refused = await stranger.PostAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts/share", null))
         {
             Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
         }
 
-        // the person says yes
         using var shared = await client.PostAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts/share", null);
         var answer = await shared.Content.ReadFromJsonAsync<JsonObject>();
         Assert.True(shared.StatusCode == HttpStatusCode.OK, answer!.ToJsonString());
@@ -176,12 +154,10 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
             Assert.Equal(png, await picture.Content.ReadAsByteArrayAsync());
         }
 
-        // and a change of mind deletes it
         using var declined = await client.DeleteAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts");
         Assert.Equal(HttpStatusCode.NoContent, declined.StatusCode);
         Assert.Equal("none", (await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{jobId}"))!["artifacts"]!.GetValue<string>());
 
-        // a scheduled run's open question on the binding closes with the answer
         factory.Write(db =>
         {
             var row = db.ConnectorSessions.Single(s => s.Id == sessionId);

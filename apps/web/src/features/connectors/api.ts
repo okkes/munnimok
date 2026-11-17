@@ -20,14 +20,9 @@ import type {
   SyncOutcome,
 } from './types';
 
-/**
- * The relay's client (docs/connectors/relay.md): every call the app makes
- * about a party goes through the munni API's `/connectors/*`, which mints
- * the subject, binds sessions to the user and files what a sync fetched.
- * Demo and offline identities never reach here — apiFetch refuses them.
- */
+// the relay's client (docs/connectors/relay.md): the munni API's `/connectors/*` mints the subject and binds sessions
+// to the user; demo and offline identities never reach here (apiFetch refuses them)
 
-/** the connector's envelope, or the relay's own refusal in the same shape */
 export class ConnectorError extends Error {
   constructor(
     readonly status: number,
@@ -44,7 +39,7 @@ export const deviceClass = (): DeviceClass => (isNativeApp() ? 'native' : 'web')
 
 const BASE = '/connectors';
 
-/** how long one job poll may hang before it counts as a miss: a phone that slept mid-request must not hang the follow for ever (prod 2026-10-06) */
+/** a phone that slept mid-request must not hang the job follow for ever (prod 2026-10-06) */
 const POLL_TIMEOUT_MS = 20_000;
 const pollSignal = (): AbortSignal | undefined => (typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(POLL_TIMEOUT_MS) : undefined);
 
@@ -110,7 +105,6 @@ export const connectorApi = {
     }
   },
 
-  /** the catalogue, or null when the ETag still holds */
   async catalogue(etag: string | null): Promise<{ catalogue: Catalogue; etag: string | null } | null> {
     const headers = new Headers({ 'X-Device-Class': deviceClass() });
     if (etag) headers.set('If-None-Match', etag);
@@ -161,7 +155,6 @@ export const connectorApi = {
     return (await call<SessionView>(`/${provider}/login/${sessionId}/cancel`, { method: 'POST' })).body;
   },
 
-  /** the challenge's picture, fetched with the caller's own credentials */
   async challengeImage(provider: string, sessionId: string, challengeId: string): Promise<Blob | null> {
     const response = await apiFetch(`${BASE}/${provider}/login/${sessionId}/challenges/${challengeId}/image`, {
       headers: { 'X-Device-Class': deviceClass() },
@@ -179,9 +172,8 @@ export const connectorApi = {
     if (response.status === 204) return null;
     if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, await response.json().catch(() => null)));
     const [width, height] = (response.headers.get('X-Live-Size') ?? '390x844').split('x').map(Number);
-    // a relay that lost the sequence header hands back the caller's own
-    // mark: the view shows the picture and polls at its idle pace instead
-    // of asking again at once (the storm of 2026-10-01)
+    // a relay that lost the sequence header hands back the caller's own mark: the view polls at its idle pace instead of
+    // asking again at once (the storm of 2026-10-01)
     const sequenceHeader = response.headers.get('X-Live-Sequence');
     return {
       sequence: sequenceHeader ? Number(sequenceHeader) : after,
@@ -192,11 +184,7 @@ export const connectorApi = {
     };
   },
 
-  /**
-   * The live view pushed (#429): one response that carries every picture
-   * past `after` as it is taken (read by liveStream.ts). A refusal before
-   * the first byte throws the envelope, as the poll does.
-   */
+  /** #429: one response carrying every picture past `after` as it is taken (read by liveStream.ts) */
   async liveStream(provider: string, sessionId: string, challengeId: string, after: number, signal: AbortSignal): Promise<Response> {
     const response = await apiFetch(
       `${BASE}/${provider}/login/${sessionId}/challenges/${challengeId}/live/stream?after=${after}`,
@@ -230,7 +218,6 @@ export const connectorApi = {
     await call<unknown>(`/${provider}/jobs/${jobId}/artifacts/share`, { method: 'POST' });
   },
 
-  /** the person says no: deleted on the spot */
   async declineArtifacts(provider: string, jobId: string): Promise<void> {
     await call<unknown>(`/${provider}/jobs/${jobId}/artifacts`, { method: 'DELETE' });
   },
@@ -252,8 +239,6 @@ export const connectorApi = {
     ).body;
   },
 
-  // ── the household agents (§10.4) ──────────────────────────────────────
-
   async agents(): Promise<AgentView[]> {
     return (await call<{ agents: AgentView[] }>('/agents')).body.agents;
   },
@@ -267,9 +252,6 @@ export const connectorApi = {
     await call<unknown>(`/agents/${agentId}`, { method: 'DELETE' });
   },
 
-  // ── the hosted private agents (#420 A2) ───────────────────────────────
-
-  /** the caller’s standing: whether the environment hosts slots, how many are free, their request, the slot bound to them */
   async privateAgents(): Promise<PrivateAgentStatus> {
     return (await call<PrivateAgentStatus>('/private-agents/mine')).body;
   },

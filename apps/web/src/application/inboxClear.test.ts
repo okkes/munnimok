@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '@/lib/api';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
-import { appendNotification, readInbox, readInboxClearedAt } from './notifications';
+import { appendNotification, GENERAL_SCOPE, readClearedBy, readInbox, readInboxClearedAt } from './notifications';
 import { clearNotifications, syncNotificationsCleared } from './inboxClear';
 
 vi.mock('@/lib/api', () => ({ apiFetch: vi.fn() }));
@@ -16,8 +16,13 @@ const json = (body: unknown, status = 200) =>
   });
 const pause = () => new Promise((r) => setTimeout(r, 5));
 
-/** the OS notifications the service worker still shows, as the browser lists them */
-function installShown(shown: { close: () => void; timestamp?: number }[]) {
+/** the server's answer to a clear of some parts: each part at the moment it was sent */
+const echoScopes = async (_path: string, init?: RequestInit) => {
+  const sent = JSON.parse(String(init?.body)) as { clearedAt: string; scopes: string[] };
+  return json({ clearedAt: null, scopes: Object.fromEntries(sent.scopes.map((scope) => [scope, sent.clearedAt])) });
+};
+
+function installShown(shown: { close: () => void; timestamp?: number; tag?: string }[]) {
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
     value: {
@@ -39,34 +44,36 @@ describe('clearing notifications (#580)', () => {
     return store;
   };
 
-  it('Clear empties the list, closes what the OS shows and tells the person’s other devices', async () => {
+  it('Clear empties what the bell showed, closes what the OS shows of it and tells the person’s other devices', async () => {
     const store = fresh();
-    await appendNotification(store, 'digest', { n: '3' });
-    const shown = [{ close: vi.fn(), timestamp: Date.now() }];
+    await appendNotification(store, 'whatsnew', { version: '5.23.0' });
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' }, 'insightDigest_2026-W47');
+    await appendNotification(store, 'planOverspent', { names: 'Rent', spaceId: 's2' });
+    const shown = [
+      { close: vi.fn(), timestamp: Date.now(), tag: 'friend-accept' },
+      { close: vi.fn(), timestamp: Date.now(), tag: 'new-tx-s1' },
+      { close: vi.fn(), timestamp: Date.now(), tag: 'insightDigest_2026-W47' },
+      { close: vi.fn(), timestamp: Date.now(), tag: 'new-tx-s2' },
+    ];
     installShown(shown);
-    apiFetchMock.mockImplementation(async (_path, init) =>
-      json({
-        clearedAt: (JSON.parse(String(init?.body)) as { clearedAt: string }).clearedAt,
-      }),
-    );
+    apiFetchMock.mockImplementation(echoScopes);
 
-    await clearNotifications(store, true);
-    expect(await readInbox(store)).toEqual([]);
-    expect(shown[0].close).toHaveBeenCalled();
-    expect(apiFetchMock).toHaveBeenCalledWith('/me/notifications/cleared', expect.objectContaining({ method: 'PUT' }));
+    await clearNotifications(store, true, [GENERAL_SCOPE, 's1']);
+    // #614: the space the bell did not show keeps its row and its notification
+    expect((await readInbox(store)).map((e) => e.payload?.spaceId)).toEqual(['s2']);
+    expect(shown.map((n) => n.close.mock.calls.length)).toEqual([1, 1, 1, 0]);
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(String(apiFetchMock.mock.calls[0][1]?.body)) as { scopes: string[] };
+    expect(sent.scopes).toEqual([GENERAL_SCOPE, 's1']);
   });
 
   it('a clear made offline goes out with the next sync — after that the device only listens', async () => {
     const store = fresh();
     installShown([]);
     apiFetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await clearNotifications(store, true);
+    await clearNotifications(store, true, [GENERAL_SCOPE]);
 
-    apiFetchMock.mockImplementationOnce(async (_path, init) =>
-      json({
-        clearedAt: (JSON.parse(String(init?.body)) as { clearedAt: string }).clearedAt,
-      }),
-    );
+    apiFetchMock.mockImplementationOnce(echoScopes);
     await syncNotificationsCleared(store);
     expect(apiFetchMock).toHaveBeenLastCalledWith('/me/notifications/cleared', expect.objectContaining({ method: 'PUT' }));
 
@@ -96,31 +103,70 @@ describe('clearing notifications (#580)', () => {
     expect(shown[0].close).toHaveBeenCalled();
     expect(shown[1].close).not.toHaveBeenCalled();
 
-    // the same moment again is old news
     apiFetchMock.mockResolvedValueOnce(json({ clearedAt: elsewhere }));
     expect(await syncNotificationsCleared(store)).toBe(false);
   });
 
-  it('the person’s own Clear empties the list even while this device’s clock is behind the remembered moment', async () => {
+  it('the person’s own Clear empties the part even while this device’s clock is behind the remembered moment', async () => {
     const store = fresh();
     installShown([]);
     // a clear made elsewhere, stamped by a clock three minutes ahead of this device's
     const ahead = new Date(Date.now() + 3 * 60_000).toISOString();
-    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: ahead }));
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: null, scopes: { s1: ahead } }));
     await syncNotificationsCleared(store);
-    await appendNotification(store, 'recurringDue', { name: 'Rent', date: '12 Nov' }, 'rec_rent');
+    await appendNotification(store, 'recurringDue', { name: 'Rent', date: '12 Nov', spaceId: 's1' }, 'rec_rent');
 
-    await clearNotifications(store, false);
+    await clearNotifications(store, false, ['s1']);
     expect(await readInbox(store)).toEqual([]);
     // the later moment stays: going back would let the other device's older clear count as news again
-    expect(await readInboxClearedAt(store)).toBe(ahead);
+    expect((await readClearedBy(store)).s1).toBe(ahead);
+  });
+
+  it('#614: a part cleared on another device takes that part’s older rows and notifications here, and nothing else', async () => {
+    const store = fresh();
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' });
+    await appendNotification(store, 'digest', { n: '1', spaceId: 's2' });
+    const before = Date.now();
+    await pause();
+    const elsewhere = new Date().toISOString().replace('Z', '+00:00');
+    await pause();
+    const shown = [
+      { close: vi.fn(), timestamp: before, tag: 'new-tx-s1' },
+      { close: vi.fn(), timestamp: Date.now(), tag: 'new-tx-s1' },
+      { close: vi.fn(), timestamp: before, tag: 'new-tx-s2' },
+    ];
+    installShown(shown);
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: null, scopes: { s1: elsewhere } }));
+
+    expect(await syncNotificationsCleared(store)).toBe(true);
+    expect((await readInbox(store)).map((e) => e.payload?.spaceId)).toEqual(['s2']);
+    expect(shown.map((n) => n.close.mock.calls.length)).toEqual([1, 0, 0]);
+    expect(await readInboxClearedAt(store)).toBeUndefined();
+
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: null, scopes: { s1: elsewhere } }));
+    expect(await syncNotificationsCleared(store)).toBe(false);
+  });
+
+  it('a whole-list clear an older build left waiting still goes out as one', async () => {
+    const store = fresh();
+    installShown([]);
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: '2026-11-01T10:00:00.000Z' }));
+    await syncNotificationsCleared(store);
+    await store.metaPut('notifClearPending', true);
+
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: '2026-11-01T10:00:00.000Z' }));
+    await syncNotificationsCleared(store);
+    expect(apiFetchMock).toHaveBeenLastCalledWith(
+      '/me/notifications/cleared',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ clearedAt: '2026-11-01T10:00:00.000Z' }) }),
+    );
   });
 
   it('a profile without a server clears on this device alone', async () => {
     const store = fresh();
     installShown([]);
     await appendNotification(store, 'digest', { n: '1' });
-    await clearNotifications(store, false);
+    await clearNotifications(store, false, [GENERAL_SCOPE]);
     expect(await readInbox(store)).toEqual([]);
     expect(apiFetchMock).not.toHaveBeenCalled();
   });

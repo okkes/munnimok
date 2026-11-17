@@ -1,19 +1,11 @@
 #!/bin/sh
-# NAS-side deploy poller (no SSH, no manual pulls). GitHub publishes one
-# bundle per stack into $PUBLISHED via the File Station API
-# (.github/workflows/deploy-nas.yml): munni-<stack>.tgz + a stamp file
-# VERSION_<STACK> (the stack name upper-cased, dashes to underscores).
-# This script — run every ~5 minutes by the DSM Task Scheduler entry the
-# shared stack's bootstrap creates — notices a new stamp, unpacks the
-# bundle into $(dirname LIVE)/<stack>/ and runs update.sh there. A stamp
-# reading "remove" tears the stack down (cleanup as code). Markers live in
-# $LIVE: .applied_<stack> holds the stamp last applied (or "removed").
+# NAS-side deploy poller (DSM Task Scheduler, ~5 min): GitHub publishes munni-<stack>.tgz + a stamp
+# VERSION_<STACK> into $PUBLISHED (deploy-nas.yml); a new stamp unpacks the bundle and runs update.sh.
+# A stamp reading "remove" tears the stack down. .applied_<stack> in $LIVE holds the last stamp applied.
 #
-# It ships IN every bundle and so updates itself; the scheduler therefore
-# never executes this file directly (tar would overwrite a running
-# script) — it runs a throwaway copy:
+# It ships IN every bundle and updates itself, so the scheduler runs a throwaway copy (tar would
+# overwrite a running script):
 #   cd "<live dir>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live dir>" MUNNI_PUBLISHED_DIR="<live dir>/published" sh .apply.run
-# Idempotent: exits in milliseconds when nothing changed.
 set -u
 
 LIVE="${MUNNI_LIVE_DIR:-$(cd "$(dirname "$0")" && pwd)}"
@@ -48,7 +40,6 @@ if command -v flock >/dev/null 2>&1; then
   date +%s >"$LIVE/.apply.started"
 fi
 
-# stack name from a stamp file name: VERSION_NAS_PROD -> munni-nas-prod
 stack_of() { echo "$1" | sed 's/^VERSION_//' | tr 'A-Z_' 'a-z-' | sed 's/^/munni-/'; }
 
 apply_stack() { # apply_stack STACK
@@ -61,10 +52,7 @@ apply_stack() { # apply_stack STACK
   [ -f "$PUBLISHED/$stamp" ] || return 0
   new="$(cat "$PUBLISHED/$stamp" | tr -d '[:space:]')"
   old="$(cat "$LIVE/$marker" 2>/dev/null || echo none)"
-  # cleanup as code: a stamp reading "remove" stops the stack's containers,
-  # drops its volumes and deletes its folder and bundle — checked BEFORE
-  # the nothing-new shortcut so a marker that already reads "remove"
-  # (an older script took it for a version) still removes
+  # "remove" is checked BEFORE the nothing-new shortcut: an older script stored it as a version marker
   if [ "$new" = "remove" ]; then
     [ "$old" = "removed" ] && return 0
     if [ -d "$target" ]; then
@@ -95,7 +83,7 @@ apply_stack() { # apply_stack STACK
 }
 
 rc=0
-# the shared stack first (the environments join its network), then every environment stamp found
+# the shared stack first: the environments join its network
 shared=""
 envs=""
 for f in "$PUBLISHED"/VERSION_*; do
@@ -106,8 +94,7 @@ done
 [ -n "$shared" ] && { apply_stack "$shared" || rc=1; }
 for s in $envs; do apply_stack "$s" || rc=1; done
 
-# a Logto or GlitchTip seed that could not run yet (the service still booting)
-# left .logto-seed-pending / .glitchtip-seed-pending — retried every cycle
+# .logto-seed-pending / .glitchtip-seed-pending: a seed that could not run yet (service booting), retried each cycle
 for d in "$(dirname "$LIVE")"/munni-*; do
   [ -d "$d" ] || continue
   if { [ -f "$d/.logto-seed-pending" ] || [ -f "$d/.glitchtip-seed-pending" ]; } && [ -f "$d/update.sh" ]; then
@@ -117,7 +104,6 @@ for d in "$(dirname "$LIVE")"/munni-*; do
   fi
 done
 
-# one status line to stdout (the DSM Run Result)
 state=""
 for m in "$LIVE"/.applied_*; do [ -f "$m" ] && state="$state $(basename "$m" | sed 's/^.applied_//')=$(cat "$m")"; done
 echo "cycle done rc=$rc${state:- (nothing applied yet)}"

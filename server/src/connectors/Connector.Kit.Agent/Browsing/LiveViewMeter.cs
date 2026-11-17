@@ -3,21 +3,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// What one second of a live view cost, summarised.
-///
-/// Every figure is milliseconds except the counts and the byte size, and the
-/// shape is deliberately the shape of a decision: <see cref="Fps"/> says
-/// whether this is a live view or a slideshow, <see cref="AgeP95"/> says how
-/// stale a picture already is when it leaves, <see cref="PostP95"/> whether
-/// the network is the reason, and <see cref="Superseded"/> how much of what the
-/// browser drew never had to travel.
-/// </summary>
 internal readonly record struct LiveViewWindow
 {
     public required TimeSpan Elapsed { get; init; }
 
-    /// <summary>Frames that reached the control plane.</summary>
     public required int Posted { get; init; }
 
     /// <summary>Frames whose bytes were identical to the last posted frame.</summary>
@@ -29,7 +18,6 @@ internal readonly record struct LiveViewWindow
     /// <summary>Frames the browser drew that a newer one replaced before they could leave.</summary>
     public required int Superseded { get; init; }
 
-    /// <summary>Frames the control plane would not take.</summary>
     public required int Failed { get; init; }
 
     /// <summary>How old a frame was when it left: from the compositor drawing it to the post starting.</summary>
@@ -41,32 +29,17 @@ internal readonly record struct LiveViewWindow
 
     public required double PostP95 { get; init; }
 
-    /// <summary>Mean encoded size of the frames posted in this window.</summary>
     public required int MeanBytes { get; init; }
 
-    /// <summary>
-    /// Frames per second actually delivered - posted frames only, because a
-    /// suppressed frame is one the viewer does not receive. This is the number
-    /// the feature is judged on and it is deliberately the pessimistic reading:
-    /// a static form legitimately delivers nothing.
-    /// </summary>
+    // posted frames only (a suppressed frame is not received): deliberately pessimistic, a static form delivers nothing
     public double Fps => Elapsed.TotalSeconds <= 0 ? 0 : Posted / Elapsed.TotalSeconds;
 
-    /// <summary>
-    /// How many frames the browser drew per second, sent or not. Read beside
-    /// <see cref="Fps"/> this is how much the pacing kept off the wire.
-    /// </summary>
     public double DrawnHz =>
         Elapsed.TotalSeconds <= 0 ? 0 : (Posted + Suppressed + Missed + Superseded + Failed) / Elapsed.TotalSeconds;
 
     public double KilobytesPerSecond => Elapsed.TotalSeconds <= 0 ? 0 : Posted * MeanBytes / Elapsed.TotalSeconds / 1024;
 
-    /// <summary>
-    /// Whether anything at all happened in this window. A window of nothing is
-    /// what a still page and the last call of a session that had just reported
-    /// get, and logging a line of zeroes under it would say "the stream
-    /// delivered nothing", which is the opposite of what happened.
-    /// </summary>
+    // a window of nothing (a still page, a session's last call) must not log zeroes: that reads as "delivered nothing"
     public bool HasSamples => Posted + Suppressed + Missed + Superseded + Failed > 0;
 
     public override string ToString() => string.Create(
@@ -78,27 +51,9 @@ internal readonly record struct LiveViewWindow
         $"{Posted} posted, {Superseded} superseded, {Suppressed} unchanged, {Missed} withheld, {Failed} refused");
 }
 
-/// <summary>
-/// The stopwatch on the stream, because every number in the design scales
-/// with what a frame costs and how old it is by the time it leaves.
-///
-/// It reports at least once a second while a stream is busy rather than at
-/// the end, for two reasons: a session that is killed by an expiry or a
-/// navigation would otherwise report nothing at all, which is precisely the run
-/// you most want the numbers from; and a cadence that degrades halfway through
-/// - because a provider started animating something, or because the agent's
-/// browser is now sharing a NAS with three other jobs - is invisible in a
-/// single average over ninety seconds.
-///
-/// Two numbers per frame, because they are fixed by different people: its
-/// AGE when it left (the browser drew it at the compositor's timestamp; a long
-/// age is the agent's machine or the pacing) and its POST (the link to the
-/// control plane).
-///
-/// NOT thread-safe, and does not need to be: one picture loop writes it, and
-/// the session reads the last window only after that loop has finished. A lock
-/// here would be measuring the cost of measuring.
-/// </summary>
+// reports at least once a second, not at the end: a killed session would report nothing, and a mid-run degradation
+// hides in one average; age (agent machine, pacing) and post (control-plane link) are separate: different people fix them
+// not thread-safe: one picture loop writes, the session reads after it finishes
 internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
 {
     private readonly List<double> _ages = [];
@@ -128,7 +83,6 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
         _totalBytes += bytes;
     }
 
-    /// <summary>A frame whose bytes matched the last posted one, so nothing was sent.</summary>
     public void Suppressed(TimeSpan age)
     {
         _ages.Add(age.TotalMilliseconds);
@@ -136,31 +90,24 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
         _totalSuppressed++;
     }
 
-    /// <summary>Frames dropped at the source while a navigation was being checked.</summary>
     public void Missed(int count)
     {
         _missed += count;
     }
 
-    /// <summary>Frames the browser drew that a newer one replaced before they could leave.</summary>
     public void Superseded(int count)
     {
         _superseded += count;
         _totalSuperseded += count;
     }
 
-    /// <summary>A frame the control plane would not take.</summary>
     public void Failed(TimeSpan age)
     {
         _ages.Add(age.TotalMilliseconds);
         _failed++;
     }
 
-    /// <summary>
-    /// The window just closed, or null when it has not. Reading it RESETS the
-    /// window, so a caller that reads and does not log has thrown the numbers
-    /// away - which is why the session logs unconditionally on a non-null.
-    /// </summary>
+    // reading RESETS the window: a caller that reads without logging throws the numbers away, so the session logs on non-null
     public LiveViewWindow? TryClose()
     {
         var elapsed = time.GetElapsedTime(_windowStartedAt);
@@ -169,16 +116,8 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
         return Close(elapsed);
     }
 
-    /// <summary>
-    /// The window as it stands, whatever the clock says. For the last line a
-    /// session writes, where a partial window is the only one left.
-    /// </summary>
     public LiveViewWindow Close() => Close(time.GetElapsedTime(_windowStartedAt));
 
-    /// <summary>
-    /// Everything since the stream opened, for the one line that says whether
-    /// this login was watchable.
-    /// </summary>
     public string Total() => string.Create(
         CultureInfo.InvariantCulture,
         $"{_totalPosted} frame(s) over {time.GetElapsedTime(_openedAt).TotalSeconds:0.0} s, " +
@@ -214,13 +153,7 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
         return window;
     }
 
-    /// <summary>
-    /// Nearest-rank, and sorting a copy rather than the list.
-    ///
-    /// A window holds at most a couple of dozen samples, so the median of a
-    /// sorted copy is free and an approximation would be a needless second way
-    /// to be wrong about the one number this class exists to produce.
-    /// </summary>
+    // nearest-rank on a sorted copy: a window holds a couple of dozen samples, so exact beats an approximation
     private static double Percentile(List<double> samples, double fraction)
     {
         if (samples.Count == 0) return 0;
@@ -233,7 +166,6 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
     }
 }
 
-/// <summary>Logs a window under the one message every live view uses.</summary>
 internal static class LiveViewMeterLog
 {
     public static void Report(this ILogger logger, string jobId, LiveViewWindow window) =>

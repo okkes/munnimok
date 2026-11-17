@@ -36,7 +36,6 @@ describe('the account step: who signed in last, and how they get back in (#559)'
 
   it('a sign-in without a name to show takes the previous person’s record off the login screen', () => {
     rememberLastAccount('Okkes', { social: 'google' });
-    // another account signs in on this device — one that carries no name, username or e-mail to display
     rememberLastAccount(undefined, { social: 'apple' });
     expect(readLastAccount()).toBeNull();
     rememberLastAccount('Okkes', { social: 'google' });

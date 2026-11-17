@@ -13,10 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// Everything a <see cref="JobRunner"/> needs, wired to fakes, plus the
-/// scratch directories it insists on owning.
-/// </summary>
 internal sealed class TestRig : IDisposable
 {
     public const string ProviderId = "test-provider";
@@ -24,19 +20,8 @@ internal sealed class TestRig : IDisposable
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), "connector-agent-tests", Guid.NewGuid().ToString("N"));
 
-    /// <param name="manifest">
-    /// What the REGISTRY serves the runner, which is not the same as what a
-    /// context is built with. The runner reads a manifest to decide things the
-    /// adapter never sees - whether a failed job should sign its session out,
-    /// for one - so a test about that has to be able to state one.
-    /// </param>
-    /// <param name="time">
-    /// The clock every part of this rig reads, the control plane's client
-    /// timeouts included. The machine's unless a test hands over a
-    /// <see cref="TestClock"/>, which is what the cases about lease renewal
-    /// need: their numbers are measured in minutes and their assertions in
-    /// seconds.
-    /// </param>
+    // manifest: what the registry serves the runner; it decides things the adapter never sees (e.g. sign-out after a failed job)
+    // time: the clock of every part of the rig, client timeouts included; a TestClock for the lease-renewal cases
     public TestRig(
         IProviderAdapter adapter,
         bool headless = true,
@@ -54,9 +39,7 @@ internal sealed class TestRig : IDisposable
             ProfileRootDirectory = Path.Combine(_root, "profiles"),
             StateFilePath = Path.Combine(_root, "agent-state.json"),
             Headless = headless,
-            // The poll gap is what the parked wait actually spends its time in;
-            // the production default of two seconds would make every test that
-            // parks slower than the thing it is testing.
+            // short poll gap: the 2s production default would make every test that parks slower than the thing it tests
             AnswerPollInterval = TimeSpan.FromMilliseconds(20),
         };
 
@@ -84,19 +67,10 @@ internal sealed class TestRig : IDisposable
 
     public IProviderAdapter Adapter { get; }
 
-    /// <summary>The clock this rig runs on.</summary>
     public TimeProvider Time { get; }
 
-    /// <summary>
-    /// Who this agent says it is.
-    /// </summary>
-    /// <remarks>
-    /// Exposed so a test can be TWO agents. A BYO agent derives its profile id
-    /// from this, and the last time that id did not carry the agent, two
-    /// households on the same provider collided on the control plane's primary
-    /// key - and the losing heartbeat took the agent's liveness with it. A rig
-    /// that can only ever be one machine cannot state that.
-    /// </remarks>
+    // exposed so a test can be two agents: a BYO agent's profile id derives from it, and when it did not, two households
+    // on one provider collided on the control plane's primary key and the losing heartbeat took the agent's liveness with it
     public AgentIdentity Identity { get; } = new();
 
     public FakeControlPlane Control { get; }
@@ -107,11 +81,7 @@ internal sealed class TestRig : IDisposable
 
     public ProfileStore Profiles { get; }
 
-    /// <summary>
-    /// A login job with a budget expressed in whole seconds, as the wire has
-    /// it. <paramref name="leaseSeconds"/> drives how often the runner renews:
-    /// it renews at half the remaining lease, floored at five seconds.
-    /// </summary>
+    // leaseSeconds drives renewal: the runner renews at half the remaining lease, floored at five seconds
     public static LeasedJob Login(int budgetSeconds, int leaseSeconds = 120) => new()
     {
         JobId = "job_" + Guid.NewGuid().ToString("N")[..16],
@@ -123,24 +93,8 @@ internal sealed class TestRig : IDisposable
         Limits = new JobLimits { TimeoutSeconds = budgetSeconds, PolitenessMs = 0 },
     };
 
-    /// <summary>
-    /// A context built the way the runner builds one, minus the runner.
-    /// </summary>
-    /// <param name="manifest">
-    /// Overrides the default for the handful of tests that are about the
-    /// manifest reaching something - the live view's origin allowlist is read
-    /// from it, so a test of that wiring has to be able to state one.
-    /// </param>
-    /// <param name="browser">
-    /// The lease options this context is built over. Defaulted to the headless
-    /// minimum, because most tests here are about something else entirely.
-    /// <para>
-    /// A test about what the context READS OFF the browser has to pass the
-    /// runner's own answer - <see cref="JobRunner.BrowserOptionsForTest"/> -
-    /// rather than a hand-built one, or it would be asserting the decision
-    /// beside the decision and would pass with the decision deleted.
-    /// </para>
-    /// </param>
+    // browser: a test of what the context reads off the browser passes JobRunner.BrowserOptionsForTest, not a hand-built one,
+    // or it asserts the decision beside the decision and passes with the decision deleted
     public AgentJobContext Context(
         LeasedJob job, ProviderManifest? manifest = null, BrowserLeaseOptions? browser = null) => new(
         new JobContextOptions
@@ -172,11 +126,7 @@ internal sealed class TestRig : IDisposable
         }
     }
 
-    /// <summary>
-    /// The simplest manifest an agent will accept: browser-interactive so the
-    /// runner takes the login path, with one secret field so the redactor and
-    /// the scrubber both have something to do.
-    /// </summary>
+    // browser-interactive so the runner takes the login path; one secret field so the redactor and scrubber have work
     public static ProviderManifest Manifest { get; } = new()
     {
         Id = ProviderId,
@@ -239,13 +189,8 @@ internal sealed class TestRig : IDisposable
     }
 }
 
-/// <summary>
-/// An adapter whose login does exactly one scripted thing, so a test can say
-/// "park on a human" or "never come back" without a fixture.
-/// </summary>
 internal sealed class ScriptedAdapter(Func<IJobContext, CancellationToken, Task> login) : IProviderAdapter
 {
-    /// <summary>Raises one challenge and returns as soon as it is answered.</summary>
     public static ScriptedAdapter AsksAHuman(TimeSpan window) => new(async (ctx, ct) =>
     {
         await ctx.AskAsync(new Challenge
@@ -256,7 +201,6 @@ internal sealed class ScriptedAdapter(Func<IJobContext, CancellationToken, Task>
         }, ct);
     });
 
-    /// <summary>Raises nothing and never finishes. A wedged adapter, exactly.</summary>
     public static ScriptedAdapter Wedges() => new((_, ct) => Task.Delay(Timeout.Infinite, ct));
 
     public ProviderManifest Describe() => TestRig.Manifest;

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 
-/** GET /admin/image-search: whether this environment searches the web for pictures, the limit, and how the month stands */
 export interface ImageSearchDoc {
   enabled: boolean;
   /** searches a person gets a day; null = no limit */
@@ -28,12 +27,8 @@ function monthLine(doc: ImageSearchDoc): string {
   return `${doc.remainingThisMonth.toLocaleString()} searches left this month, by the search service's own count.`;
 }
 
-/**
- * #521 (user 2026-11-11: "configurable … by default infinite"): how many
- * web searches for a picture one person gets a day. Every search is paid
- * beyond the month's credit, so the operator can cap one person without
- * closing the feature; the same words searched again cost nothing.
- */
+// #521: every search is paid beyond the month's credit, so the operator can cap one person without closing the feature;
+// the same words searched again cost nothing
 export function ImageSearchScreen({
   doc,
   busy,

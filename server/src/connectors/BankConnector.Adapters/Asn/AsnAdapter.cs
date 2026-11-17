@@ -10,34 +10,8 @@ using BankConnector.Adapters.Parsing;
 
 namespace BankConnector.Adapters.Asn;
 
-/// <summary>
-/// ASN Bank, written from a discovery session rather than from a guess.
-///
-/// <para>
-/// An earlier adapter of this name was deleted. It was reasoned from a design
-/// document - a digipas serial typed into a form, a challenge number read back -
-/// and two live sessions showed a different bank entirely. Everything below
-/// comes from <see cref="AsnOptions"/>, where each value is marked OBSERVED or
-/// not.
-/// </para>
-///
-/// <para>
-/// <b>Why this bank is worth the trouble.</b> ASN serves CAMT.053 to private
-/// customers, which ING reserves for businesses. So the hard half of a bank
-/// adapter - turning a statement into transactions somebody can trust - is
-/// <see cref="Camt053Parser"/>, already written and already proven against a
-/// real 390-entry export whose balances reconciled to the cent. What is left is
-/// driving a form, and this file is that.
-/// </para>
-///
-/// <para>
-/// <b>The export is the whole fetch.</b> There is no per-account API to walk and
-/// no cursor to follow: one form takes the accounts, the dates and the format,
-/// and produces one document holding a statement per account. That is why
-/// <see cref="AccountsAsync"/> and the transaction read are the same download -
-/// asking twice would mean two exports of the same data.
-/// </para>
-/// </summary>
+/// ASN: one export form yields one CAMT.053 document with a statement per account, so accounts and transactions
+/// are one download. ASN serves CAMT.053 to private customers (ING reserves it for businesses).
 internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time = null) : IProviderAdapter
 {
     public const string ProviderId = AsnManifest.ProviderId;
@@ -60,7 +34,6 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         return await LoginAsync(ctx, new AsnPortal(page), ct).ConfigureAwait(false);
     }
 
-    /// <summary>The sign-in, behind the seam so the offline suite can drive it.</summary>
     internal async Task<LoginResult> LoginAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         try
@@ -69,16 +42,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         }
         catch (ConnectorException)
         {
-            // WHAT THE PAGE LOOKED LIKE WHEN IT WENT WRONG, carried out with
-            // the failure rather than left on the agent.
-            //
-            // A first live attempt against this bank produced nothing but
-            // "provider_changed", which names a category and not a step: the
-            // method button, the QR, or a page that never loaded at all are
-            // three different repairs and one error code. A login here runs on
-            // somebody's real account and cannot simply be repeated with more
-            // logging turned on, so the diagnosis has to travel with the first
-            // failure.
+            // on failure the page's shape travels with the error: a live login on a real account cannot be repeated with more logging
             ctx.Note($"{ProviderId}: when that failed, the page was - {await portal.DescribeAsync(ct).ConfigureAwait(false)}");
 
             throw;
@@ -90,15 +54,10 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         await portal.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
         await PastBrowserNoticeAsync(portal, _options, ctx.Note, ct).ConfigureAwait(false);
 
-        // REFUSED, NOT ACCEPTED, and it stands in front of everything. Best
-        // effort: it appears on the second render rather than the first, and a
-        // session that never saw it is not a session that failed.
+        // refuse cookies, not accept; best effort: the banner appears on the second render, and a miss must not fail the sign-in
         await portal.ClickAsync(_options.CookieRefuseSelectors, ct).ConfigureAwait(false);
 
-        // AND THE BRAND BANNER, so the QR is not pushed below the fold of the
-        // stream the account holder has to scan. Best effort by design: a
-        // sign-in that failed because a promotional banner would not close
-        // would be a defect invented for a convenience.
+        // dismiss the brand banner so the QR is not below the fold; best effort, a promo banner must not fail a sign-in
         await portal.ClickAsync(_options.BannerDismissSelectors, ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.Authenticating);
@@ -128,15 +87,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         };
     }
 
-    /// <summary>
-    /// ASN's "Browser updaten" notice, passed: the bank shows it a browser it
-    /// judges outdated, with its own button on to online banking. A sign-in
-    /// that met it used to end as a page the connector had never seen (#562).
-    /// Said out loud when it was there - the agent's browser wants renewing
-    /// (docs/connectors/deploy.md, "Keeping the agents' browsers current") -
-    /// and quiet when it was not.
-    /// </summary>
-    /// <returns>Whether the notice was there and passed.</returns>
+    /// ASN's "Browser updaten" notice (shown to a browser it judges outdated) is passed and noted: the agent's browser
+    /// wants renewing (#562).
     internal static async Task<bool> PastBrowserNoticeAsync(IAsnPortal portal, AsnOptions options, Action<string>? note, CancellationToken ct)
     {
         if (!await portal.HasAsync(options.BrowserNoticeContinueSelectors, TimeSpan.FromMilliseconds(options.BrowserNoticeProbeMs), ct).ConfigureAwait(false))
@@ -151,32 +103,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         return true;
     }
 
-    /// <summary>
-    /// Relays ASN's own screen while the human scans, and waits for the bank to
-    /// move the browser on.
-    /// </summary>
-    /// <remarks>
-    /// A LIVE VIEW RATHER THAN A PHOTOGRAPH, because the code rotates.
-    ///
-    /// The first version found the QR by being square - 205x205 against a
-    /// 158x30 logo - cropped it and relayed one picture. That works for a code
-    /// that sits still, and ASN's does not: it refreshes every few seconds, so
-    /// a still frame is a code that has already expired by the time somebody
-    /// has their phone out. What they scan has to be what the page is showing
-    /// NOW, which is what the live view is for - the same relay DUO uses for
-    /// DigiD's QR, for the same reason.
-    ///
-    /// <para>
-    /// THE RELAY OUTLIVES THE CALL THAT RAISES IT, which the first version got
-    /// wrong. The challenge is raised and not awaited - nobody types anything
-    /// back, the scan finishes by ASN moving the browser on - so the wait for
-    /// that has to happen inside the relay's lifetime. It did not: the token
-    /// source was disposed when the method returned, cancelling the relay
-    /// before the caller began waiting, and the account holder watched their
-    /// code appear and vanish.
-    /// </para>
-    /// </remarks>
-    /// <returns>Whether the browser reached a signed-in page.</returns>
+    // live view, not a still: the QR rotates every few seconds. The relay must outlive the challenge call: the scan
+    // ends by ASN moving the browser on, and disposing the source early cancelled the relay before that wait began
     private async Task<bool> ScanAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         ctx.Progress(JobStep.AwaitingHuman);
@@ -194,19 +122,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
 
         try
         {
-            // THE SIGN-IN PROVES ITSELF BY LEAVING, which is a path rather than
-            // a word. There is an "Uitloggen" button on every signed-in page
-            // and it would be a better marker in every way except the one that
-            // matters: a bank serving an English-speaking customer would fail
-            // every login.
-            //
-            // BOTH HALVES IN ONE WAIT, because one path is a prefix of the
-            // other. ASN signs people in under /online/web/onlinebankieren/ AND
-            // lands them there - the sign-in page is /inloggen/ beneath it - so
-            // waiting for the signed-in marker alone matched on the very first
-            // check, and the /inloggen/ test then failed the login instantly.
-            // The account holder got "that code was not accepted" before there
-            // was a code to accept.
+            // proven by a path, not a word: "Uitloggen" would fail every login for an English-speaking customer
+            // both markers in one wait: the signed-in path is a prefix of the sign-in path, so it alone matched at once
             return await portal.WaitForPathAsync(
                     _options.SignedInPathMarker,
                     _options.SignInPathMarker,
@@ -216,9 +133,6 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         }
         finally
         {
-            // Taken down once the page has answered. Observed rather than
-            // awaited: it was cancelled on purpose, and the cancellation it
-            // throws is not news.
             await relay.CancelAsync().ConfigureAwait(false);
             _ = asked.ContinueWith(static t => t.Exception, TaskScheduler.Default);
         }
@@ -243,13 +157,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         }
         catch (ConnectorException)
         {
-            // THE SAME DIAGNOSIS THE LOGIN CARRIES, which this half went
-            // without and paid for. A first live fetch died on a button that
-            // was not there, and all the caller was told is "something broke on
-            // our side" - while the agent's own log held the label it had been
-            // hunting for. A fetch runs on a real account behind a real
-            // sign-in; it is no more repeatable-with-more-logging than the
-            // login is, so it gets the same treatment.
+            // same page diagnosis as the login: a fetch on a real account cannot be repeated with more logging either
             ctx.Note($"{ProviderId}: when that failed, the page was - {await portal.DescribeAsync(ct).ConfigureAwait(false)}");
 
             throw;
@@ -262,24 +170,9 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         var window = BankWindow.Resolve(request, Manifest, DateOnly.FromDateTime(_time.GetUtcNow().UtcDateTime));
         var statements = await ExportAsync(ctx, portal, window, ct).ConfigureAwait(false);
 
-        // FROM THE STATEMENT ITSELF. There is no account list to read: the
-        // export names the account it belongs to, so the accounts a session can
-        // see are the statements it gets back.
         var reachable = statements.Select(s => s.Account).ToList();
 
-        // THE CALLER'S ACCOUNT FILTER, WHICH THIS ADAPTER USED TO IGNORE
-        // ENTIRELY.
-        //
-        // The manifest advertises the parameter - every bank resource here
-        // does - and nothing in this file had ever read it. So a caller who
-        // ticked "credit_card" and "loan", account types ASN does not have,
-        // received four hundred transactions from the accounts they had not
-        // asked for and a green "complete" beside them. Asking wrong and asking
-        // for everything produced the same answer.
-        //
-        // BankAccountFilter is the platform's rule and it refuses rather than
-        // returning nothing: an empty result reads as "you have no savings
-        // transactions" when the truth is "this session cannot reach any".
+        // the caller's account filter: BankAccountFilter refuses an unreachable type, since an empty result reads "no transactions"
         var selected = BankAccountFilter.Select(reachable, request);
 
         if (string.Equals(request.ResourceId, BankResources.Accounts, StringComparison.Ordinal))
@@ -300,17 +193,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
             .Where(t => window.Contains(t.BookedAt))
             .ToList();
 
-        // NO RECONCILIATION LOOP HERE, and its absence is the point.
-        //
-        // This file grew one, and it was duplicating Camt053Parser's own
-        // VerifyAgainstBalances - which has done the same arithmetic since
-        // before this adapter existed, does it per statement as part of
-        // parsing, and reports a mismatch as ProviderChanged. A second copy in
-        // the caller is a second thing to keep correct and a second answer to
-        // reconcile when the two disagree.
-        //
-        // So the guarantee below is real and it is the parser's: a statement
-        // that reached this line balanced.
+        // no reconciliation here: Camt053Parser.VerifyAgainstBalances already checks each statement (ProviderChanged on mismatch)
         ctx.Note(
             $"{ProviderId}: read {rows.Count} transaction(s) from {statements.Count} statement(s). Every one "
             + "of them was checked against the opening and closing balance the bank states on it, and the "
@@ -319,15 +202,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         return new FetchResult { Transactions = rows, Complete = true, Via = "camt053" };
     }
 
-    /// <summary>
-    /// Drives the download form once and parses what comes back.
-    /// </summary>
-    /// <remarks>
-    /// The form is filled in the order the page presents it: accounts, dates,
-    /// then format. Every step is checked rather than assumed - a bank's form
-    /// that silently ignored a click would otherwise produce a perfectly valid
-    /// export of the wrong thing, which is the failure nobody can see.
-    /// </remarks>
+    /// Every step is checked: a silently ignored click would yield a valid export of the wrong thing.
     private async Task<IReadOnlyList<Camt053Statement>> ExportAsync(
         IJobContext ctx, IAsnPortal portal, FetchWindow window, CancellationToken ct)
     {
@@ -342,9 +217,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
 
         var offered = await ChooseAccountsAsync(ctx, portal, ct).ConfigureAwait(false);
 
-        // TYPED, NOT PICKED. The two boxes take dd-mm-jjjj - maxlength=10 on
-        // both - and the alternative is a month-by-month calendar that would
-        // have to be clicked backwards through years of history.
+        // dates are typed (dd-MM-yyyy, maxlength 10), not picked: the calendar would be clicked back through years
         var from = window.From.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
         var until = window.To.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
 
@@ -378,16 +251,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
 
         ctx.Found(statements.Sum(statement => statement.Transactions.Count));
 
-        // AS MANY STATEMENTS AS THERE WERE ACCOUNTS, or this is not the export
-        // that was asked for.
-        //
-        // This is the check the first working fetch went without, and it went
-        // without it for the usual reason: everything it did looked like it had
-        // worked. It selected all three accounts, closed the dialog, downloaded
-        // a file that parsed cleanly, reconciled every balance in it to the
-        // cent, and handed back ONE account as a complete answer. Nothing in
-        // that chain is capable of noticing two missing accounts, because each
-        // link only checks itself.
+        // the count check catches a skipped confirm: each link only checks itself, and one account once came back as complete
         if (offered > 0 && statements.Count < offered)
         {
             throw ConnectorException.ProviderChanged(
@@ -400,21 +264,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         return statements;
     }
 
-    /// <summary>
-    /// Opens the account picker, takes every account, and closes it again.
-    /// </summary>
-    /// <remarks>
-    /// A MODAL, WHICH IS THE WHOLE POINT. The select-all is not on the export
-    /// form: it lives in a dialog behind the account button, alongside a search
-    /// box and one checkbox per account. The first live fetch looked for it on
-    /// the form, where it has never been, and spent its budget not finding it.
-    /// <para>
-    /// Closed before anything else is touched, because this form is one where
-    /// order decides what a keystroke means - the same trap the format modal
-    /// carries, where a date typed while it is open goes into the modal.
-    /// </para>
-    /// </remarks>
-    /// <returns>How many accounts the dialog offered, or 0 if it would not say.</returns>
+    /// The select-all lives in a modal behind the account button; close it before touching anything else, since a date
+    /// typed while a modal is open goes into it.
     private async Task<int> ChooseAccountsAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         if (!await OpenPickerAsync(ctx, portal, ct).ConfigureAwait(false))
@@ -427,17 +278,10 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 + $"{string.Join(" and ", _options.AccountPickerFallbackIndexes)}");
         }
 
-        // THE BANK'S OWN COUNT OF THE ACCOUNTS, taken while its dialog is open
-        // and taken as a NUMBER: one checkbox per account, no name and no IBAN
-        // asked for. It is the only thing that turns "did this export cover
-        // everything" into a question with an answer, and the first export to
-        // reach the end needed exactly that question asking - it returned one
-        // account out of three and looked complete.
+        // the bank's own account count (a checkbox per account) is the only way to tell whether the export covered everything
         var offered = await portal.CountAsync(_options.AccountCheckboxSelectors, ct).ConfigureAwait(false);
 
-        // EVERY account, because one export covers them all and asking per
-        // account would mean one download each against a bank that is watching
-        // how often somebody exports.
+        // every account: one export covers them, and per-account downloads would be watched by the bank
         if (!await portal.ClickLabelAsync(_options.AllAccountsLabelPrefix, LabelMatch.Prefix, ct)
             .ConfigureAwait(false))
         {
@@ -447,16 +291,10 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 + "of them");
         }
 
-        // APPLIED, NOT MERELY CLOSED, and the difference cost a whole export.
-        // The first fetch that reached the end came back with one account while
-        // the dialog it had just used said "Alles selecteren (3)". Everything
-        // before this was confirmed working, which leaves the dismissal: an X
-        // closes a dialog, and on this design system that is not the same as
-        // agreeing with it, so the form kept the single account it defaults to.
+        // applied, not merely closed: an X dismissal discards the choice and the form keeps its single default account
         foreach (var label in _options.AccountConfirmLabels)
         {
-            // BY PREFIX, because this button carries the count too:
-            // "Selectie bevestigen (3)".
+            // by prefix: this button carries the count too ("Selectie bevestigen (3)")
             if (!await portal.ClickLabelAsync(label, LabelMatch.Prefix, ct).ConfigureAwait(false)) continue;
 
             ctx.Note($"{ProviderId}: the account picker was confirmed with '{label}'");
@@ -464,62 +302,21 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
             return offered;
         }
 
-        // WHAT THE DIALOG ACTUALLY HELD, because the confirm has never been
-        // seen. The first run to get this far reported "NOT SHOWN: 2 more
-        // buttons" - the probe's cap was hiding exactly the two that matter,
-        // and this note is what said so.
+        // note what the dialog held: the confirm label has never been observed
         ctx.Note(
             $"{ProviderId}: none of [{string.Join(", ", _options.AccountConfirmLabels)}] confirmed the "
             + $"account picker - with it open the page was: "
             + await portal.DescribeAsync(ct).ConfigureAwait(false));
 
-        // AND NO GUESS AT A REPLACEMENT. One run pressed the dialog's last
-        // button on the reasoning that a primary action sits there. The dialog
-        // ends "Alles selecteren", "Selectie wissen", "Selectie bevestigen" -
-        // take all, CLEAR ALL, confirm - and the last
-        // button[data-testid='button'] is the middle one. It threw the
-        // selection away, and the capture afterwards read "(0)" where it had
-        // read "(3)".
-        //
-        // A wrong button on this dialog does not merely fail to help; it undoes
-        // the step before it. So the dialog is closed and the export refuses on
-        // the count, which is the honest outcome when the confirm is not there.
+        // no guess at a replacement: the last button[data-testid='button'] is "Selectie wissen" (clear all) and undoes the
+        // selection; close the dialog and let the count check refuse
         await portal.ClickAsync(_options.ModalCloseSelectors, ct).ConfigureAwait(false);
 
         return offered;
     }
 
-    /// <summary>
-    /// Opens the account dialog, trying each way this form might offer, and
-    /// says which one worked.
-    /// </summary>
-    /// <remarks>
-    /// A LADDER RATHER THAN A GUESS, because three separate readings of the
-    /// same captures each produced a confident answer and two of them were
-    /// wrong. The rungs are ordered by how well the evidence supports them: the
-    /// box around the account select first, the select itself forced second,
-    /// and the form's two unlabelled buttons last.
-    /// <para>
-    /// WHAT MAKES THIS SAFE IS NOT THE ORDER, IT IS THE CHECK. No rung is
-    /// believed on the strength of having been clicked - each is judged by
-    /// whether ASN's own "Kies een rekening" heading appeared, and the form is
-    /// reloaded before the next one, because a click that opens nothing may
-    /// still have MOVED the browser. That is exactly how an earlier version
-    /// left the export page and went looking for a select-all on the accounts
-    /// overview.
-    /// </para>
-    /// <para>
-    /// The back control at index 2 is not a rung and must never become one. It
-    /// is the single most attractive-looking thing on this form - its label is
-    /// the name of the page you came from, which on a fresh navigation reads
-    /// "Rekening" - and it has already cost two commits.
-    /// </para>
-    /// <para>
-    /// The note is not decoration. Which rung worked is the thing worth knowing
-    /// after this run: a fetch against somebody's real bank is not an
-    /// experiment that can be repeated with more logging turned on.
-    /// </para>
-    /// </remarks>
+    /// A ladder of ways to open the account dialog, each judged by the "Kies een rekening" heading, reloading between:
+    /// a click that opens nothing may have moved the browser. The back control at index 2 must never become a rung.
     private async Task<bool> OpenPickerAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         var rungs = new List<(string What, Func<Task<bool>> Try)>
@@ -535,8 +332,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
 
         for (var i = 0; i < rungs.Count; i++)
         {
-            // A fresh form, because the rung before may have moved the browser
-            // rather than opened anything.
+            // a fresh form: the rung before may have moved the browser
             if (i > 0) await portal.GotoAsync(Absolute(_options.ExportPath), ct).ConfigureAwait(false);
 
             if (!await rungs[i].Try().ConfigureAwait(false)) continue;
@@ -553,16 +349,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
     private Task<bool> OpenedAsync(IAsnPortal portal, CancellationToken ct) =>
         portal.HasHeadingAsync(_options.AccountModalHeading, TimeSpan.FromSeconds(10), ct);
 
-    /// <summary>
-    /// Opens the format modal, picks CAMT.053, asks for it unzipped, saves.
-    /// </summary>
-    /// <remarks>
-    /// THE CHECKBOX MEANS ITS OWN OPPOSITE. It reads "Geen zip-bestand van
-    /// maken" - do NOT make a zip - so it is TICKED to get the bare XML, and
-    /// ASN zips by default. An adapter written to "tick the zip box" would
-    /// fetch precisely the wrong file, and the failure would arrive as a parser
-    /// refusing an archive, which reads like the bank changing its export.
-    /// </remarks>
+    /// "Geen zip-bestand van maken" means do not zip: it is TICKED to get bare XML, and ASN zips by default.
     private async Task ChooseFormatAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         if (!await portal.ClickLabelAsync(_options.FormatChangeLabel, LabelMatch.Exact, ct).ConfigureAwait(false))
@@ -589,11 +376,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 + "chosen - not by setting it, not by forcing it, and not by clicking the box around it");
         }
 
-        // TICKED, AND THE TICK IS REQUIRED. It reads "Geen zip-bestand van
-        // maken" - do NOT make a zip - so this is what produces the bare XML,
-        // and ASN zips by default. Left to best effort, a miss here means an
-        // archive arriving where XML is expected, which surfaces as the parser
-        // refusing the export and reads like the bank having changed it.
+        // the tick is required: a miss delivers an archive, which reads like the bank changing its export
         var zip = await portal.SetCheckedNthAsync(
             _options.NoZipCheckboxSelectors, 0, _options.TickNoZipForXml, ct).ConfigureAwait(false);
 
@@ -604,8 +387,6 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 + $"format is chosen, so index {_options.Camt053RadioIndex} may not be CAMT.053 at all");
         }
 
-        // WHICH RUNG WORKED, because this bank keeps hiding its real controls
-        // behind styled ones and the answer differs per control.
         ctx.Note($"{ProviderId}: CAMT.053 was set {format}, and the no-zip box {zip}");
 
         if (!await portal.ClickLabelAsync(_options.FormatSaveLabel, LabelMatch.Exact, ct).ConfigureAwait(false))
@@ -616,28 +397,12 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         }
     }
 
-    /// <summary>
-    /// Signs out, and confirms it by where the browser lands.
-    /// </summary>
-    /// <remarks>
-    /// Confirmed rather than assumed, because a logout that silently does
-    /// nothing is a failure this platform has already shipped once. The
-    /// signed-out page is <c>/uitgelogd.html</c>, observed in a real run.
-    /// <para>
-    /// Worth doing even though ASN expires an idle session itself - it does so
-    /// on its own schedule, and a bank that sees a string of sessions never
-    /// signed out of draws conclusions about the account.
-    /// </para>
-    /// </remarks>
+    /// Confirmed by the signed-out page (/uitgelogd.html): a logout that silently does nothing has shipped before.
     public async Task LogoutAsync(IJobContext ctx, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
 
-        // NOTHING STORED MEANS NOTHING TO SIGN OUT OF. Opening the page IS
-        // resuming the session - the lease is built with the job's own cookie
-        // jar - so with no jar this would launch Chromium to visit a bank as a
-        // stranger, and then report the sign-in page's lack of a sign-out
-        // button as a failure.
+        // nothing stored, nothing to sign out of: the page resumes via the job's cookie jar, so without one it visits as a stranger
         if (string.IsNullOrWhiteSpace(ctx.Material?.StorageState))
         {
             ctx.Note($"{ProviderId}: this disconnect carried no stored session, so there was nothing to sign out");
@@ -653,26 +418,11 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
     {
         ctx.Progress(JobStep.LoggingOut);
 
-        // ASN'S BUTTON IS ON ASN'S PAGE, and this went without it.
-        //
-        // A logout job opens a browser that has never been anywhere, so the
-        // "Uitloggen" hunt ran against about:blank and found nothing - which
-        // was then reported as "no sign-out button was on the page", blaming
-        // the bank for a page nobody had asked it for. ING's adapter carries
-        // this exact fix and this one was written without it.
-        //
-        // The signed-in overview, because that is where the button lives and
-        // navigating there with the stored jar is what proves the session is
-        // still worth ending.
+        // go to the overview first: a logout job's browser starts on about:blank, so the "Uitloggen" hunt would blame the bank
+        // (ING's adapter has the same fix)
         await portal.GotoAsync(Absolute(_options.SignedInPathMarker), ct).ConfigureAwait(false);
 
-        // A SESSION THAT HAS ALREADY ENDED IS NOT A MISSING BUTTON.
-        //
-        // ASN answers the overview with its sign-in page once the session is
-        // gone, and that page has no sign-out on it - correctly. Without this
-        // the run reports "no 'Uitloggen' button was on the page", which reads
-        // as a broken adapter and is in fact the bank saying the work is
-        // already done.
+        // an ended session is not a missing button: ASN answers the overview with its sign-in page, which has no sign-out
         if (portal.Url.Contains(_options.SignInPathMarker, StringComparison.OrdinalIgnoreCase))
         {
             ctx.Note(
@@ -682,14 +432,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
             return;
         }
 
-        // THE SIGN-OUT IS BEHIND A MENU, and the agent emulates a phone, where
-        // a menu is shut until something opens it.
-        //
-        // NOT the hamburger, which is what the first attempt at this reasoned
-        // its way to. A live disconnect opened that one and described what it
-        // held - "Overzicht", "Zelf regelen", "Contact" - so the navigation
-        // menu is now walked and ruled out. The user menu is a different
-        // control, and AsnOptions says which two it can be.
+        // the sign-out is behind a menu (the agent emulates a phone, where menus are shut); the hamburger holds only
+        // Overzicht, Zelf regelen, Contact, so the user menu is the other control
         var opened = await OpenSignOutMenuAsync(portal, ct).ConfigureAwait(false);
 
         if (!await portal.ClickLabelAsync(_options.SignOutLabel, LabelMatch.Exact, ct).ConfigureAwait(false))
@@ -699,14 +443,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 + (opened ?? "and none of its header controls revealed one")
                 + ", so the session is left to expire");
 
-            // THE HEADER AS IT STANDS, not as the last rung left it.
-            //
-            // A sign-out failure cannot be reproduced - the next attempt needs
-            // a fresh code, and by then the session it was meant to end has
-            // expired on its own - so this is the one chance to see the page.
-            // The first version described whatever the search panel had opened
-            // over the top of it, which is a picture of the last thing that
-            // went wrong rather than of the controls being searched.
+            // re-open the header: a sign-out failure cannot be reproduced, and the search panel left open would be described instead
             await portal.GotoAsync(Absolute(_options.SignedInPathMarker), ct).ConfigureAwait(false);
 
             ctx.Note(
@@ -720,12 +457,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 _options.SignedOutPathMarker, without: null, TimeSpan.FromSeconds(10), ct)
             .ConfigureAwait(false))
         {
-            // AND HOW IT WAS REACHED, which the run that finally worked could
-            // not say. Only the failure carried the route, so a sign-out that
-            // succeeded reported "signed out upstream" and nothing about which
-            // of ASN's unnamed header controls had held the button - leaving
-            // the one fact three live attempts had been spent buying to be
-            // inferred from the shape of the run before it.
+            // note which route revealed the button: only failures used to carry it
             ctx.Note(
                 $"{ProviderId}: signed out upstream, "
                 + (opened ?? "though nothing was seen to reveal the button first"));
@@ -738,43 +470,18 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
             + "may still be alive until ASN expires it");
     }
 
-    /// <summary>
-    /// Gets ASN to render its sign-out, and says what it took.
-    /// </summary>
-    /// <remarks>
-    /// ASKED RATHER THAN CLICKED AT, which is what makes a search over menus
-    /// affordable. A click that finds nothing spends ten seconds first, so
-    /// trying three candidates by clicking would cost half a minute of nothing
-    /// - long enough for the courtesy sign-out on a failed job to be cancelled
-    /// mid-hunt and report nothing at all. Asking whether the button is there
-    /// costs a second.
-    /// <para>
-    /// Every rung is judged by whether the SIGN-OUT appeared, never by whether
-    /// the press landed. A press that opens the wrong panel is still a press
-    /// that worked, and this adapter has already once mistaken one for the
-    /// other - the back control whose label reads like the thing it wanted.
-    /// </para>
-    /// </remarks>
-    /// <returns>How it was opened, or null if nothing revealed it.</returns>
+    /// Asks rather than clicks: a click that finds nothing spends ten seconds, enough to cancel the courtesy sign-out.
+    /// Each rung is judged by the SIGN-OUT appearing, never by the press landing.
     private async Task<string?> OpenSignOutMenuAsync(IAsnPortal portal, CancellationToken ct)
     {
         var budget = TimeSpan.FromSeconds(2);
 
-        // Already showing, which is what a desktop viewport does and what a
-        // session that never collapsed its header would do.
         if (await portal.HasLabelAsync(_options.SignOutLabel, budget, ct).ConfigureAwait(false))
         {
             return "on the page as it stood";
         }
 
-        // THE MENU BY ITS NAME, which is now a thing that can be asked for.
-        //
-        // A mapping run finally described these controls - "Zoeken" and
-        // "Profiel menu openen" - because the page probe learned to read an
-        // aria-label off a button with no text. Three live sign-outs went into
-        // discovering "the second one" positionally; this is that answer said
-        // properly, and unlike a position it survives ASN reordering its own
-        // header.
+        // the user menu by its name ("Profiel menu openen"): unlike a position, it survives ASN reordering its header
         if (await portal.ClickAsync(_options.UserMenuSelectors, ct).ConfigureAwait(false)
             && await portal.HasLabelAsync(_options.SignOutLabel, budget, ct).ConfigureAwait(false))
         {
@@ -787,16 +494,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         {
             ct.ThrowIfCancellationRequested();
 
-            // A FRESH HEADER, because the rung before may have opened a panel
-            // over the top of the one this is counting.
-            //
-            // The account picker's ladder has carried this line since its own
-            // version of the same failure, and this was written without it: the
-            // first press opened ASN's search - "Veel gebruikte links", a search
-            // box and three buttons - and the second press then landed on
-            // whatever was second INSIDE THAT PANEL. So an enumeration over the
-            // header's two controls pressed one of them and something else
-            // entirely.
+            // a fresh header: the rung before may have opened ASN's search panel, and the next index would land inside it
             if (tried++ > 0)
             {
                 await portal.GotoAsync(Absolute(_options.SignedInPathMarker), ct).ConfigureAwait(false);

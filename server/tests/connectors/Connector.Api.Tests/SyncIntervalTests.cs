@@ -4,12 +4,7 @@ using Connector.Kit.Hosting.Endpoints;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The provider's <c>min_interval_seconds</c>, enforced for schedules and
-/// for nobody else: a scheduler that comes back inside the interval is told
-/// <c>rate_limited</c> and how long to wait, a person who presses the button
-/// is not - the interval is about firehoses, and a person is not one.
-/// </summary>
+// min_interval_seconds is enforced for schedules only: a person pressing the button is not a firehose
 [Collection(ShopApiCollection.Name)]
 public sealed class SyncIntervalTests(ShopApiFactory factory)
 {
@@ -31,7 +26,6 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("interval"), Credentials);
         var ticket = await Flows.ResumeAsync(http, Provider, connection);
 
-        // the clock starts at a SCHEDULED fetch, nothing else
         using (var first = await FetchAsync(http, ticket, "schedule"))
         {
             Assert.True(first.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, first.StatusCode.ToString());
@@ -52,11 +46,7 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         await Flows.FetchPageAsync(http, Provider, Receipts, ticket);
     }
 
-    /// <summary>
-    /// A person's own fetch is attended traffic: it never holds the schedule
-    /// off. Counting it did, and on prod the app's syncs on open refused the
-    /// nightly scheduled one day after day as rate_limited (2026-10-04).
-    /// </summary>
+    // attended traffic never holds the schedule off: counting it made app syncs on open refuse the nightly one on prod
     [Fact]
     public async Task A_persons_fetch_inside_the_interval_does_not_hold_the_schedule_off()
     {
@@ -97,8 +87,7 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
             using var started = await http.SendAsync(first);
             var body = await started.JsonAsync();
             Assert.True(started.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, started.StatusCode.ToString());
-            // the interval counts jobs that SUCCEEDED: a 202 is a run still going, and a
-            // second login sent before it lands is inside nothing yet (CI, 2026-10-05)
+            // the interval counts jobs that SUCCEEDED: a 202 is still running, so a second login sent before it lands is inside nothing
             if (body.TextOrNull("bundle") is null) await Flows.AwaitBundleAsync(http, Provider, body.Text("session_id"));
         }
 
@@ -109,16 +98,10 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         var error = await ErrorEnvelope.AssertAsync(scheduled, HttpStatusCode.TooManyRequests, "rate_limited");
         Assert.InRange(error.GetProperty("retry_after_seconds").GetInt32(), 1, 60);
 
-        // and a person can sign in again whenever they like
         await Flows.ConnectAsync(http, Provider, subject, Credentials);
     }
 
-    /// <summary>
-    /// #460: a scheduler's pass over older history is unattended too, held to
-    /// the interval on a clock of its own: it fits beside the schedule's pass,
-    /// and a second one inside the interval is told to wait - one of each per
-    /// interval, two unattended reads where PSD2 allows four.
-    /// </summary>
+    // #460: a backfill pass has its own interval clock: one of each per interval, two unattended reads where PSD2 allows four
     [Fact]
     public async Task A_backfill_pass_fits_beside_the_schedules_pass_and_a_second_one_inside_the_interval_is_held_off()
     {

@@ -6,16 +6,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The credential bundle: what the human typed, sealed for their own device.
-///
-/// It rides the same codec, the same key and the same associated data as a
-/// session bundle, and that is the point - the custody argument is identical.
-/// What differs is what leaks if it escapes. A session bundle carries a token
-/// that rotates and can be revoked upstream; this carries a password, which
-/// does neither. So the two rules with teeth are that the AAD binds it to one
-/// person, and that the two KINDS cannot be mistaken for each other.
-/// </summary>
+// same codec, key and AAD as a session bundle, but it carries a password, which neither rotates nor can be revoked:
+// the AAD must bind it to one person, and the two kinds must not be mistaken for each other
 public sealed class CredentialBundleCodecTests
 {
     private const string Provider = "jumbo";
@@ -60,12 +52,7 @@ public sealed class CredentialBundleCodecTests
         Assert.Equal(Provider, opened.Provider);
     }
 
-    /// <summary>
-    /// The password must not be readable from the blob. Not a cryptographic
-    /// proof - it is AES-GCM either way - but the one mistake this catches is
-    /// the one that actually happens: a payload that stops being encrypted at
-    /// all and nobody notices because the round trip still passes.
-    /// </summary>
+    // not a cryptographic proof; it catches a payload that stops being encrypted while the round trip still passes
     [Fact]
     public void The_sealed_form_carries_no_readable_credential()
     {
@@ -78,13 +65,8 @@ public sealed class CredentialBundleCodecTests
         Assert.DoesNotContain("shopper@example.test", sealedBundle, StringComparison.Ordinal);
     }
 
-    // ---- the two kinds are not interchangeable ------------------------------
-
-    /// <summary>
-    /// They share a key and an AAD, so without the prefix a credential bundle
-    /// handed to a session route would decrypt perfectly and then deserialise
-    /// into a shape it is not. Refused as malformed, before any of that.
-    /// </summary>
+    // they share key and AAD: without the prefix a credential bundle sent to a session route would decrypt
+    // and deserialise into the wrong shape
     [Fact]
     public void A_credential_bundle_cannot_be_opened_as_a_session_bundle()
     {
@@ -116,8 +98,6 @@ public sealed class CredentialBundleCodecTests
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
     }
 
-    // ---- who it is for ------------------------------------------------------
-
     [Theory]
     [InlineData("u_somebody_else", Provider, ManifestVersion)]
     [InlineData(Subject, "ah", ManifestVersion)]
@@ -129,8 +109,7 @@ public sealed class CredentialBundleCodecTests
 
         var sealedBundle = codec.SealCredentials(Payload(), Binding);
 
-        // Every mismatch is the same answer, so a caller probing with somebody
-        // else's blob learns nothing from which one it got wrong.
+        // every mismatch gives the same answer, so a prober with somebody else's blob learns nothing
         var error = Assert.Throws<ConnectorException>(
             () => codec.OpenCredentials(sealedBundle, new BundleBinding(provider, subject, manifestVersion)));
 

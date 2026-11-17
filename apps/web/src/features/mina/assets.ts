@@ -1,5 +1,4 @@
-// Mina, munni's assistant persona (user-provided art, optimized from
-// mina/ via scripts — swap localized scenario files in by NAME later).
+// user-provided art, optimized from mina/ via scripts; localized scenario files are swapped in by NAME
 import exprSmile from '@/assets/mina/expr-smile.webp';
 import exprThinking from '@/assets/mina/expr-thinking.webp';
 import exprArmCrossed from '@/assets/mina/expr-armcrossed.webp';
@@ -27,14 +26,10 @@ export type MinaExpr = keyof typeof MINA_EXPR;
 
 export const MINA_ART = {
   greeting: fullGreeting,
-  // the wrap screen's figure — the HD greeting (user request 2026-08-01,
-  // converted from mina/full-body/mina-greeting-hd.png)
   handopen: fullGreetingHd,
   spaces: sceneSpaces,
   family: sceneFamily,
-  // art↔content mapping corrected against the actual files (user ss):
-  // finacc-01 = the three kinds at a glance, finacc-02 = manual lives in
-  // one space, finacc-03 = imported/linked are global and attach
+  // finacc-01 = the three kinds at a glance, finacc-02 = manual lives in one space, finacc-03 = imported/linked are global
   acctKinds: sceneAcctManual,
   acctManual: sceneAcctImport,
   acctGlobal: sceneAcctLinked,

@@ -16,6 +16,7 @@ import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { settleSpaceReimbursements } from '@/application/catalogMaintenance';
 import { countPreAnchorTx } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -64,12 +65,8 @@ import type { AccountRow, EventRow, RecurringRow, TxSplit, TxSplitCat } from '@/
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
-/**
- * How the counterparty account reads on the detail (user ss 2026-10-07): the
- * name the SPACE gave it (the display name the accounts list shows), and its
- * number underneath — the masked card number, the IBAN, or the bank's own
- * name when that is a number and the space renamed it.
- */
+// the name the SPACE gave the account, and under it its number: masked card, IBAN, or the bank's own name
+// when that is a number and the space renamed it
 function counterAccountFace(
   account: Pick<AccountRow, 'id' | 'name' | 'iban' | 'maskedNumber'>,
   spaceAccounts: readonly { id: string; name: string }[] | undefined,
@@ -81,18 +78,11 @@ function counterAccountFace(
   return { name: display, number: number === display ? null : number };
 }
 
-/** #200: the part id a container row navigates to — the settled
- *  Reimbursed slice and id-less legacy parts return null and keep the
- *  editor. Module-level for S3776. */
+// a container row opens its part's page; the settled Reimbursed slice and id-less legacy parts keep the editor (#200)
 const partTargetId = (multi: boolean, slice: TxSplit | null, canOpen: boolean): string | null =>
   multi && canOpen && slice?.id && slice.catId !== REIMBURSED_ID ? slice.id : null;
 
-// sliceCounterName retired (#228 feedback): the counterparty has its own
-// property row on every surface now — no "→ account" under categories.
-
-/** #138: every category row carries its money — the single category
- *  spans the whole transaction; a PART row shows what the part is
- *  WORTH (its own settled bookkeeping nets it, #228) (S3776) */
+// a part row shows what the part is WORTH (its own settled bookkeeping nets it, #228); a single category spans the whole tx
 const sliceRowAmountCents = (
   partsMode: boolean,
   slice: { amountCents: number; cats?: TxSplitCat[] } | null,
@@ -102,11 +92,7 @@ const sliceRowAmountCents = (
   return partsMode ? partNetCents(slice) : slice.amountCents;
 };
 
-/** the categories block's rows: one per slice (or the single category).
- *  A single category opens the unified editor; on a container the rows
- *  ARE the parts — plain rows now (#200: the circles + vertical line
- *  are gone) and tapping one goes to that part's page, never to the
- *  manage flow. */
+/** on a container the rows ARE the parts and open the part's page; a single category opens the unified editor (#200) */
 function CategorySlices({
   tx,
   cats,
@@ -119,16 +105,13 @@ function CategorySlices({
   cats: ReturnType<typeof useCategories>;
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
   fallbackColor: string;
-  /** #328 (user): absent = the category is locked — the row is inert
-   *  and drops its chevron */
+  /** absent = the category is locked: the row is inert and drops its chevron (#328) */
   onEdit?: () => void;
-  /** #200: a real part row navigates to its page */
   onOpenPart?: (partId: string) => void;
 }>) {
   const { t, lang } = useLang();
-  // #211: a container renders its PARTS (navigable pages); a whole row
-  // with its own category spread renders one plain row per entry — the
-  // classic slice look, every row a door back into the cats editor
+  // a container renders its PARTS; a whole row with its own category spread renders one row per entry, each a door
+  // back into the cats editor (#211)
   const partsMode = !!tx.splits?.length;
   const spreadEntries = (tx.cats?.length ? tx.cats : [null]) as (TxSplit | null)[];
   const parts = partsMode ? tx.splits! : spreadEntries;
@@ -139,13 +122,9 @@ function CategorySlices({
         const rowCat = slice ? cats.byId(slice.catId) : fallbackCat;
         const rowColor = slice ? (rowCat.color ?? cats.byId(rowCat.parentId ?? '').color) : fallbackColor;
         const parentName = rowCat.parentId ? catName(cats.byId(rowCat.parentId), t) : t(`tx.type.${tx.txType}`);
-        // typed-splits v2: the part wears its OWN story — the copied-info
-        // label ("<title> – split N" unless renamed) and, when its type
-        // differs from the row's kind, a quiet type chip
         const partLabel = slice?.label ?? (multi ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
         const partType = slice?.txType && slice.txType !== tx.txType ? slice.txType : undefined;
-        // a spread part's subline lists its REAL categories (v2.1;
-        // #228: the settled bookkeeping is not a story to retell here)
+        // a spread part lists its real categories, not the settled bookkeeping (#228)
         const realSliceCats = slice?.cats?.filter((c) => c.catId !== REIMBURSED_ID);
         const spreadNames = realSliceCats?.length
           ? realSliceCats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
@@ -174,8 +153,6 @@ function CategorySlices({
             <span className="m-num text-[13px] text-ink-2">
               {fmtCents(sliceRowAmountCents(partsMode, slice, tx), tx.currency, lang)}
             </span>
-            {/* #328 (user): the editor door is a door too — every live
-                tap (part page OR cats editor) wears the chevron */}
             {(openPartId || onEdit) && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </button>
         );
@@ -184,11 +161,7 @@ function CategorySlices({
   );
 }
 
-/** the DETAILS block: the facts underneath the user's edits — the
- *  original amount (reimbursements shrank it), the bank's counterparty
- *  (#220: ALWAYS shown here, read-only metadata — a tap opens the
- *  matched account's info sheet, never an editor), the bank's original
- *  title (renamed), and the raw bank data */
+/** the bank's counterparty is ALWAYS shown here as read-only metadata; a tap only opens the matched account's info (#220) */
 function DetailFacts({
   tx,
   givenOut,
@@ -197,7 +170,6 @@ function DetailFacts({
 }: Readonly<{
   tx: SpaceTx;
   givenOut: number;
-  /** the space account the bank's counter-IBAN resolves to, if any */
   counterAccountName?: string;
   /** absent = the plain-metadata rendering (part pages) */
   onOpenCounterAccount?: () => void;
@@ -218,10 +190,7 @@ function DetailFacts({
             </span>
           </div>
         )}
-        {/* #220 (user): the counterparty the BANK named, always here as
-            metadata; recognizable ones open their account info sheet.
-            #228: reads "Original counterparty" again — the editable
-            property row above owns the plain name */}
+        {/* the counterparty the BANK named, always shown as metadata (#220); the property row owns the plain name (#228) */}
         {tx.counterIban && (
           <button
             data-testid="tx-detail-original-counter"
@@ -265,16 +234,11 @@ function DetailFacts({
   );
 }
 
-/** every other transaction of this merchant that still differs */
 const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: SpaceTx) => boolean): SpaceTx[] =>
   (allTxs ?? []).filter((item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && differs(item));
 
-/** pre-anchor payment on a manual loan that was never counted in — the
- *  deliberate one-shot override applies (loans v2). `<=` mirrors the
- *  strictly-newer rule in countsTowardLoan. A peer only disqualifies
- *  when it is a REAL other leg (bank twin, picked row — its own write
- *  already carried the value); the row's own gated MINT moved nothing
- *  for pre-anchor dates, so the offer stays. */
+// a pre-anchor payment on a manual loan never counted in may be counted by hand once; `<=` mirrors countsTowardLoan
+// only a REAL other leg (bank twin, picked row) disqualifies: the row's own gated mint moved nothing for pre-anchor dates
 const offersLoanCount = (
   tx: Pick<SpaceTx, 'id' | 'transferPeerId' | 'loanCounted' | 'date'>,
   linked: Pick<AccountRow, 'source' | 'type' | 'balanceAsOf'>,
@@ -286,9 +250,7 @@ const offersLoanCount = (
   !!linked.balanceAsOf &&
   tx.date <= linked.balanceAsOf;
 
-/** #509 (user): the count-it-in offer lives on BOTH legs — the payment's
- *  own counterparty row, and the loan's generated leg, which counts its
- *  source in (the marker stays on the source) */
+/** the count-it-in offer lives on both legs: the payment's counterparty row and the loan's generated leg (#509) */
 const loanCountOffer = (
   tx: SpaceTx,
   account: AccountRow | undefined,
@@ -300,10 +262,8 @@ const loanCountOffer = (
   return null;
 };
 
-/** deleting a manual row (S3776: out of the screen): its mint goes with
- *  it — the manual counter's mirror is tombstoned and the balance it
- *  moved comes back (typed-splits v2) — and the row's own manual account
- *  hands the amount back (bank-linked balances stay the bank's) */
+// deleting takes the mint along: the manual counter's mirror is tombstoned and its balance comes back;
+// bank-linked balances stay the bank's
 async function deleteManualTxRow(
   store: ReturnType<typeof useData>['store'],
   repo: ReturnType<typeof useData>['repo'],
@@ -319,13 +279,12 @@ async function deleteManualTxRow(
     }
   }
   await repo.remove('transaction', tx.spaceId, tx.id);
+  // #617: what it reimbursed, or was reimbursed by, stops reading as settled now — not at the next start
+  await settleSpaceReimbursements(store, repo, spaceId).catch(() => undefined);
   void logActivity(store, repo, spaceId, 'txDelete', txTitle(tx));
 }
 
-/** the create-counter heal door (S3776: out of the screen): mint the
- *  manual counter's missing leg for a pre-engine link, then peer to it.
- *  #237: an already-minted but UNPAIRED leg (an old unlink left it
- *  orphaned) gets its reciprocal back too — the door used to no-op. */
+// heals a pre-engine link's missing leg; an already-minted but unpaired leg gets its reciprocal back too (#237)
 async function healMissingMirror(
   store: ReturnType<typeof useData>['store'],
   repo: ReturnType<typeof useData>['repo'],
@@ -340,13 +299,8 @@ async function healMissingMirror(
   }
 }
 
-/** where this transfer stands with its other leg (arc 1 pair UX).
- *  #237: ANY peered row shows its pair — the wallet story's purchase
- *  leg keeps its own category and type, so the old transfer-kind gate
- *  would have hidden the pairing from the side that matters most.
- *  #237 r2: the peer id is the EFFECTIVE one — a one-way pair (the
- *  other row points here, this one holds nothing yet) still reads as
- *  peered while the heal writes the reciprocal. */
+// any peered row shows its pair: the wallet story's purchase leg keeps its own category and type (#237)
+// the peer id is the EFFECTIVE one: a one-way pair still reads as peered while the heal writes the reciprocal
 function transferPairState(
   tx: Pick<SpaceTx, 'txType' | 'linkedAccountId'>,
   effectivePeerId: string | undefined,
@@ -360,10 +314,6 @@ function transferPairState(
   return linkedAccount.source === 'manual' ? 'offerCreate' : 'awaiting';
 }
 
-/** the pair row: jump to the other leg, or release the link.
- *  #237 (user): the row reads like a reimbursement record now — who the
- *  other leg is, when, on which account and for how much — and the tap
- *  goes STRAIGHT to that transaction (no sheet in between). */
 function TransferPeerRow({
   t,
   lang,
@@ -376,8 +326,7 @@ function TransferPeerRow({
   lang: ReturnType<typeof useLang>['lang'];
   peer: SpaceTx | undefined;
   accountName: string | undefined;
-  /** #255 r4: absent = the other leg is out of this space's view — the
-   *  old blind jump landed on an EMPTY detail (the reported glitch) */
+  /** absent = the other leg is out of this space's view: a blind jump landed on an empty detail (#255) */
   onOpen?: () => void;
   onUnpair?: () => void;
 }>) {
@@ -398,8 +347,6 @@ function TransferPeerRow({
       </span>
     </>
   ) : (
-    // the other leg lives outside this space's view — nothing to
-    // preview, and (#255 r4) nothing to jump to either
     <span className="text-[14px] font-medium text-accent-deep">{t('tx.pairedCounterpart')}</span>
   );
   return (
@@ -451,11 +398,6 @@ function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onCl
   );
 }
 
-/**
- * The bulk offer after a category change: the bar itself opens a
- * selection sheet (user request — see and pick the transactions instead
- * of a blind apply-all); Apply touches only the checked rows.
- */
 function DetailBulkBar({
   targets,
   selected,
@@ -507,9 +449,7 @@ function DetailBulkBar({
         </button>
       </div>
 
-      {/* selection sheet, same mechanics as the review bulk list */}
       <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760} dragHandle>
-        {/* #378: the one select-all row every transaction list wears */}
         <SelectAllRow
           total={targets.length}
           selected={targets.filter((item) => selected.has(item.id)).length}
@@ -556,11 +496,7 @@ function DetailBulkBar({
   );
 }
 
-/**
- * Rename a transaction's display title (user request). The bank's
- * merchant is shown underneath and never changes — clearing the field
- * (or typing the original) removes the override again.
- */
+/** the bank's merchant never changes; clearing the field (or typing the original) removes the override */
 function RenameTitleSheet({
   open,
   onOpenChange,
@@ -577,12 +513,11 @@ function RenameTitleSheet({
   const { t } = useLang();
   const [draft, setDraft] = useState(value);
   const last = useRef(open);
-  if (open && !last.current) setDraft(value); // fresh open re-seeds
+  if (open && !last.current) setDraft(value);
   last.current = open;
 
   return (
-    // 'form' height: on iOS the sheet lifts by the keyboard height —
-    // the compact sheet rose clean off the screen (user report ss 2026-07-18)
+    // 'form' height: on iOS the sheet lifts by the keyboard height and the compact one rose off the screen
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.renameTitle')} size="form">
       <input
         data-testid="tx-rename-input"
@@ -619,25 +554,14 @@ function RenameTitleSheet({
   );
 }
 
-// ContainerTypeRows + CounterpartyRow retired (#220, user): the
-// transaction-level counterparty row modified the link — that story is
-// category-level now (the entries carry it, edited inside the category
-// editor). The bank's counterparty lives on the Details block as
-// read-only metadata, interactable only to VIEW a matched account.
+// the bank's counterparty is read-only metadata on the Details block; the category editor's entries own the links (#220)
 
-/** which split door the detail shows (#126 r4): the visible Split row
- *  on a whole transaction, Manage splits on a split one, nothing while
- *  the category is reimbursement-locked. Module-level for S3776. */
 function splitDoorModeFor(multiPart: boolean, categoryLocked: boolean): 'row' | 'manage' | 'none' {
   if (multiPart) return 'manage';
   return categoryLocked ? 'none' : 'row';
 }
 
-/** #213/#232: the Actions card — split door first, recurring + event
- *  links after (non-container rows only — r7: parts own their links;
- *  the recurring door for expense/funding rows, the event door for every
- *  kind of event money, #448). Module-level for S3776; null when no row
- *  applies. */
+// non-container rows only: parts own their links; the event door covers every kind of event money (#213, #448)
 function DetailActionsCard({
   tx,
   multiPart,
@@ -658,12 +582,9 @@ function DetailActionsCard({
   onOpenEvent: () => void;
 }>) {
   const { t } = useLang();
-  // #264 (user): funding is recurring-shaped money too — its rows keep
-  // the recurring door
+  // funding is recurring-shaped money too (#264)
   const recurringRow = (tx.txType === 'expense' || tx.txType === 'funding') && !multiPart;
-  // #448 (user): received money joins an event too — a reimbursement, an
-  // uncategorized credit; only a movement between own accounts has no
-  // event to be part of (the expense-only gate read as "missing" here)
+  // received money joins an event too; only a movement between own accounts has none (#448)
   const eventRow = isEventMoney(tx.txType) && !multiPart;
   if (splitDoorMode === 'none' && !recurringRow && !eventRow) return null;
   return (
@@ -678,8 +599,7 @@ function DetailActionsCard({
           >
             <Icon name="call-split" size={20} color="var(--m-ink-3)" />
             <span className="flex-1 truncate">{t(splitDoorMode === 'row' ? 'split.title' : 'review.manageSplits')}</span>
-            {/* #328 (user): rows whose tap opens a sheet wear the right
-                chevron — the pencil stays for true in-place edits */}
+            {/* rows whose tap opens a sheet wear the chevron; the pencil is for in-place edits (#328) */}
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         )}
@@ -724,10 +644,7 @@ function DetailActionsCard({
   );
 }
 
-// ── small derivations, module-level so the screen stays readable to
-// Sonar (S3776) ──
-/** #143: a split container is never a bulk-recategorize target — its
- *  parts own their categories (title renames stay container-legit) */
+/** a split container is never a bulk-recategorize target: its parts own their categories (#143) */
 const isMultiPartRow = (item: Pick<SpaceTx, 'splits'>): boolean =>
   (item.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
 const catBulkTargets = (
@@ -735,13 +652,10 @@ const catBulkTargets = (
   tx: SpaceTx,
   offer: { catId: string } | null,
 ): SpaceTx[] =>
-  // #211: a sibling carrying its own category spread made a deliberate
-  // multi-category decision — a single-category bulk never steamrolls it
+  // a sibling with its own category spread made a deliberate decision: single-category bulk never overwrites it (#211)
   (offer ? similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && !item.cats?.length && item.catId !== offer.catId) : []);
-/** #141 (r2, user rule): the rows a fresh split can copy onto — same
- *  merchant, still splitless (a settled, spread or already-split sibling
- *  never gets overwritten). An exact-euros split reaches ONLY siblings
- *  of the exact same amount; a percentage split scales, so it reaches any. */
+// a fresh split copies onto same-merchant splitless siblings; exact euros reach only the same amount,
+// a percentage split scales to any (#141)
 const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: readonly TxSplit[]): SpaceTx[] => {
   const pctSplit = source.some((s) => s.pct != null);
   const totalCents = source.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
@@ -751,16 +665,9 @@ const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: re
     (item) => (item.splits ?? []).length === 0 && !item.cats?.length && (pctSplit || Math.abs(item.amountCents) === totalCents),
   );
 };
-/** #211 + #141: the siblings a category SPREAD can copy onto — same
- *  merchant, still partitionless. Exact euros reach only exact twins;
- *  a %-typed spread scales to any amount. */
-/** shared shape of the part page's counter plumbing (S3776: the sheet
- *  callback lives at module level). #133 r4: the ◆ asks moved INSIDE
- *  the category editor — this only serves the existing-link re-pick. */
 
-/** #211: ONE category on a whole row rewrites its partition — a spread
- *  clears (or, settled, re-forms around the pick); legacy splits clear.
- *  Module-level for S3776. */
+// one category on a whole row rewrites its partition: a spread clears (settled: re-forms around the pick),
+// legacy splits clear (#211)
 function singleCatPartitionFields(
   tx: Pick<SpaceTx, 'amountCents' | 'cats' | 'splits'>,
   multiPart: boolean,
@@ -781,21 +688,8 @@ function singleCatPartitionFields(
   };
 }
 
-// choosePartCounter retired (#220, user): part-level counterparty
-// modification is gone — the category editor's entries own the links.
+// the peer is fetched from the STORE when the live snapshot hasn't emitted it: a slow liveQuery left it dangling (CI flake)
 
-/** the OTHER leg's side of a release — its own row clears in the same
- *  write. The peer is fetched from the STORE when the live snapshot
- *  hasn't emitted it yet (a slow liveQuery beat left the peer's
- *  transferPeerId dangling — CI-only flake). Module for S3776. */
-// releasePeerLeg lives in application/counterPair.ts now (2026-10-05): the
-// review card releases a stored pair the same way this screen does
-
-// retypeRow retired (#220, user): the transaction-level counterparty
-// door was its last caller — the category editor's entries write
-// through writeRowSingleEntry / the choke now.
-
-/** shared deps of the row-level single-entry writer (S3776) */
 interface RowEntryDeps {
   tx: SpaceTx;
   cats: ReturnType<typeof useCategories>;
@@ -813,34 +707,26 @@ interface RowEntryDeps {
   setBulkSelected: (v: ReadonlySet<string>) => void;
 }
 
-/** #268: the offer remembers the entry's counter story — a plain link
- *  bulk-applies (each sibling links and waits), a SPECIFIC pick runs the
- *  per-sibling match queue instead */
+// the offer remembers the entry's counter story: a plain link bulk-applies,
+// a SPECIFIC pick runs the per-sibling match queue (#268)
 interface BulkOfferState {
   catId: string;
   count: number;
   link?: { accountId: string; viaPeer: boolean };
 }
 
-/** ONE entry decides the row — its counterparty (#228: the transaction-
- *  level fact) was answered INSIDE the editor or the property row, so
- *  nothing asks afterwards. A linked entry lands category + link in one
- *  write (a pick-existing peer rides along and pairs the reciprocal); a
- *  bare ◆ entry keeps the deliberate bare story; and the plain pick
- *  arms the #141 bulk offer. Module-level for S3776. */
+// one entry decides the row; its counterparty was answered in the editor or property row, so nothing asks afterwards (#228)
+// a bare ◆ entry keeps the deliberate bare story; a plain pick arms the #141 bulk offer
 async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): Promise<void> {
   const { tx } = deps;
-  // #218: the editor OWNS the link story — a BARE entry on a linked row
-  // is a detach (the choke retires our mint, the peer releases)
+  // the editor owns the link story: a bare entry on a linked row is a detach (#218)
   const linkChanged = (entry.linkedAccountId ?? undefined) !== (tx.linkedAccountId ?? undefined);
-  // #237 r2: a pick can arrive on the SAME account the row already
-  // links (re-picking Paypal to point at a row) — the peer must land
-  // regardless of linkChanged, or the pick writes nothing at all
+  // a pick can arrive on the account the row already links (re-picking Paypal):
+  // the peer must land regardless of linkChanged (#237)
   const foreignPeer =
     entry.transferPeerId && entry.transferPeerId !== tx.transferPeerId ? entry.transferPeerId : undefined;
-  // a re-link away from a peered leg — or a re-pick onto a new peer —
-  // releases the old pair first: a stale peer would keep collapsing
-  // the pair in the list
+  // a re-link away from a peered leg, or a re-pick onto a new peer, releases the old pair first:
+  // a stale peer keeps collapsing the pair in the list
   const unpeer = (linkChanged || !!foreignPeer) && !!tx.transferPeerId;
   if (unpeer) void releasePeerLeg(deps.store, deps.repo, deps.spaceId, tx, deps.allTxs);
   let peerField: { transferPeerId?: string | null } = {};
@@ -857,13 +743,8 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     },
     'txCategory',
   );
-  // …and the picked row gets the reciprocal (#133 B's fork, per entry)
   if (foreignPeer) await pairWithExistingRow(deps.store, deps.repo, deps.spaceId, tx, foreignPeer, deps.allTxs);
-  // bulk mechanism from the detail too (user request) — unlike review
-  // it reaches EVERYTHING of this merchant, reviewed included. The
-  // settlement category is never a bulk suggestion (user rule).
-  // …and never on the placeholder: an Uncategorized write (a detached
-  // counterparty) is no decision to spread (user ss 2026-10-06)
+  // reaches EVERYTHING of this merchant, reviewed included; never the settlement category nor the Uncategorized placeholder
   const similar =
     entry.catId === REIMBURSED_ID || entry.catId === UNCATEGORIZED_ID
       ? []
@@ -876,8 +757,6 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
       ? {
           catId: entry.catId,
           count: similar.length,
-          // #268: the link travels with the offer — viaPeer flips the
-          // apply into the per-sibling counter-match queue
           link: entry.linkedAccountId ? { accountId: entry.linkedAccountId, viaPeer: !!foreignPeer } : undefined,
         }
       : null,
@@ -885,12 +764,8 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
   deps.setBulkSelected(new Set(similar.map((item) => item.id)));
 }
 
-/** #211: the row-level cats apply — ONE entry routes through the single
- *  writer (its ◆ ask already answered in the editor); several land the
- *  spread in one write with the settled `reimbursed` entry re-attached
- *  and the row-level link cleared (#228: a spread means regular
- *  categories — no movement story, no counterparty), then arm the #141
- *  offer. Module for S3776. */
+// ONE entry routes through the single writer; several land the spread in one write with the settled `reimbursed` entry
+// re-attached and the row-level link cleared: a spread means regular categories (#228)
 function applyRowCats(
   deps: {
     tx: SpaceTx;
@@ -932,8 +807,6 @@ const catsBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, entries: re
   );
 };
 
-/** #211: the spread lands on every picked sibling, resized to its
- *  amount (largest remainder). Returns how many rows it touched. */
 async function writeCatsBulk(
   transform: ReturnType<typeof useTxTransform>,
   entries: readonly TxSplitCat[],
@@ -950,9 +823,7 @@ async function writeCatsBulk(
   return n;
 }
 
-/** #141: the same split lands on every picked sibling, resized to its
- *  amount (scaleSplitsTo drops per-transaction stories). Module-level
- *  for S3776; returns how many rows it touched. */
+/** scaleSplitsTo drops per-transaction stories */
 async function writeSplitBulk(
   transform: ReturnType<typeof useTxTransform>,
   mintId: () => string,
@@ -963,8 +834,7 @@ async function writeSplitBulk(
   for (const item of picked) {
     const scaled = scaleSplitsTo(source, Math.abs(item.amountCents), mintId);
     if (scaled.length < 2) continue;
-    // one history line for the whole batch (caller logs), review settled;
-    // the explicit cats null version-stamps the container (#211)
+    // one history line for the whole batch (caller logs); the explicit cats null version-stamps the container (#211)
     await transform(item, { splits: scaled, catId: primaryCatId(scaled) ?? item.catId, cats: null as never, needsReview: 0 }, null);
     n++;
   }
@@ -987,9 +857,6 @@ const valuesEditorValue = (
   parts: TxSplit[],
 ): TxSplit[] | undefined => stage ?? (multiPart ? parts : undefined);
 
-/** the app bar's pencil: rename on bank rows, full edit on manual ones,
- *  rename on a part page too (r9: the split's label is the user's).
- *  Module-level for S3776. */
 function detailTrailingAction(
   isPart: boolean,
   importRef: string | undefined,
@@ -1018,27 +885,17 @@ function detailTrailingAction(
   );
 }
 
-/** the derived "… – split N" name a part settles on without a label
- *  of its own (r9 rename). Module-level for S3776. */
 const derivedPartLabel = (tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string =>
   partView ? `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}` : '';
 
-/** the app bar's name: the whole transaction's title, or the part's
- *  own face on a part page. Module-level for S3776. */
 function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string {
   if (!partView) return txTitle(tx);
   return orDefaultLabel(partView.label, derivedPartLabel(tx, parts, partView, t));
 }
 
-/** #255 r4 (user): where a pair pointer actually LANDS. The stored id
- *  may be the peer row itself, a CONTAINER whose PART holds the pair's
- *  other end, or a minted part-leg's back-pointer — the part-mirror
- *  SOURCE key ("rowId:partId"; ':' never occurs inside real ids). Both
- *  sides resolve to the other LEG's face and a REAL navigation target:
- *  a tap must never land on an empty screen (the reported glitch was a
- *  jump to the synthetic key's blank detail). Module for S3776. */
+// a pair pointer may be the peer row, a container whose PART holds the other end, or a part-mirror source key
+// "rowId:partId" (':' never occurs in real ids); resolve to a real nav target, never an empty detail (#255)
 interface ResolvedPairPeer {
-  /** the row the face reads from (the container when the leg is a part) */
   row: SpaceTx;
   /** set when the other leg is a PART of `row` */
   part?: TxSplit;
@@ -1064,9 +921,6 @@ function resolvePairPeer(
   return owner && part?.id ? { row: owner, part, nav: { txId: owner.id, part: part.id } } : null;
 }
 
-/** the face the pair row wears: the peer row itself, or — when the other
- *  leg is a PART — the container recut to the part's own money and
- *  derived name. Module for S3776. */
 function pairPeerFace(resolved: ResolvedPairPeer, t: TFunc): SpaceTx {
   const { row, part } = resolved;
   if (!part) return row;
@@ -1079,9 +933,6 @@ function pairPeerFace(resolved: ResolvedPairPeer, t: TFunc): SpaceTx {
   };
 }
 
-/** r9: the part's label written from its own page — Save trims; ''
- *  (or typing the default back) clears the label so the derived name
- *  rules again. Module-level for S3776. */
 function writePartLabel(
   transform: ReturnType<typeof useTxTransform>,
   tx: SpaceTx,
@@ -1096,8 +947,6 @@ function writePartLabel(
   void transform(tx, { splits: nextSplits });
 }
 
-/** the rename sheet serves BOTH the whole transaction and a part page
- *  (r9): one place decides which story it edits. Module for S3776. */
 function renameSheetProps(
   tx: SpaceTx,
   partView: TxSplit | undefined,
@@ -1111,16 +960,11 @@ function renameSheetProps(
   return { original: cleanBankText(tx.merchant), value: txTitle(tx), onSave: saveTitle };
 }
 
-/** drafted-until-complete (#126 r4, relaxed r7): the staged split may
- *  Apply once every part has a real category — the ONLY remaining hold;
- *  a refused Apply marks the offenders (attention badges).
- *  Module-level for S3776. */
+/** the only hold on Apply: every part has a real category; a refused Apply marks the offenders (#126) */
 const stagedSplitComplete = (stage: TxSplit[] | null): boolean =>
   !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID);
 
-/** back to a whole transaction: one category, split gone — the settled
- *  Reimbursed slice keeps the gross partition when it exists.
- *  Module-level for S3776. */
+/** the settled Reimbursed slice keeps the gross partition when it exists */
 function writeUnsplit(
   transform: ReturnType<typeof useTxTransform>,
   tx: SpaceTx,
@@ -1131,8 +975,7 @@ function writeUnsplit(
   const cat = catId !== UNCATEGORIZED_ID ? catId : fallbackCatId;
   // #260: un-splitting is a deliberate category decision — reviewed
   if (settledCents > 0) {
-    // #211: a whole row's gross partition lives in its own cats now —
-    // #228: the parts' settled bookkeeping folds back into the row's
+    // the parts' settled bookkeeping folds back into the row's own cats (#228)
     const rest = Math.max(0, Math.abs(tx.amountCents) - settledCents);
     void transform(tx, {
       cats: [...(rest > 0 ? [{ catId: cat, amountCents: rest }] : []), { catId: REIMBURSED_ID, amountCents: settledCents }],
@@ -1145,9 +988,7 @@ function writeUnsplit(
   }
 }
 
-/** the split flow's sheets (#126 r4; #211: values-only — categories
- *  have their own editor now): Done only STAGES; the completion deck's
- *  Apply is the ONE write. Module-level for S3776. */
+/** values-only (categories have their own editor): Done only STAGES; the completion deck's Apply is the ONE write (#211) */
 function DetailSplitSheets({
   tx,
   splitOpen,
@@ -1180,9 +1021,7 @@ function DetailSplitSheets({
   setCompleteOpen: (open: boolean) => void;
   activeEvents: readonly EventRow[];
   lockedKind: boolean;
-  /** r7: parts link recurring costs like whole transactions do */
   recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
-  /** r7: a refused Apply marks the parts that still need a category */
   attention: boolean;
   openValuesEditor: () => void;
   applyStagedSplit: () => void;
@@ -1206,8 +1045,7 @@ function DetailSplitSheets({
           }
         }}
       />
-      {/* drafted-until-complete (#126 r4): every part takes its category,
-          type and event here; Apply is the ONE write */}
+      {/* drafted-until-complete: every part takes its category, type and event here; Apply is the ONE write (#126) */}
       <Sheet
         open={completeOpen}
         onOpenChange={(next) => {
@@ -1232,8 +1070,7 @@ function DetailSplitSheets({
             }}
             onSplits={(next) => setSplitStage([...next])}
           />
-          {/* r7: always tappable — a refused Apply marks the incomplete
-              parts instead of sitting silently disabled */}
+          {/* always tappable: a refused Apply marks the incomplete parts instead of sitting disabled */}
           <Button data-testid="split-apply" onClick={applyStagedSplit} disabled={!splitStage}>
             {t('split.applyAll')}
           </Button>
@@ -1243,8 +1080,6 @@ function DetailSplitSheets({
   );
 }
 
-/** the part page's sister list (#126 r4) — every part one tap away,
- *  the current one inert. Module-level for S3776. */
 function PartSiblingRows({
   tx,
   parts,
@@ -1276,7 +1111,6 @@ function PartSiblingRows({
               {orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`)}
               <span className="text-[11px] font-normal text-ink-4"> · {catName(sliceCat, t)}</span>
             </span>
-            {/* #228: siblings list what each part is worth (net) */}
             <span className="m-num text-[12px] text-ink-2">{fmtCents(partNetCents(slice), tx.currency, lang)}</span>
             {!self && <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />}
           </button>
@@ -1286,12 +1120,8 @@ function PartSiblingRows({
   );
 }
 
-/** one part as its own transaction page (#126 r4): the sub-transaction
- *  the list drilled into — its share as the headline, its OWN type,
- *  category and event editable in place (write-through: the split is
- *  already complete), its siblings one tap away, and the manage door
- *  for the amounts. Container-only facts (notes, reimbursements,
- *  receipts, delete) stay on the whole transaction. */
+// write-through: the split is already complete; container-only facts (notes, reimbursements, receipts, delete)
+// stay on the whole transaction (#126)
 function PartDetailBody({
   tx,
   part,
@@ -1312,7 +1142,6 @@ function PartDetailBody({
   activeEvents: readonly EventRow[];
   allowedCatIds?: readonly string[];
   onManageSplits: () => void;
-  /** opens another transaction (or a part) under the tree this detail lives in */
   open: OpenTx;
 }>) {
   const { t, lang } = useLang();
@@ -1321,20 +1150,13 @@ function PartDetailBody({
   const navigate = useNavigate();
   const accounts = useSpaceAccounts();
   const [eventOpen, setEventOpen] = useState(false);
-  // r7: the part links recurring costs like whole transactions do
   const [recOpen, setRecOpen] = useState(false);
-  // #251: quick creation, parts edition — same doors as the whole tx
   const [recCreating, setRecCreating] = useState(false);
   const [eventCreating, setEventCreating] = useState(false);
   const recurrings = useRecurrings();
   const activeRecs = (recurrings ?? []).filter((r) => r.active === 1);
-  // r6/r7: the category card opens the whole-transaction category
-  // editor, scoped to this part
   const [spreadOpen, setSpreadOpen] = useState(false);
-  // #228: the PART's one counterparty — its own property row
   const [counterOpen, setCounterOpen] = useState(false);
-  // #255 r3 (user): the part's own counter-TRANSACTION mechanism —
-  // point at the existing row, or link and wait
   const [partMatchOpen, setPartMatchOpen] = useState(false);
   const { store, repo, spaceId } = useData();
 
@@ -1342,9 +1164,7 @@ function PartDetailBody({
   const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const partEvent = activeEvents.find((e) => e.id === part.eventId);
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
-  // r5: the links that target THIS part, and what the part is net worth.
-  // #197: a CREDIT container's part also FUNDS links that live on the
-  // expense rows — gather the ones naming this part.
+  // #197: a CREDIT container's part also FUNDS links that live on the expense rows
   const allTxs = useSpaceTransactions();
   const partLinks = (tx.reimbursements ?? []).filter((r) => r.partId === part.id);
   const givenLinks = (allTxs ?? []).flatMap((row) =>
@@ -1356,35 +1176,26 @@ function PartDetailBody({
     const row = allTxs?.find((item) => item.id === id);
     return row ? txTitle(row) : id;
   };
-  // #270 r2 (user): the linked rows say WHEN, here too
   const rowDayOf = (id: string) => {
     const row = allTxs?.find((item) => item.id === id);
     return row ? new Date(row.date).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' }) : '';
   };
 
-  /** per-part write-through — r7 (user rule): NO restriction on a split
-   *  beyond the amounts, every patch lands. #260: a deliberate edit here
-   *  IS the review — the unreviewed badge stands down with it. */
+  // no restriction on a split beyond the amounts; a deliberate edit here IS the review (#260)
   const patchPart = (patch: Partial<TxSplit>): void => {
     const nextSplits = (tx.splits ?? []).map((s) => (s.id === part.id ? { ...s, ...patch } : s));
     const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
     void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId, needsReview: 0 }, 'txCategory');
   };
 
-  // #228: the part's one counterparty — pick refiles the category by the
-  // account's kind (the bijection's re-pick rule), remove resets it.
-  // Settled `reimbursed` bookkeeping always survives a category rewrite.
+  // pick refiles the category by the account's kind (bijection re-pick rule); settled `reimbursed` bookkeeping survives (#228)
   const partCounter = accounts?.find((a) => a.id === part.linkedAccountId);
-  // #255 r4 (user): the part's pair resolves like the whole row's — the
-  // other leg's face plus a REAL landing for the row's tap
   const partPeer = resolvePairPeer(tx.id, part.transferPeerId, allTxs);
   const partPeerFaceRow = partPeer ? pairPeerFace(partPeer, t) : undefined;
   const partPeerAccountName = partPeer ? accounts?.find((a) => a.id === partPeer.row.accountId)?.name : undefined;
   const partRealCats = (part.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const partSettledCats = (part.cats ?? []).filter((c) => c.catId === REIMBURSED_ID);
   const partSigned = sign * Math.abs(part.amountCents);
-  // #255 r3: the reciprocal pairing a part-level pick leaves behind —
-  // the same shape review's part picks use
   const pairPartPick = (pickedTxId: string): void => {
     void pairWithExistingRow(store, repo, spaceId, { id: tx.id, accountId: tx.accountId, amountCents: partSigned }, pickedTxId, allTxs);
   };
@@ -1411,8 +1222,6 @@ function PartDetailBody({
   return (
     <>
       <div className="flex flex-col items-center py-6 text-center">
-        {/* #228: the part's headline is what it is WORTH — its own
-            settled bookkeeping nets it, exactly like a whole row */}
         <div className="m-num text-4xl text-ink" data-testid="tx-part-amount">
           {fmtCents(sign * partNetCents(part), tx.currency, lang, { sign: true })}
         </div>
@@ -1420,7 +1229,6 @@ function PartDetailBody({
           {fmtDay.format(new Date(tx.date))}
           {tx.time ? ` · ${tx.time}` : ''}
         </div>
-        {/* whose money this is a piece of */}
         <div className="mt-1 text-[12px] text-ink-4">{txTitle(tx)}</div>
       </div>
 
@@ -1430,9 +1238,7 @@ function PartDetailBody({
           <span className="min-w-0 flex-1 truncate">{accountName ?? '—'}</span>
           <span className="text-xs text-ink-4">{t('txform.account')}</span>
         </div>
-        {/* #228 (user): the counterparty is the PART's own property —
-            one per (split) transaction, editable, removable (removal
-            resets the part's category) */}
+        {/* the counterparty is the PART's own property: removal resets the part's category (#228) */}
         <div className="mx-4 h-px bg-line-2" />
         <button
           data-testid="tx-part-counter-row"
@@ -1445,15 +1251,9 @@ function PartDetailBody({
             {partCounter?.name ?? t('tx.counterNone')}
           </span>
           <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-          {/* #328 (user): the tap opens the counterparty sheet — chevron */}
           {!ownStamp && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
         </button>
-        {/* #255 r3 (user): the part's Counter-transaction row — the
-            picked leg's face, or the honest waiting state. #255 r4
-            (user): a PAIRED row's tap TRAVELS to the other side (the
-            same contract as the whole row's counterpart row); the
-            pencil is what re-opens the match sheet. Unpaired, the tap
-            still opens the sheet — there is nowhere to travel yet. */}
+        {/* a PAIRED row's tap travels to the other side, the pencil re-opens the match sheet; unpaired, the tap opens it (#255) */}
         {partCounter && !ownStamp && (
           <>
             <div className="mx-4 h-px bg-line-2" />
@@ -1498,11 +1298,7 @@ function PartDetailBody({
         )}
       </div>
 
-      {/* the category card IS the door to the whole-transaction category
-          editor, scoped to this part (r7: same gears). #217/#138 (user):
-          a spread shows EACH category row with its value. #228 feedback:
-          no counter subline here — the property row above owns it; the
-          part's settled bookkeeping renders as its own quiet row */}
+      {/* opens the whole-transaction category editor scoped to this part; the counter lives in the property row (#228) */}
       <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-category">
         {(partRealCats.length ? partRealCats : [null]).map((entry, i) => {
           const rowCat = cats.byId(entry?.catId ?? part.catId);
@@ -1538,13 +1334,11 @@ function PartDetailBody({
             <Icon name={cats.byId(entry.catId).icon} size={20} color="var(--m-ink-4)" />
             <span className="min-w-0 flex-1 truncate text-[15px] text-ink-2">{catName(cats.byId(entry.catId), t)}</span>
             <span className="m-num text-[13px] text-ink-3">{fmtCents(entry.amountCents, tx.currency, lang)}</span>
-            {/* #328 (user): this tap opens the editor too — say so */}
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         ))}
       </div>
 
-      {/* r7: the part's recurring link — whole-transaction parity */}
       <button
         data-testid="tx-part-rec"
         onClick={() => setRecOpen(true)}
@@ -1569,7 +1363,6 @@ function PartDetailBody({
         <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
       </button>
 
-      {/* r5: the part's own note — parts are full transactions */}
       <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
         <textarea
           data-testid="tx-part-notes"
@@ -1584,8 +1377,7 @@ function PartDetailBody({
         />
       </div>
 
-      {/* r5: the part's own reimbursements — links born here target THIS
-          part; the whole pair still shows on the container */}
+      {/* links born here target THIS part; the whole pair still shows on the container */}
       <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
         <span>{t('reimb.section')}</span>
         <button
@@ -1599,10 +1391,8 @@ function PartDetailBody({
         </button>
       </div>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-reimbs">
-        {/* #231 r2 (user): links only — the netted headline and the facts
-            card's original amount carry the money story */}
-        {/* #237 (user): reimbursement rows go STRAIGHT to the linked
-            transaction — no sheet in between, on parts too */}
+        {/* links only: the netted headline and the facts card's original amount carry the money story (#231) */}
+        {/* reimbursement rows go STRAIGHT to the linked transaction, parts too (#237) */}
         {partLinks.map((linkRow) => (
           <button
             key={`${linkRow.txId}-${linkRow.partId}`}
@@ -1618,7 +1408,6 @@ function PartDetailBody({
             <span className="m-num text-ink-2">{fmtCents(linkRow.amountCents, tx.currency, lang)}</span>
           </button>
         ))}
-        {/* #197: what this CREDIT part already funded elsewhere */}
         {givenLinks.map((given) => (
           <button
             key={`out-${given.rowId}`}
@@ -1637,11 +1426,9 @@ function PartDetailBody({
         {partLinks.length === 0 && givenLinks.length === 0 && <div className="px-4 py-3" />}
       </div>
 
-      {/* #199: the parent's bank facts right here — a deliberate
-          duplicate, so no trip to the container is needed */}
+      {/* a deliberate duplicate of the parent's bank facts: no trip to the container needed (#199) */}
       <DetailFacts tx={tx} givenOut={givenOutFor(tx, allTxs)} />
 
-      {/* the sisters: every part one tap away (#126 r4) */}
       <div className="m-cap mt-5 mb-1 px-1">{t('split.title')}</div>
       <PartSiblingRows
         tx={tx}
@@ -1666,8 +1453,6 @@ function PartDetailBody({
         {t('tx.partWhole')}
       </button>
 
-      {/* #228: the part's counterparty picker — the property row's door.
-          The part's category narrows the kinds; detach resets it */}
       <CounterpartySheet
         open={counterOpen}
         onOpenChange={setCounterOpen}
@@ -1679,8 +1464,6 @@ function PartDetailBody({
         onChoose={(picked, peer) => applyPartCounter(picked, peer)}
         onDetach={part.linkedAccountId ? removePartCounter : undefined}
       />
-      {/* #255 r3: the part's own match sheet — pick the existing row or
-          keep waiting for the bank */}
       {partCounter && (
         <CounterMatchSheet
           open={partMatchOpen}
@@ -1695,10 +1478,6 @@ function PartDetailBody({
           }}
         />
       )}
-      {/* the part's categories (r6/r7) — the whole-transaction editor,
-          scoped to the part's amount. #228: a lone ◆ pick asks the
-          part's counterparty inside the editor; spreads offer regular
-          categories only */}
       <CatsSheet
         open={spreadOpen}
         onOpenChange={setSpreadOpen}
@@ -1707,14 +1486,12 @@ function PartDetailBody({
         direction={partDirection}
         txType={tx.txType}
         allowedCatIds={allowedCatIds}
-        // #216 (user): the chosen %/€ shape is per-transaction data —
-        // part spreads keep it too, so the editor reopens as it was left
+        // part spreads keep the chosen %/€ shape too, so the editor reopens as it was left (#216)
         includePct
         excludeAccountId={tx.accountId}
         askDisabled={ownStamp}
         onApply={(entries) => patchPart(partCatsApplyPatch(part, entries))}
       />
-      {/* r7: the part's recurring link — the manual pick, parts edition */}
       <Sheet
         open={recOpen}
         onOpenChange={setRecOpen}
@@ -1744,13 +1521,11 @@ function PartDetailBody({
               }}
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
             >
-              {/* #258 (user): the cost's own face, not a generic icon */}
               <RecurringVisual rec={rec} size={18} />
               <span className="min-w-0 flex-1 truncate">{rec.name}</span>
               {part.recurringId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
           ))}
-          {/* #251: the quick-create door the whole-tx picker has */}
           <button
             data-testid="tx-part-rec-create"
             onClick={() => {
@@ -1792,7 +1567,6 @@ function PartDetailBody({
               setEventOpen(false);
             }}
           />
-          {/* #251: the quick-create door the whole-tx picker has */}
           <button
             data-testid="tx-part-event-create"
             onClick={() => {
@@ -1806,8 +1580,7 @@ function PartDetailBody({
           </button>
         </div>
       </Sheet>
-      {/* #251: create-and-link, parts edition — prefilled from the PART,
-          the created id files onto this part alone */}
+      {/* create-and-link: prefilled from the PART, the created id files onto this part alone (#251) */}
       {recCreating && (
         <RecurringFormSheet
           initial={partRecurringPrefill(tx, part)}
@@ -1822,10 +1595,7 @@ function PartDetailBody({
   );
 }
 
-/** the account · counterparty · pair block (S3776: out of the screen) —
- *  the row's home account, the counterparty PROPERTY row (#228: back on
- *  the transaction, one per (split) tx — editable, removable) with the
- *  loans-v2 count-it-in offer, and the transfer-pair state underneath */
+/** counterparty property row (#228), the loans count-it-in offer, and the transfer-pair state underneath */
 function DetailAccountBlock({
   tx,
   account,
@@ -1847,24 +1617,19 @@ function DetailAccountBlock({
   linkedAccount: AccountRow | undefined;
   /** #505: the space is read-only to this identity — the block's own writes stay hidden */
   readOnly?: boolean;
-  /** the accounts as the space names them (#239) — the counterparty row speaks that name */
+  /** the accounts as the space names them: the counterparty row speaks that name (#239) */
   spaceAccounts: readonly { id: string; name: string }[] | undefined;
   pairState: ReturnType<typeof transferPairState>;
-  /** #237 r2: the other leg as the space sees it (feeds the rich row) —
-   *  #255 r4: already recut to the exact LEG when that leg is a part */
+  /** the other leg as the space sees it, already recut to the exact leg when that leg is a part (#237, #255) */
   peer: SpaceTx | undefined;
   peerAccountName: string | undefined;
   loanCountBusy: boolean;
   setLoanCountBusy: (busy: boolean) => void;
-  /** #255 r4: absent when the pair pointer resolves to nothing visible —
-   *  the row then renders without the dead jump */
+  /** absent when the pair pointer resolves to nothing visible: no dead jump (#255) */
   onOpenPeer?: () => void;
   onUnpair?: () => void;
-  /** #228: opens the transaction-level counterparty picker; absent =
-   *  the row is read-only here (containers and adjustments hide it) */
+  /** absent = read-only here (containers and adjustments hide it) */
   onEditCounter?: () => void;
-  /** #237: opens the counter-match sheet — point the pair at a row that
-   *  already exists on the counter account */
   onPickCounterpart?: () => void;
 }>) {
   const { t, lang } = useLang();
@@ -1878,10 +1643,7 @@ function DetailAccountBlock({
         <span className="min-w-0 flex-1 truncate">{account?.name ?? '—'}</span>
         <span className="text-xs text-ink-4">{t('txform.account')}</span>
       </div>
-      {/* #228 (user): the counterparty is a property of the (split)
-          transaction again — one per transaction, editable in place,
-          removable (removal resets the category). Sibling buttons, never
-          nested (S6819). */}
+      {/* sibling buttons, never nested (S6819) */}
       {counterRow && (
         <>
           <div className="mx-4 h-px bg-line-2" />
@@ -1897,8 +1659,7 @@ function DetailAccountBlock({
                 <span className={`block truncate ${linkedAccount ? '' : 'text-ink-4'}`} data-testid="tx-detail-linked-account">
                   {linkedAccount ? counterAccountFace(linkedAccount, spaceAccounts).name : t('tx.counterNone')}
                 </span>
-                {/* the account's number under its name (user ss 2026-10-07): a renamed card
-                    read as its masked number here while the sheet called it by its name */}
+                {/* a renamed card read as its masked number here while the sheet called it by its name */}
                 {linkedAccount && counterAccountFace(linkedAccount, spaceAccounts).number && (
                   <span className="block truncate font-mono text-[11px] text-ink-4" data-testid="tx-detail-linked-number">
                     {counterAccountFace(linkedAccount, spaceAccounts).number}
@@ -1910,17 +1671,14 @@ function DetailAccountBlock({
                   </span>
                 )}
               </button>
-              {/* pre-anchor payment (loans v2): dated before the loan's
-                  known-true balance, so it did NOT move the balance —
-                  the user can deliberately count it in, once */}
+              {/* dated before the loan's known-true balance, so it did NOT move the balance: the person may count it in once */}
               {loanCount && (
                 <button
                   data-testid="tx-detail-loan-count"
                   disabled={loanCountBusy}
                   onClick={() => {
-                    // one-shot with a busy latch: the liveQuery re-emit
-                    // that hides this button trails the write (review
-                    // finding: a double-tap applied the delta twice)
+                    // one-shot with a busy latch: the liveQuery re-emit that hides this button trails the write;
+                    // a double-tap applied the delta twice
                     setLoanCountBusy(true);
                     void countPreAnchorTx(store, repo, { ...loanCount.source, linkedAccountId: loanCount.loan.id } as never, () =>
                       writeTxTransform(repo, loanCount.source, { loanCounted: 1 }),
@@ -1933,7 +1691,6 @@ function DetailAccountBlock({
               )}
             </span>
             <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-            {/* #328 (user): the tap opens the counterparty sheet — chevron */}
             {onEditCounter && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </div>
         </>
@@ -1944,8 +1701,7 @@ function DetailAccountBlock({
       {pairState === 'awaiting' && (
         <div className="px-4 pb-3">
           <Pill testId="tx-detail-awaiting">{t('tx.awaitingCounterpart')}</Pill>
-          {/* #237 (user): the wallet's other side may never arrive from
-              the feed — point at the row that is already there */}
+          {/* the wallet's other side may never arrive from the feed: point at the row already there (#237) */}
           {onPickCounterpart && (
             <button
               data-testid="tx-detail-pick-counter"
@@ -1959,8 +1715,6 @@ function DetailAccountBlock({
       )}
       {pairState === 'offerCreate' && !readOnly && (
         <div className="px-4 pb-3">
-          {/* #237: creating is one option — pointing at the existing row
-              is the other, and neither happens silently anymore */}
           <button
             data-testid="tx-detail-create-counter"
             onClick={() => void healMissingMirror(store, repo, tx).catch(() => undefined)}
@@ -1987,13 +1741,9 @@ function DetailAccountBlock({
 export type OpenTx = (txId: string, part?: string) => void;
 
 // NOSONAR-next-line: S3776 — router-level composition. Every decision
-// (category routing, retype, bulk arms, partition rewrites, the ask
-// plumbing) lives in the module helpers above; what remains here is
-// state wiring and JSX visibility gating, and slicing the markup
-// further would only scatter one screen across pretend-components.
-// #168 r5 (user): `backTo` is where LEAVING the detail lands (panes
-// close, Esc, delete) — the /recurring/tx/$txId mount passes /recurring
-// so the recurring list keeps the master pane; mobile back stays history.
+// lives in the module helpers above; only state wiring and JSX visibility gating remain here
+// `backTo` is where leaving the detail lands (pane close, Esc, delete): /recurring/tx/$txId passes /recurring
+// so the recurring list keeps the master pane (#168)
 export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ backTo?: string; openTx?: OpenTx }> = {}) { // NOSONAR(S3776)
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -2003,41 +1753,28 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [editOpen, setEditOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  // title bulk (user request): renaming offers the same pick-and-apply
-  // flow as categories, and the memory teaches future arrivals
   const [titleBulk, setTitleBulk] = useState<{ title: string } | null>(null);
   const [titleSelected, setTitleSelected] = useState<ReadonlySet<string>>(new Set());
-  // #228: the counterparty is a (split)-transaction property again —
-  // this opens its picker; counterOpen below stays the read-only
-  // account INFO sheet the Details row opens
+  // counterPickOpen is the property row's picker; counterOpen is the read-only account INFO sheet (#228)
   const [counterPickOpen, setCounterPickOpen] = useState(false);
-  // #237: the unlink confirms + the counter-match sheet (declared with
-  // the other hooks — the `!tx` return below must never reorder them)
+  // declared with the other hooks: the `!tx` return below must never reorder them
   const [unpairConfirm, setUnpairConfirm] = useState<null | 'mint' | 'default'>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
-  // #211: the split-categories editor — the pencil's door on whole rows
   const [catsOpen, setCatsOpen] = useState(false);
-  // #126 r4: the values door + drafted-until-complete stage — splitting
-  // from the detail writes NOTHING until every part is complete, then
-  // lands in ONE write (no half-deployed splits, easy bulk updates)
+  // splitting from the detail writes NOTHING until every part is complete, then lands in ONE write (#126)
   const [splitStage, setSplitStage] = useState<TxSplit[] | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
-  // r7: a refused Apply marks incomplete parts; splitting a filled row
-  // warns that the container's own story resets
   const [applyAttention, setApplyAttention] = useState(false);
   const [splitResetOpen, setSplitResetOpen] = useState(false);
   const { part: partParam } = useSearch({ strict: false }) as { part?: string };
   const [recurringOpen, setRecurringOpen] = useState(false);
-  // create-and-return doors (user request): snapshot of pre-existing ids
-  // so the freshly created row is identifiable and auto-links to this tx
   const [recCreating, setRecCreating] = useState(false);
   const [eventCreating, setEventCreating] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<BulkOfferState | null>(null);
-  // #268: the per-sibling counter-match queue a viaPeer bulk apply runs
   const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; accountId: string } | null>(null);
   // #495 (user): the bulk siblings' receipts walk in turn afterwards — after the counter queue, over the ones it settled
   const [receiptBulk, setReceiptBulk] = useState<SpaceTx[] | null>(null);
@@ -2045,35 +1782,23 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const counterSettled = useRef(new Set<string>());
   const receiptInventory = useAttachableReceipts();
   const receiptProposals = useProposedMatches();
-  // #141: a landed split offers itself to the splitless siblings —
-  // mutually exclusive with the category offer (they share the bar)
+  // mutually exclusive with the category offer: they share the bar (#141)
   const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
   const [splitSelected, setSplitSelected] = useState<ReadonlySet<string>>(new Set());
-  // #211: a landed category SPREAD offers itself the same way
   const [catsBulk, setCatsBulk] = useState<TxSplitCat[] | null>(null);
   const [catsSelected, setCatsSelected] = useState<ReadonlySet<string>>(new Set());
-  // the reimbursement total at arm time: a settlement AFTER arming
-  // rewrites the category attribution, so the stale offer must retire
-  // (user rule: any category change — direct or indirect — re-evaluates)
+  // a settlement AFTER arming rewrites the category attribution, so the stale offer must retire
   const bulkArmedReimbRef = useRef(0);
-  // which of the similar transactions the bulk apply will touch (user
-  // request: see and pick them, not a blind apply-all)
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
-  // user request 2026-10-06: a detour to another transaction (the
-  // counterpart, a part, a reimbursement link) stays under the tree this
-  // detail was opened in — the overview's drill keeps its context; the
-  // default is the canonical /transactions tree
+  // a detour to another transaction stays under the tree this detail was opened in; the default is /transactions
   const open: OpenTx = openTx ?? ((txId, part) => void navigate({ to: '/transactions/$txId', params: { txId }, search: part ? { part } : {} }));
   const panes = useLgViewport();
 
-  // desktop affordance (D5): Esc closes the detail pane back to the plain
-  // list — but only when no sheet is open (sheets own their own Esc)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // any open sheet owns Esc — mobile sheets included (they render no
-      // <dialog>, which the old selector-only guard missed)
+      // any open sheet owns Esc, mobile sheets included (they render no <dialog>)
       if (e.key !== 'Escape' || hasOpenSheet() || document.querySelector('dialog[open], [role="dialog"]')) return;
       void navigate({ to: backTo });
     };
@@ -2088,11 +1813,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const account = useSpaceAccount(tx?.accountId);
   const linkedAccount = useSpaceAccount(tx?.linkedAccountId);
   const spaceAccounts = useSpaceAccounts();
-  // a transfer into a loan account IS a payment on that loan (v2: the
-  // account is the debt) — say so, matching the review card's debt row
-  // read-time join (user request): the moment an account with this IBAN
-  // exists locally — e.g. it was attached to a space later — every
-  // transaction's counterparty upgrades from plain text to a live door
+  // read-time join: once an account with this IBAN exists locally, the counterparty upgrades from plain text to a live door
   const counterIban = normalizedCounterIban(tx);
   const counterAccount = useQuery(
     store,
@@ -2110,15 +1831,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
   const events = useEvents();
-  // what this credit refunded elsewhere — the expenses own the links,
-  // so the credit's net worth is a derived fact
+  // the expenses own the reimbursement links, so a credit's net worth is derived
   const allTxs = useSpaceTransactions();
   const givenOut = givenOutFor(tx, allTxs);
 
-  // #237 r2: pairs can exist ONE-WAY in stored data (the reciprocal
-  // write used to land on the raw feed row — a void every reader
-  // ignores). The screen reads the pair from EITHER direction: the
-  // row's own peer, a row pointing here, or a split PART pointing here.
+  // pairs can exist ONE-WAY in stored data (the reciprocal write used to land on the raw feed row): read the pair from
+  // either direction: the row's own peer, a row pointing here, or a split PART pointing here (#237)
   const reversePeer = useMemo(
     () =>
       tx && !tx.transferPeerId
@@ -2132,17 +1850,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     [tx, allTxs],
   );
   const effectivePeerId = tx?.transferPeerId ?? reversePeer?.id;
-  // #255 r4: the pointer resolves to a REAL destination — the peer row,
-  // or the exact PART (page) when the other leg is, or points into, a
-  // split; a minted part-leg's "rowId:partId" back-pointer resolves too
   const resolvedPeer = useMemo(
     () => (tx ? resolvePairPeer(tx.id, effectivePeerId, allTxs) : null),
     [tx, effectivePeerId, allTxs],
   );
   const peerAccount = useSpaceAccount(resolvedPeer?.row.accountId);
-  // …and HEALS the missing reciprocal, once per pairing, so every other
-  // surface (lists, match-sheet exclusion, the other detail) recovers.
-  // The key latch keeps the heal from re-arming a pair mid-unpair.
+  // heals the missing reciprocal once per pairing; the key latch keeps the heal from re-arming a pair mid-unpair
   const healedPairRef = useRef<string | null>(null);
   useEffect(() => {
     if (!tx || !allTxs) return;
@@ -2156,17 +1869,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         void writeTxTransform(upkeep, peer, { transferPeerId: tx.id });
       }
     } else if (reversePeer?.transferPeerId === tx.id && !tx.splits?.some((s) => s.transferPeerId === reversePeer.id)) {
-      // row-level pointer only — a PART's pair belongs to the part.
-      // #255 r4: a part-level pick's reciprocal ALSO points at the
-      // container row-level; lifting it here minted a duplicate
-      // row-level pair on top of the part's own (the corruption the
-      // user's screenshots walked into).
+      // row-level pointer only: a part-level pick's reciprocal ALSO points at the container, and lifting it minted a
+      // duplicate row-level pair on top of the part's own (#255)
       void writeTxTransform(upkeep, tx, { transferPeerId: reversePeer.id });
     }
   }, [tx, allTxs, reversePeer, repo]);
 
-  // a settlement AFTER the bulk offer armed rewrote the attribution —
-  // the offer's premise is stale, retire it (user rule)
+  // a settlement after the bulk offer armed makes its premise stale: retire it
   const reimbNow = tx ? totalReimbursedCents(tx) + givenOut : 0;
   useEffect(() => {
     if (bulkOffer && reimbNow !== bulkArmedReimbRef.current) setBulkOffer(null);
@@ -2188,16 +1897,10 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
-  // R1: the row's own account stamps its type — the kind row locks
   const ownStamp = accountStamp(account?.type);
   const pairState = transferPairState(tx, effectivePeerId, linkedAccount);
-  // the OTHER leg's side of a release — its own row clears in the same
-  // write. The peer is fetched from the STORE when the live snapshot
-  // hasn't emitted it yet (a slow liveQuery beat left the peer's
-  // transferPeerId dangling — CI-only flake)
-  // unpairing releases BOTH legs — one activity entry covers the action.
-  // #237 r2: a reverse-only pair (a row or a part points HERE) releases
-  // from this side too — the pointing side is what clears.
+  // the peer is fetched from the STORE when the live snapshot hasn't emitted it (CI-only flake)
+  // unpairing releases both legs; a reverse-only pair releases from this side by clearing the pointing side (#237)
   const releasePair = () => {
     if (tx.transferPeerId) {
       void releasePeerLeg(store, repo, spaceId, tx, allTxs);
@@ -2213,22 +1916,16 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       });
     }
   };
-  // #237 (user): unlinking asks first when there is something at stake —
-  // the cash wallet (the one default, #546) resets the whole story,
-  // munni's own generated leg can be removed or kept; a picked/bank pair
-  // just releases
+  // unlinking asks first when something is at stake: the cash wallet (#546) resets the whole story, munni's own generated leg
+  // can be removed or kept; a picked/bank pair just releases (#237)
   const unpair = () => {
-    // the deterministic id decides, not the (async) account row — a tap
-    // racing the query must never route the wallet to the wrong question
+    // the deterministic id decides, not the async account row: a tap racing the query must not route the wallet wrongly
     if (tx.linkedAccountId === cashWalletId(tx.spaceId)) setUnpairConfirm('default');
     else if (tx.transferPeerId === mirrorTxId(tx.id)) setUnpairConfirm('mint');
     else releasePair();
   };
-  // #237 (user): the unpair question decides the GENERATED row's fate —
-  // the source keeps its counterparty either way (that story ends via
-  // "Remove counterparty"), so the create/pick doors return after.
-  // Keep: the leg becomes an ordinary row on its account, its balance
-  // effect stays; Remove: the leg tombstones and its balance refunds.
+  // the question decides the GENERATED row's fate; the source keeps its counterparty either way (#237)
+  // Keep: the leg becomes an ordinary row, its balance effect stays; Remove: it tombstones and its balance refunds
   const keepGeneratedLeg = async () => {
     const mirror = await store.get('transaction', tx.transferPeerId!);
     if (mirror?.deleted === 0) {
@@ -2240,41 +1937,31 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     await removeMirrorForDeletedSource(store, repo, tx, tx.linkedAccountId);
     await transform(tx, { transferPeerId: null as never }, 'txLink');
   };
-  // #237: point the pair at a row that already exists on the counter side
   const pairWithPicked = async (pickedTxId: string) => {
     await transform(tx, { transferPeerId: pickedTxId }, 'txLink');
     await pairWithExistingRow(store, repo, spaceId, tx, pickedTxId, allTxs);
-    // #268: a standing bulk offer upgrades — the anchor now points at a
-    // SPECIFIC row, so applying must queue per-sibling counter picks
+    // a standing bulk offer upgrades: the anchor now points at a SPECIFIC row,
+    // so applying must queue per-sibling counter picks (#268)
     setBulkOffer((offer) =>
       offer?.link && offer.link.accountId === tx.linkedAccountId ? { ...offer, link: { ...offer.link, viaPeer: true } } : offer,
     );
   };
-  // a credit that self-filed as Reimbursed keeps that category as long
-  // as any link lives (user rule) — unlink first, then recategorize. The
-  // part a PARTIAL link left open is the user's to file (user ss
-  // 2026-10-05: +250 settled 163, the uncategorized 87 was stuck): the
-  // settled slice stays pinned inside the editor, the remainder is editable
+  // a credit that self-filed as Reimbursed keeps it while any link lives; the part a PARTIAL link left open is the person's
+  // to file: the settled slice stays pinned inside the editor, the remainder is editable
   const openRemainder = (tx.cats ?? []).some((c) => c.catId !== REIMBURSED_ID && c.amountCents !== 0);
   const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0 && !openRemainder;
-  // the recurring OWNS the category (user rule 2026-07-28): a linked row
-  // only picks between the recurring's category and expected
-  // reimbursement — the editor's picker enforces it
+  // the recurring OWNS the category: a linked row only picks between the recurring's category and expected reimbursement
   const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
-  // #126 r4: with a real split the container steps back and the parts
-  // carry the stories
   const parts = tx.splits ?? [];
   const multiPart = parts.length > 1;
-  // #537: pickers list archived events too — labelled, after the active ones
+  // pickers list archived events too, labelled, after the active ones (#537)
   const activeEventsList = events ?? [];
   const activeRecsList = (recurrings ?? []).filter((r) => r.active === 1);
-  // the completion stage: values Done stages; Apply writes once whole
   const stageComplete = stagedSplitComplete(splitStage);
   const unsplitFallbackCat = primaryCatId(parts) ?? tx.catId ?? UNCATEGORIZED_ID;
   const openValuesEditor = () => setSplitOpen(true);
-  // r7 (user rule): splitting RESETS the transaction's own story — a
-  // filled row gets a conscious warning before the split flow opens
+  // splitting RESETS the transaction's own story: a filled row gets a warning before the split flow opens
   const requestSplit = () => {
     const hasStory =
       !!tx.notes || !!tx.eventId || !!tx.recurringId || !!tx.cats?.length ||
@@ -2282,28 +1969,22 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     if (hasStory) setSplitResetOpen(true);
     else openValuesEditor();
   };
-  // #211: two features, two doors — the categories pencil opens the
-  // SPLIT-CATEGORIES editor on a whole row (a container routes into the
-  // manage flow; its parts own the categories)
+  // the categories pencil opens the split-categories editor on a whole row; a container routes into the manage flow (#211)
   const openCategoriesEditor = multiPart ? openValuesEditor : () => setCatsOpen(true);
   const splitDoorMode = splitDoorModeFor(multiPart, categoryLocked);
   const applyStagedSplit = () => {
     if (!splitStage) return;
     if (!stageComplete) {
-      // r7: a refused Apply POINTS at the parts that hold it back
       setApplyAttention(true);
       return;
     }
-    // the stage lands in ONE write — settled value rides along untouched.
-    // r7: the container's own story RESETS as the split lands (parts
-    // carry it now); explicit nulls — an undefined would drop from the
-    // op and leave stale values behind (LWW)
+    // the stage lands in ONE write; the container's own story resets with explicit nulls: an undefined drops from the op
+    // and leaves stale values behind (LWW)
     void transform(tx, {
       splits: splitStage,
       catId: primaryCatId(splitStage) ?? tx.catId,
-      // #211: a container owns no category spread — the explicit null
-      // also VERSION-STAMPS the row (its cats fieldVersion tells fresh
-      // devices these splits are real parts, never legacy slices)
+      // a container owns no category spread: the explicit null also VERSION-STAMPS the row,
+      // so fresh devices read the splits as real parts (#211)
       cats: null as never,
       // #260: landing a split IS the review decision for this row
       needsReview: 0,
@@ -2311,32 +1992,24 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       ...(tx.eventId ? { eventId: null as never } : {}),
       ...(tx.recurringId ? { recurringId: null as never } : {}),
     });
-    armSplitBulk(splitStage); // #141: offer the partition to the siblings
+    armSplitBulk(splitStage);
     setApplyAttention(false);
     setSplitStage(null);
     setCompleteOpen(false);
   };
-  // the settled value a container holds: the parts' own bookkeeping
-  // (#228: the settle lives ON the parts)
   const partsSettledCents = parts.reduce((sum, part) => sum + reimbursedInCats(part.cats), 0);
   const unsplitTo = (catId: string) => {
     setSplitStage(null);
-    // #201 (user): removing the split retires the armed bulk offers —
-    // a bar selling the deleted partition (or its spread) is stale
+    // removing the split retires the armed bulk offers: a bar selling the deleted partition is stale (#201)
     setSplitBulk(null);
     setCatsBulk(null);
     setBulkOffer(null);
     writeUnsplit(transform, tx, unsplitFallbackCat, partsSettledCents, catId);
   };
 
-  // #211: ONE category on a whole row rewrites its partition — a spread
-  // clears (or, settled, re-forms around the pick)
   const settledPartitionCents = (tx.cats ?? []).filter((e) => e.catId === REIMBURSED_ID).reduce((sum, e) => sum + e.amountCents, 0);
   const singleCatFields = (catId: string) => singleCatPartitionFields(tx, multiPart, settledPartitionCents, catId);
-  // #220: the bank's counterparty is ALWAYS a Details fact now — no
-  // derivation gates; the row itself decides how it renders
 
-  // the editor answered any ◆ ask already — this only writes
   const applySingleEntry = (entry: CatsApplyEntry) =>
     void writeRowSingleEntry(
       {
@@ -2346,9 +2019,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       entry,
     );
 
-  // #228: the property row's picker — the answered account's KIND names
-  // the category (the bijection's re-pick rule: doors overwrite
-  // deliberately); a stamped row forces its movement sub instead
+  // the account's KIND names the category (bijection re-pick rule: doors overwrite deliberately);
+  // a stamped row forces its movement sub (#228)
   const applyCounterPick = (picked: { id: string; type: AccountRow['type'] }, peer?: { txId: string }) =>
     applySingleEntry({
       catId: (ownStamp ? stampMovementSub(ownStamp, tx.amountCents) : undefined) ?? movementCatFor(picked.type, tx.amountCents),
@@ -2356,12 +2028,10 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       linkedAccountId: picked.id,
       ...(peer ? { transferPeerId: peer.txId } : {}),
     });
-  // #228 (user): removing the counterparty RESETS the category — the
-  // movement story and its account are one fact
+  // removing the counterparty RESETS the category: the movement story and its account are one fact (#228)
   const removeCounter = () =>
     applySingleEntry({ catId: UNCATEGORIZED_ID, amountCents: Math.abs(tx.amountCents) });
 
-  // #141: a stored split arms the sibling offer (the staged Apply lands here)
   const armSplitBulk = (stored: TxSplit[]) => {
     const similar = splitBulkTargets(allTxs, tx, stored);
     setBulkOffer(null);
@@ -2378,8 +2048,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     setSplitBulk(null);
   };
 
-  // #211 + #141: a landed category spread offers itself to the plain
-  // same-merchant siblings the same way a split does
   const armCatsBulk = (entries: TxSplitCat[]) => {
     const similar = catsBulkTargets(allTxs, tx, entries);
     setBulkOffer(null);
@@ -2391,7 +2059,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const applyCatsBulk = async () => {
     if (!catsBulk) return;
     const picked = catsTargets.filter((target) => catsSelected.has(target.id));
-    // #495: the siblings whose receipt wants a look — read before the writes settle their review
+    // the siblings whose receipt wants a look: read before the writes settle their review (#495)
     const walk = receiptsToVerify(picked, receiptInventory, receiptProposals);
     const n = await writeCatsBulk(transform, catsBulk, picked);
     if (n > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${n}`);
@@ -2416,7 +2084,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const applyTitleBulk = async () => {
     if (!titleBulk) return;
     const picked = titleTargets.filter((target) => titleSelected.has(target.id));
-    // one history line for the whole bulk, not one per sibling
     for (const item of picked) await transform(item, { titleOverride: titleBulk.title }, null);
     if (picked.length) void logActivity(store, repo, spaceId, 'txEdit', `${txTitle(tx)} +${picked.length}`);
     setTitleBulk(null);
@@ -2425,10 +2092,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const applyBulk = async () => {
     if (!bulkOffer) return;
     const picked = bulkTargets.filter((target) => bulkSelected.has(target.id));
-    // #495: the siblings whose receipt wants a look — read before the writes settle their review
+    // the siblings whose receipt wants a look: read before the writes settle their review (#495)
     const walk = receiptsToVerify(picked, receiptInventory, receiptProposals);
-    // #268 (user): a SPECIFIC counter pick cannot be copied — each
-    // sibling asks for its own counter row (or links and waits)
+    // a SPECIFIC counter pick cannot be copied: each sibling asks for its own counter row (#268)
     if (bulkOffer.link?.viaPeer && picked.length > 0) {
       counterSettled.current = new Set();
       pendingReceiptBulk.current = walk.length > 0 ? walk : null;
@@ -2436,8 +2102,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       setBulkOffer(null);
       return;
     }
-    // one history line for the whole bulk, not one per sibling — a plain
-    // account link rides along (each sibling links and waits, #268)
+    // one history line for the whole bulk; a plain account link rides along, each sibling links and waits (#268)
     for (const item of picked) {
       await transform(
         item,
@@ -2454,8 +2119,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     if (walk.length > 0) setReceiptBulk(walk);
   };
 
-  // #268: one queue step — the sibling gets the category, the link and
-  // (on a pick) its own peer, exactly like the anchor's single write
   const resolveCounterBulk = async (item: SpaceTx, peerId: string | null) => {
     if (!counterBulk) return;
     if (item.transferPeerId) void releasePeerLeg(store, repo, spaceId, item, allTxs);
@@ -2478,7 +2141,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     void logActivity(store, repo, spaceId, 'note', txTitle(tx));
   };
 
-  // two-tap confirm, matching the app's other destructive rows
   const deleteManualTx = async () => {
     await deleteManualTxRow(store, repo, spaceId, tx, account);
     void navigate({ to: backTo });
@@ -2486,24 +2148,19 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
 
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // #126 r4: ?part=<id> shows ONE part as its own transaction page
   const partView = findPartView(parts, partParam);
-  // r9: the part's label is editable from its page — the rename sheet
-  // doubles for it (derive + write + props live at module level, S3776)
   const partDefault = derivedPartLabel(tx, parts, partView, t);
   const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
   const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
-  // #567: an ordinary payment whose categories are the person's to edit can be filed by its receipt's lines; the
-  // offer to repeat a spread on similar payments stays out — their receipts are other receipts
+  // #567: an ordinary payment whose categories are the person's to edit can be filed by its receipt's lines;
+  // the offer to repeat a spread stays out: similar payments have other receipts
   const byReceipt =
     canEdit && !partView && !multiPart && !categoryLocked && tx.amountCents < 0 && tx.txType === 'expense'
       ? (entries: TxSplitCat[]) =>
           applyRowCats({ tx, settledCents: settledPartitionCents, transform, applySingle: applySingleEntry, armCatsBulk: () => undefined }, entries)
       : undefined;
   const trailingAction = canEdit ? detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true)) : null;
-  // the values editor edits the STAGE when one exists, else the stored
-  // parts; classic mode stays uncontrolled
   const editorValue = valuesEditorValue(splitStage, multiPart, parts);
 
   return (
@@ -2536,8 +2193,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         ) : (
           <>
         <div className="flex flex-col items-center py-6 text-center">
-          {/* both directions show the net truth: expenses minus what came
-              back, credits minus what they refunded elsewhere */}
+          {/* both directions show the net truth: expenses minus what came back, credits minus what they refunded elsewhere */}
           <div className="m-num text-4xl text-ink" data-testid="tx-detail-amount">
             {headlineAmount}
           </div>
@@ -2545,8 +2201,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
           </div>
-          {/* converted headline (display-currency lens): the recorded truth
-              stays one line below — a detail screen must never hide it */}
+          {/* the recorded truth stays one line below the converted headline: a detail screen must never hide it */}
           {headlineAmount.startsWith('≈') && (
             <div className="m-num mt-0.5 text-[13px] text-ink-4" data-testid="tx-detail-recorded-amount">
               {fmtCents(netCents, tx.currency, lang, { sign: true })}
@@ -2559,8 +2214,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           )}
         </div>
 
-        {/* title bulk: right under the header so a rename's reach is
-            the first thing on screen */}
         {titleBulk && (
           <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-title-bulk">
             <DetailBulkBar
@@ -2573,8 +2226,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </div>
         )}
 
-        {/* block: account + the counterparty property (#228: back on the
-            transaction — one per (split) tx) + the transfer pair facts */}
         <DetailAccountBlock
           tx={tx}
           account={account}
@@ -2585,16 +2236,14 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           peerAccountName={peerAccount?.deleted === 0 ? peerAccount.name : undefined}
           loanCountBusy={loanCountBusy}
           setLoanCountBusy={setLoanCountBusy}
-          // #255 r4: the tap lands on the RESOLVED leg — the peer row,
-          // or its exact part page; unresolvable = no jump at all (the
-          // blind jump rendered an empty detail, the reported glitch)
+          // the tap lands on the RESOLVED leg (peer row or exact part page); unresolvable = no jump:
+          // a blind jump rendered an empty detail (#255)
           onOpenPeer={
             resolvedPeer ? () => open(resolvedPeer.nav.txId, resolvedPeer.nav.part ?? undefined) : undefined
           }
           onUnpair={canEdit ? unpair : undefined}
-          // #265 (user): a recurring-narrowed row's counter door STAYS
-          // open — a fully inert row left funding picks unescapable; the
-          // sheet's detach is the way out (it resets the category too)
+          // a recurring-narrowed row's counter door STAYS open: a fully inert row left funding picks unescapable;
+          // the sheet's detach is the way out (it resets the category too) (#265)
           onEditCounter={
             !canEdit || multiPart || tx.adjustment === 1 || tx.txType === 'adjustment'
               ? undefined
@@ -2604,10 +2253,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           readOnly={!canEdit}
         />
 
-        {/* #547: a hand-typed entry and the bank's own transaction — linked, or still waiting */}
         {!partView && <EntryLinkSection tx={tx} account={account} readOnly={!canEdit} />}
 
-        {/* #538: the payment sits in a split — said to everyone in the space, so nobody adds it twice */}
+        {/* #538: said to everyone in the space, so nobody adds the payment twice */}
         {!partView && tx.splitRef && (
           <button
             data-testid="tx-detail-split"
@@ -2620,9 +2268,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </button>
         )}
 
-        {/* block: categories — ONE edit affordance for the whole block
-            (user: a pencil per slice read wrong); rows stay tappable.
-            r9: on a container the block lists PARTS, and says so */}
+        {/* one edit affordance for the block (a pencil per slice read wrong); on a container the block lists PARTS */}
         <CategoriesHeader
           locked={categoryLocked}
           byRecurring={!!recurringAllowedCats}
@@ -2635,7 +2281,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             cats={cats}
             fallbackCat={cat}
             fallbackColor={color}
-            // #328 (user): locked = no door — undefined drops the chevron
             onEdit={categoryLocked || !canEdit ? undefined : openCategoriesEditor}
             onOpenPart={(id) => open(tx.id, id)}
           />
@@ -2648,8 +2293,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
               onDismiss={() => setBulkOffer(null)}
             />
           )}
-          {/* #141: the landed split offers itself to the splitless
-              siblings — same bar, resized per row on apply */}
           {!bulkOffer && splitBulk && (
             <DetailBulkBar
               targets={splitTargets}
@@ -2659,7 +2302,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
               onDismiss={() => setSplitBulk(null)}
             />
           )}
-          {/* #211: a landed category spread rides the same offer */}
           {!bulkOffer && !splitBulk && catsBulk && (
             <DetailBulkBar
               targets={catsTargets}
@@ -2671,19 +2313,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           )}
         </div>
 
-        {/* everything below the categories card follows the space's saved
-            order/visibility (#232: actions and the facts card joined the
-            registry — same mechanics as Home). r7/r9: a container carries
-            no notes/reimbursements/receipts — the parts do. Actions and
-            facts run for every row, gated only by their own content. */}
+        {/* a container carries no notes/reimbursements/receipts: the parts do; actions and facts run for every row (#232) */}
         {resolveTxDetailBlocks(space)
           .filter((entry) => !entry.hidden)
           .map((entry) => {
             const attachable = !multiPart;
             const section: Record<TxDetailBlockId, ReactNode> = {
-              // #213 (user): the split door leads the actions, out of the
-              // categories card; recurring + event links follow (expense,
-              // non-container rows only — r7: parts own their links)
+              // the split door leads the actions; recurring + event links follow, non-container rows only: parts own their links (#213)
               actions: (
                 <DetailActionsCard
                   tx={tx}
@@ -2726,8 +2362,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             );
           })}
 
-        {/* #232: actions/facts are customizable on every row now — the
-            door stays on containers too */}
         {canEdit && (
           <button
             data-testid="tx-detail-customize"
@@ -2739,8 +2373,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </button>
         )}
 
-        {/* manual rows may leave again (user request); bank rows are the
-            bank's truth and only ever tombstone via their feed */}
+        {/* bank rows are the bank's truth and only ever tombstone via their feed */}
         {canEdit && !tx.importRef && !tx.feedSpaceId && (
           <button
             data-testid="tx-detail-delete"
@@ -2754,8 +2387,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         )}
       </div>
 
-      {/* the aligned danger confirm — no cooldown: one transaction is a
-          low-stakes delete (user ruling) */}
+      {/* no cooldown: one transaction is a low-stakes delete */}
       <DangerConfirmSheet
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -2766,9 +2398,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         testId="tx-delete"
       />
 
-      {/* #228: the transaction-level counterparty picker — the property
-          row's door. The current category narrows the account kinds (the
-          bijection); the detach row resets the category with the link */}
       <CounterpartySheet
         open={counterPickOpen}
         onOpenChange={setCounterPickOpen}
@@ -2780,8 +2409,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         onChoose={(picked, peer) => applyCounterPick(picked, peer)}
         onDetach={tx.linkedAccountId ? removeCounter : undefined}
       />
-      {/* #237: point the existing link at the row already on the counter
-          side — same-sign wallet rows included (user decision "a") */}
+      {/* same-sign wallet rows included (#237) */}
       {linkedAccount && (
         <CounterMatchSheet
           open={matchOpen}
@@ -2792,8 +2420,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
         />
       )}
-      {/* #268 (user): a bulk apply born from a specific counter pick —
-          every sibling matches its own counter row in turn */}
       {counterBulk && (
         <BulkCounterQueue
           queue={counterBulk.items}
@@ -2803,17 +2429,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           onDone={(resolved) => {
             if (resolved > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${resolved}`);
             setCounterBulk(null);
-            // #495: the receipt walk follows, over the siblings the queue settled
             const walk = (pendingReceiptBulk.current ?? []).filter((item) => counterSettled.current.has(item.id));
             pendingReceiptBulk.current = null;
             if (walk.length > 0) setReceiptBulk(walk);
           }}
         />
       )}
-      {/* #495 (user): the per-sibling receipt walk a bulk apply leaves behind */}
       {receiptBulk && <BulkReceiptQueue queue={receiptBulk} onDone={() => setReceiptBulk(null)} />}
-      {/* #237 (user): unlinking a DEFAULT counter resets the story — say
-          so before doing it */}
       <DangerConfirmSheet
         open={unpairConfirm === 'default'}
         onOpenChange={(next) => {
@@ -2829,8 +2451,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         }}
         testId="tx-unlink-default"
       />
-      {/* #237 (user): munni generated the other leg — removing the link
-          asks what happens to it */}
       <Sheet
         open={unpairConfirm === 'mint'}
         onOpenChange={(next) => {
@@ -2864,16 +2484,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </Button>
         </div>
       </Sheet>
-      {/* #211: the split-TRANSACTION flow — the values editor whose Done
-          only STAGES; nothing is written until the completion deck's
-          Apply lands the whole split */}
       <DetailSplitSheets
         tx={tx}
         splitOpen={splitOpen}
         setSplitOpen={setSplitOpen}
         editorValue={editorValue}
-        // #289 (user): parts are independent — the whole-row recurring
-        // constraint must not narrow them (the split resets the link)
+        // parts are independent: the whole-row recurring constraint must not narrow them (#289)
         allowedCatIds={undefined}
         unsplitTo={unsplitTo}
         unsplitFallbackCat={unsplitFallbackCat}
@@ -2888,11 +2504,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         openValuesEditor={openValuesEditor}
         applyStagedSplit={applyStagedSplit}
       />
-      {/* #211: the split-CATEGORIES editor — the pencil's door. One entry
-          is a plain category pick (bulk offer intact); several land the
-          row's own spread in one write. #228: a lone ◆ pick asks its
-          counterparty INSIDE the editor — the transaction-level answer.
-          A settled `reimbursed` entry is held aside and re-attached. */}
+      {/* one entry = a plain pick (bulk offer intact); several = one spread write; settled `reimbursed` is re-attached (#211) */}
       <CatsSheet
         open={catsOpen}
         onOpenChange={setCatsOpen}
@@ -2900,8 +2512,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           id: tx.id,
           label: txTitle(tx),
           catId: tx.catId,
-          // #228 feedback: the FULL partition rides in — the sheet pins
-          // the settled bookkeeping read-only and nets the gross itself
+          // the FULL partition rides in: the sheet pins the settled bookkeeping read-only and nets the gross itself (#228)
           cats: tx.cats?.length ? tx.cats : undefined,
           amountCents: Math.abs(tx.amountCents),
           linkedAccountId: tx.linkedAccountId,
@@ -2920,8 +2531,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           applyRowCats({ tx, settledCents: settledPartitionCents, transform, applySingle: applySingleEntry, armCatsBulk }, entries)
         }
       />
-      {/* r7 (user rule): splitting resets the transaction's own story —
-          a conscious continue, never a silent drop */}
       <Sheet open={splitResetOpen} onOpenChange={setSplitResetOpen} title={t('split.resetWarnTitle')} size="compact">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] leading-relaxed text-ink-2">{t('split.resetWarnBody')}</p>
@@ -2941,7 +2550,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       </Sheet>
       <RenameTitleSheet open={renameOpen} onOpenChange={setRenameOpen} {...renameProps} />
 
-      {/* the counterparty is one of the user's own accounts — show it */}
       <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">
         {counterAccount && (
           <div className="flex flex-col pt-1" data-testid="counterparty-sheet">
@@ -2961,7 +2569,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         )}
       </Sheet>
 
-      {/* attach to an event */}
       <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-event-list">
           <button
@@ -2976,7 +2583,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
             {!tx.eventId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
           </button>
-          {/* #537: archived events labelled after the active ones, each with a peek */}
           <EventPickList
             events={events ?? []}
             selectedId={tx.eventId}
@@ -3000,7 +2606,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </button>
         </div>
       </Sheet>
-      {/* create-and-return: the fresh event auto-links to this tx */}
       {eventCreating && (
         <EventFormSheet
           initial="new"
@@ -3009,7 +2614,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         />
       )}
 
-      {/* attach to a recurring cost */}
       <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-recurring-list">
           <button
@@ -3055,7 +2659,6 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           </button>
         </div>
       </Sheet>
-      {/* create-and-return: prefilled from THIS transaction, auto-links */}
       {recCreating && (
         <RecurringFormSheet
           initial={formFromTx(tx)}
@@ -3067,10 +2670,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   );
 }
 
-/**
- * Notes editor that stays live in shared spaces: remote edits replace
- * the draft whenever this user is not actively typing in the field.
- */
+/** remote edits replace the draft whenever this user is not typing in the field (shared spaces) */
 function NotesField({
   value,
   onSave,
@@ -3101,12 +2701,6 @@ function NotesField({
   );
 }
 
-/** the counterparty row: a live door when the IBAN matches an own
- * account, otherwise EDITABLE (user remark: CAMT rows often ship
- * without one — picking an own account still works and suggests the
- * type through the same sheet as the type row) */
-/** a recurring-linked row's category allowlist: the recurring's own
- *  category plus expected reimbursement (S3776: extracted) */
 function recurringCatConstraint(
   tx: { recurringId?: string },
   recurrings: { id: string; catId?: string }[] | undefined,
@@ -3115,10 +2709,8 @@ function recurringCatConstraint(
   return rec?.catId ? [rec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 }
 
-/** the categories caption: one Edit for the block — or a lock while a
- *  reimbursement owns the attribution (user rule; S3776: extracted).
- *  r9: on a split container the rows are PARTS, so the caption says
- *  "Split transactions", not "Categories". */
+// on a split container the rows are PARTS, so the caption says "Split transactions";
+// a lock shows while a reimbursement owns the attribution
 function CategoriesHeader({
   locked,
   byRecurring,
@@ -3130,9 +2722,7 @@ function CategoriesHeader({
     <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
       <span>
         {t(multiPart ? 'split.partsSection' : 'screen.categories')}
-        {/* informational, not a hard lock: Edit still opens the editor,
-            whose picker only offers the recurring's category and
-            expected reimbursement (user rule 2026-07-28) */}
+        {/* not a hard lock: Edit still opens the editor, whose picker offers only the recurring's category + expected reimb. */}
         {byRecurring && !locked && (
           <span className="pl-2 font-normal text-ink-4" data-testid="tx-detail-cats-recurring">
             {t('tx.setByRecurring')}
@@ -3145,9 +2735,7 @@ function CategoriesHeader({
           {t('reimb.categoryLocked')}
         </span>
       )}
-      {/* #200: on a container the Edit pencil is gone — Manage splits
-          below is the one door; a whole transaction keeps it (#505: an
-          absent onEdit = a space this identity only reads) */}
+      {/* on a container the pencil is gone: Manage splits is the one door; absent onEdit = read-only space (#200, #505) */}
       {!locked && !multiPart && onEdit && (
         <button
           data-testid="tx-detail-cats-edit"

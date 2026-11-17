@@ -1,11 +1,6 @@
 import type { SpacePeriodType } from '@/db/types';
 
-/**
- * Budget periods, per the space's settings (ported from the legacy
- * computePeriodHistory): monthly periods start on `periodDay` (1-28);
- * weekly and bi-weekly periods are Monday-anchored (bi-weekly on a
- * fixed 2020 anchor so the cycle never drifts).
- */
+/** bi-weekly periods use a fixed 2020 anchor so the cycle never drifts */
 export interface Period {
   /** inclusive yyyy-mm-dd bounds (local time) */
   start: string;
@@ -18,8 +13,7 @@ const localIso = (d: Date): string =>
 const shift = (d: Date, days: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 
 function weeklyStart(today: Date, lengthDays: number, weekday: number): Date {
-  // anchored on the chosen weekday; 6 Jan 2020 is a Monday, so weekday
-  // 1 (Mon) … 7 (Sun) offsets from there and the cycle never drifts
+  // 6 Jan 2020 is a Monday: a fixed anchor, so the cycle never drifts
   const anchor = new Date(2020, 0, 6 + (weekday - 1));
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   // both are local midnights, but DST makes the raw diff N days ± 1h —
@@ -29,11 +23,7 @@ function weeklyStart(today: Date, lengthDays: number, weekday: number): Date {
   return shift(anchor, periods * lengthDays);
 }
 
-/**
- * Newest last: the `count` most recent periods including the current one.
- * `periodDay` means day-of-month (1-28) for monthly and day-of-week
- * (1 = Monday … 7 = Sunday) for weekly/bi-weekly periods.
- */
+/** `periodDay`: day-of-month (1-28) for monthly, day-of-week (1 = Monday … 7 = Sunday) for weekly/bi-weekly */
 export function periodHistory(periodType: SpacePeriodType, periodDay: number, count: number, now = new Date()): Period[] {
   const result: Period[] = [];
   if (periodType === 'week' || periodType === 'biweekly') {
@@ -57,7 +47,6 @@ export function periodHistory(periodType: SpacePeriodType, periodDay: number, co
   return result;
 }
 
-/** the period immediately after the current one (upcoming views) */
 export function nextPeriod(periodType: SpacePeriodType, periodDay: number, now = new Date()): Period {
   const current = periodHistory(periodType, periodDay, 1, now)[0];
   const [y, m, d] = current.end.split('-').map(Number);
@@ -72,24 +61,14 @@ const localDay = (iso: string): Date => {
   return new Date(y, m - 1, d);
 };
 
-/**
- * A period on a months axis (#511, user: "when the period starts on the
- * 1st we show whole months, but … it's the 21st, so we should show Jul–Aug"):
- * the month when the period is one calendar month, else the months it
- * spans — "Jul–Aug".
- */
+/** #511: a period on a months axis: the month when it is one calendar month, else the months it spans ("Jul–Aug") */
 export function periodMonthsLabel(period: Period, locale: string): string {
   const from = localDay(period.start).toLocaleDateString(locale, { month: 'short' });
   const to = localDay(period.end).toLocaleDateString(locale, { month: 'short' });
   return from === to ? from : `${from}–${to}`;
 }
 
-/**
- * Newest last: every period from the one holding `earliest` (a yyyy-mm-dd,
- * or null for "nothing on record") up to the current one — at least `min`
- * periods so a chart has two points, at most `cap` so three years of
- * monthly history is where it stops.
- */
+/** newest last, from the period holding `earliest`: at least `min` periods so a chart has two points, at most `cap` */
 export function periodHistoryCovering(
   periodType: SpacePeriodType,
   periodDay: number,

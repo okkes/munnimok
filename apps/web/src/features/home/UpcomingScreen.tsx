@@ -21,18 +21,9 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Picture } from '@/ui/Picture';
 
-/**
- * #334 (user): the home "Coming up" block mixes recurring costs and loan
- * payments, so its see-all must land on the SAME combined story — not
- * the recurring manager. One lightweight list, segmented by kind, every
- * row leading to its own detail. The window is the space's current
- * period, stretched to at least the block's 7-day horizon so no row the
- * block promised goes missing here.
- */
-/** #336 (user): the loan row wears the ACCOUNT's face — its chosen
- *  logo/picture if set, else the type icon tinted the account's color —
- *  the old hardcoded card icon ignored the editor entirely. Shared by
- *  the home block and this landing so the two can never drift. */
+// the window is the space's current period, stretched to at least the block's 7-day horizon
+// so no row the block promised goes missing (#334)
+/** shared by the home block and this landing so the two never drift (#336) */
 export function LoanFace({ loan }: Readonly<{ loan: AccountRow }>) {
   if (loan.logo) return <Picture src={loan.logo} className="h-8 w-8 shrink-0 rounded-lg object-contain" />;
   return (
@@ -53,15 +44,13 @@ export function UpcomingScreen() {
   const currency = space?.currency ?? 'EUR';
 
   const today = localToday();
-  // #334 r2 (user): the shared window — the home block asks the same
-  // helper the same question when deciding whether see-all adds anything
+  // the home block asks the same helper the same question when deciding whether see-all adds anything (#334)
   const horizon = upcomingHorizon(space, today);
   const recs = upcomingRecurrings(recurrings ?? [], today, horizon);
   const loans = upcomingLoanPayments(accounts ?? [], today, horizon);
 
   const fmtShort = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
-  // #347: the date alone made the reader do the math — say the days too
   const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
 
   return (
@@ -75,7 +64,6 @@ export function UpcomingScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* the window this list covers — the "given period" made visible */}
         <div className="m-cap px-1" data-testid="upcoming-window">
           {fmtShort(today)} – {fmtShort(horizon)}
         </div>
@@ -96,7 +84,7 @@ export function UpcomingScreen() {
                     <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
                     <span className="block text-[11px] text-ink-4">{dueLabel(nextDue)}</span>
                   </span>
-                  {/* #334 r2 (user): unsigned — one sign story for both kinds */}
+                  {/* unsigned: one sign story for both kinds (#334) */}
                   <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingRecAmountCents(rec), currency)}</span>
                 </button>
               ))}

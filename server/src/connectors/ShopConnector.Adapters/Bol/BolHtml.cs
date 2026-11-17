@@ -5,47 +5,21 @@ using Connector.Kit.Errors;
 
 namespace ShopConnector.Adapters.Bol;
 
-/// <summary>One element the scanner matched: its tag, its opening tag verbatim, and its content.</summary>
 internal readonly record struct HtmlElement(string Tag, string OpenTag, string Inner);
 
-/// <summary>
-/// The smallest HTML reader that can survive a redesign.
-///
-/// bol's order page has never been seen by anyone here - it needs an account
-/// - so every hook the parser reaches for is a guess with a shelf life, and
-/// the whole point of this file is that those guesses are strings in
-/// <see cref="BolOptions"/> rather than code. The subset understood is
-/// deliberately tiny and CSS-shaped, because an operator fixing a broken
-/// adapter at 3am should be able to read the selector off devtools and paste
-/// it into configuration:
-///
-/// <code>
-///   [data-test=order-container]     an attribute with an exact value
-///   [data-test*=order]              an attribute containing a value
-///   li[data-test=order-item]        the same, narrowed to a tag
-///   div.order-row                   a class token
-///   time                            a bare tag
-/// </code>
-///
-/// There is no HTML parser on this platform's allowed package list, so this
-/// is hand-rolled. It is a scanner, not a DOM: it balances the matched tag,
-/// respects quoted attribute values and skips comments, and it does not try
-/// to repair malformed markup. That is enough to read a list of order blocks
-/// and their line items, and being unable to do so is reported as
-/// <see cref="ErrorCode.ProviderChanged"/> rather than guessed around.
-/// </summary>
+// hooks are strings in BolOptions, not code: the order page has never been seen (it needs an account)
+// the selector subset is tiny and CSS-shaped so an operator can read one off devtools; no HTML parser is on the
+// platform's package list, so this is a scanner, not a DOM, and does not repair markup
 internal static partial class BolHtml
 {
-    /// <summary>Elements HTML gives no closing tag, so they never open a scope.</summary>
     private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
     {
         "area", "base", "br", "col", "embed", "hr", "img", "input",
         "link", "meta", "param", "source", "track", "wbr",
     };
 
-    // One pattern per element rather than one with a backreference: the source
-    // generator cannot generate a case-insensitive backreference and would fall
-    // back to the interpreter for the whole expression.
+    // one pattern per element: the source generator cannot generate a case-insensitive backreference and would fall back
+    // to the interpreter for the whole expression
     [GeneratedRegex(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex ScriptBlock { get; }
 
@@ -61,41 +35,21 @@ internal static partial class BolHtml
     [GeneratedRegex(@"\s+")]
     private static partial Regex Runs { get; }
 
-    /// <summary>
-    /// One attribute of an opening tag, quoted or bare. Applied only to an
-    /// opening tag, which is short, so the backtracking cost is bounded.
-    /// </summary>
+    // applied only to a short opening tag, so backtracking is bounded
     [GeneratedRegex("""([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))""")]
     private static partial Regex AttributePair { get; }
 
-    /// <summary>
-    /// The selector subset. Everything is optional except that at least one
-    /// part must be present, which the caller checks.
-    /// </summary>
     [GeneratedRegex(@"^(?<tag>[A-Za-z][A-Za-z0-9]*)?(?:\.(?<class>[-\w]+))?(?:\[(?<attr>[-\w:]+)(?:(?<op>[*]?=)(?<val>[^\]]*))?\])?$")]
     private static partial Regex SelectorPattern { get; }
 
-    /// <summary>
-    /// A number, without letting a space join two of them.
-    ///
-    /// "12,50 3" must not read as 12503. Digit grouping by space is therefore
-    /// not supported, which costs nothing on a page that writes thousands
-    /// with a dot and is the difference between a wrong total and no total.
-    /// </summary>
+    // "12,50 3" must not read as 12503: space digit grouping is unsupported, the difference between a wrong total and none
     [GeneratedRegex(@"-?\d+(?:[.,]\d+)*")]
     private static partial Regex NumberToken { get; }
 
-    /// <summary>A price sitting at the end of a label, for <see cref="WithoutPrice"/>.</summary>
     [GeneratedRegex(@"\s*-?\s*\u20AC?\s*\d+(?:[.,]\d+)*\s*-?\s*$")]
     private static partial Regex TrailingPrice { get; }
 
-    /// <summary>
-    /// The first selector in the candidate list that matches anything.
-    ///
-    /// Ordered most-specific first, exactly like the Playwright candidate
-    /// lists elsewhere in this assembly, and for the same reason: the page
-    /// has no published contract, so the list is the unit of repair.
-    /// </summary>
+    // most-specific first: the page has no published contract, so the list is the unit of repair
     public static IReadOnlyList<HtmlElement> All(string html, IReadOnlyList<string> selectors)
     {
         foreach (var selector in selectors)
@@ -107,7 +61,6 @@ internal static partial class BolHtml
         return [];
     }
 
-    /// <summary>Every element one selector matches, in document order.</summary>
     public static IReadOnlyList<HtmlElement> All(string html, string selector)
     {
         var simple = Parse(selector);
@@ -125,10 +78,7 @@ internal static partial class BolHtml
                 var (inner, after) = Content(html, name, openTag, end);
                 results.Add(new HtmlElement(name, openTag, inner));
 
-                // Past the whole element, so a nested element matching the
-                // same selector is not reported twice. Line items are read
-                // by scanning their order block's own content, so nothing
-                // needs the inner match at this level.
+                // past the whole element so a nested match is not reported twice; line items are read from their block's own content
                 cursor = after;
             }
             else
@@ -151,15 +101,10 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>
-    /// The text of the first matching element, or null when none matched.
-    /// Null and empty are kept apart: an element that exists and is blank is
-    /// a different finding from an element that is not there at all.
-    /// </summary>
+    // null and empty are kept apart: a blank element is a different finding from one that is not there
     public static string? TextOf(string html, IReadOnlyList<string> selectors) =>
         First(html, selectors) is { } element ? Text(element.Inner) : null;
 
-    /// <summary>An attribute's value, or null. Case-insensitive on the name, as HTML is.</summary>
     public static string? Attribute(string openTag, string name)
     {
         foreach (var groups in AttributePair.Matches(openTag).Select(pair => pair.Groups))
@@ -172,7 +117,6 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>The first of <paramref name="names"/> the tag carries.</summary>
     public static string? Attribute(string openTag, IReadOnlyList<string> names)
     {
         foreach (var name in names)
@@ -183,7 +127,6 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>The value out of whichever alternative matched: double-quoted, single-quoted or bare.</summary>
     private static string Unquoted(GroupCollection groups)
     {
         if (groups[3].Success) return groups[3].Value;
@@ -191,17 +134,7 @@ internal static partial class BolHtml
         return groups[4].Success ? groups[4].Value : groups[5].Value;
     }
 
-    /// <summary>
-    /// The first of <paramref name="names"/> carried by any tag inside the
-    /// fragment.
-    ///
-    /// A date is the case this exists for. Pages wrap the machine-readable
-    /// value one level down - <c>&lt;span data-test="order-date"&gt;&lt;time
-    /// datetime="..."&gt;14 juni 2026&lt;/time&gt;&lt;/span&gt;</c> - and
-    /// reading only the labelled element's own attributes throws away a
-    /// timestamp that states its own offset in favour of Dutch prose that has
-    /// to be interpreted. That is the wrong trade every time.
-    /// </summary>
+    // for dates: pages wrap the machine-readable value one level down (a time datetime), which states its offset, unlike prose
     public static string? AttributeWithin(string html, IReadOnlyList<string> names)
     {
         var cursor = 0;
@@ -217,34 +150,21 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>
-    /// Readable text: script and style content dropped, comments dropped,
-    /// tags stripped, entities decoded, whitespace collapsed.
-    ///
-    /// Decoding happens after the tags are stripped, never before - a page
-    /// containing <c>&amp;lt;div&amp;gt;</c> would otherwise grow a tag that
-    /// the stripper had already gone past.
-    /// </summary>
+    // decoding after the tags are stripped: an entity-encoded tag would otherwise grow a real one
     public static string Text(string fragment)
     {
         var stripped = AnyTag.Replace(
             CommentBlock.Replace(StyleBlock.Replace(ScriptBlock.Replace(fragment, " "), " "), " "), " ");
 
         var decoded = WebUtility.HtmlDecode(stripped)
-            .Replace('\u00A0', ' ')     // non-breaking space
-            .Replace('\u2212', '-')     // minus sign
+            .Replace('\u00A0', ' ')
+            .Replace('\u2212', '-')
             .Replace('\u2013', '-');    // en dash, which price ranges and refunds both use
 
         return Runs.Replace(decoded, " ").Trim();
     }
 
-    /// <summary>
-    /// The first number in a run of text, as a decimal. A quantity, never an
-    /// amount: money goes through <see cref="MoneyText"/> and a declared
-    /// <see cref="Connector.Kit.Normalization.MoneyUnit"/> instead, because a
-    /// misread quantity fails reconciliation loudly while a misread amount
-    /// corrupts a total silently.
-    /// </summary>
+    // a quantity, never an amount: money goes through MoneyText and a declared MoneyUnit (a misread amount corrupts silently)
     public static decimal? Number(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
@@ -254,8 +174,7 @@ internal static partial class BolHtml
 
         var cleaned = match.Value.Replace(',', '.');
 
-        // "1.234" is a thousand, not 1.234 - but only when the groups are
-        // three digits long, which is what tells the two apart.
+        // several dots are thousands separators; a single one is read as the decimal point
         var dots = cleaned.Count(c => c == '.');
         if (dots > 1) cleaned = cleaned.Replace(".", string.Empty, StringComparison.Ordinal);
 
@@ -264,27 +183,8 @@ internal static partial class BolHtml
             : null;
     }
 
-    /// <summary>
-    /// The money-looking part of a rendered price, with its sign resolved,
-    /// ready for <see cref="Connector.Kit.Normalization.MoneyParser"/> under a
-    /// unit the caller has already declared. Returns null when the text holds
-    /// no number at all, which the caller reports rather than guesses around.
-    ///
-    /// Which number, when there is more than one, is the interesting part. A
-    /// discount reads "2e halve prijs - &#8364; 3,00", and taking the first
-    /// number in that string charges the customer two euros for a promotion
-    /// worth three. So the choice is, in order: the number a currency symbol
-    /// introduces, then the first one with a cents part, then the first one at
-    /// all. Each rule is a fact about how prices are typeset, not a guess
-    /// about magnitude - the UNIT is still declared by the caller and never
-    /// inferred here.
-    ///
-    /// Both Dutch sign conventions are honoured: a leading minus that may be
-    /// separated from the digits by a currency symbol ("- &#8364; 4,00"), and
-    /// the receipt-style trailing minus, which must be touching ("4,00-") so
-    /// that a range - "&#8364; 10,00 - &#8364; 12,00" - does not read as a
-    /// negative ten.
-    /// </summary>
+    // which number: after a currency symbol, else the first with cents, else the first ("2e halve prijs - € 3,00" is 3)
+    // a trailing minus must touch the digits ("4,00-") so the range "€ 10,00 - € 12,00" is not negative
     public static string? MoneyText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
@@ -303,19 +203,13 @@ internal static partial class BolHtml
         return Negative(normalized, chosen.Index, chosen.Index + chosen.Length) ? "-" + value : value;
     }
 
-    /// <summary>
-    /// The text with its price taken out - "2e halve prijs", "kortingscode
-    /// LENTE" - or null when the element was nothing but a price. A label of
-    /// "- 3,00" is worse than no label at all.
-    /// </summary>
+    // the text with its price taken out ("2e halve prijs"); null when it was only a price: a label "- 3,00" is worse than none
     public static string? WithoutPrice(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
         var normalized = text.Replace('\u2212', '-').Replace('\u2013', '-');
 
-        // Everything from the currency symbol on is the price and whatever
-        // trails it; before it is the human's description of what happened.
         var symbol = normalized.IndexOf('\u20ac');
         var head = symbol >= 0 ? normalized[..symbol] : TrailingPrice.Replace(normalized, string.Empty);
 
@@ -323,7 +217,6 @@ internal static partial class BolHtml
         return trimmed.Length == 0 ? null : trimmed;
     }
 
-    /// <summary>Only whitespace and a currency symbol between a '-' and the digits.</summary>
     private static bool Negative(string text, int start, int end)
     {
         var i = start - 1;
@@ -341,11 +234,7 @@ internal static partial class BolHtml
         return i >= 0 && text[i] == '\u20ac';
     }
 
-    /// <summary>
-    /// A separator followed by one or two digits, which is a cents part -
-    /// where three digits after a dot is a thousands group, and "1.249" must
-    /// not be mistaken for one euro twenty-five.
-    /// </summary>
+    // one or two digits after the separator are cents; three are a thousands group ("1.249" is not 1.25)
     private static bool HasCents(string value)
     {
         var separator = value.LastIndexOfAny([',', '.']);
@@ -355,14 +244,6 @@ internal static partial class BolHtml
         return tail is 1 or 2;
     }
 
-    // ---- scanning -----------------------------------------------------------
-
-    /// <summary>
-    /// The next opening tag at or after <paramref name="from"/>: where its
-    /// '&lt;' is and where its '&gt;' is, or null when the document holds no
-    /// more. A comment is stepped over whole, and a '&lt;' that starts no tag
-    /// is stepped past.
-    /// </summary>
     private static (int Open, int End)? NextTag(string html, int from)
     {
         var cursor = from;
@@ -391,12 +272,6 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>
-    /// The next tag carrying the element's own name at or after
-    /// <paramref name="from"/>, opening or closing: where it starts, where it
-    /// ends and which of the two it is - or null when there is none before the
-    /// document ends. Comments are stepped over whole.
-    /// </summary>
     private static (int At, int End, bool Closing)? NextNamed(string html, string name, int from)
     {
         var cursor = from;
@@ -428,17 +303,12 @@ internal static partial class BolHtml
         return null;
     }
 
-    /// <summary>
-    /// The index just past the comment opening at <paramref name="at"/>. One
-    /// that never closes takes the rest of the document with it.
-    /// </summary>
     private static int PastComment(string html, int at)
     {
         var closed = html.IndexOf("-->", at, StringComparison.Ordinal);
         return closed < 0 ? html.Length : closed + 3;
     }
 
-    /// <summary>The index of the '>' that closes an opening tag, ignoring quoted values.</summary>
     private static int TagEnd(string html, int open)
     {
         var quote = '\0';
@@ -467,12 +337,7 @@ internal static partial class BolHtml
         return openTag.Substring(1, length);
     }
 
-    /// <summary>
-    /// The element's content and the index just past its closing tag.
-    /// An element that is never closed keeps the rest of the document, which
-    /// is what a browser does and is better than losing every order after a
-    /// single stray tag.
-    /// </summary>
+    // an element never closed keeps the rest of the document, as a browser does: no order lost after a stray tag
     private static (string Inner, int After) Content(string html, string name, string openTag, int end)
     {
         if (openTag.EndsWith("/>", StringComparison.Ordinal) || VoidElements.Contains(name))
@@ -502,7 +367,6 @@ internal static partial class BolHtml
         return (html[(end + 1)..], html.Length);
     }
 
-    /// <summary>Whether the tag starting at <paramref name="at"/> is exactly this element.</summary>
     private static bool Named(string html, int at, string name)
     {
         if (at + name.Length > html.Length) return false;
@@ -511,8 +375,6 @@ internal static partial class BolHtml
         var following = at + name.Length;
         return following >= html.Length || !char.IsAsciiLetterOrDigit(html[following]);
     }
-
-    // ---- selectors ----------------------------------------------------------
 
     private readonly record struct Simple(
         string? Tag, string? Class, string? AttributeName, string? Value, bool Contains);
@@ -524,8 +386,7 @@ internal static partial class BolHtml
 
         if (!match.Success || trimmed.Length == 0)
         {
-            // An operator's typo, not a provider's redesign: saying so with
-            // the wrong code would degrade bol.com for every other user.
+            // an operator's typo, not a provider's redesign: ProviderChanged here would degrade bol.com for every other user
             throw ConnectorException.InvalidRequest(
                 $"bol: '{selector}' is not a supported selector; use tag, .class, [attr], [attr=value] or [attr*=value]");
         }

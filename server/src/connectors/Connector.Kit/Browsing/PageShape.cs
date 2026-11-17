@@ -4,69 +4,16 @@ using Connector.Kit.Normalization;
 
 namespace Connector.Kit.Browsing;
 
-/// <summary>
-/// What a page is made of, with none of what it says.
-///
-/// <para>
-/// The DOM counterpart of the JSON schema probe that ING's reader was written
-/// from, and it exists for the same reason. Onboarding a provider means finding
-/// out what its pages are called - which input holds the serial number, which
-/// element shows the challenge, what only appears once somebody is signed in -
-/// and every one of those questions is about STRUCTURE. None of them needs the
-/// account holder's name, their balance, or the number on their card.
-/// </para>
-///
-/// <para>
-/// So this reports selectors, roles, field names and element counts, and
-/// refuses text except in the two places a human onboarding a provider cannot
-/// work without it: headings, and whatever the page is complaining about. Both
-/// are capped, and both are the page's own words rather than the reader's.
-/// </para>
-///
-/// <para>
-/// <b>Written to be run against somebody's real bank.</b> That is not a
-/// hypothetical audience - it is the only audience.
-/// </para>
-///
-/// <para>
-/// <b>The claim, stated exactly, because the first live run narrowed it.</b>
-/// Nothing here carries a value a page holds ABOUT an account: no input's
-/// contents, no image's bytes, no digits of any number on screen, and no
-/// identifier out of a path. What it does carry is the page's own headings -
-/// and a bank greets people by name, so ASN's own screens produced
-/// "headings: Goedemorgen, &lt;the account holder&gt;". Headings stay, because
-/// without them the report is a list of anonymous selectors nobody can put in
-/// order; the honest consequence is that a shape is safe to READ and should be
-/// skimmed before it is published. "Paste it anywhere unchecked" was the
-/// original claim and it was too strong.
-/// </para>
-/// </summary>
+// structure only, never what a page says about an account: selectors, roles, field names, counts; text only from headings
+// and alerts, capped. A bank greets people by name, so a shape is safe to READ but should be skimmed before publishing
 public static class PageShape
 {
     private const string SelectorKey = "selector";
 
-    /// <summary>
-    /// The counts the script's <c>cut</c> block carries: how many of each kind
-    /// the caps left out of the report.
-    /// </summary>
     private static readonly string[] CutCounts = ["buttons", "headings"];
 
-    /// <summary>
-    /// The script, extracted rather than described.
-    /// </summary>
-    /// <remarks>
-    /// EVERY VALUE-BEARING READ IS ABSENT BY CONSTRUCTION. Inputs give their
-    /// type and name and never <c>.value</c>; images give their dimensions and
-    /// never their bytes; text comes only from headings and alerts, trimmed,
-    /// collapsed and cut to eighty characters - a limit learned from a bank
-    /// loading screen whose "heading" was two thousand characters of minified
-    /// javascript.
-    /// <para>
-    /// Selectors are reported as CSS a human can paste into the options file,
-    /// because the whole output of a discovery session is exactly that: a list
-    /// of selectors somebody types into <c>AsnOptions</c>.
-    /// </para>
-    /// </remarks>
+    // every value-bearing read is absent by construction: never input .value or image bytes; text only from headings and
+    // alerts, cut to 80 chars (a bank loading screen's "heading" was 2000 chars of minified javascript)
     public const string Script = """
     () => {
       const pick = s => [...document.querySelectorAll(s)];
@@ -198,20 +145,7 @@ public static class PageShape
     }
     """;
 
-    /// <summary>
-    /// One page, as a line somebody can read and then paste selectors out of.
-    /// </summary>
-    /// <remarks>
-    /// Written for the person doing the onboarding rather than for a machine:
-    /// the output of a discovery session is a human deciding which of these
-    /// selectors belongs in which option, and a JSON dump makes that harder
-    /// than a list does.
-    /// <para>
-    /// Every read here is <see cref="JsonRead"/>'s, so a probe that answered
-    /// with something unexpected produces a thinner description rather than an
-    /// exception in the middle of somebody's bank login.
-    /// </para>
-    /// </remarks>
+    // reads go through JsonRead, so an unexpected probe answer thins the description instead of throwing mid-login
     public static string Describe(JsonElement shape)
     {
         var text = new StringBuilder();
@@ -229,25 +163,16 @@ public static class PageShape
         Add(text, "buttons", Join(shape.Items("buttons").Objects().Select(b =>
             $"{b.Text(SelectorKey)} \"{b.Text("label")}\"")));
 
-        // The QR candidates, by shape rather than by content. A square canvas
-        // a couple of hundred pixels across is what a scannable code looks
-        // like, and its bytes ARE the code.
         Add(text, "images", Join(shape.Items("codes").Objects().Select(c =>
             $"{c.Text(SelectorKey)} {c.Int32("w")}x{c.Int32("h")}"
             + (c.Flag("square") ? " SQUARE" : string.Empty))));
 
-        // Digits shown as text - the shape of a number a device is keyed with.
-        // The count of them, never the digits.
         Add(text, "digit-runs", Join(shape.Items("shown").Objects().Select(s =>
             $"{s.Text(SelectorKey)} ({s.Int32("digits")} digits)")));
 
         Add(text, "links", Join(shape.Items("links").Select(l => l.Text())));
 
-        // WHAT THIS REPORT LEFT OUT, stated rather than left to be assumed
-        // absent. A capture of ASN's export form with its account dialog open
-        // held exactly the twelve buttons the cap allows, so the dialog's own
-        // controls were cut and the report still read as the whole page. It was
-        // then reasoned from twice, as evidence that a control did not exist.
+        // a capped list must say so: a cut list read as complete was twice taken as proof a control was absent (ASN export form)
         var cut = shape.Child("cut");
         var lost = CutCounts
             .Select(what => (What: what, Count: cut.Int32(what) ?? 0))

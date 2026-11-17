@@ -5,34 +5,18 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// A transaction whose id the CONNECTOR invented (the party states none for
-/// the row — ING's card repayments, its loan and savings movements) can
-/// land under a new id when a fact the id is built from moves. 2026-10-07
-/// (prod): such ids once carried the login session, so every new sign-in
-/// re-keyed the fetched window and the repayments landed a second time.
-/// The adapter's seed is stable now; this is the net under it. Before a
-/// derived row becomes a NEW entity, the account's existing rows are asked:
-/// <list type="number">
-/// <item>the stable id already has a row - nothing to reconcile;</item>
-/// <item>a row carries this external id as its import reference (it adopted the id on an earlier pass) - that row;</item>
-/// <item>a row of the same account with the same booked date, amount, currency and counterparty that no incoming
-/// row claims - the oldest such twin, each one at most once (two identical payments on one day stay two rows).</item>
-/// </list>
-/// The row keeps its id and takes the new reference, so the person's category,
-/// pairing and reimbursements stay where they were filed.
-/// </summary>
+// connector-invented ids (ING card repayments, loan and savings movements) re-key when a fact in the id moves:
+// the login session once did (prod 2026-10-07); the adapter's seed is stable now, this is the net under it
+// the row keeps its id and takes the new reference, so category, pairing and reimbursements stay; twins match once each
 internal sealed class DerivedRowReconciler(AppDbContext db, IReadOnlySet<string> incomingIds)
 {
     private readonly Dictionary<string, AccountIndex> _accounts = new(StringComparer.Ordinal);
 
-    /// <summary>The content twins are matched on: booked date, amount, currency and the counterparty as the ingest names it.</summary>
     public static string Key(string date, long amountCents, string currency, string? merchant) =>
         string.Create(
             CultureInfo.InvariantCulture,
             $"{date}|{amountCents}|{currency.ToUpperInvariant()}|{(merchant ?? string.Empty).Trim().ToUpperInvariant()}");
 
-    /// <summary>The entity id a derived row lands on: its own, or the existing row it is the same transaction as.</summary>
     public async Task<string> ResolveAsync(ConnectorAccountRef account, string entityId, string externalId, string key, CancellationToken ct)
     {
         if (!_accounts.TryGetValue(account.Id, out var index))
@@ -43,7 +27,6 @@ internal sealed class DerivedRowReconciler(AppDbContext db, IReadOnlySet<string>
         return index.Resolve(entityId, externalId, key, incomingIds);
     }
 
-    /// <summary>One account's existing rows, by reference and by content, loaded once per ingest pass.</summary>
     private sealed class AccountIndex
     {
         private readonly HashSet<string> _ids = new(StringComparer.Ordinal);

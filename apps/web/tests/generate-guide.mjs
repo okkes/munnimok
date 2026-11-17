@@ -1,9 +1,4 @@
-/**
- * Generates the in-app user guide (public/guide/) from the curated
- * sections in tests/guide/content.mjs + the committed gallery
- * screenshots. Ships with the PWA at /guide/.
- * Run: npm run guide   (from apps/web)
- */
+/** run: npm run guide (from apps/web); the guide ships with the PWA at /guide/ */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

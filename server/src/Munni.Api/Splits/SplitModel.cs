@@ -57,7 +57,6 @@ public sealed record EntryRequest(
     List<SplitShareDto>? Shares, string? SourceTxId, string? ShareMode = null, string? OriginalCurrency = null,
     long? OriginalCents = null, string? Receipt = null, string? SourceSpaceId = null);
 
-/// <summary>The words the split tables store, and the questions every endpoint asks of a membership.</summary>
 internal static class SplitWords
 {
     public const string Owner = "owner";
@@ -78,7 +77,7 @@ internal static class SplitWords
 
 internal static class SplitRules
 {
-    /// <summary>A picture is one of the app's own covers (a path) or an uploaded one, downscaled, as a data URL; the cap keeps a list of events light.</summary>
+    /// a picture is one of the app's own covers (a path) or an uploaded data URL; the cap keeps a list of events light
     public const int MaxPictureLength = 600_000;
 
     private static bool IsPicture(string picture) =>
@@ -92,7 +91,6 @@ internal static class SplitRules
 
     public static bool IsCurrency(string? value) => value is { Length: 3 } && value.All(c => c is >= 'A' and <= 'Z');
 
-    /// <summary>What is wrong with an event's facts, or null.</summary>
     public static string? FactsError(SplitFactsRequest facts)
     {
         if (string.IsNullOrWhiteSpace(facts.Name) || facts.Name.Length > 60) return "invalid name";
@@ -122,10 +120,7 @@ internal static class SplitRules
         return [.. ordered.Select((userId, index) => new SplitShareDto(userId, basis + (index < remainder ? 1 : 0)))];
     }
 
-    /// <summary>
-    /// Percentages as cents: each share rounded down, the cents that leaves handed to the largest remainders —
-    /// the shares add up to the amount whatever the percentages do to it.
-    /// </summary>
+    /// each share rounded down, the leftover cents to the largest remainders: shares always add up to the amount
     public static List<SplitShareDto> PercentShares(long amountCents, IReadOnlyList<SplitShareDto> given)
     {
         var exact = given.Select(s => amountCents * (s.Pct ?? 0m) / 100m).ToList();
@@ -140,7 +135,7 @@ internal static class SplitRules
         return [.. given.Select((s, i) => new SplitShareDto(s.UserId, cents[i], s.Pct))];
     }
 
-    /// <summary>The shares an entry stores — frozen now, so who joins later never rewrites what was divided.</summary>
+    /// shares are frozen at write: who joins later never rewrites what was divided
     public static (List<SplitShareDto> Shares, string Mode, string? Error) ResolveShares(EntryRequest request, IReadOnlyCollection<Guid> members)
     {
         var given = request.Shares ?? [];
@@ -155,13 +150,12 @@ internal static class SplitRules
                 if (given.Count == 0 || given.Any(s => s.Cents < 0) || given.Sum(s => s.Cents) != request.AmountCents) return ([], "", "shares must add up");
                 return ([.. given.Select(s => new SplitShareDto(s.UserId, s.Cents))], "exact", null);
             default:
-                // no mode named: exact amounts when cents were given (the old client), else equal among the named members — everybody when none is named
+                // no mode named: exact when cents were given (the old client), else equal among the named members, everybody if none
                 if (given.Any(s => s.Cents != 0)) return ResolveShares(request with { ShareMode = "exact" }, members);
                 return (EqualShares(request.AmountCents, given.Count > 0 ? given.Select(s => s.UserId) : members), "equal", null);
         }
     }
 
-    /// <summary>What is wrong with an entry before its shares are looked at, or null.</summary>
     public static string? EntryError(EntryRequest request)
     {
         if (request.AmountCents <= 0 || string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > 120) return "invalid entry";
@@ -174,14 +168,10 @@ internal static class SplitRules
     }
 }
 
-/// <summary>What every split endpoint reads first: the event and the caller's place in it.</summary>
 internal static class SplitStore
 {
-    /// <summary>
-    /// The single authorization gate: an event exists only for those with a membership row (404 for everyone
-    /// else, never 403). Someone who left or was removed still reads it — they may owe or be owed. An event
-    /// whose deletion countdown ran out is gone the moment anyone looks.
-    /// </summary>
+    /// The single authorization gate: 404 for everyone without a membership row, never 403. Someone who left or was removed
+    /// still reads (they may owe or be owed). An event whose deletion countdown ran out is gone the moment anyone looks.
     public static async Task<(Split? Split, SplitMember? Me)> GateAsync(AppDbContext db, string splitId, Guid userId, TimeProvider time, CancellationToken ct)
     {
         var me = await db.SplitMembers.FirstOrDefaultAsync(m => m.SplitId == splitId && m.UserId == userId, ct);
@@ -196,7 +186,6 @@ internal static class SplitStore
         return (split, me);
     }
 
-    /// <summary>Everything an event holds goes with it.</summary>
     public static async Task DeleteAsync(AppDbContext db, string splitId, CancellationToken ct)
     {
         db.SplitReceipts.RemoveRange(await db.SplitReceipts.Where(r => r.SplitId == splitId).ToListAsync(ct));
@@ -210,7 +199,7 @@ internal static class SplitStore
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Out of the event, as someone who left or was taken out: they stay in the arithmetic, without a role.</summary>
+    /// they stay in the arithmetic, without a role
     public static void Gone(SplitMember member, string state, DateTimeOffset now)
     {
         member.State = state;
@@ -218,10 +207,7 @@ internal static class SplitStore
         member.LeftAt = now;
     }
 
-    /// <summary>
-    /// A member goes of their own accord. The last owner to go hands the event to everybody who stays, and the
-    /// last member to go takes the event with them — true then.
-    /// </summary>
+    /// the last owner to go makes everybody who stays an owner; the last member to go takes the event with them (true)
     public static async Task<bool> LeaveAsync(AppDbContext db, SplitMember me, DateTimeOffset now, CancellationToken ct)
     {
         var others = await db.SplitMembers.Where(m => m.SplitId == me.SplitId && m.UserId != me.UserId && m.State == SplitWords.Active).ToListAsync(ct);
@@ -245,7 +231,6 @@ internal static class SplitStore
     public static async Task<string?> NameOfAsync(AppDbContext db, Guid userId, CancellationToken ct) =>
         (await db.Users.FindAsync([userId], ct))?.DisplayName;
 
-    /// <summary>What everybody stands at, from the event's entries.</summary>
     public static Dictionary<Guid, long> Balances(IEnumerable<SplitEntry> entries) =>
         SplitSettlement.Balances(entries.Select(e => (e.PaidByUserId, e.AmountCents, (IReadOnlyList<SplitShareDto>)SplitRules.SharesOf(e))));
 

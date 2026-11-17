@@ -3,18 +3,9 @@ import type { LogtoConfig } from '@logto/browser';
 import { config } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, nativePlatform } from '@/lib/platform';
 
-/**
- * The redirect policy of record (docs/native-auth-popupless.md, RFC 8252):
- * first-party sign-in on the phone runs in the platform's auth session —
- * never in the webview, never in a plain browser tab that has to bounce
- * back through a custom-scheme link and its "Open in munni?" question.
- *  - iOS: ASWebAuthenticationSession (the AuthSession plugin registered in
- *    AppDelegate.swift) hands the callback URL straight back to JS.
- *  - Android: a Custom Tab (@capacitor/browser); Logto redirects to the
- *    app's scheme, the singleTask activity receives it and the tab folds.
- * The callback is the scheme form (munni-<env>-<platform>://…) — the
- * redirect URIs Logto registered for the native app.
- */
+// phone sign-in runs in the platform's auth session (RFC 8252, docs/native-auth-popupless.md), never webview or plain tab
+// iOS: ASWebAuthenticationSession (AuthSession plugin) hands the callback URL straight back to JS
+// Android: a Custom Tab; Logto redirects to the app's scheme and the singleTask activity receives it
 interface AuthSessionPlugin {
   start(options: { url: string; callbackScheme: string }): Promise<{ url: string | null; cancelled?: boolean }>;
 }
@@ -24,12 +15,8 @@ interface BrowserPlugin {
 const plugins = (): { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } | undefined =>
   (globalThis as { Capacitor?: { Plugins?: { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } } }).Capacitor?.Plugins;
 
-/**
- * The platform refuses to start a session while the window is mid-transition
- * (GlitchTip 15, 2026-10-05: "could not start" / error 3 right after the
- * app came back): one more try a beat later is the handling; only a second
- * refusal is the failure the login screen reports.
- */
+// the platform refuses a session while the window is mid-transition (GlitchTip 15, error 3 right after resume):
+// retry once; only a second refusal is reported
 export async function startAuthSession(
   session: AuthSessionPlugin,
   options: { url: string; callbackScheme: string },
@@ -47,14 +34,8 @@ export async function startAuthSession(
 export const nativeCallbackUri = (): string => `${config.nativeScheme}://auth-callback`;
 export const nativeSignedOutUri = (): string => `${config.nativeScheme}://signed-out`;
 
-/** where the app lands once the callback URL is back: the exchange screen, or the login screen after a sign-out */
 export const landingFor = (callbackUrl: string): string => (callbackUrl.includes('signed-out') ? '/#/login' : '/auth-callback');
 
-/**
- * Every navigation the Logto client asks for on the phone (sign-in, the
- * end-session round-trip) goes through here. `go` is the final in-app
- * navigation — injectable so the seam is testable without a window.
- */
 export async function nativeNavigate(url: string, go: (path: string) => void = (path) => globalThis.location.assign(path)): Promise<void> {
   const p = plugins();
   if (nativePlatform() === 'ios' && p?.AuthSession?.start) {
@@ -72,7 +53,6 @@ export async function nativeNavigate(url: string, go: (path: string) => void = (
   go(url);
 }
 
-/** the Logto client the native shell uses: its navigations run in the auth session */
 export class NativeLogtoClient extends LogtoClient {
   constructor(logtoConfig: LogtoConfig, unstableEnableCache = false) {
     super(logtoConfig, unstableEnableCache);

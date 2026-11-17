@@ -2,19 +2,8 @@ using System.Globalization;
 
 namespace Connector.Kit.Tracing;
 
-/// <summary>
-/// The bounded, redacting buffer a recording is written into. Every entry
-/// passes <see cref="TraceRedaction"/> on its way in - by name, then by
-/// value - so nothing the book holds was ever a secret, and a book that is
-/// dropped on the floor leaks nothing.
-///
-/// Bounded three ways: a body is cut at <see cref="MaxBodyChars"/>, a
-/// document snapshot at <see cref="MaxHtmlChars"/>, and the whole book at
-/// <see cref="MaxEntries"/> entries or <see cref="MaxTotalChars"/>
-/// characters, past which entries are counted and dropped rather than
-/// kept. A run that pulls a thousand images must not make its trace the
-/// largest row in the database.
-/// </summary>
+// every entry passes TraceRedaction (by name, then by value) on the way in, so a dropped book leaks nothing.
+// Bounded so a run pulling a thousand images cannot make its trace the largest row in the database
 public sealed class TraceBook
 {
     public const int MaxEntries = 3_000;
@@ -82,7 +71,6 @@ public sealed class TraceBook
     public void Navigation(string url) =>
         Add(new TraceEntry { Seq = 0, AtMs = 0, Kind = TraceKind.Navigation, Via = ViaBrowser, Url = Clean(url) });
 
-    /// <summary>A request as it left: the browser's or the HTTP client's.</summary>
     public void Request(TraceCall call)
     {
         ArgumentNullException.ThrowIfNull(call);
@@ -104,7 +92,6 @@ public sealed class TraceBook
         });
     }
 
-    /// <summary>A response as it arrived, for the call it answers.</summary>
     public void Response(TraceCall call, int status, long? size)
     {
         ArgumentNullException.ThrowIfNull(call);
@@ -158,7 +145,6 @@ public sealed class TraceBook
     public void Note(string text) =>
         Add(new TraceEntry { Seq = 0, AtMs = 0, Kind = TraceKind.Note, Text = Scrub(Cut(text, MaxHeaderChars).Text) });
 
-    /// <summary>A cookie as the book keeps it: name and attributes, the value as a fingerprint.</summary>
     public static TraceCookie Cookie(string name, string value, string domain, string path, CookieAttributes attributes)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -262,10 +248,8 @@ public sealed class TraceBook
             : (string.Create(CultureInfo.InvariantCulture, $"{text[..max]}… [{text.Length - max} more]"), true);
 }
 
-/// <summary>One call as a surface saw it, before the book redacts it.</summary>
 public sealed record TraceCall
 {
-    /// <summary><see cref="TraceBook.ViaBrowser"/> or <see cref="TraceBook.ViaHttp"/>.</summary>
     public required string Via { get; init; }
 
     public required string Method { get; init; }
@@ -278,11 +262,9 @@ public sealed record TraceCall
 
     public string? ContentType { get; init; }
 
-    /// <summary>A text body, or null for a binary one or one that was not read.</summary>
     public string? Body { get; init; }
 }
 
-/// <summary>A cookie's attributes, everything about it that is not its name, its scope or its value.</summary>
 public sealed record CookieAttributes(
     DateTimeOffset? Expires = null,
     bool HttpOnly = false,

@@ -10,26 +10,11 @@ public readonly record struct FetchWindow(DateOnly From, DateOnly To)
     public bool Contains(DateOnly day) => day >= From && day <= To;
 }
 
-/// <summary>
-/// Turns a caller's <c>since</c>/<c>until</c> into the range an adapter
-/// actually asks the bank for.
-///
-/// The interesting part is that the two are not the same. A bank export
-/// shows BOOKED transactions: a card payment made on the 19th may not
-/// appear until it settles on the 21st, and it then appears dated the 19th,
-/// behind a cursor that has already moved past it. Fetching strictly since
-/// the last sync therefore loses rows permanently, and invisibly - from the
-/// consumer's point of view they never existed. Widening by the provider's
-/// settlement lag and letting content hashes absorb the overlap is a
-/// correctness requirement, not an optimisation.
-/// </summary>
+// the window asked of the bank is wider than since/until: a booked row can settle late and appear dated before the
+// cursor, so fetching strictly since the last sync loses it for good; widen by the settlement lag, hashes absorb the overlap
 public static class BankWindow
 {
-    /// <summary>
-    /// What a caller gets when it names no <c>since</c> at all. Short
-    /// enough that a first connect does not download a year, long enough
-    /// that a monthly credit-card statement is complete.
-    /// </summary>
+    /// when since is not named: short enough for a first connect, long enough for a monthly credit-card statement
     public const int DefaultSinceDays = 90;
 
     public static FetchWindow Resolve(
@@ -50,8 +35,7 @@ public static class BankWindow
         var floor = today.AddDays(-maxHistoryDays);
         if (from < floor) from = floor;
 
-        // Widening can only ever move `from` earlier, so an inverted window
-        // is always the caller's own doing and worth naming as such.
+        // widening only moves `from` earlier, so an inverted window is the caller's own doing
         if (to < from)
         {
             throw ConnectorException.InvalidRequest(

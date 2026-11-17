@@ -1,10 +1,8 @@
-// Sizing the pooled browser agents (#420, A1): the recommendation from the host's memory, the environment's agents block.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AGENT_BASE_MB, DEFAULT_CONCURRENCY, ENV_MB, HEADROOM, JOB_MB, MAX_PRIVATE_SLOTS, MAX_REPLICAS, SHARED_MB, normalizeAgents, recommendAgents, replicaMb } from '../modules/agents.mjs';
 
 test('the recommendation keeps a quarter free, subtracts the stacks, and fits replicas of two jobs into what is left per environment', () => {
-  // a 16 GB NAS with two environments
   const r = recommendAgents({ totalMb: 16384, environments: 2 });
   assert.equal(r.headroomMb, Math.round(16384 * HEADROOM));
   assert.equal(r.reservedMb, SHARED_MB + ENV_MB * 2);

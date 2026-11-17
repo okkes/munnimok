@@ -31,7 +31,6 @@ const receipt = (id: string, txId: string, totalCents: number, more: Record<stri
   repo.upsert('receiptLink', SPACE, id, { txId, source: 'photo', date: '2026-11-12', totalCents, merchant: 'Albert Heijn', items: LINES, auto: 0, ...more } as never);
 const viewed = async (id: string) => (await visibleTransactions(store, SPACE)).find((tx) => tx.id === id)!;
 
-/** #567: a receipt attached to a payment of the same amount files it by its lines */
 describe('a payment filed by its receipt', () => {
   beforeEach(async () => {
     db = new MunniDB(`munni_receipt_filing_${++counter}`);
@@ -55,7 +54,6 @@ describe('a payment filed by its receipt', () => {
     expect(tx.catId).toBe('groceries');
     expect(tx.needsReview).toBe(0);
     expect((await store.get('receiptLink', 'r1'))?.picks).toEqual({ t1: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
-    // filed once: the payment tells a story of its own now
     expect(await fileByReceipt(store, repo, SPACE, 't1', known)).toBe(false);
   });
 

@@ -28,16 +28,10 @@ import { takeAfterLogin } from '@/app/afterLogin';
 import { continueOptions, readLastAccount, readSignInWay, rememberLastAccount } from './lastAccount';
 import { Logo } from '@/ui/Logo';
 
-/**
- * OIDC redirect URIs cannot contain fragments, so the callback lands on a
- * real path (/auth-callback) *outside* the hash router; after processing we
- * jump back into the app shell. The native shell signs in via its custom
- * scheme instead (register munni://auth-callback — and the staging app's
- * munni-dev://auth-callback — in Logto's redirect URIs); the deep-link
- * handler re-enters /auth-callback with the same params.
- */
+// OIDC redirect URIs cannot contain fragments: the callback lands on a real path (/auth-callback) outside the hash router.
+// The native shell uses its custom scheme instead: munni://auth-callback and munni-dev://auth-callback must be
+// registered in Logto's redirect URIs; the deep-link handler re-enters /auth-callback with the same params.
 export const callbackUri = () =>
-  // native: the scheme callback the auth session hands straight back (nativeAuth.ts)
   isNativeApp() ? nativeCallbackUri() : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
@@ -56,7 +50,6 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
         // A refresh never sends scopes, so the sessions granted before this keep working.
         scopes: ['identities'],
       }}
-      // the phone's client navigates through the platform auth session (ASWebAuthenticationSession / Custom Tab)
       LogtoClientClass={isNativeApp() ? NativeLogtoClient : undefined}
     >
       <TokenBridge />
@@ -65,18 +58,14 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** exposes Logto access tokens + signIn/signOut to non-React code */
 function TokenBridge() {
   const { error, getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
-  // #559: the same person signing in again goes the way they came in (Logto's
-  // session continues silently; once it is gone, straight to their provider)
+  // #559: the same person signs in the way they came in: Logto's session continues, once gone straight to their provider
   const continueSignIn = useCallback((uri: string) => signIn({ redirectUri: uri, ...continueOptions(readLastAccount()) }), [signIn]);
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
-    // the 401 self-heal (data.tsx) re-enters the OIDC flow from outside React
-    // "use another account" (user 2026-10-07): prompt=login makes Logto ask
-    // for credentials even with its session alive; consent keeps the refresh
-    // token (login alone issues none)
+    // prompt=login makes Logto ask for credentials with its session alive;
+    // consent keeps the refresh token (login alone issues none)
     setOidcSignIn((uri, fresh) => (fresh ? signIn({ redirectUri: uri, prompt: [Prompt.Login, Prompt.Consent] }) : continueSignIn(uri)));
     return () => {
       setOidcSignOut(null);
@@ -84,30 +73,20 @@ function TokenBridge() {
     };
   }, [signIn, signOut, continueSignIn]);
   useEffect(() => {
-    // #222: the SDK swallows refresh failures into the SHARED context
-    // error — `invalid_grant` is Logto's verdict that the refresh grant
-    // is spent (rotation raced across tabs, or revoked): tokens never
-    // mint again without a fresh sign-in. Name the state, report it
-    // once, and — near app open — silently re-enter the OIDC flow (the
-    // IdP session cookie usually survives, so the round-trip re-mints
-    // tokens without the user typing anything). Never during the
-    // callback exchange: its errors have their own wipe handling.
+    // #222: the SDK swallows refresh failures into the SHARED context error; invalid_grant means the refresh grant is spent,
+    // so tokens never mint again without a fresh sign-in: report once, and near app open silently re-enter the OIDC flow.
+    // Never during the callback exchange: its errors have their own wipe handling.
     if (!error || isCallbackPath() || !isInvalidGrantError(error)) return;
     if (markSessionExpired()) {
-      // handled — the re-entry or the banner — so a breadcrumb, not an
-      // event (GlitchTip 4/8/9/11/12, user rule 2026-10-05); a sign-in
-      // that then fails reports from where it fails
+      // a breadcrumb, not an event: the re-entry or the banner handles it; a sign-in that then fails reports where it fails
       console.warn('refresh grant dead: invalid_grant on token refresh — re-entering sign-in');
       void attemptSilentReentry(() => continueSignIn(callbackUri()));
     }
   }, [error, continueSignIn]);
   useEffect(() => {
-    // the SDK flips isLoading for EVERY call it runs, its own getAccessToken
-    // included (user ss 2026-10-07: "Offline" for the first seconds after a
-    // sign-in — the sync's first call went out without a bearer while the
-    // token was being minted). Only the initial restore keeps sync waiting;
-    // once signed in, the getter stays put through those flips.
-    if (isLoading && !isAuthenticated) return; // session still restoring — keep sync waiting
+    // the SDK flips isLoading for EVERY call, its own getAccessToken included: only the initial restore keeps sync waiting,
+    // else the first sync went out without a bearer
+    if (isLoading && !isAuthenticated) return;
     if (isAuthenticated) {
       setAccessTokenGetter(async () => {
         // a spent grant never mints again — stop hammering the IdP
@@ -120,17 +99,13 @@ function TokenBridge() {
             noteRefreshSucceeded();
             return token;
           }
-          // the SDK (4.x) swallows a failed refresh into its shared context
-          // error and answers undefined — the error effect above reads the
-          // verdict; here the attempt counts as failed, so the callers of
-          // the next 15 s ask nobody (prod Logto logs 2026-10-08)
+          // the SDK (4.x) swallows a failed refresh into its shared error and answers undefined: count it as failed,
+          // so the callers of the next 15 s ask nobody
           noteRefreshFailed();
           return undefined;
         } catch (err) {
           noteRefreshFailed();
-          // a client that throws instead: the verdict is read HERE too, so
-          // the SDK's shared error state is not the only thing that stops
-          // the hammering — a breadcrumb, not an event (user rule 2026-10-05)
+          // a client that throws instead: read the verdict here too — a breadcrumb, not an event
           if (isInvalidGrantError(err) && markSessionExpired()) {
             console.warn('refresh grant dead: invalid_grant from the token getter — asking for a sign-in');
             void attemptSilentReentry(() => continueSignIn(callbackUri())).catch(() => undefined);
@@ -155,22 +130,18 @@ function TokenBridge() {
   return null;
 }
 
-/** shared post-exchange step: adopt the session, then re-enter the app */
 function useFinishSignIn(): (getToken?: () => Promise<string | null | undefined>) => Promise<boolean> {
   const { getIdTokenClaims } = useLogto();
   const login = useSession((s) => s.login);
   return async (getToken) => {
     const claims = await getIdTokenClaims();
-    // exchange ok but no readable identity — caller shows retry instead of
-    // bouncing a session-less user into the app shell
+    // no readable identity: the caller shows retry instead of bouncing a session-less user into the app
     if (!claims?.sub) return false;
     login({ kind: 'user', sub: claims.sub });
     // #559: how this account gets back in — asked beside the display-name write below, never after it
     const way = readSignInWay(config.logto.endpoint, claims.username, getToken);
-    // best-effort display name for friends/space members. AWAITED (with a
-    // cap): fire-and-forget raced the /#/home navigation — iOS WebKit
-    // cancels the in-flight fetch ('Load failed'), which set the shared
-    // Logto context error and used to trigger the post-login key wipe
+    // AWAITED with a cap: fire-and-forget raced the /#/home navigation, iOS WebKit cancels the in-flight fetch and the shared
+    // context error then triggered the post-login key wipe
     const name = claims.name ?? claims.username ?? claims.email;
     if (name) {
       const { apiFetch } = await import('@/lib/api');
@@ -211,15 +182,9 @@ function CallbackShell({ failed, detail }: Readonly<{ failed?: boolean; detail?:
   );
 }
 
-/**
- * Native shell: the webview lands here as https://localhost/auth-callback,
- * but the code exchange must present the ORIGINAL munni:// url as its
- * redirect_uri — the SDK checks that the callback url starts with the
- * stored redirect_uri, so localhost is rejected (this was the
- * stuck-at-logo bug). The React hook only ever sees window.location, so
- * we drive a fresh client with the deep-link url instead; it shares the
- * sign-in session (localStorage keyed by appId) with the provider.
- */
+// native: the webview lands on https://localhost/auth-callback but the exchange must present the ORIGINAL munni:// url as
+// redirect_uri (the SDK checks the callback url starts with the stored one); so a fresh client is driven with the deep-link
+// url, sharing the sign-in session (localStorage keyed by appId)
 function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
   const finish = useFinishSignIn();
   const [failed, setFailed] = useState<string | null>(null);
@@ -240,12 +205,9 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       if (!(await finish(() => client.getAccessToken()))) setFailed('no identity claims');
     })().catch((err: unknown) => {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
-      // shown on screen AND reported: a native user cannot open devtools —
-      // unless it is a stale callback (the state of a sign-in that was
-      // started over), which the fresh sign-in below already answers
+      // shown on screen AND reported (a native user has no devtools), unless it is a stale callback the fresh sign-in answers
       if (!isStaleCallbackError(err)) Sentry.captureException(err);
-      // a failed exchange leaves poisoned SDK state behind — clear it so
-      // the retry starts a fresh sign-in (password-change loop fix)
+      // a failed exchange leaves poisoned SDK state: clear it so the retry starts a fresh sign-in
       clearStaleLogtoState('native-callback-error');
       setFailed(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     });
@@ -254,12 +216,8 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
   return <CallbackShell failed={failed !== null} detail={failed ?? undefined} />;
 }
 
-/**
- * A callback whose state no longer matches: the sign-in it belongs to was
- * started over (a second tap, a second tab, a retry during an outage) and
- * this URL answers the old one. The screen says "start again" and the
- * fresh sign-in is the handling — not an incident (GlitchTip 16).
- */
+// a callback whose state no longer matches: its sign-in was started over (second tap/tab, retry); the fresh sign-in
+// is the handling, not an incident (GlitchTip 16)
 export function isStaleCallbackError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /state mismatch/i.test(message);
@@ -278,17 +236,13 @@ function WebCallbackScreen() {
   useEffect(() => {
     if (!error) return;
     if (!isStaleCallbackError(error)) Sentry.captureException(error);
-    // wipe ONLY while the exchange itself failed. The context error is
-    // SHARED: any later useLogto call sets it too (iOS cancels the
-    // display-name PUT during the /#/home navigation), and wiping then
-    // stranded a freshly signed-in user with zero Logto keys — the
-    // signed-in-but-tokenless 401 loop (field report 2026-07-29)
+    // wipe ONLY while the exchange itself failed: the context error is SHARED (iOS cancels the display-name PUT), and wiping
+    // then left a signed-in user with no Logto keys, a 401 loop
     if (!isAuthenticated) clearStaleLogtoState('web-callback-error');
   }, [error, isAuthenticated]);
   return <CallbackShell failed={Boolean(error) || noClaims} detail={error ? `${error.name}: ${error.message}` : undefined} />;
 }
 
-/** rendered at /auth-callback: finishes the OIDC exchange, then re-enters the app */
 export function CallbackScreen() {
   const nativeUrl = sessionStorage.getItem(NATIVE_CALLBACK_KEY);
   return nativeUrl ? <NativeCallbackScreen url={nativeUrl} /> : <WebCallbackScreen />;

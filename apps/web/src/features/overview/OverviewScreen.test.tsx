@@ -40,7 +40,6 @@ describe('Overview (demo identity)', () => {
     expect(screen.getByTestId('overview-barchart')).toBeTruthy();
     expect(screen.getByTestId('overview-stackedbar')).toBeTruthy();
 
-    // main categories render; expanding one reveals its sub categories
     const group = await waitFor(() => {
       const el = document.querySelector('[data-testid^="overview-group-"]');
       expect(el).toBeTruthy();
@@ -62,7 +61,7 @@ describe('Overview (demo identity)', () => {
       expect(el).toBeTruthy();
       return el!;
     });
-    fireEvent.click(group); // unfold
+    fireEvent.click(group);
     const all = await waitFor(() => {
       const el = document.querySelector('[data-testid^="overview-all-"]');
       expect(el).toBeTruthy();
@@ -70,15 +69,12 @@ describe('Overview (demo identity)', () => {
     });
     fireEvent.click(all);
 
-    // stays inside the analysis: the category's own screen, not the tab
     await screen.findByTestId('screen-category-drill');
     await waitFor(() => expect(screen.getByTestId('catdrill-total').textContent).toMatch(/€[1-9]/));
     expect(screen.getByTestId('overview-barchart')).toBeTruthy();
     const list = await screen.findByTestId('catdrill-list');
     expect(list.querySelectorAll('[data-testid^="tx-row-"]').length).toBeGreaterThan(0);
 
-    // #168 r5 (user): a payment row goes STRAIGHT to the transaction
-    // page — the in-between peek sheet is retired
     fireEvent.click(list.querySelector('[data-testid^="tx-row-"]')!);
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
     expect(screen.queryByTestId('tx-peek')).toBeNull();
@@ -89,23 +85,20 @@ describe('Overview (demo identity)', () => {
     await screen.findByTestId('screen-overview');
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
     const current = screen.getByTestId('overview-total').textContent;
-    fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
+    fireEvent.click(screen.getByTestId('overview-bar-0'));
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).not.toBe(current));
     const older = screen.getByTestId('overview-total').textContent;
 
-    // a detour (a category, a transaction) and back: the period stays (#355)
     cleanup();
     renderApp('/overview/expense');
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(older));
 
-    // another main tab, then the overview again: the current period
     fireEvent.click(screen.getByTestId('tab-settings'));
     await screen.findByTestId('screen-settings');
     cleanup();
     renderApp('/overview/expense');
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(current));
 
-    // and Home itself forgets it too
     fireEvent.click(screen.getByTestId('overview-bar-0'));
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(older));
     cleanup();
@@ -132,13 +125,11 @@ describe('Overview (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`overview-all-${catId}`));
     await screen.findByTestId('screen-category-drill');
 
-    // back from the drill: the group is still open and the list where it was — no tap needed
     cleanup();
     renderApp('/overview/expense');
     expect(await screen.findByTestId(`overview-subs-${catId}`)).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('overview-list').scrollTop).toBe(140));
 
-    // Home forgets the fold and the offset along with the period (#454)
     cleanup();
     renderApp('/home');
     await screen.findByTestId('screen-home');
@@ -155,7 +146,7 @@ describe('Overview (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('catdrill-total').textContent).toMatch(/€/));
     const label = screen.getByTestId('catdrill-period').textContent;
 
-    fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
+    fireEvent.click(screen.getByTestId('overview-bar-0'));
     await waitFor(() => expect(screen.getByTestId('catdrill-period').textContent).not.toBe(label));
   });
 
@@ -165,7 +156,7 @@ describe('Overview (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
     const current = screen.getByTestId('overview-total').textContent;
 
-    fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
+    fireEvent.click(screen.getByTestId('overview-bar-0'));
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).not.toBe(current));
   });
 
@@ -194,14 +185,12 @@ describe('Overview (demo identity)', () => {
   }, 20_000);
 
   it('saving uses the checking-side sign mechanic (deposits count positive)', async () => {
-    // compute, from the seed itself, a period bar that holds a saving deposit —
-    // never fireEvent inside waitFor: the clicks mutate the DOM, which re-runs
-    // the callback forever and starves waitFor's own timeout (real hang we had)
+    // never fireEvent inside waitFor: the clicks mutate the DOM, re-running the callback forever and starving waitFor's timeout
     const periods = periodHistory('month', 1, 6);
     const depositDate = DEMO_TXS.filter((tx) => tx.cat === 'savingDeposit')
       .map((tx) => isoDaysAgo(tx.daysAgo))
       .find((date) => periods.some((p) => inPeriod(date, p)));
-    expect(depositDate).toBeTruthy(); // the seed always has a deposit in range
+    expect(depositDate).toBeTruthy();
     const barIndex = periods.findIndex((p) => inPeriod(depositDate!, p));
 
     renderApp('/overview/saving');

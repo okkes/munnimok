@@ -32,10 +32,14 @@ async function seed(write: (repo: Repo) => Promise<void>) {
   first.unmount();
 }
 
-async function openBreakdown() {
+async function openBreakdown(): Promise<string | null> {
   renderApp('/home');
-  fireEvent.click(await screen.findByTestId('home-cashflow', {}, { timeout: 5000 }));
-  return screen.findByTestId('cashflow-breakdown');
+  const block = await screen.findByTestId('home-cashflow', {}, { timeout: 5000 });
+  const onHome = screen.queryByTestId('home-cashflow-amount')?.textContent ?? null;
+  fireEvent.click(block);
+  await screen.findByTestId('screen-safe-to-spend', {}, { timeout: 5000 });
+  await screen.findByTestId('cashflow-breakdown', {}, { timeout: 5000 });
+  return onHome;
 }
 
 describe('safe to spend (#541)', () => {
@@ -46,19 +50,20 @@ describe('safe to spend (#541)', () => {
   });
 
   it('sums the checking and cash accounts and takes off what is still due this period, each with its reason', async () => {
-    // due today and not paid yet: it comes off
     await seed((repo) =>
       repo.upsert('recurring', DEMO_SPACE_ID, 'rec_gym', { name: 'Gym', kind: 'subscription', amountCents: 2_055, every: 'month', dueDay: now.getDate(), active: 1 }),
     );
-    await openBreakdown();
+    const onHome = await openBreakdown();
     expect(screen.getByTestId('cashflow-account-demo_main')).toBeTruthy();
     expect(screen.getByTestId(`cashflow-account-${WALLET}`)).toBeTruthy();
     expect(screen.queryByTestId('cashflow-account-demo_save')).toBeNull();
     expect(screen.getByTestId('cashflow-due-rec_gym').textContent).toContain('Recurring cost');
     expect(screen.getByTestId('cashflow-headline').textContent).toContain('3,400.00');
-    // the Home block and the breakdown tell the same number
-    expect(screen.getByTestId('cashflow-total').textContent).toBe(screen.getByTestId('home-cashflow-amount').textContent);
-    // no plan yet: the set-asides wait for one
+    // the Home block and its screen tell the same number, and the screen says it once
+    expect(screen.getByTestId('cashflow-headline').textContent).toBe(onHome);
+    expect(screen.getAllByText('€3,400.00')).toHaveLength(1);
+    expect(screen.getByTestId('cashflow-accounts-total').textContent).toContain('3,420.55');
+    expect(screen.getByTestId('cashflow-dues-total').textContent).toContain('20.55');
     expect(screen.getByTestId('cashflow-noplan')).toBeTruthy();
   }, 20_000);
 
@@ -69,6 +74,9 @@ describe('safe to spend (#541)', () => {
     fireEvent.click(screen.getByTestId('cashflow-pick-save'));
     await waitFor(() => expect(screen.getByTestId('cashflow-headline').textContent).toContain('11,570.55'));
 
+    fireEvent.click(screen.getByTestId('cashflow-back'));
+    await screen.findByTestId('screen-home', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('home-cashflow-amount').textContent).toContain('11,570.55'));
     fireEvent.click(screen.getByTestId('home-balance-band'));
     fireEvent.click(await screen.findByTestId('band-mode-spendable'));
     await waitFor(() => expect(screen.getByTestId('band-mode-label').textContent).toContain('Safe to spend'));

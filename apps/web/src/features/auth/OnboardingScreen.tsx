@@ -41,14 +41,8 @@ function answerWithin(request: Promise<Response | null>, ms: number): Promise<Re
   });
 }
 
-/**
- * First-run setup for new identities — online AND offline (user ruling):
- * display name (with the why), avatar (upload or preset), app language
- * (kept from the login pick, still changeable), country of use (feeds
- * category prediction — NOT nationality), then the app lock offer.
- * NOT skippable (user ruling) and shown without navigation chrome; the
- * bank/account step is gone — the guided tutorial owns that now.
- */
+// first-run setup, online AND offline, not skippable; the country of use feeds category prediction (NOT nationality);
+// the guided tutorial owns the bank step
 export function OnboardingScreen() {
   const { t, lang, setLang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -61,16 +55,13 @@ export function OnboardingScreen() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
-  // #160: desktop-only webcam door beside the avatar upload
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
-  // step 1 = profile, step 2 = app lock; bank step retired (user ruling)
   const [step, setStep] = useState<1 | 2>(1);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [lockPin, setLockPin] = useState('');
   const [lockPin2, setLockPin2] = useState('');
   const [lockError, setLockError] = useState<string | null>(null);
-  // #195: tappable — an invalid tap names the blocker (one flag per step)
   const [attempted, setAttempted] = useState(false);
   const [lockAttempted, setLockAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -80,9 +71,7 @@ export function OnboardingScreen() {
     void biometricAvailable().then(setBioAvailable);
   }, []);
 
-  // signed-in users get an IP-based country DEFAULT (user ruling: only
-  // here, never on the login screen — zero telemetry before consent);
-  // an explicit pick always wins
+  // an IP-based country DEFAULT, only here and never on the login screen (zero telemetry before consent); a pick wins
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void apiFetch('/geo')
@@ -95,8 +84,6 @@ export function OnboardingScreen() {
       .catch(() => undefined);
   }, [identity]);
 
-  // offline profiles already told us their name at creation — prefill,
-  // don't re-ask from scratch
   useEffect(() => {
     if (identity?.kind === 'offline') {
       const existing = offlineProfileName(identity.profileId);
@@ -111,8 +98,7 @@ export function OnboardingScreen() {
 
   const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => fileRef.current?.click());
 
-  /** same shape as the settings flow: PIN is the fallback, biometrics
-   *  best-effort — a cancelled prompt still yields a PIN-locked app */
+  /** PIN is the fallback, biometrics best-effort: a cancelled prompt still yields a PIN-locked app */
   const enableLock = async () => {
     if (!validPin(lockPin)) {
       setLockError(t('lock.pinHint'));
@@ -140,7 +126,6 @@ export function OnboardingScreen() {
     return COUNTRIES.filter((c) => !q || c[lang].toLowerCase().includes(q) || c.native.toLowerCase().includes(q));
   }, [query, lang]);
 
-  /** step 1 done: persist the profile everywhere it matters */
   const applyProfile = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -160,8 +145,7 @@ export function OnboardingScreen() {
     }
     await store.metaPut('profile', { name: trimmed, picture, country });
     if (identity?.kind === 'offline') updateOfflineProfile(identity.profileId, { name: trimmed, picture });
-    // the personal space was auto-named before the user could type —
-    // an offline rename here follows into it
+    // the personal space was auto-named before the user could type: an offline rename follows into it
     const space = await store.get('space', spaceId);
     if (space && identity?.kind === 'offline' && space.kind === 'personal') {
       await repo.upsert('space', spaceId, spaceId, { name: trimmed });
@@ -174,8 +158,7 @@ export function OnboardingScreen() {
   };
 
   const finish = async () => {
-    // Mina takes over IMMEDIATELY after the form (user ruling: no
-    // opt-in card, no Home in between) — once per identity
+    // Mina takes over immediately after the form, once per identity
     const pending = (await store.metaGet('minaTutorialPending'))?.value;
     const done = (await store.metaGet('minaTutorialDone'))?.value;
     if (pending && !done) {
@@ -189,7 +172,6 @@ export function OnboardingScreen() {
   return (
     <div className="m-fade flex h-full flex-col items-center overflow-y-auto px-6" data-testid="screen-onboarding">
       <div className="flex w-full max-w-[420px] flex-col pb-8">
-        {/* desktop: hug the top instead of floating mid-window (user ss) */}
         <div className="flex flex-col items-center pt-10 pb-6 text-center lg:pt-4">
           <Logo size={32} />
           <h1 className="m-h2 mt-4 text-ink">{t('onboarding.title')}</h1>
@@ -197,7 +179,6 @@ export function OnboardingScreen() {
 
         {step === 1 && (
           <div className="flex flex-col gap-3">
-            {/* avatar: upload or preset (user request) */}
             <div className="flex flex-col items-center gap-2 pb-1">
               <Avatar picture={picture} size={72} />
               <div className="flex flex-wrap items-center justify-center gap-1.5" data-testid="onboarding-avatars">
@@ -219,7 +200,6 @@ export function OnboardingScreen() {
                 >
                   <Icon name="camera-plus-outline" size={17} color="var(--m-ink-3)" />
                 </button>
-                {/* #160: desktop webcam snapshot — mirrors the upload dot */}
                 {webcamDoor && (
                   <button
                     data-testid="onboarding-avatar-webcam"
@@ -245,10 +225,7 @@ export function OnboardingScreen() {
               aria-invalid={attempted && !name.trim()}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
             />
-            {/* #195 r2 (user): the blocker sits AT the field */}
             <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="onboarding-save-blocker" />
-            {/* the WHY, kept short (user request): offline nobody else
-                ever sees the name; online it's the face others see */}
             <p className="px-1 text-[12px] leading-snug text-ink-4">
               {t(identity?.kind === 'offline' ? 'onboarding.nameInfoOffline' : 'onboarding.nameInfoOnline')}
             </p>
@@ -354,7 +331,6 @@ export function OnboardingScreen() {
               <Icon name={bioAvailable ? 'fingerprint' : 'lock-outline'} size={18} />
               {t('lock.setup')}
             </Button>
-            {/* skippable — and the note says WHERE it lives later */}
             <Button variant="ghost" data-testid="onboarding-lock-later" onClick={() => void finish()}>
               {t('onboarding.lockLater')}
             </Button>
@@ -362,7 +338,6 @@ export function OnboardingScreen() {
         )}
       </div>
 
-      {/* #160: snapshot feeds the same downscale path as the file input */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
 
       <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>

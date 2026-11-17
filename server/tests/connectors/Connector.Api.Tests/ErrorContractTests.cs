@@ -5,14 +5,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §5. Never a bare 500, never an HTML error page, never English.
-///
-/// Every assertion here goes through <see cref="ErrorEnvelope"/>, which checks
-/// the whole shape rather than the status code: an error body that grew a
-/// free-text <c>message</c> would be a contract change the consumer cannot see
-/// coming, and it is exactly the kind of change that arrives by accident.
-/// </summary>
+// api-spec §5: ErrorEnvelope checks the whole shape: a free-text `message` would be a silent contract change
 [Collection(ShopApiCollection.Name)]
 public sealed class ErrorContractTests(ShopApiFactory factory)
 {

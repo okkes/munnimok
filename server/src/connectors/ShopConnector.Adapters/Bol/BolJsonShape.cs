@@ -6,23 +6,9 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Bol;
 
-/// <summary>
-/// The other shape: an order list fetched as JSON by the account page.
-///
-/// Nothing here is confirmed - no JSON order endpoint has been identified for
-/// bol's consumer site, and the research that looked for one found only
-/// seller-API clients. It is built anyway, and built to the same standard as
-/// the HTML shape, because the alternative is discovering at 3am that the
-/// page is JSON-backed and having nothing at all. Every name it reaches for
-/// is an alias list in <see cref="BolOptions"/>, and its URL is a template:
-/// a live run that finds the real endpoint turns this from dead code into the
-/// working path with two configuration edits and no release.
-///
-/// If this shape wins, the provider's tier can probably drop from
-/// <c>browser_once</c> toward <c>http</c> - but only after someone has
-/// watched a login, because the login is still a JavaScript page with a
-/// reCAPTCHA key on hand.
-/// </summary>
+// unconfirmed: no JSON order endpoint has been found for bol's consumer site; built anyway with alias lists and a URL
+// template in BolOptions, so finding the real one takes two configuration edits and no release
+// the tier could drop toward http only after a login is watched: the login is still a JS page with a reCAPTCHA key
 internal sealed class BolJsonShape : IBolOrdersShape
 {
     private const string ProviderId = BolAdapter.ProviderId;
@@ -56,9 +42,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
         }
         catch (JsonException ex)
         {
-            // Non-JSON where JSON was promised is almost always an
-            // interstitial the guard did not recognise, so it is a shape
-            // change worth paging someone about rather than a parse bug.
+            // non-JSON where JSON was promised is almost always an interstitial the guard did not recognise: a shape change
             throw new ConnectorException(
                 ErrorCode.ProviderChanged,
                 $"{ProviderId}: the orders endpoint was read as the '{Name}' shape and did not return JSON. " +
@@ -81,15 +65,8 @@ internal sealed class BolJsonShape : IBolOrdersShape
         }
     }
 
-    /// <summary>
-    /// The array of orders, at whichever of the candidate paths holds one.
-    ///
-    /// An array that resolves and is empty is an account with no orders in
-    /// this page, which is a perfectly good answer. No path resolving at all
-    /// is the shape having moved, and it names every path tried - guessing
-    /// which array in an unknown document holds orders is exactly how a
-    /// parser silently reports the wrong data.
-    /// </summary>
+    // an empty resolved array is an account with no orders; no path resolving is a moved shape, naming every path tried
+    // (guessing which array holds orders reports wrong data silently)
     private IReadOnlyList<JsonElement> Rows(JsonElement root, BolOptions options)
     {
         if (root.ValueKind == JsonValueKind.Array) return JsonAccess.AsArray(root);
@@ -99,8 +76,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
             if (!JsonAccess.TryPath(root, path, out var value)) continue;
             if (value.ValueKind == JsonValueKind.Array) return JsonAccess.AsArray(value);
 
-            // A wrapper around the array - { "orders": { "items": [...] } } -
-            // is common enough to be worth one hop, and no more than one.
+            // a wrapper around the array ({ "orders": { "items": [...] } }) is common enough for one hop, no more
             if (value.ValueKind == JsonValueKind.Object &&
                 JsonAccess.TryProp(value, out var nested, "items", "results", "content", "orders") &&
                 nested.ValueKind == JsonValueKind.Array)
@@ -132,9 +108,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
             Id = id,
             PlacedAt = BolDate.Parse(
                 JsonAccess.StrOf(row, [.. options.JsonOrderDateNames]), zone, $"order[{id}].date"),
-            // The unit is declared, never sniffed - see BolOptions.JsonAmountUnit,
-            // which is the one value on this provider that can be wrong without
-            // anything noticing.
+            // unit declared, never sniffed: BolOptions.JsonAmountUnit is the one value here that can be wrong without anything noticing
             Total = MoneyReader.Require(
                 row, options.JsonAmountUnit, currency, $"order[{id}].total", [.. options.JsonOrderTotalNames]),
             SellerName = Seller(row, options),
@@ -172,9 +146,8 @@ internal sealed class BolJsonShape : IBolOrdersShape
             masked = JsonAccess.StrOf(block, [.. options.JsonPaymentMaskNames]);
         }
 
-        // Explicit nulls, not an omitted block: the consumer must be able to
-        // tell "bol gave us no tail" from "nobody thought about it", because
-        // it is what disambiguates two identical purchases on one day.
+        // explicit nulls, not an omitted block: the consumer must tell "no tail from bol" from "not considered"
+        // (it disambiguates two identical purchases on one day)
         return ReceiptFactory.Payment(BolNormalize.Method(method), JsonAccess.Tail(masked));
     }
 
@@ -229,8 +202,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
             ? JsonAccess.StrOf(block, "description", "label", "name")
             : null;
 
-        // Providers state a discount with either sign; the schema requires it
-        // negative so that summing for reconciliation is unconditional.
+        // providers state a discount with either sign; the schema requires negative so summing for reconciliation is unconditional
         return new ReceiptDiscount
         {
             Amount = value.Value > 0 ? value.Negated() : value,

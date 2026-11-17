@@ -7,7 +7,6 @@ describe('the booked twin of a reserved charge (#533)', () => {
   it('the same payment booked a day later is the twin; a different hold amount still is when the merchant agrees', () => {
     const hold = row('r', '2026-10-06', -1300, 'PAY.nl*X TU DELFT');
     expect(twinScore(hold, row('b', '2026-10-07', -1300, 'PAY.nl*X TU DELFT'))).not.toBeNull();
-    // a fuel hold books for what was actually tanked
     const fuel = row('f', '2026-10-13', -15_000, 'Total Nn0001853 Den Haa');
     expect(twinScore(fuel, row('fb', '2026-10-14', -9083, 'Total Nn0001853 Den Haa'))).not.toBeNull();
   });
@@ -33,7 +32,6 @@ describe('the booked twin of a reserved charge (#533)', () => {
     const pairs = pairReservedWithBooked(holds, booked);
     expect(pairs.get('h1')).toBe('b1');
     expect(pairs.get('h2')).toBe('b2');
-    // one candidate, two holds: only one of them gets it
     const one = pairReservedWithBooked(holds, [row('b1', '2026-10-07', -1300, 'TU Delft')]);
     expect(one.size).toBe(1);
   });

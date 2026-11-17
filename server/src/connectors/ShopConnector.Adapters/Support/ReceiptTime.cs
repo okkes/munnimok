@@ -5,15 +5,8 @@ using Connector.Kit.Errors;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// Turns a provider timestamp into one that carries a real offset.
-///
-/// A bare date, or a wall-clock string reinterpreted in the agent's own
-/// time zone, makes a near-midnight purchase land on the wrong day - and a
-/// receipt matched to the wrong day is worse than one not matched at all.
-/// So: an explicit offset is honoured, and anything without one is
-/// interpreted in the provider's country zone rather than the machine's.
-/// </summary>
+/// a bare date, or a wall clock read in the agent's zone, puts a near-midnight purchase on the wrong day: an explicit
+/// offset is honoured, anything else is read in the provider's country zone
 internal static partial class ReceiptTime
 {
     [GeneratedRegex(@"(?:[Zz]|[+-]\d{2}:?\d{2})$")]
@@ -36,10 +29,8 @@ internal static partial class ReceiptTime
 
         if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var wallClock))
         {
-            // Kind must be Unspecified for GetUtcOffset to read the value as
-            // local *to that zone* rather than to this machine. During the
-            // autumn fold an ambiguous hour resolves to standard time; an
-            // hour of error twice a year beats a whole-day error every day.
+            // Kind Unspecified so GetUtcOffset reads it as local to that zone; an ambiguous autumn hour resolves to standard time
+            // (an hour off twice a year beats a whole day off every day)
             var unspecified = DateTime.SpecifyKind(wallClock, DateTimeKind.Unspecified);
             return new DateTimeOffset(unspecified, zone.GetUtcOffset(unspecified));
         }
@@ -48,17 +39,11 @@ internal static partial class ReceiptTime
     }
 }
 
-/// <summary>
-/// Country to time zone, written out rather than derived. Every country in
-/// the Lidl list happens to sit on CET today, so a shortcut would work and
-/// would silently break the day a non-CET country is added - an explicit
-/// table makes that a visible edit.
-/// </summary>
+/// written out, not derived: every Lidl country sits on CET today, and a table makes a non-CET addition a visible edit
 internal static class RetailZones
 {
     private const string Netherlands = "Europe/Amsterdam";
 
-    /// <summary>Windows' names for the two zones every listed country falls under.</summary>
     private const string WestEurope = "W. Europe Standard Time";
 
     private const string Romance = "Romance Standard Time";
@@ -74,12 +59,8 @@ internal static class RetailZones
         ["ES"] = "Europe/Madrid",
     };
 
-    /// <summary>
-    /// Windows ships its own zone ids. .NET maps IANA ids through ICU on
-    /// every supported platform, but an agent image with globalization
-    /// trimmed would fail the lookup, and failing to date a receipt is not
-    /// an acceptable outcome of a packaging choice.
-    /// </summary>
+    /// fallback for hosts without IANA ids (trimmed globalization): failing to date a receipt
+    /// over a packaging choice is unacceptable
     private static readonly Dictionary<string, string> WindowsFallback = new(StringComparer.Ordinal)
     {
         [Netherlands] = WestEurope,

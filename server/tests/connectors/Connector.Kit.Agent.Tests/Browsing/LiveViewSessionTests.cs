@@ -7,18 +7,8 @@ using Xunit.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The whole live view, end to end, against a real headless Chromium and a
-/// stubbed control plane.
-///
-/// A fake browser cannot answer any of the questions here. Whether a frame
-/// costs 30 ms or 300 decides whether this is a live view or a slideshow;
-/// whether a relayed fraction lands on the password box is a fact about
-/// Chromium's hit testing; and whether a stream really stops when the page
-/// leaves its origin is a fact about when Playwright raises
-/// <c>FrameNavigated</c>. So the provider is a real origin served by a route
-/// handler - no server, no network, but a real navigation with a real host.
-/// </summary>
+/// real headless Chromium, stubbed control plane: frame cost, hit testing and when FrameNavigated fires are Chromium
+/// facts a fake cannot answer; the provider is a real origin served by a route handler
 public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifetime
 {
     private const int Width = 390;
@@ -44,13 +34,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         _playwright?.Dispose();
     }
 
-    /// <summary>
-    /// Frames arrive numbered, in order, carrying the size they were taken at.
-    ///
-    /// The sequence is what lets a viewer showing frame 40 ignore 39 arriving
-    /// late; the size is what every returned fraction is multiplied by. Neither
-    /// is optional and neither has anywhere else to come from.
-    /// </summary>
+    /// the sequence lets a viewer ignore a late frame; the size is what every returned fraction is multiplied by
     [Fact]
     public async Task Frames_arrive_numbered_and_carrying_the_size_they_were_taken_at()
     {
@@ -69,28 +53,14 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.All(frames, f => Assert.True(f.Bytes > 0));
     }
 
-    /// <summary>
-    /// A SECOND live view in the same job carries on counting where the first
-    /// stopped.
-    ///
-    /// The sequence is monotonic per JOB, and the connector enforces it by
-    /// keeping one slot and discarding any frame not numbered higher than the
-    /// one it holds - while answering 200, so the agent is never told. A counter
-    /// that restarted per view therefore made every frame of a job's second live
-    /// view disappear at the connector, with the consumer still displaying the
-    /// last picture of the first: a stale login page, and a human typing a
-    /// password into it. Nothing at either end logged a thing.
-    ///
-    /// So the fake counts what the connector would throw away, and the assertion
-    /// is that it threw away nothing.
-    /// </summary>
+    /// the sequence is monotonic per JOB: the connector keeps one slot and silently discards (answering 200) frames not
+    /// numbered higher, so a per-view counter made a second view's frames vanish behind a stale login page
     [Fact]
     public async Task A_second_live_view_in_one_job_continues_the_count()
     {
         var (page, control) = await OpenAsync();
 
-        // One counter, because there is one job. This is the whole fix: it is
-        // owned above the session, so it outlives one.
+        // one counter per job, owned above the session so it outlives one
         var frames = new LiveFrameSequence();
 
         await using (var first = Session(page, control, frames: frames))
@@ -113,20 +83,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             $"the second view restarted the count at {control.Frames[afterFirst].Sequence}");
     }
 
-    /// <summary>
-    /// A page nobody is touching sends its picture once, and the next one it
-    /// sends is the change.
-    ///
-    /// This is the entire bandwidth argument: a login form is static until
-    /// somebody types, and a stream that re-sends the same picture for the
-    /// ninety seconds a human spends reading it is the version of this feature
-    /// that gets switched off. The heartbeat (<c>MaxSilence</c>) is pushed out
-    /// of the way so the test measures the stream and not the heartbeat; the
-    /// focused field is there because a blinking caret would be the one thing
-    /// on this page that draws by itself. The proof is the numbering: whatever
-    /// the machine's load, the change is frame two only if nothing went out in
-    /// between.
-    /// </summary>
+    /// a static login form must not be re-sent while a human reads it. MaxSilence is pushed out and the field focused
+    /// because a blinking caret would draw by itself; frame two proves nothing went out between
     [Fact]
     public async Task A_page_nobody_is_touching_sends_its_picture_once()
     {
@@ -149,11 +107,6 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.Equal([1L, 2L], control.Frames.Select(f => f.Sequence));
     }
 
-    /// <summary>
-    /// A moving pointer is streamed softer, and the page is sent sharp again
-    /// once it settles - one fresh frame at the higher quality, without the
-    /// page having to change.
-    /// </summary>
     [Fact]
     public async Task A_moving_pointer_is_streamed_softer_and_the_page_sharp_once_it_settles()
     {
@@ -181,13 +134,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             "one sharp frame after the pointer settled");
     }
 
-    /// <summary>
-    /// The heartbeat: an unchanged page still sends something eventually.
-    ///
-    /// Silence and death look identical from the viewer's side, and a viewer
-    /// that attached after the last frame was posted would otherwise have
-    /// nothing at all to draw.
-    /// </summary>
+    /// silence and death look identical from the viewer's side, and a viewer attaching after the last frame would have
+    /// nothing to draw
     [Fact]
     public async Task An_unchanged_page_is_re_sent_when_the_silence_gets_too_long()
     {
@@ -202,16 +150,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         await UntilAsync(() => control.Frames.Count >= 3, "three heartbeat frames");
     }
 
-    /// <summary>
-    /// What the human did on a picture of the page happens on the page.
-    ///
-    /// The one test that exercises the whole loop: a fraction measured against
-    /// the frame's own size becomes a click that focuses the provider's real
-    /// password box, and the characters that follow it are typed into it. If
-    /// the coordinate mapping is out by the crop origin, by the device scale
-    /// factor, or by the difference between the viewport and the frame, this is
-    /// where it shows up - the field stays empty.
-    /// </summary>
+    /// the whole loop: a mapping out by the crop origin, the device scale factor or viewport vs frame leaves the field empty
     [Fact]
     public async Task A_tap_and_some_typing_land_on_the_provider_s_own_field()
     {
@@ -237,15 +176,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             "the password box to hold what was typed");
     }
 
-    /// <summary>
-    /// Typed text reaches the page one character at a time, each with its own
-    /// key events.
-    ///
-    /// A verification-code page keeps one box per digit and moves the focus
-    /// on the moment a box has its character. The whole code inserted at once
-    /// landed in the first box (user ss 2026-10-05, Albert Heijn's SMS code);
-    /// typed a beat apart, each digit finds its own box.
-    /// </summary>
+    /// a code page has one box per digit and moves focus on at once: the whole code inserted at once landed in the first
+    /// box (Albert Heijn SMS code); typed a beat apart, each digit finds its box
     [Fact]
     public async Task Typed_text_arrives_a_character_at_a_time_so_a_segmented_code_takes_one_digit_a_box()
     {
@@ -273,13 +205,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.Equal("2", await ValueOfAsync(page, "#d2"));
     }
 
-    /// <summary>
-    /// A key arrives as the key it names and nothing else.
-    ///
-    /// Enter on a form submits it, which is the whole reason the key channel
-    /// exists - and the reason a relayed string must never reach
-    /// <c>PressAsync</c>, which would read one as a chord.
-    /// </summary>
+    /// Enter submits a form, which is why the key channel exists; a relayed string must never reach PressAsync,
+    /// which reads chords
     [Fact]
     public async Task A_named_key_reaches_the_page_as_that_key()
     {
@@ -306,14 +233,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             "backspace to remove exactly one character");
     }
 
-    /// <summary>
-    /// A batch delivered twice is replayed once.
-    ///
-    /// The hazard is not a duplicated character. It is a duplicated Enter: the
-    /// provider counts the attempt, and a platform rule says a submitted
-    /// credential is never retried. Every other channel on this agent retries
-    /// by default, so this has to be refused rather than merely not attempted.
-    /// </summary>
+    /// a duplicated Enter makes the provider count the attempt, and a submitted credential is never retried: every other
+    /// channel retries by default, so the re-delivery must be refused
     [Fact]
     public async Task A_batch_delivered_twice_is_replayed_once()
     {
@@ -341,8 +262,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             async () => await ValueOfAsync(page, "#password") == "once",
             "the typing to arrive");
 
-        // The re-delivery handed over, and one more poll after it: the agent
-        // asks again only once it has dealt with what it was given.
+        // the agent polls again only once it has dealt with what it was given
         await UntilAsync(() => control.PendingInput == 0, "the re-delivered batch to be handed over");
         var handed = control.InputPolls;
         await UntilAsync(() => control.InputPolls > handed, "the poll that follows the re-delivery");
@@ -350,16 +270,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.Equal("once", await ValueOfAsync(page, "#password"));
     }
 
-    /// <summary>
-    /// The page leaves the origin it opened on and not one further frame is
-    /// posted.
-    ///
-    /// This is the rule standing between a login relay and a live remote view
-    /// of an authenticated account: the moment the provider redirects to the
-    /// signed-in pages, the browser is holding the user's address and order
-    /// history and the stream must already be dead. Terminal - there is no path
-    /// that resumes it.
-    /// </summary>
+    /// terminal: once the page leaves its origin the browser holds the signed-in account (address, order history)
+    /// and no path resumes the stream
     [Fact]
     public async Task A_page_that_leaves_its_origin_stops_the_stream_for_good()
     {
@@ -372,19 +284,15 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         await page.GotoAsync(ElsewhereUrl);
         await UntilAsync(() => session.Stopped, "the stream to latch shut");
 
-        // Disposing waits both loops out, so everything that will ever be
-        // posted has been: none of it is the other origin's.
+        // disposing waits both loops out, so everything that will ever be posted has been
         await session.DisposeAsync();
 
         Assert.True(session.Stopped);
         Assert.All(control.Frames, f => Assert.Equal("https://provider.test", f.Origin));
     }
 
-    /// <summary>
-    /// Navigating WITHIN the allowed origin does not stop anything. A login
-    /// flow that posts a form and lands on a second page of its own site is
-    /// ordinary, and a latch that fired on it would make the feature useless.
-    /// </summary>
+    /// a login that posts a form and lands on a second page of its own site is ordinary;
+    /// a latch firing on it would make the feature useless
     [Fact]
     public async Task A_page_that_stays_on_its_origin_keeps_streaming()
     {
@@ -401,17 +309,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.False(session.Stopped);
     }
 
-    /// <summary>
-    /// A frame POST the HTTP client gives up on is one lost frame, not the end
-    /// of the stream.
-    ///
-    /// <c>HttpClient.Timeout</c> surfaces as a <c>TaskCanceledException</c>,
-    /// which derives from <c>OperationCanceledException</c> - the same type the
-    /// shutter loop uses to recognise "we are being stopped". Treating the two
-    /// as one meant a single stalled POST ended the shutter permanently and
-    /// silently: the retry budget saw no failure, no line was logged above
-    /// debug, and the viewer kept the last picture on screen.
-    /// </summary>
+    /// HttpClient.Timeout surfaces as TaskCanceledException, an OperationCanceledException like the shutter's stop signal;
+    /// treated as one, a single stalled POST ended the shutter silently and permanently
     [Fact]
     public async Task A_frame_post_the_client_gives_up_on_is_retried_rather_than_ending_the_stream()
     {
@@ -419,8 +318,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         control.ClientTimeout = TimeSpan.FromMilliseconds(250);
         control.StallFrames(1);
 
-        // A still page sends its next picture on the heartbeat, so the
-        // heartbeat comes round quickly here.
+        // a still page sends its next picture on the heartbeat, so it comes round quickly here
         await using var session = Session(page, control, o => o with
         {
             IdleInterval = TimeSpan.FromMilliseconds(40),
@@ -433,15 +331,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.False(session.Stopped);
     }
 
-    /// <summary>
-    /// And the same on the other leg: an input long poll the client gives up on
-    /// leaves the human's keyboard connected.
-    ///
-    /// The worse of the two failures, because it is invisible from the outside.
-    /// Frames carry on arriving, so the view looks alive; every tap and every
-    /// keystroke from that moment on does nothing at all, for the rest of the
-    /// login, and the only trace is one debug line when the session is disposed.
-    /// </summary>
+    /// the worse failure, invisible from outside: frames carry on so the view looks alive
+    /// while every tap and keystroke does nothing
     [Fact]
     public async Task An_input_poll_the_client_gives_up_on_leaves_the_channel_open()
     {
@@ -473,17 +364,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             "the input channel to survive a poll the client timed out");
     }
 
-    /// <summary>
-    /// A batch this build cannot read costs the batch and nothing more.
-    ///
-    /// The enum converter takes an integer as readily as a name, so a kind
-    /// nobody has a word for is a thing that can arrive. It used to reach a
-    /// <c>default:</c> arm marked unreachable, throw a type no catch filter
-    /// around it matched, and fault the input task for the rest of the login.
-    /// The contract refuses it now; this asserts the whole chain, which is the
-    /// only place the consequence was ever visible - the human types again and
-    /// it works.
-    /// </summary>
+    /// the enum converter accepts integers; an unknown kind once hit an "unreachable" default arm and faulted the input task
+    /// for the rest of the login. The contract refuses it now; this asserts the whole chain
     [Fact]
     public async Task A_batch_this_build_cannot_read_does_not_end_the_input_channel()
     {
@@ -514,10 +396,8 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             "the input channel to outlive an event nobody has a word for");
     }
 
-    /// <summary>
-    /// A control plane that will not take a frame is a stop, not a retry. It is
-    /// how a revoked capability or a finished challenge reaches the shutter.
-    /// </summary>
+    /// a control plane that will not take a frame is a stop, not a retry:
+    /// how a revoked capability or finished challenge reaches the shutter
     [Fact]
     public async Task A_control_plane_with_no_live_channel_stops_the_shutter()
     {
@@ -531,11 +411,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.Empty(control.Frames);
     }
 
-    /// <summary>
-    /// A wildcard origin is refused rather than expanded, so nothing streams at
-    /// all. An adapter that declared <c>*.provider.test</c> would keep the
-    /// stream running straight through a successful login.
-    /// </summary>
+    /// a wildcard origin is refused, not expanded: <c>*.provider.test</c> would keep streaming through a successful login
     [Fact]
     public async Task A_wildcard_origin_streams_nothing()
     {
@@ -548,25 +424,15 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         Assert.Empty(control.Frames);
     }
 
-    /// <summary>
-    /// What a frame costs, on a real page, with the real pipeline, written into
-    /// the test output.
-    ///
-    /// Not an assertion about speed - a shared build machine would make that
-    /// flake, and the number is wanted for judgement rather than for a gate.
-    /// The only thing asserted is that the measurement HAPPENS: nobody had
-    /// measured this before, every cadence and bandwidth figure in the design
-    /// scales with it, and a stream that reports nothing is the one thing that
-    /// must not survive a refactor.
-    /// </summary>
+    /// not an assertion about speed (a shared build machine would flake) but that the measurement HAPPENS: every cadence
+    /// and bandwidth figure scales with it, and a stream that reports nothing must not survive a refactor
     [Fact]
     public async Task The_cost_of_a_frame_is_measured_and_written_down()
     {
         var (page, control) = await OpenAsync();
 
-        // The fake's empty input poll answers after 50 ms where a real one
-        // holds for its window; the floor that keeps a fast answer from
-        // becoming a spin would otherwise be most of what is measured.
+        // the fake's empty input poll answers after 50 ms where a real one holds.
+        // the floor against a spin would dominate the measure
         await using var session = Session(
             page,
             control,
@@ -576,10 +442,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         session.Start(CancellationToken.None);
         await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
 
-        // Typing keeps the stream in its burst tier and keeps the page
-        // changing, which is the expensive case and the one worth timing: a
-        // keystroke every 250 ms, and how long each takes to come back as a
-        // picture the control plane holds.
+        // typing keeps the stream in its burst tier and the page changing: the expensive case worth timing
         var (x, y) = await CentreOfAsync(page, "#password");
         var sequence = 0L;
         var reactions = new List<double>();
@@ -614,10 +477,6 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
                          "(the input poll's own 50 ms window included)");
     }
 
-    /// <summary>
-    /// A session, wired to a real page and a stubbed control plane. Silent by
-    /// default: only the measurement test wants a running commentary.
-    /// </summary>
     private LiveViewSession Session(
         IPage page,
         FakeControlPlane control,
@@ -638,15 +497,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             TimeProvider.System);
     }
 
-    /// <summary>
-    /// A page on a real origin, served from a route handler.
-    ///
-    /// <c>SetContentAsync</c> would leave the page on <c>about:blank</c>, which
-    /// has no host - so the origin latch would refuse to open, and every test
-    /// here would be testing that refusal instead of what it says it does.
-    /// Fulfilling the request locally keeps it a genuine navigation with a
-    /// genuine host and still contacts nothing.
-    /// </summary>
+    /// SetContentAsync leaves the page on about:blank, which has no host: the origin latch would refuse to open
     private async Task<(IPage Page, FakeControlPlane Control)> OpenAsync(string? body = null)
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
@@ -666,10 +517,6 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         return (page, new FakeControlPlane());
     }
 
-    /// <summary>
-    /// An element's centre as a fraction of the frame - the same arithmetic the
-    /// consumer does when a finger lands on the picture.
-    /// </summary>
     private static async Task<(double X, double Y)> CentreOfAsync(IPage page, string selector)
     {
         var box = await page.Locator(selector).BoundingBoxAsync()
@@ -681,20 +528,13 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     private static async Task<string> ValueOfAsync(IPage page, string selector) =>
         await page.EvaluateAsync<string>($"() => document.querySelector('{selector}').value");
 
-    /// <summary>The one thing on a login page that changes by itself: an error message being drawn.</summary>
     private static Task<System.Text.Json.JsonElement?> ShowAnErrorAsync(IPage page) =>
         page.EvaluateAsync("() => { document.querySelector('#error').textContent = 'Onjuist wachtwoord'; }");
 
     private static Task UntilAsync(Func<bool> condition, string what) =>
         UntilAsync(() => Task.FromResult(condition()), what);
 
-    /// <summary>
-    /// Polls rather than sleeps a fixed amount.
-    ///
-    /// A stream is a clock, so every test here is about time passing - and a
-    /// fixed sleep long enough to be reliable on a loaded build machine would
-    /// make the suite slower than the feature it measures.
-    /// </summary>
+    /// a fixed sleep long enough to be reliable on a loaded build machine would make the suite slower than the feature
     private static async Task UntilAsync(Func<Task<bool>> condition, string what)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(15);

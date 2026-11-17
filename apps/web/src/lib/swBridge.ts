@@ -1,9 +1,5 @@
-/**
- * Mirrors app state into the service worker's tiny IDB store: the
- * worker boots cold and cannot read localStorage, so anything it needs
- * (language for notifications, session for background sync) is copied
- * here. Dependency-free on purpose.
- */
+// mirrors app state into the service worker's IDB store: the worker boots cold and cannot read localStorage;
+// dependency-free on purpose
 
 function kvPut(key: string, value: unknown): void {
   try {
@@ -35,11 +31,8 @@ export interface SwSessionMirror {
 
 let lastMirrored = '';
 
-/**
- * Keep the worker able to sync in the background: same trust boundary
- * as the tokens in localStorage (documented local-first trade-off).
- * Deduplicated — the auth path resolves on every request.
- */
+// same trust boundary as the tokens in localStorage (documented local-first trade-off);
+// deduplicated: the auth path resolves on every request
 export function mirrorSessionForSw(session: SwSessionMirror): void {
   const fingerprint = `${session.identityKey}:${session.bearer ?? session.testSub}`;
   if (fingerprint === lastMirrored) return;

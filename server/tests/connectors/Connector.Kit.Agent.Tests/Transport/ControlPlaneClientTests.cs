@@ -9,12 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-/// <summary>
-/// The client's translation of what comes back over the wire: a control
-/// plane that cannot be reached, one that answers with a status the agent
-/// must act on, and one whose body does not parse each become a typed
-/// exception (or a plain answer) the loops above can reason about.
-/// </summary>
 public sealed class ControlPlaneClientTests
 {
     private sealed class Scripted(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler, IHttpClientFactory

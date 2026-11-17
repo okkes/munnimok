@@ -5,19 +5,8 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// Bridges a connector's event stream into munni's own (docs/connector-
-/// integration-plan.md §5.4). A login or a job the user is waiting on has a
-/// stream on the control plane; the relay reads it and republishes every
-/// view — minus anything a bundle rides in — on <c>/sync/events</c> for that
-/// user as <c>{ kind: "connector", … }</c>. The client already holds that
-/// stream, so there is no second EventSource and no CORS.
-///
-/// One bridge per session or job, started by the relay whenever it answers
-/// with a run still in flight, held at most the control plane's own ten
-/// minutes, and gone the moment the view is terminal. Nothing is stored:
-/// every frame is a projection of rows the client can re-read.
-/// </summary>
+// republishes a connector's event stream, minus anything a bundle rides in, on /sync/events as kind "connector":
+// no second EventSource, no CORS; one bridge per session or job, at most the control plane's ten minutes; nothing is stored
 public sealed class ConnectorEventBridge(
     IServiceScopeFactory scopes,
     SpaceEventBroadcaster events,
@@ -29,18 +18,14 @@ public sealed class ConnectorEventBridge(
 
     private readonly ConcurrentDictionary<string, Task> _running = new(StringComparer.Ordinal);
 
-    /// <summary>How many bridges are open right now — for the operator's status line and the tests.</summary>
     public int Open => _running.Count;
 
-    /// <summary>Starts following a login session's stream, unless it is already followed.</summary>
     public void WatchSession(Guid userId, string subject, string provider, string sessionId) =>
         Start(sessionId, userId, subject, provider, sessionId, jobId: null);
 
-    /// <summary>Starts following a job's stream, unless it is already followed.</summary>
     public void WatchJob(Guid userId, string subject, string provider, string sessionId, string jobId) =>
         Start(jobId, userId, subject, provider, sessionId, jobId);
 
-    /// <summary>The frame the app receives, built from the connector's view.</summary>
     public static string Frame(string provider, string sessionId, string? jobId, JsonObject view)
     {
         var frame = ConnectorJson.WithoutSecrets(view);
@@ -110,7 +95,6 @@ public sealed class ConnectorEventBridge(
         logger.LogDebug(ex, "connector stream for {Key} {What}", key, what);
     }
 
-    /// <summary>Reads server-sent events: <c>event: state</c> + <c>data: …</c>, blank line between frames, comments skipped.</summary>
     private async Task PumpAsync(StreamReader reader, Guid userId, string provider, string sessionId, string? jobId, CancellationToken ct)
     {
         string? eventName = null;

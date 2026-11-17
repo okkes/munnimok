@@ -8,16 +8,11 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
 
-// a credit card pays like a checking account (user 2026-10-21, #532), so it may join the pool
+// a credit card pays like a checking account (#532), so it may join the pool
 const POOL_CANDIDATE_TYPES = new Set(['checking', 'cash', 'savings', 'credit']);
 
-/**
- * The money pool (#128): the accounts whose balances the plan hands out.
- * Every checking and cash account until the space ticks its own set — a
- * space fact, synced (planPoolAccountIds). A credit card ticked in brings
- * its balance (what is owed takes off) and its spending; paying it off
- * then moves money inside the pool, so it is no debt to plan any more.
- */
+// every checking and cash account until the space ticks its own set (a synced space fact, planPoolAccountIds)
+// a ticked credit card brings its balance (owed takes off) and spending; paying it off then moves money inside the pool
 export function PoolSheet({
   open,
   onOpenChange,
@@ -64,7 +59,7 @@ export function PoolSheet({
     >
       <div className="flex flex-col gap-3" data-testid="plan-pool">
         <p className="text-[12px] text-ink-3">{t('plan.poolHint')}</p>
-        {/* the pool rule (user 2026-10-08): the plan's number is what the period STARTED with, not the balance alone */}
+        {/* the plan's number is what the period STARTED with, not the balance alone */}
         <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-2" data-testid="plan-pool-rule">
           {t('plan.poolRule')}
         </p>

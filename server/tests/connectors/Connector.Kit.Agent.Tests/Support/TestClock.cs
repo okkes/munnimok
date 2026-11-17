@@ -1,46 +1,11 @@
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The clock the agent reads, with the test holding the hands.
-/// </summary>
-/// <remarks>
-/// This suite's habit is real time in hundreds of milliseconds, and for most
-/// of it that is the right habit: a budget that suspends can only be proved by
-/// letting time pass. It does not reach the keepalives. The numbers those are
-/// about belong to the control plane - a two-minute lease, a thirty-second
-/// beat, a ninety-second liveness window - and a case that waited them out
-/// would cost minutes and still not be able to say WHEN anything happened.
-/// <para>
-/// The alternative is the one that was here: shrink the agent's own timeouts
-/// until the test is quick. A renewal test written against a 250ms client
-/// timeout passes exactly as happily when the production bound is seventy
-/// seconds, which is the defect it was written for. So time is virtual and
-/// every number under test stays the production one.
-/// </para>
-/// <para>
-/// Everything in the path reads a <see cref="TimeProvider"/> - the runner's
-/// delays, the job budget, the host's two loops, and through
-/// <see cref="FakeControlPlane"/> the client timeout that stands in for
-/// HttpClient's own - so advancing this is the whole of "a minute went by".
-/// </para>
-/// <para>
-/// It starts where the machine's clock is, because a leased job carries a
-/// <c>LeaseExpiresAt</c> stamped from <c>DateTimeOffset.UtcNow</c> and the two
-/// have to mean the same thing.
-/// </para>
-/// </remarks>
+// virtual time keeps every number under test the production one (lease, beat, liveness window): shrunk agent
+// timeouts pass at a 70s bound too; starts at the machine's clock because LeaseExpiresAt is stamped from UtcNow
 internal sealed class TestClock : TimeProvider
 {
-    /// <summary>
-    /// How far <see cref="RunUntilAsync"/> jumps per step, and therefore how
-    /// late a stamp taken by the code under test can be.
-    /// </summary>
     public static readonly TimeSpan Step = TimeSpan.FromSeconds(1);
 
-    /// <summary>
-    /// The real time <see cref="RunUntilAsync"/> waits after each step, for
-    /// the code under test to reach its next wait. See the remarks.
-    /// </summary>
     private static readonly TimeSpan StepPause = TimeSpan.FromMilliseconds(5);
 
     private readonly Lock _gate = new();
@@ -66,17 +31,8 @@ internal sealed class TestClock : TimeProvider
         return waiter;
     }
 
-    /// <summary>
-    /// Moves the clock, firing everything that falls due on the way AT the
-    /// instant it falls due.
-    /// </summary>
-    /// <remarks>
-    /// Not at the end of the step: a caller that armed a ten-second wait has to
-    /// read exactly ten seconds when it wakes, or a test cannot assert a bound
-    /// as a number. Callbacks run outside the lock because one of them will arm
-    /// the next wait, and the continuation it releases may run inline and arm
-    /// three more.
-    /// </remarks>
+    // fires due callbacks AT the instant they fall due so a wait reads exactly its bound; callbacks run outside
+    // the lock because they arm the next wait
     public void Advance(TimeSpan by)
     {
         var target = GetUtcNow() + by;
@@ -106,26 +62,9 @@ internal sealed class TestClock : TimeProvider
         }
     }
 
-    /// <summary>
-    /// Runs time forward until <paramref name="done"/> holds, or answers false
-    /// once <paramref name="budget"/> of virtual time has been spent.
-    /// </summary>
-    /// <remarks>
-    /// In steps rather than one leap, because the code under test arms its next
-    /// wait only after the last one fired, and on a thread of its own: a single
-    /// jump to the end would fire one timer and leave the rest unarmed. The
-    /// short REAL pause between steps is what lets that thread get as far as
-    /// its next wait; a whole test of these costs about a second of wall clock
-    /// for minutes of agent time.
-    /// <para>
-    /// Five milliseconds a step, not two: every real millisecond a continuation
-    /// lags is a fraction of a virtual second here, and at two the keepalive
-    /// bound - ten virtual seconds - was twenty real milliseconds, which a
-    /// loaded runner spends in a single pause. The client then gave up on a
-    /// beat the fake went on to answer (CI, 2026-10-04: a 44s gap where sixty
-    /// was due). At five the same bound is fifty, and still fast.
-    /// </para>
-    /// </remarks>
+    // steps, not one leap: the code under test arms its next wait on its own thread after the last fired.
+    // the short real pause lets it get there; five ms, not two: at two the ten-virtual-second keepalive bound
+    // was 20 real ms, which a loaded CI runner spent in one pause
     public async Task<bool> RunUntilAsync(Func<bool> done, TimeSpan budget)
     {
         ArgumentNullException.ThrowIfNull(done);
@@ -141,12 +80,10 @@ internal sealed class TestClock : TimeProvider
         return true;
     }
 
-    /// <summary>One armed wait; a <c>Task.Delay</c> on this clock is one of these.</summary>
     private sealed class Waiter(TestClock clock, TimerCallback callback, object? state) : ITimer
     {
         private TimeSpan _period = Timeout.InfiniteTimeSpan;
 
-        /// <summary>When this next comes due, or null while it is not armed.</summary>
         public DateTimeOffset? DueAt { get; private set; }
 
         public bool Change(TimeSpan dueTime, TimeSpan period)

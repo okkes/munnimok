@@ -37,8 +37,6 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
   { code: 'tr', labelKey: 'lang.tr', badge: 'TR' },
 ];
 
-/** who you are, everywhere — moved here from the Settings tab (user
- *  request: the profile is global, the Settings tab header is the space) */
 function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   const { t } = useLang();
   const { store } = useData();
@@ -56,8 +54,7 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
       <Avatar picture={profile?.picture} size={44} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
-        {/* no name yet → the title already says "Profile"; repeating it read
-            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
+        {/* no name yet: the title already says "Profile"; repeating it read as a bug (§2L) */}
         <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
@@ -65,17 +62,12 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   );
 }
 
-/** #157: the appearance row taps through this cycle — a fixed order so
- *  repeated taps visit every mode and land back where they started */
 export const NEXT_THEME_MODE: Record<ThemeMode, ThemeMode> = { light: 'dark', dark: 'system', system: 'light' };
 
-/** three-state appearance control: light / dark / follow device */
 function ThemeModeSwitch() {
   const { t } = useLang();
   const { mode, setMode } = useTheme();
-  // #157: the row AROUND this switch cycles on tap (trailing renders
-  // inside the row's button) — a precise segment pick must not bubble
-  // up and ALSO advance the cycle
+  // the surrounding row cycles on tap: a segment pick must not bubble up and also advance the cycle (#157)
   const pick = (next: ThemeMode) => (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
     setMode(next);
@@ -85,10 +77,7 @@ function ThemeModeSwitch() {
       active ? 'bg-accent-soft text-accent-deep' : 'text-ink-3'
     }`;
   return (
-    // no group role (S6819): each segment is a labelled aria-pressed
-    // button — the span is purely a visual frame
-    // #327 r3 (user): the end segments own the frame's corners so the
-    // inset focus ring follows the visible rounding
+    // no group role (S6819): the span is a visual frame; the end segments own its corners so the focus ring follows
     <span className="flex shrink-0 overflow-hidden rounded-lg border border-line-2">
       <button
         type="button"
@@ -124,13 +113,7 @@ function ThemeModeSwitch() {
   );
 }
 
-/**
- * Everything that is NOT scoped to a space lives here, behind a single
- * "Global settings" door on the Settings tab (user feedback: mixing
- * space-scoped and app-wide rows in one list was confusing).
- */
-
-/** #370: the calendar's first weekday — every new space copies it, a space may override it */
+/** #370: every new space copies it, a space may override it */
 function WeekStartRow() {
   const { t } = useLang();
   const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
@@ -173,11 +156,9 @@ export function GlobalSettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
-  // #195: tappable — an invalid tap names the blocker
   const [lockAttempted, setLockAttempted] = useState(false);
 
-  // #282 (user): turning the lock OFF is a guarded act — the current
-  // PIN (or the registered biometric) must answer first
+  // turning the lock off is guarded: the current PIN (or the registered biometric) must answer first (#282)
   const [disarmOpen, setDisarmOpen] = useState(false);
   const [disarmPin, setDisarmPin] = useState('');
   const [disarmError, setDisarmError] = useState(false);
@@ -208,7 +189,6 @@ export function GlobalSettingsScreen() {
       setDisarmError(false);
       setDisarmOpen(true);
       const config = readLockConfig();
-      // the registered biometric answers hands-free where it exists
       if (config?.credentialId) void tryDisarmBiometric();
       return;
     }
@@ -255,15 +235,12 @@ export function GlobalSettingsScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {/* spaces moved here from the tab bar — day-to-day switching
-              happens via the Home avatar, management is a settings task */}
           <Row testId="settings-spaces-row" icon="account-group-outline" title={t('screen.spaces')} onClick={() => void navigate({ to: '/spaces' })} />
           <Row testId="settings-accounts-row" icon="bank-outline" title={t('acct.financialAccounts')} onClick={() => void navigate({ to: '/accounts' })} />
           {identity?.kind === 'user' && (
             <Row testId="settings-friends-row" icon="account-multiple-outline" title={t('settings.friends')} onClick={() => void navigate({ to: '/friends' })} />
           )}
-          {/* #159 (user): devices are an app-wide concern — moved here from
-              the profile, which keeps only identity-level acts */}
+          {/* devices are app-wide: the profile keeps only identity-level acts (#159) */}
           {identity?.kind === 'user' && (
             <Row
               testId="settings-devices-row"
@@ -285,8 +262,7 @@ export function GlobalSettingsScreen() {
             onClick={() => setLangSheetOpen(true)}
           />
           <WeekStartRow />
-          {/* receipts are a space view; the global door is the hub of
-              every party the user connected (#367) */}
+          {/* receipts are a space view; the global door is the hub of every connected party (#367) */}
           <Row testId="settings-hub-row" icon="link-variant" title={t('conn.title')} onClick={() => void navigate({ to: '/connections' })} />
           {/* trust feature: munni reads your banks, so it also lets you leave */}
           <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
@@ -313,8 +289,7 @@ export function GlobalSettingsScreen() {
             sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
             chevron={false}
             trailing={<ThemeModeSwitch />}
-            // #157 (user): the row itself is the quick cycle — the
-            // segments stay the precise control (their clicks don't bubble)
+            // the row is the quick cycle; the segments stay the precise control (#157)
             onClick={() => setThemeMode(NEXT_THEME_MODE[themeMode])}
           />
           <Row
@@ -332,13 +307,9 @@ export function GlobalSettingsScreen() {
           />
         </div>
 
-        {/* go-offline + account deletion moved to the PROFILE screen
-            (user request): they are about the identity, not app settings */}
+        {/* go-offline and account deletion live on the Profile screen: they are about identity */}
       </div>
 
-      {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
-      {/* #282: the disarm challenge — current PIN (auto-verifying like
-          the lock screen) or the registered biometric */}
       <Sheet open={disarmOpen} onOpenChange={setDisarmOpen} title={t('lock.disarmTitle')} size="compact">
         <div className="flex flex-col gap-3 pt-1" data-testid="lock-disarm-sheet">
           <p className="text-[13px] leading-relaxed text-ink-2">{t('lock.disarmBody')}</p>
@@ -378,7 +349,6 @@ export function GlobalSettingsScreen() {
             aria-invalid={lockAttempted && !validPin(lockPin)}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !validPin(lockPin))}`}
           />
-          {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={lockAttempted && !validPin(lockPin)} text={t('form.needFields')} testId="lock-setup-save-blocker" />
           <input
             data-testid="lock-setup-pin2"
@@ -429,7 +399,6 @@ export function GlobalSettingsScreen() {
 
       <Sheet open={langSheetOpen} onOpenChange={setLangSheetOpen} title={t('lang.title')}>
         <div className="flex flex-col pt-1">
-          {/* no pinned language = track the device */}
           <button
             data-testid="lang-option-device"
             onClick={() => {

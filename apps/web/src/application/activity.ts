@@ -4,29 +4,29 @@ import type { EntityName } from '@/db/types';
 import { useSession } from '@/app/session';
 import { offlineProfileName } from '@/features/auth/offlineProfiles';
 
-/** newest rows kept per space — 200 rows OR 90 days, whichever is
- *  smaller (user-approved): the cap bounds sync payloads, the age bound
- *  keeps a dormant space from replaying stale history */
+// newest 200 rows or 90 days, whichever is smaller: the cap bounds sync payloads, the age bound keeps a dormant space
+// from replaying stale history
 export const ACTIVITY_CAP = 200;
 export const ACTIVITY_MAX_AGE_DAYS = 90;
 
-/**
- * Append one "who did what" line to the space's history (YNAB-style,
- * user request). The actor's display name is frozen at write time so
- * every member's device can render it offline. Writes ride the normal
- * Repo/outbox path — history syncs like any other space data.
- */
+/** the actor's display name is frozen at write time, so every member's device renders it offline */
+export interface ActivityFigures {
+  detail2?: string;
+  amountCents?: number;
+  fromCents?: number;
+}
+
 export async function logActivity(
   store: StorageBackend,
   repo: Repo,
   spaceId: string,
   kind: string,
   detail?: string,
+  figures?: ActivityFigures,
 ): Promise<void> {
   try {
     const profile = (await store.metaGet('profile'))?.value as { name?: string } | undefined;
-    // actor resolution: profile display name first, the offline profile's
-    // name as fallback — plus the sub so other devices can render "You"
+    // actor: profile name, else the offline profile's; the sub lets other devices render "You"
     const identity = useSession.getState().identity;
     const actorName =
       profile?.name ?? (identity?.kind === 'offline' ? offlineProfileName(identity.profileId) : undefined);
@@ -35,6 +35,7 @@ export async function logActivity(
       ...(actorName ? { actorName } : {}),
       ...(identity?.kind === 'user' ? { actorSub: identity.sub } : {}),
       ...(detail ? { detail } : {}),
+      ...figures,
       at: new Date().toISOString(),
     });
     await pruneActivity(store, repo, spaceId);
@@ -43,11 +44,6 @@ export async function logActivity(
   }
 }
 
-/**
- * Convenience for the uniform save/remove ops: partial updates often
- * carry no name, so resolve the row's display name from the store
- * before (for removes: while it still exists) logging.
- */
 export async function logRowActivity(
   store: StorageBackend,
   repo: Repo,
@@ -65,8 +61,6 @@ export async function logRowActivity(
   }
 }
 
-/** tombstone everything beyond the newest ACTIVITY_CAP rows or older
- *  than ACTIVITY_MAX_AGE_DAYS */
 export async function pruneActivity(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
   const rows = (await store.bySpace('activity', spaceId)).filter((r) => r.deleted === 0);
   const cutoff = new Date(Date.now() - ACTIVITY_MAX_AGE_DAYS * 86_400_000).toISOString();

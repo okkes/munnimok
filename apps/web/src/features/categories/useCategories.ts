@@ -12,20 +12,13 @@ import { useData } from '@/app/data';
 // service worker can build it too; this hook only adds the live query
 export type { Cat, Catalog } from '@/domain/catalog';
 
-/** display name for either kind */
 export function catName(cat: Cat, t: TFunc): string {
   // operator-published names (catalog document) win over the bundled key
   return cat.names?.[getCurrentLang()] ?? cat.name ?? (cat.nameKey ? t(cat.nameKey as TranslationKey) : cat.id);
 }
 
-/**
- * Built-in catalog merged with the visible custom categories.
- *
- * Scope rule (matches the legacy app): categories created in a personal
- * space are user-scoped — visible across ALL the user's personal
- * spaces; categories created in a shared space belong to that space
- * only. Custom rows are ordinary synced data either way.
- */
+// categories created in a personal space are user-scoped (visible in all the user's personal spaces);
+// those created in a shared space belong to that space only
 export function useCategories(): Catalog {
   const { store, spaceId } = useData();
 

@@ -12,7 +12,6 @@ import { reportNativeExits, watchNativeExits } from './nativeExit';
 
 type Global = { Capacitor?: unknown };
 
-/** the Android shell, answering with these records */
 function androidShell(answer: NativeExits | (() => Promise<NativeExits>)) {
   const recent = vi.fn(typeof answer === 'function' ? answer : async () => answer);
   (globalThis as Global).Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android', Plugins: { ExitReasons: { recent } } };
@@ -111,7 +110,6 @@ describe('what ended the Android app last time (#594)', () => {
 
     useSession.getState().login({ kind: 'user', sub: 'u1', testAuth: true });
     await vi.waitFor(() => expect(reported.calls).toHaveLength(1));
-    // told once, however often the session changes afterwards
     useSession.getState().login({ kind: 'user', sub: 'u1', testAuth: true });
     expect(recent).toHaveBeenCalledTimes(1);
   });

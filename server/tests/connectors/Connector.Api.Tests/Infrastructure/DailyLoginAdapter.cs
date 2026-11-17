@@ -6,20 +6,9 @@ using Connector.Kit.Security;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// A T1 store shaped like Jumbo: a password login whose session cannot be
-/// refreshed, so the same human would be asked again tomorrow.
-///
-/// It exists because that shape is exactly the one a credential store is for
-/// and no offline provider has it. Jumbo itself is browser-tier and needs a
-/// pooled residential agent and a real account, so the store's whole round trip
-/// - sealed on success, delivered once, offered back instead of a password -
-/// would otherwise be asserted by nothing.
-///
-/// The login refuses a wrong password, which is what makes the redemption test
-/// mean something: a bundle that came back with the password missing or mangled
-/// fails the login rather than quietly succeeding.
-/// </summary>
+// T1 store shaped like Jumbo: a password login whose session cannot refresh; no offline provider has that shape, so the
+// credential store's round trip (sealed, delivered once, offered back) would be asserted by nothing
+// a wrong password fails the login, so a mangled bundle cannot pass quietly
 internal sealed class DailyLoginAdapter : IProviderAdapter
 {
     public const string ProviderId = "test-daily-login";
@@ -83,7 +72,6 @@ internal sealed class DailyLoginAdapter : IProviderAdapter
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
 
-        // The whole reason this adapter exists.
         OffersCredentialStore = true,
 
         Auth = new AuthSpec

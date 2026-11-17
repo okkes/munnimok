@@ -16,21 +16,13 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// What a failed run leaves behind, and who may look at it (#441 L1).
-///
-/// An agent that fails a job sends the last picture of the page; the picture
-/// is somebody's account. So a person's run is held unread until they say the
-/// operator may see it, the operator's own runs are readable at once, and a
-/// question nobody answers deletes itself. Every assertion below is about one
-/// of those three sentences.
-/// </summary>
+// #441 L1: a person's failed run is held unread until they share it, the operator's own runs are readable at once,
+// and an unanswered question deletes itself
 [Collection(ShopApiCollection.Name)]
 public sealed class FailureArtifactTests(ShopApiFactory factory)
 {
     private const string Provider = PooledStoreAdapter.ProviderId;
 
-    /// <summary>A 1×1 PNG, which is enough for "the bytes come back as sent".</summary>
     private static readonly byte[] Png = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
 
@@ -43,11 +35,9 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         var subject = Flows.NewSubject("artifacts");
         var (sessionId, jobId) = await FailWithArtifactsAsync(http, subject, trigger: null);
 
-        // The person's own view says a picture waits on their answer.
         var view = await Flows.ReadSessionAsync(http, Provider, sessionId);
         Assert.Equal(jobId, view.TextOrNull("artifacts_job_id"));
 
-        // The operator sees that something is pending - and nothing else.
         var operatorView = await AdminJobAsync(http, jobId);
         Assert.Equal("pending", operatorView.Text("artifacts"));
         Assert.False(operatorView.GetProperty("has_screenshot").GetBoolean());
@@ -66,7 +56,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
             await ErrorEnvelope.AssertAsync(refused, HttpStatusCode.BadRequest, "unsupported_resource");
         }
 
-        // The person says yes.
         http.ActAs(subject);
         using var shared = await http.SendAsync(Wire.Post($"/v1/{Provider}/jobs/{jobId}/artifacts/share"));
         Assert.Equal(HttpStatusCode.OK, shared.StatusCode);
@@ -74,7 +63,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.Equal(jobId, answer.Text("job_id"));
         Assert.True(answer.GetProperty("expires_at").GetDateTimeOffset() > DateTimeOffset.UtcNow.AddDays(29));
 
-        // Now the operator may look, and the picture is the one that was sent.
         operatorView = await AdminJobAsync(http, jobId);
         Assert.Equal("retained", operatorView.Text("artifacts"));
         Assert.True(operatorView.GetProperty("has_screenshot").GetBoolean());
@@ -87,11 +75,9 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
             Assert.Equal(Png, await picture.Content.ReadAsByteArrayAsync());
         }
 
-        // And the question is no longer open.
         view = await Flows.ReadSessionAsync(http, Provider, sessionId);
         Assert.Null(view.TextOrNull("artifacts_job_id"));
 
-        // A change of mind deletes it, retained or not.
         using var declined = await http.DeleteAsync($"/v1/{Provider}/jobs/{jobId}/artifacts");
         Assert.Equal(HttpStatusCode.NoContent, declined.StatusCode);
         Assert.Equal("none", (await AdminJobAsync(http, jobId)).Text("artifacts"));
@@ -111,15 +97,10 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.False(Db.Read(factory, db => db.JobArtifacts.Any(a => a.JobId == jobId)));
         Assert.Null((await Flows.ReadSessionAsync(http, Provider, sessionId)).TextOrNull("artifacts_job_id"));
 
-        // Sharing afterwards has nothing to share.
         using var late = await http.SendAsync(Wire.Post($"/v1/{Provider}/jobs/{jobId}/artifacts/share"));
         await ErrorEnvelope.AssertAsync(late, HttpStatusCode.BadRequest, "unsupported_resource");
     }
 
-    /// <summary>
-    /// The operator's own run has nobody to ask: a lab run's picture is the
-    /// operator's at once, and the view asks the lab nothing.
-    /// </summary>
     [Fact]
     public async Task The_operators_own_run_is_retained_without_asking()
     {
@@ -135,10 +116,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.Null((await Flows.ReadSessionAsync(http, Provider, sessionId)).TextOrNull("artifacts_job_id"));
     }
 
-    /// <summary>
-    /// A question nobody answers inside its window deletes itself, and so
-    /// does a report past its month; one still inside its window stays.
-    /// </summary>
     [Fact]
     public async Task The_sweep_deletes_a_lapsed_question_and_an_expired_report_and_keeps_the_rest()
     {
@@ -163,10 +140,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.Equal([open], left);
     }
 
-    /// <summary>
-    /// Disconnecting takes the open question with it - the person is leaving
-    /// - and leaves what they already chose to share.
-    /// </summary>
     [Fact]
     public async Task A_disconnect_takes_the_open_question_with_it_and_keeps_what_was_shared()
     {
@@ -194,10 +167,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.Equal([shared], left);
     }
 
-    /// <summary>
-    /// A picture past the cap is dropped and the digest kept: the row is
-    /// still a finding, it just has no image.
-    /// </summary>
     [Fact]
     public async Task A_picture_past_the_cap_is_dropped_and_the_digest_kept()
     {
@@ -212,14 +181,6 @@ public sealed class FailureArtifactTests(ShopApiFactory factory)
         Assert.Equal("sha256:login-page-v3", operatorView.Text("dom_digest"));
     }
 
-    // ---- the run ------------------------------------------------------------
-
-    /// <summary>
-    /// A login for the pooled double, leased by a fleet agent of this test's
-    /// making and failed the way a real agent fails: through the outcome
-    /// service, picture attached. The route the agent posts to is one line
-    /// above that call; what matters here is what the outcome keeps.
-    /// </summary>
     private async Task<(string SessionId, string JobId)> FailWithArtifactsAsync(
         HttpClient http, string subject, string? trigger, byte[]? screenshot = null)
     {

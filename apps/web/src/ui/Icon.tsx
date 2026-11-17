@@ -8,7 +8,6 @@ interface IconProps {
   style?: CSSProperties;
 }
 
-/** Material Design Icons glyph (self-hosted @mdi/font). */
 export function Icon({ name, size = 20, color, style }: IconProps) {
   // a picked colour is ink here: on the dark surface a dark one is lifted (#592)
   const ink = useUserInk();

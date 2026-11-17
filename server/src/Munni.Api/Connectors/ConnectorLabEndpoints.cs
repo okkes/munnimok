@@ -7,27 +7,14 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>The kill switch: <c>healthy</c>, <c>degraded</c>, <c>paused</c> or <c>retired</c>, with a copy key the app shows.</summary>
 public sealed record ConnectorProviderStatusRequest(string State, string? ReasonKey = null);
 
-/// <summary>A user's connector session as the operator's diagnosis lists it.</summary>
 public sealed record AdminConnectorSessionDto(string SessionId, string Provider, string ConnectionId, string State, DateTimeOffset LastSeenAt);
 
-/// <summary>Who the lab is to the control plane: the operator's own lab subject, with the operator's name beside it.</summary>
 public sealed record LabMeDto(string Subject, string? Name, string? Email);
 
-/// <summary>
-/// The connector lab's side of the relay (#441, docs/connectors/lab.md):
-/// the control plane as the operator works it — the status line, the
-/// catalogue with every manifest, the kill switch per party, the fleet,
-/// the hosted private slots, the canaries, an aggregator's inventory — all
-/// under the <c>admin</c> scope, relayed to the control plane's own routes
-/// with the api's machine token. The lab's own runs belong to a LAB
-/// SUBJECT per operator (<see cref="SubjectMinter.ForLab"/>): never the
-/// person's app subject, so nothing the lab does shows in the app or lands
-/// in a space. The cockpit reads the same status under <c>/control</c>,
-/// read-only, exactly as it reads consents.
-/// </summary>
+// the lab's runs belong to a LAB SUBJECT per operator, never the person's app subject:
+// nothing the lab does shows in the app or lands in a space
 public static partial class ConnectorLabEndpoints
 {
     /// <summary>The control plane's own vocabulary (<c>ProviderState</c>): healthy is the working state, not "active".</summary>
@@ -49,15 +36,12 @@ public static partial class ConnectorLabEndpoints
         lab.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
         lab.MapGet("/agents", Fleet);
         lab.MapDelete("/agents/{agentId}", RevokeAny);
-        // a browser enrolled for the lab's own subject: the machine the test bench and the recorder run on when picked
         lab.MapPost("/agents/enrollment", EnrolForLab).WithValidation<ConnectorEnrollmentRequest>();
-        // hosted private agents (#420 A2): the slots and the requests, the decisions, taking a slot back
         lab.MapGet("/private-agents", PrivateAgents);
         lab.MapPost("/private-agents/requests/{requestId}/approve", ApprovePrivateAgent);
         lab.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
         lab.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
         lab.MapGet("/canaries", Canaries);
-        // L1: the job history with who ran what, one job, a shared picture, the health report, a canary run now
         lab.MapGet("/jobs", Jobs);
         lab.MapGet("/jobs/{jobId}", Job);
         lab.MapGet("/jobs/{jobId}/artifacts/screenshot", JobScreenshot);
@@ -68,12 +52,9 @@ public static partial class ConnectorLabEndpoints
         lab.MapGet("/health", Health);
         lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
-        // L2: the test bench — the operator's own sessions, sign-ins with their challenges and the live view, fetches, canaries
         Munni.Api.Lab.LabBenchEndpoints.Map(lab);
 
-        // the cockpit's read-only view of the designated environment (§15.6): the
-        // parties with their quota, and an aggregator's inventory of consents —
-        // never a revocation, which stays in the environment's own lab
+        // the cockpit's view is read-only (§15.6): never a revocation, which stays in the environment's own lab
         var control = app.MapGroup("/control/connectors")
             .RequireAuthorization(AdminScope.Policy)
             .WithSafeRouteParams()
@@ -83,14 +64,12 @@ public static partial class ConnectorLabEndpoints
         control.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
     }
 
-    /// <summary>The operator's lab subject and name — what the control plane knows the lab as, and who sits behind it.</summary>
     private static async Task<IResult> Me(HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var user = await relay.Db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == http.GetUserId(), ct);
         return Results.Ok(new LabMeDto(relay.LabSubjectOf(http), user?.DisplayName, user?.Email));
     }
 
-    /// <summary>Providers with their health, agents online, the queue — the control plane's own status line.</summary>
     private static async Task<IResult> Status(ConnectorClient client, ConnectorEventBridge bridge, CancellationToken ct)
     {
         var reply = await client.GetAsync("v1/status", new ConnectorCall(), ct);
@@ -100,7 +79,6 @@ public static partial class ConnectorLabEndpoints
         return Results.Json(status);
     }
 
-    /// <summary>Every manifest with its status beside it — what the lab's Providers screen and the test bench read.</summary>
     private static async Task<IResult> Catalogue(ConnectorClient client, CancellationToken ct)
     {
         var reply = await client.GetAsync("v1/providers", new ConnectorCall(), ct);
@@ -115,14 +93,7 @@ public static partial class ConnectorLabEndpoints
         return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
-    /// <summary>
-    /// The kill switch. Retiring a party expires every session of it at the
-    /// control plane; pausing stops new work and the catalogue says so;
-    /// healthy is the way back (degraded keeps work flowing with a warning). The
-    /// operator and the reason go to the server log: munni's activity log
-    /// is the members' own per space, and an operator's act belongs where
-    /// the operator reads.
-    /// </summary>
+    // the operator and the reason go to the server log: munni's activity log is the members' own per space
     private static async Task<IResult> SetProviderStatus(
         string providerId,
         ConnectorProviderStatusRequest request,
@@ -147,12 +118,8 @@ public static partial class ConnectorLabEndpoints
 
     private static string OperatorOf(HttpContext http) => http.User.FindFirst("sub")?.Value ?? "-";
 
-    /// <summary>
-    /// Every agent whoever owns it, each marked <c>lab</c> when it was enrolled
-    /// under the caller's lab subject: those take the lab's runs beside the
-    /// fleet, a person's own machine or a hosted slot never does (#576 — the
-    /// bench says where a run can go).
-    /// </summary>
+    // each agent is marked `lab` when enrolled under the caller's lab subject: those take the lab's runs,
+    // a person's machine or a hosted slot never does (#576)
     private static async Task<IResult> Fleet(HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync("v1/admin/agents", new ConnectorCall(), ct);
@@ -181,12 +148,7 @@ public static partial class ConnectorLabEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>
-    /// A one-time enrollment code under the LAB subject, with the line that
-    /// starts a household agent against this environment — the same door the
-    /// app offers a person, for the operator's own test machine. The agent
-    /// then serves the lab's runs and nobody else's.
-    /// </summary>
+    // enrolled under the LAB subject: the agent serves the lab's runs and nobody else's
     private static async Task<IResult> EnrolForLab(
         ConnectorEnrollmentRequest request, HttpContext http, ConnectorRelay relay, ConnectorOptions options, ILogger<ConnectorClient> logger, CancellationToken ct)
     {
@@ -208,13 +170,8 @@ public static partial class ConnectorLabEndpoints
         return Results.Ok(new ConnectorEnrollmentDto(code, expiresAt, url, url is null ? null : ConnectorRelayEndpoints.ComposeCommand(url, code, request.Name)));
     }
 
-    /// <summary>
-    /// The hosted private slots and the requests for them (#420 A2), with WHO
-    /// each pseudonymous subject is. The control plane knows subjects and
-    /// nothing else; an operator deciding a request needs a name. The relay
-    /// mints every user's subject the way it mints the caller's, so the map
-    /// is computed here per call and stored nowhere.
-    /// </summary>
+    // the control plane knows pseudonymous subjects only: the map to names is computed per call from the minted subjects,
+    // stored nowhere (#420 A2)
     private static async Task<IResult> PrivateAgents(ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync("v1/admin/private-agents", new ConnectorCall(), ct);
@@ -224,11 +181,6 @@ public static partial class ConnectorLabEndpoints
         return Results.Json(view);
     }
 
-    /// <summary>
-    /// `who` on every row that carries a `subject`: the pseudonym mapped
-    /// back to the person's name or e-mail, computed per call and stored
-    /// nowhere. The lab's own subject maps to nobody, which is right.
-    /// </summary>
     private static async Task NameSubjectsAsync(ConnectorRelay relay, IEnumerable<JsonNode?> rows, CancellationToken ct)
     {
         var users = await relay.Db.Users.Select(u => new { u.Id, u.Email, u.DisplayName }).ToListAsync(ct);
@@ -242,13 +194,8 @@ public static partial class ConnectorLabEndpoints
         }
     }
 
-    /// <summary>
-    /// The control plane's job history (#441 L1) with the query passed
-    /// through — provider, session, state, kind, trigger, code, since,
-    /// before, limit — plus `user=&lt;sub&gt;`, which the relay turns into that
-    /// person's subject, and `who` on every row. Never inputs, never
-    /// material: the control plane's view has no field for them.
-    /// </summary>
+    // the query is passed through; `user` becomes that person's subject; never inputs or material:
+    // the control plane's view has no field for them
     private static async Task<IResult> Jobs(HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var query = QueryHelpers.ParseQuery(http.Request.QueryString.Value);
@@ -281,7 +228,6 @@ public static partial class ConnectorLabEndpoints
         return Results.Json(view);
     }
 
-    /// <summary>A picture the operator may see, as the control plane serves it: bytes, never cached. The envelope while nothing may be seen.</summary>
     private static async Task<IResult> JobScreenshot(string jobId, HttpContext http, ConnectorClient client, CancellationToken ct)
     {
         var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/artifacts/screenshot", new ConnectorCall(), ct);
@@ -290,8 +236,6 @@ public static partial class ConnectorLabEndpoints
         return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
     }
 
-    /// <summary>Per-provider health: the month's runs by outcome, code and trigger, the people affected, the sessions, the canary, the reports.</summary>
-    /// <summary>A run's recording (#441 L3): the trace as the agent posted it, camelCased for the browser.</summary>
     private static async Task<IResult> JobTrace(string jobId, ConnectorClient client, CancellationToken ct)
     {
         var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/trace", new ConnectorCall(), ct);
@@ -299,7 +243,6 @@ public static partial class ConnectorLabEndpoints
         return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
-    /// <summary>The recording's digest.md, served as the markdown it is.</summary>
     private static async Task<IResult> JobTraceDigest(string jobId, HttpContext http, ConnectorClient client, CancellationToken ct)
     {
         var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/trace/digest", new ConnectorCall(), ct);
@@ -308,13 +251,6 @@ public static partial class ConnectorLabEndpoints
         return Results.File(reply.Bytes, "text/markdown; charset=utf-8");
     }
 
-    /// <summary>
-    /// The new-service scaffold (#441 L5): the recording and its digest read from
-    /// the control plane, turned into the files an adapter author starts from and
-    /// zipped at their repo paths. The names come from the query: the provider id
-    /// (kebab), the type name (Pascal), the product (shop, bank, registry) and
-    /// the country.
-    /// </summary>
     private static async Task<IResult> JobScaffold(string jobId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
     {
         var q = http.Request.Query;
@@ -438,7 +374,6 @@ public static partial class ConnectorLabEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>One user's bindings — ids and state, the same rows the diagnosis carries.</summary>
     private static async Task<IResult> UserSessions(string sub, AppDbContext db)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);

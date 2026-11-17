@@ -2,17 +2,13 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { useData } from '@/app/data';
 import { usePlanningDot } from '@/application/planning';
+import { settleInbox } from '@/application/inboxResolve';
 import { osNotifyAllowed } from '@/application/spaceNotifications';
 import { useLang } from '@/i18n';
 import { hapticNotify } from '@/lib/platform';
 import { collectPlanAlerts } from '@/sync/swPlanning';
 
-/**
- * The tab bar lives outside the data provider, so the planning tab's dot
- * travels through a module store: this headless component (inside the
- * provider) keeps it current and, once per day, records the "in the red"
- * notice — the in-app inbox row always, the OS notification when allowed.
- */
+/** the tab bar lives outside the data provider, so the planning dot travels through a module store */
 interface PlanDotState {
   dot: boolean;
   set: (dot: boolean) => void;
@@ -31,6 +27,11 @@ export function PlanAttention() {
   useEffect(() => {
     publish(dot);
   }, [dot, publish]);
+
+  // #614: when the app opens and whenever this plan goes into or out of the red, the bell lets go of what no longer holds
+  useEffect(() => {
+    void settleInbox(store).catch(() => undefined);
+  }, [store, spaceId, dot]);
 
   useEffect(() => {
     void (async () => {

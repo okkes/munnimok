@@ -23,18 +23,12 @@ export const PERIOD_KEYS = {
   custom: 'space.periodMonthly',
 } as const;
 
-const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]; // ISO: Monday … Sunday
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
 const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
-/** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
 const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
   new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
 
-/**
- * The period picker's controls — type chips + the day-of-month input or
- * weekday strip. Extracted (arc 4) so space CREATION offers the exact
- * same editor against local draft state, while this screen writes
- * through to the space row.
- */
+/** shared by space creation (local draft state) and this screen (writes through to the space row) */
 export function PeriodControls({
   periodType,
   periodDay,
@@ -88,7 +82,6 @@ export function PeriodControls({
           />
         </label>
       ) : (
-        // weekly/bi-weekly periods start on a chosen weekday (legacy parity)
         <div className="flex flex-wrap gap-1.5">
           {WEEKDAYS.map((weekday) => (
             <button
@@ -111,12 +104,7 @@ export function PeriodControls({
   );
 }
 
-/**
- * The space's budget period as its own settings screen (extracted from
- * space settings — user request: that screen tried to do everything).
- * Changes apply immediately: there is nothing else here a save button
- * would batch with, and LWW makes every tap safe.
- */
+/** changes apply immediately: no save button, and LWW makes every tap safe */
 export function PeriodSettingsScreen() {
   const { t } = useLang();
   const { store, repo } = useData();
@@ -160,8 +148,6 @@ export function PeriodSettingsScreen() {
         <div className="flex flex-col gap-3 pt-1">
           <ReadOnlyNote spaceId={spaceId} testId="period-reader-note" />
 
-          {/* #283: the money-rhythm explainer folds behind a hint on the
-              caption row — the tinted paragraph shouted over the picker */}
           <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
             {t('space.periodTitle')}
             <InfoHint text={t('period.explain')} testId="period-explain" />

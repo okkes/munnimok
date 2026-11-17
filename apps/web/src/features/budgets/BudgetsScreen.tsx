@@ -17,7 +17,6 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { CADENCE_KEYS, budgetColor, budgetSoft, ratioPct } from './budgetUi';
 
-/** One budget card: urgency-colored state, progress, carry-over note. */
 export function BudgetCard({
   status,
   currency,
@@ -47,7 +46,6 @@ export function BudgetCard({
           </span>
           <span className="block text-[11px] text-ink-4" data-testid={`budget-cadence-${budget.id}`}>
             {t(CADENCE_KEYS[budget.every])}
-            {/* days until reset next to the cadence (user request) */}
             {` · ${t('budgets.daysLeft', { n: budgetDaysLeft(budget, localToday(), opts) })}`}
             {carriedCents > 0 && ` · ${t('budgets.carryLine', { amount: fmt(carriedCents, currency) })}`}
           </span>
@@ -76,7 +74,6 @@ export function BudgetCard({
   );
 }
 
-/** All budgets, most urgent first. */
 export function BudgetsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -84,7 +81,7 @@ export function BudgetsScreen() {
   const statuses = useBudgetStatuses();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
-  const canEdit = useCanEdit(); // #505
+  const canEdit = useCanEdit();
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-budgets">

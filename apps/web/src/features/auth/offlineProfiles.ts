@@ -1,20 +1,14 @@
 import { v7 as uuidv7 } from 'uuid';
 import { forgetNavCache } from '@/features/navigation/navCache';
 
-/**
- * Registry of offline profiles on this device (localStorage). Offline
- * mode is fully local: no network calls, no sync — signing out keeps the
- * profile and its data; only its explicit deletion removes anything.
- */
+/** fully local: no network, no sync; signing out keeps the profile and its data, only explicit deletion removes anything */
 export interface OfflineProfile {
   id: string;
   name: string;
   createdAt: number;
   /** avatar preset id ("icon|color"), set from the profile screen */
   picture?: string;
-  /** OO1 identity rebind: a profile born from "Go offline" ADOPTS the
-   *  signed-in identity's existing store — this is that identity key
-   *  (e.g. "user_abc"). Absent = a normal profile with its own store. */
+  /** a profile born from "Go offline" ADOPTS the signed-in identity's store: this is that identity key (e.g. "user_abc") */
   storeKey?: string;
 }
 
@@ -30,24 +24,14 @@ export function listOfflineProfiles(): OfflineProfile[] {
   }
 }
 
-/**
- * Mint a profile — ALWAYS a fresh one (arc 8 lifted the one-per-device
- * rule; the old silent return-the-first was a landmine once multiples
- * exist). Each profile is a fully separate world with its own store;
- * spaces INSIDE a profile are how bookkeeping splits.
- */
+/** always a fresh profile: each is a fully separate world with its own store */
 export function addOfflineProfile(name: string): OfflineProfile {
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim(), createdAt: Date.now() };
   localStorage.setItem(KEY, JSON.stringify([...listOfflineProfiles(), profile]));
   return profile;
 }
 
-/**
- * OO1: mint the profile for an online→offline conversion. It ADOPTS the
- * signed-in identity's store (no copying — the local-first store IS the
- * data). Lives happily next to existing profiles (arc 8): every profile
- * keeps its own store, nothing merges.
- */
+/** online→offline conversion: adopts the identity's store, no copying (the local-first store IS the data); nothing merges */
 export function adoptOfflineProfile(name: string, picture: string | undefined, storeKey: string): OfflineProfile {
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim() || 'munni', createdAt: Date.now(), picture, storeKey };
   localStorage.setItem(KEY, JSON.stringify([...listOfflineProfiles(), profile]));
@@ -72,12 +56,8 @@ export function updateOfflineProfile(id: string, changes: Pick<Partial<OfflinePr
   localStorage.setItem(KEY, JSON.stringify(updated));
 }
 
-/**
- * Delete the profile AND everything it owns (user request — with one
- * profile per device, reinstalling was the only way out): the identity
- * database wherever it lives (Dexie or SQLCipher), the app-lock config
- * and the registry row. Irreversible by design.
- */
+// deletes the profile AND everything it owns: the identity database (Dexie or SQLCipher), the app-lock config,
+// the registry row; irreversible
 export async function deleteOfflineProfile(id: string): Promise<void> {
   const { destroyStorage } = await import('@/db/openStore');
   const { identityDbName } = await import('@/db/schema');

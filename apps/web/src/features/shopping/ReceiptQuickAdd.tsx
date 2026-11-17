@@ -5,12 +5,8 @@ import { useReceiptOps } from '@/application/receipts';
 import { Sheet } from '@/ui/Sheet';
 import { ReceiptCaptureRungs } from './ReceiptCapture';
 
-/**
- * #567 (user): a receipt kept before its transaction exists. Photographed
- * from Home, it joins the person's own receipts — every space of theirs
- * lists it — and its screen opens at once, where the amount is typed or
- * read: that is what the payment it fits is recognised by when it arrives.
- */
+// #567: a receipt kept before its transaction exists joins the person's own receipts (every space lists it)
+// its amount is what the payment is recognised by when it arrives
 export function ReceiptQuickAdd({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t } = useLang();
   const navigate = useNavigate();

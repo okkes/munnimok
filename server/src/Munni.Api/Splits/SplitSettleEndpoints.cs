@@ -7,16 +7,9 @@ using Munni.Api.Push;
 
 namespace Munni.Api.Splits;
 
-/// <summary>
-/// How a split event ends (#538). Anyone in it may look at what settling
-/// would ask of everybody. An owner SETTLES: the fewest payments that bring
-/// everyone to zero become the plan, nothing can be added any more, and
-/// everybody is told what they pay or get. The payments happen outside
-/// munni; payer, receiver or an owner mark them paid, and the last one
-/// archives the event. An owner may reopen (what was marked paid stays as
-/// payments made), archive at any time, or delete — with a countdown while
-/// others are still in it.
-/// </summary>
+/// #538: settling turns the fewest payments into the plan and nothing can be added any more. Payments happen outside
+/// munni; payer, receiver or an owner mark them paid, the last one archives the event. Reopening keeps what was marked
+/// paid as payments made; deleting has a countdown while others are in.
 internal static class SplitSettleEndpoints
 {
     public static void MapSplitSettling(this RouteGroupBuilder group)
@@ -33,7 +26,6 @@ internal static class SplitSettleEndpoints
     private static async Task<List<SettlementPayment>> PlanAsync(AppDbContext db, string splitId, CancellationToken ct) =>
         SplitSettlement.Plan(SplitStore.Balances(await db.SplitEntries.Where(e => e.SplitId == splitId).ToListAsync(ct)));
 
-    /// <summary>The look ahead: who would pay whom if the event were settled as it stands.</summary>
     private static async Task<IResult> PreviewAsync(string splitId, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -42,7 +34,6 @@ internal static class SplitSettleEndpoints
         return Results.Ok(plan.Select(p => new { fromUserId = p.From, toUserId = p.To, amountCents = p.Cents }).ToList());
     }
 
-    /// <summary>Nobody gets in any more: the link, the queue and the unanswered invitations end with the event's running.</summary>
     private static async Task CloseDoorsAsync(AppDbContext db, string splitId, TimeProvider time, CancellationToken ct)
     {
         db.SplitInvites.RemoveRange(await db.SplitInvites.Where(i => i.SplitId == splitId).ToListAsync(ct));
@@ -91,10 +82,7 @@ internal static class SplitSettleEndpoints
         return Results.Ok(new { id = splitId, status = split.Status });
     }
 
-    /// <summary>
-    /// Back to running: what was marked paid stays as payments the members made to each other, the rest of the
-    /// plan is dropped — settling again works out what is left.
-    /// </summary>
+    /// what was marked paid stays as payments the members made to each other; settling again works out what is left
     private static async Task<IResult> ReopenAsync(string splitId, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -127,7 +115,6 @@ internal static class SplitSettleEndpoints
         return Results.Ok(new { id = splitId, status = split.Status });
     }
 
-    /// <summary>The payer, the receiver or an owner says a payment was made (or was not after all); the last one paid archives the event.</summary>
     private static async Task<IResult> PaidAsync(string splitId, Guid paymentId, PaidRequest request, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time)
     {
         var ct = http.RequestAborted;
@@ -165,10 +152,7 @@ internal static class SplitSettleEndpoints
         return Results.Ok(new { id = splitId, status = split.Status });
     }
 
-    /// <summary>
-    /// Deleting: alone in the event it goes at once; with others in it a week's countdown starts that any owner
-    /// can stop, and everybody is told.
-    /// </summary>
+    /// alone in the event it goes at once; with others a week's countdown starts that any owner can stop, and everybody is told
     private static async Task<IResult> DeleteAsync(string splitId, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);

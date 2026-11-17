@@ -1,7 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import { Icon } from './Icon';
 
-/** a pick row's tick: in, partly in (indeterminate), or out */
 export type TickState = 'checked' | 'half' | 'off';
 
 /** a pick row's native checkbox takes its dash only as a property — the ref sets it on every render */
@@ -16,11 +15,7 @@ export const enterToggles = (e: KeyboardEvent<HTMLInputElement>) => {
   e.currentTarget.click();
 };
 
-/**
- * #374 (user): the square check of a pick list, with a real indeterminate
- * state — a parent only partly picked (some of its subs sit elsewhere)
- * wears a dash, never a full check. Same face as SelectAllRow.
- */
+/** #374: a parent only partly picked wears a dash, never a full check */
 export function TickBox({ state }: Readonly<{ state: TickState }>) {
   return (
     <span

@@ -4,12 +4,8 @@ namespace ShopConnector.Adapters.Support;
 
 internal static class UrlBuilder
 {
-    /// <summary>
-    /// Appends an escaped query. Hand-rolled because the alternatives live
-    /// in ASP.NET packages this library has no business referencing, and
-    /// because every value here (a redirect URI, a scope list) needs
-    /// escaping that string concatenation gets wrong.
-    /// </summary>
+    /// hand-rolled: the alternatives live in ASP.NET packages this library must not reference,
+    /// and concatenation mis-escapes redirect URIs and scopes
     public static string WithQuery(string baseUrl, IReadOnlyDictionary<string, string> query)
     {
         if (query.Count == 0) return baseUrl;

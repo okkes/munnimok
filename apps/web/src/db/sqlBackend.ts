@@ -9,20 +9,9 @@ import type {
   ConnectorConnRow,
 } from './types';
 
-/**
- * Encryption-at-rest E2: the StorageBackend over a SQL engine. On the
- * native shells the executor is @capacitor-community/sqlite with a
- * SQLCipher key; the parity suite drives the same class with an
- * in-memory sql.js database — the backend itself never knows which.
- *
- * Storage shape: one document table per entity — (id PRIMARY KEY,
- * spaceId indexed, json payload). That mirrors Dexie's row model
- * exactly, which is what makes backend parity a testable property
- * instead of a hope. Queries beyond id/spaceId filter in JS, the same
- * contract the interface already promises.
- */
+// StorageBackend over a SQL engine (SQLCipher on native shells, sql.js in the parity suite). One document table per entity
+// (id, spaceId, json) mirrors Dexie's row model, which makes parity testable; other filters run in JS
 
-/** a value bound to a `?` */
 export type SqlParam = string | number | null;
 
 export interface SqlStatement {
@@ -33,28 +22,18 @@ export interface SqlStatement {
 /** ids per SELECT … IN (the oldest SQLite builds bind at most 999 values) and rows per batched write (one message to native code) */
 const READ_CHUNK = 500;
 const WRITE_CHUNK = 200;
-/**
- * rows per read of a whole table or a whole space (#594): on a phone a read comes back from native code as ONE
- * object, and Android holds it inside a heap that some years of transactions do not fit in several times over
- */
+// rows per read of a whole table or space (#594): native code returns a read as ONE object,
+// held in an Android heap that years of transactions overflow
 export const READ_PAGE = 2000;
 
-/** the SQL the backend needs — tiny on purpose, so any engine fits */
 export interface SqlExecutor {
-  /** DML/DDL, no result rows */
   run(sql: string, params?: SqlParam[]): Promise<void>;
-  /**
-   * many `run`s in ONE call: on a phone each call crosses into native code, which is what a pulled page cannot
-   * afford per row. Only statements that may run twice (INSERT OR REPLACE): an engine that refuses the batch
-   * replays them one by one
-   */
+  // many `run`s in ONE call: each call crosses into native code on a phone. Only statements that may run twice
+  // (INSERT OR REPLACE): an engine that refuses the batch replays them one by one
   batch(statements: SqlStatement[]): Promise<void>;
-  /** SELECT returning rows as plain objects */
   query(sql: string, params?: SqlParam[]): Promise<Record<string, unknown>[]>;
-  /** BEGIN/COMMIT/ROLLBACK wrapper around `fn` */
   transaction(fn: () => Promise<void>): Promise<void>;
   close(): Promise<void>;
-  /** wipe the whole database file (identity destroy) */
   destroy(): Promise<void>;
 }
 
@@ -81,9 +60,7 @@ export const ENTITIES: readonly EntityName[] = [
   'plan',
   'planSubject',
   'activity',
-  // #296: forgotten here while Dexie got it — on native, user login
-  // crashed the home mount (`unknown entity: txSeen`) the moment the
-  // synced first-seen clock (#148 r3) asked for its rows
+  // #296: forgotten here while Dexie had it: on native, user login crashed (`unknown entity: txSeen`)
   'txSeen',
 ];
 
@@ -104,13 +81,11 @@ export async function initSqlSchema(sql: SqlExecutor): Promise<void> {
   await sql.run('CREATE TABLE IF NOT EXISTS outbox (opId TEXT PRIMARY KEY, spaceId TEXT, hlc TEXT, json TEXT NOT NULL)');
   await sql.run('CREATE INDEX IF NOT EXISTS idx_outbox_space ON outbox (spaceId)');
   await sql.run('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
-  // #367: device-only connector connections (the bundle lives here), keyed by connection id
   await sql.run('CREATE TABLE IF NOT EXISTS connector_conn (id TEXT PRIMARY KEY, json TEXT NOT NULL)');
   await sql.run('DROP TABLE IF EXISTS store_inst');
   await sql.run('CREATE TABLE IF NOT EXISTS quote_cache (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
 }
 
-/** the deps — what a live query read and what a write touched: an entity's table, the outbox, one meta key, a device store */
 const entityDep = (entity: EntityName): string => `e:${entity}`;
 const metaDep = (key: string): string => `m:${key}`;
 const OUTBOX_DEP = 'outbox';
@@ -127,30 +102,18 @@ const intersects = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean => 
 };
 
 interface LiveSub {
-  /** waiting in the re-run queue */
   queued: boolean;
-  /** a write landed: what it touched */
   touched(written: ReadonlySet<string>): void;
-  /** one run; settles with it */
   run(): Promise<void>;
 }
 
-/**
- * #554 (GlitchTip: receipts.match averaged 70 s on the iOS app): every
- * write used to re-run every live query — a sync round's stamp, each of
- * the matcher's proposals. Now, like Dexie's liveQuery, a run records what
- * it read and a write wakes only the queries that read what it touched.
- * Reads carry no async context, so write-triggered re-runs go one at a
- * time to record their own reads (a read by anyone meanwhile counts too:
- * a spare re-run, never a missed one). Bursts coalesce by Dexie's rule
- * (LIVE_QUERY_QUIET_MS).
- */
+// #554: a write wakes only the live queries that read what it touched (like Dexie's liveQuery); reads carry no
+// async context, so re-runs go one at a time to record their reads (a read by anyone meanwhile counts: spare, never missed)
 export class SqlStorageBackend implements StorageBackend {
   private readonly subs = new Set<LiveSub>();
   private inTransaction = false;
   /** what the open transaction wrote (and anyone meanwhile — BEGIN is connection-wide): announced after the commit */
   private txDeps = new Set<string>();
-  /** the reads of every run in flight */
   private readonly recorders = new Set<Set<string>>();
   private burstDepth = 0;
   private lastWriteAt = Number.NEGATIVE_INFINITY;
@@ -175,9 +138,7 @@ export class SqlStorageBackend implements StorageBackend {
     for (const recorder of this.recorders) recorder.add(dep);
   }
 
-  /** every write announces what it touched; inside `transact` the
-   *  announcement waits for the commit — a live query must never observe
-   *  a half-applied write batch */
+  /** inside `transact` the announcement waits for the commit: a live query must never see a half-applied batch */
   private emit(dep: string): void {
     if (this.inTransaction) {
       this.txDeps.add(dep);
@@ -234,11 +195,8 @@ export class SqlStorageBackend implements StorageBackend {
     return rows[0];
   }
 
-  /**
-   * Every row the condition admits, a page at a time in the order the rows were written. A row rewritten while
-   * the pages are read moves to the end (REPLACE gives it a new place) and may come by twice: it is kept once,
-   * as it stands last.
-   */
+  // rows in write order, a page at a time; a row rewritten mid-read moves to the end (REPLACE gives it a new place)
+  // and may come by twice: kept once, as it stands last
   private async pagedRowsOf<E extends EntityName>(entity: E, condition = '', params: (string | number)[] = []) {
     this.read(entityDep(entity));
     const table = entityTable(entity);
@@ -395,11 +353,8 @@ export class SqlStorageBackend implements StorageBackend {
     this.emit(QUOTE_DEP);
   }
 
-  /** transactions are serialized: SQL BEGIN is connection-wide, and two
-   *  concurrent Repo writes (e.g. a manual tx + its balance delta, both
-   *  fired without awaiting) raced into "cannot start a transaction
-   *  within a transaction" on SQLCipher (user GlitchTip report). Dexie
-   *  schedules overlapping transactions itself; here the queue does. */
+  // SQL BEGIN is connection-wide: concurrent un-awaited Repo writes raced into a nested BEGIN on SQLCipher,
+  // so transactions queue (Dexie schedules its own)
   private txQueue: Promise<void> = Promise.resolve();
 
   async transact(_tables: TableScope[], fn: () => Promise<void>) {
@@ -429,7 +384,6 @@ export class SqlStorageBackend implements StorageBackend {
 
   subscribe<T>(query: () => Promise<T>, onNext: (value: T) => void, onError?: (err: unknown) => void) {
     let cancelled = false;
-    /** the run in flight's reads so far */
     let reading: Set<string> | null = null;
     /** what the last run read — null until one settled: then anything wakes it */
     let deps: Set<string> | null = null;
@@ -466,7 +420,6 @@ export class SqlStorageBackend implements StorageBackend {
           }
         });
     };
-    /** wait until the writes have been quiet for the window, then queue the re-run */
     const hold = () => {
       if (cancelled || waiting) return;
       waiting = true;

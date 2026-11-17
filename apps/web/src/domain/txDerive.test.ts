@@ -3,16 +3,11 @@ import { deriveTxType } from './txDerive';
 
 describe('deriveTxType — the compat txType, computed instead of asked (#133)', () => {
   it('walks the order of truth: adjustment > stamp > vessel > counterparty > ◆ category > sign', () => {
-    // manual corrections stay corrections
     expect(deriveTxType({ amountCents: -100, adjustment: true, catId: 'savingDeposit' })).toBe('adjustment');
-    // a special account types every one of its rows — link or not
     expect(deriveTxType({ amountCents: -100, stamp: 'saving', linkedAccountId: 'x', catId: 'groceries' })).toBe('saving');
-    // a split CONTAINER is a vessel: sign only, whatever its shadow category says
     expect(deriveTxType({ amountCents: -100, multiPart: true, catId: 'savingDeposit' })).toBe('expense');
     expect(deriveTxType({ amountCents: 200, multiPart: true })).toBe('income');
-    // a counter account makes the movement a transfer
     expect(deriveTxType({ amountCents: -100, linkedAccountId: 'acc9', catId: 'savingDeposit' })).toBe('transfer');
-    // bare ◆ categories pull their family (R3), everything else signs
     expect(deriveTxType({ amountCents: -100, catId: 'savingDeposit' })).toBe('saving');
     expect(deriveTxType({ amountCents: -100, catId: 'loanRepayment' })).toBe('debtPayment');
     expect(deriveTxType({ amountCents: -100, catId: 'investBuy' })).toBe('investment');

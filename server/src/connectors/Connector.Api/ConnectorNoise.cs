@@ -2,11 +2,6 @@ using Sentry;
 
 namespace Connector.Api;
 
-/// <summary>
-/// What a crash report of the control plane becomes before it leaves
-/// (docs/observability.md): tagged with its role, and - when the database did
-/// not answer - one of that outage's events rather than an issue of its own.
-/// </summary>
 public static class ConnectorNoise
 {
     public const string UnreachableFingerprint = "database-unreachable";
@@ -20,15 +15,9 @@ public static class ConnectorNoise
         return sentryEvent;
     }
 
-    /// <summary>
-    /// The database did not answer (it restarts, a deploy recreates it, the
-    /// host is out of breath): the sweeps, the pump and every request of those
-    /// minutes notice in their own words, and each wording used to open an
-    /// issue of its own. Under one fingerprint they are one issue whose count
-    /// is the size of the outage. A statement the server refused (a
-    /// <c>PostgresException</c>) is not this, and neither is one that ran
-    /// past its time: a slow query is a fault of its own.
-    /// </summary>
+    // the database did not answer (restart, deploy, overloaded host): sweeps, pump and requests each worded it differently and
+    // opened their own issue; one fingerprint makes the count the outage's size. A refused statement (PostgresException) or a
+    // timed-out query (a slow query is its own fault) is not this
     public static bool IsDatabaseUnreachable(SentryEvent sentryEvent)
     {
         ArgumentNullException.ThrowIfNull(sentryEvent);

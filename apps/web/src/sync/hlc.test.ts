@@ -33,7 +33,7 @@ describe('HlcClock', () => {
     let wall = 5000;
     const clock = new HlcClock('dev', undefined, () => wall);
     const a = clock.now();
-    wall = 3000; // clock jumped back 2s
+    wall = 3000;
     const b = clock.now();
     expect(compareHlc(a, b)).toBe(-1);
   });

@@ -7,43 +7,11 @@ using Microsoft.AspNetCore.Http;
 
 namespace Connector.Kit.Hosting.Live;
 
-/// <summary>
-/// One picture as the pushed live view carries it (#429): the frame route's
-/// headers and body, in one event.
-/// </summary>
-/// <param name="Sequence">Monotonic per job; also the event's id, which a reconnect sends back.</param>
-/// <param name="Width">Pixels, the size every returned fraction is multiplied by.</param>
-/// <param name="Height">Pixels.</param>
-/// <param name="Origin">Whose page this is (<c>https://login.ah.nl</c>), absent when unknown.</param>
-/// <param name="Jpeg">The JPEG, base64 on the wire - bytes, so the writer emits the alphabet unescaped.</param>
+// one picture as the pushed live view (#429) carries it; Sequence is also the event id a reconnect sends back
 public sealed record LiveStreamFrame(long Sequence, int Width, int Height, string? Origin, byte[] Jpeg);
 
-/// <summary>
-/// The pushed live view (#429): one server-sent event per picture, so a
-/// consumer holds one response for the whole login instead of asking for
-/// every frame.
-///
-/// <code>
-/// retry: 1000
-///
-/// id: 12
-/// event: frame
-/// data: {"sequence":12,"width":390,"height":844,"origin":"https://login.ah.nl","jpeg":"/9j/4AAQ…"}
-///
-/// : keep-alive
-///
-/// event: end
-/// data: {"code":"challenge_expired"}
-/// </code>
-///
-/// The id is the frame's sequence, so a reconnect names the last picture it
-/// drew (<c>Last-Event-ID</c>, or <c>?after=</c>) and is handed the current
-/// one only when it is newer. There is no backlog to replay: the slot holds
-/// one picture, and a reconnect wants the login as it is now. <c>end</c> is
-/// the platform's "this live view is over" - the same word the frame route
-/// answers 410 with - so a consumer can tell it from a dropped connection,
-/// which it reconnects.
-/// </summary>
+// pushed live view (#429): one SSE event per picture; a reconnect (Last-Event-ID or ?after=) gets the current one if newer
+// `end` = this live view is over (the frame route answers 410); a dropped connection reconnects
 public static class LiveStream
 {
     public const string ContentType = "text/event-stream";
@@ -60,12 +28,8 @@ public static class LiveStream
     /// <summary>Written after a quiet stretch so an idle proxy keeps the response open.</summary>
     public const string KeepAlive = ": keep-alive\n\n";
 
-    /// <summary>
-    /// How often the run behind the stream is read again. The frame slot
-    /// cannot say that the challenge was answered or the session moved on;
-    /// the rows can, and reading them per frame would be a dozen queries a
-    /// second for an answer that changes once.
-    /// </summary>
+    // the frame slot cannot say the challenge was answered or the session moved on.
+    // reading per frame would be a dozen queries a second
     public static readonly TimeSpan RecheckEvery = TimeSpan.FromSeconds(1);
 
     public static string Frame(LiveFrame frame)
@@ -90,10 +54,6 @@ public static class LiveStream
     public static string End(ErrorCode code) =>
         $"event: {EndEvent}\ndata: {ConnectorJson.Serialize(new { code })}\n\n";
 
-    /// <summary>
-    /// Where a (re)connecting stream starts: the <c>Last-Event-ID</c> a
-    /// reconnect carries, else <c>?after=</c>, else "nothing seen yet".
-    /// </summary>
     public static long After(HttpRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

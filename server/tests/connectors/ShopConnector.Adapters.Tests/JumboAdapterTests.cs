@@ -10,16 +10,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The Jumbo fetch loop, driven through the <see cref="IJumboGraphQlClient"/>
-/// seam.
-///
-/// Six defaults in this adapter were wrong and five of them show up here: the
-/// response paths, the two independent paginations, where line items come
-/// from, that in-store receipts have none, and that no persisted-query
-/// handshake is in play. The sixth - the money unit - is pinned in
-/// <see cref="JumboParsingTests"/>.
-/// </summary>
+// six adapter defaults were wrong: response paths, two independent paginations, where line items come from, in-store
+// receipts having none, a persisted-query handshake that is not in play; the money unit is pinned in JumboParsingTests
 public sealed class JumboAdapterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
@@ -29,12 +21,10 @@ public sealed class JumboAdapterTests
 
     private static ResourceRequest SinceJuly => Requests.Receipts(since: Requests.Day(2026, 7, 1));
 
-    /// <summary>The recorded pass's three purchases, newest first.</summary>
     private static readonly string[] NewestFirstIds = ["order-90211", "receipt-TX-2026-07-19-778812", "order-90118"];
 
     private static readonly long[] NewestFirstTotals = [3113L, 1106L, 1240L];
 
-    /// <summary>One cursor each: orders advance by their limit, receipts by one page.</summary>
     private static readonly int[] OrderOffsets = [0, 2, 4];
 
     private static readonly int[] ReceiptPages = [0, 1, 2];
@@ -44,21 +34,16 @@ public sealed class JumboAdapterTests
     {
         var manifest = Adapter(new FakeJumboGraphQl()).Describe();
 
-        // A manifest that cannot boot the host must not pass the suite either.
         ManifestValidator.Validate(manifest);
 
         Assert.Equal(ProviderRuntime.BrowserInteractive, manifest.Runtime);
         Assert.False(manifest.UnattendedFetch);
         Assert.Equal(86_400, manifest.Auth.Session.TtlSeconds);
 
-        // Still false, and now for the right reason: Jumbo's Auth0 tenant does
-        // support refresh_token and offline_access, but the web client's code
-        // is exchanged server-side and the browser is handed nothing but a
-        // cookie. There is a refresh path and this connector is not on it.
+        // not refreshable though Auth0 supports refresh_token and offline_access: the web client's code is exchanged server-side
+        // and the browser gets only a cookie
         Assert.False(manifest.Auth.Session.Refreshable);
     }
-
-    // ---- the whole pass ----------------------------------------------------
 
     [Fact]
     public async Task Fetch_emits_both_online_orders_and_till_receipts_from_the_confirmed_shapes()
@@ -68,13 +53,10 @@ public sealed class JumboAdapterTests
 
         var result = await Adapter(graphql).FetchAsync(ctx, SinceJuly, CancellationToken.None);
 
-        // Two orders and two till receipts came back, but one of the receipts
-        // is the till record of one of the orders - so three purchases, not
-        // four.
+        // one of the till receipts is the till record of an order: three purchases, not four
         Assert.Equal(3, result.Receipts.Count);
         Assert.Equal(NewestFirstIds, result.Receipts.Select(r => r.ExternalId));
 
-        // Newest first.
         Assert.Equal(NewestFirstTotals, result.Receipts.Select(r => r.Total.Value));
         Assert.All(result.Receipts, r => Assert.Equal("EUR", r.Total.Currency));
         Assert.All(result.Receipts, r => Assert.True(r.Reconciled));
@@ -83,25 +65,18 @@ public sealed class JumboAdapterTests
         Assert.Equal("graphql", result.Via);
         Assert.True(result.Complete);
 
-        // Nothing rotates: there is no token in our hands to refresh.
         Assert.Null(result.RefreshedMaterial);
 
-        // One list call, one detail per order, one detail for the till receipt
-        // that survived deduplication.
         Assert.Equal(4, graphql.Calls.Count);
         Assert.Single(graphql.ListCalls);
         Assert.Equal(2, graphql.Calls.Count(c => c.OperationName == "OrderPagesOrder"));
         Assert.Single(graphql.Calls, c => c.OperationName == "GetDigitalReceipt");
 
-        // Carried from the material rather than minted per run.
         Assert.All(graphql.DeviceIds, id => Assert.Equal("device-fixture", id));
     }
 
-    /// <summary>
-    /// The till record of an online order carries that order's id in its
-    /// transaction id. Emitting both would count one weekly shop twice, and
-    /// the duplicate would look exactly like a real second purchase.
-    /// </summary>
+    // a till record carries its order's id in its transaction id: emitting both counts one weekly shop twice,
+    // indistinguishable from a real purchase
     [Fact]
     public async Task An_online_order_s_till_receipt_is_not_emitted_a_second_time()
     {
@@ -112,8 +87,6 @@ public sealed class JumboAdapterTests
 
         Assert.DoesNotContain(result.Receipts, r => r.ExternalId == "receipt-90211-2026-07-20-0001");
 
-        // The dedupe happens before the detail call, so the round trip is
-        // saved too.
         Assert.DoesNotContain(graphql.Calls, c =>
             c.OperationName == "GetDigitalReceipt" &&
             c.Variables["transactionId"]!.GetValue<string>() == "90211-2026-07-20-0001");
@@ -132,14 +105,7 @@ public sealed class JumboAdapterTests
         Assert.Contains(result.Receipts, r => r.ExternalId == "receipt-90211-2026-07-20-0001");
     }
 
-    // ---- the two paginations -----------------------------------------------
-
-    /// <summary>
-    /// Online orders page by <c>offset</c>/<c>limit</c> nested inside
-    /// <c>ordersInput</c>; in-store receipts page by a top-level, zero-based
-    /// <c>page</c>. They are two systems with two cursors, and the single
-    /// offset counter this adapter used to carry drove neither.
-    /// </summary>
+    // two systems with two cursors: orders page by offset/limit inside ordersInput, receipts by a top-level zero-based page
     [Fact]
     public async Task Orders_and_receipts_advance_their_own_cursors()
     {
@@ -156,12 +122,9 @@ public sealed class JumboAdapterTests
         var list = graphql.ListCalls;
         Assert.Equal(3, list.Count);
 
-        // offset advances by the order limit; page advances by one. Nothing
-        // about either derives from the other.
         Assert.Equal(OrderOffsets, list.Select(c => c.Variables["ordersInput"]!["offset"]!.GetValue<int>()));
         Assert.Equal(ReceiptPages, list.Select(c => c.Variables["page"]!.GetValue<int>()));
 
-        // Three orders across two pages, plus two till receipts.
         Assert.Equal(5, result.Receipts.Count);
         Assert.True(result.Complete);
     }
@@ -179,17 +142,11 @@ public sealed class JumboAdapterTests
         Assert.Equal("DESC", input["direction"]!.GetValue<string>());
         Assert.Equal("deliveryDate", input["sortBy"]!.GetValue<string>());
 
-        // What restricts the list to completed orders. Without it the walk
-        // would return baskets that are still open.
+        // statusCategory CLOSED restricts the list to completed orders; without it open baskets come back
         Assert.Equal("CLOSED", input["statusCategory"]!.GetValue<string>());
     }
 
-    /// <summary>
-    /// No <c>extensions.persistedQuery</c> anywhere, in either direction. The
-    /// router accepts plain documents from an authenticated session, so the
-    /// APQ handshake this adapter used to carry was machinery for a protocol
-    /// that is not in play.
-    /// </summary>
+    // the router accepts plain documents from an authenticated session: no APQ handshake
     [Fact]
     public async Task Every_call_sends_a_plain_document_and_never_a_persisted_query()
     {
@@ -208,12 +165,8 @@ public sealed class JumboAdapterTests
         });
     }
 
-    /// <summary>
-    /// <c>OrderPagesOrder</c>, and the name matters: the plausible-looking
-    /// transposition <c>OrdersPageOrders</c> is corroborated nowhere and would
-    /// be a schema validation error rather than a slower path. <c>$orderId</c>
-    /// is a <c>Float!</c>, so it goes on the wire as a number.
-    /// </summary>
+    // the name matters: OrdersPageOrders is corroborated nowhere and would be a schema validation error.
+    // $orderId is Float!, a number on the wire
     [Fact]
     public async Task Line_items_are_asked_for_by_the_confirmed_operation_with_a_numeric_order_id()
     {
@@ -240,12 +193,7 @@ public sealed class JumboAdapterTests
         Assert.Contains("Float!", error.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The manifest offers "raw", so both kinds of purchase have to produce
-    /// one. Jumbo builds a receipt from two different documents depending on
-    /// whether the shop was online or in a store, and a raw that only covered
-    /// one of them would arrive half-empty for a normal week's shopping.
-    /// </summary>
+    // Jumbo builds a receipt from two documents (online vs in store): a raw covering one would arrive half-empty
     [Fact]
     public async Task Raw_covers_both_an_online_order_and_a_till_receipt()
     {
@@ -255,32 +203,22 @@ public sealed class JumboAdapterTests
         var result = await Adapter(graphql).FetchAsync(
             ctx, Requests.Receipts(since: Requests.Day(2026, 7, 1), raw: true), CancellationToken.None);
 
-        // Keyed by the same external id the receipts carry, or a consumer
-        // cannot pair the two back up.
+        // keyed by the receipts' external id, or a consumer cannot pair them
         Assert.All(result.Receipts, r =>
             Assert.Contains(r.ExternalId, (IDictionary<string, string>)result.Raw!));
 
         using var order = JsonDocument.Parse(result.Raw!["order-90211"]);
         using var till = JsonDocument.Parse(result.Raw!["receipt-TX-2026-07-19-778812"]);
 
-        // The DETAIL document, not the list row it started from - `data.order`
-        // is the detail response's own envelope and the list row has no `data`
-        // at all. The detail is the richer of the two and the one worth keeping
-        // when a field moves, so which one arrives here is the point.
+        // the DETAIL document (data.order envelope), not the list row: it is the richer one, worth keeping when a field moves
         Assert.True(order.RootElement.TryGetProperty("data", out var orderData));
         Assert.True(orderData.TryGetProperty("order", out _));
 
-        // And the whole digital-receipt document for the till record.
         Assert.True(till.RootElement.TryGetProperty("data", out var tillData));
         Assert.True(tillData.TryGetProperty("receipt", out _));
     }
 
-    /// <summary>
-    /// Raw without items: there is no detail call to take a document from, so
-    /// the list row stands in. Returning nothing here would read as "Jumbo sent
-    /// nothing" rather than "you did not ask for the call that produces it" -
-    /// the same mistake Albert Heijn already made once.
-    /// </summary>
+    // no detail call without items, so the list row stands in: returning nothing would read as "Jumbo sent nothing"
     [Fact]
     public async Task Raw_without_items_falls_back_to_the_list_row_rather_than_nothing()
     {
@@ -321,24 +259,16 @@ public sealed class JumboAdapterTests
 
         Assert.DoesNotContain(graphql.Calls, c => c.OperationName == "OrderPagesOrder");
 
-        // The totals still arrive: they come from the list, not the detail.
         Assert.Equal(3113, result.Receipts.First(r => r.ExternalId == "order-90211").Total.Value);
 
-        // A till receipt has no total in the list at all, so its detail is
-        // fetched whether or not items were asked for.
+        // a till receipt's list entry has no total, so its detail is fetched whether or not items were asked for
         Assert.Single(graphql.Calls, c => c.OperationName == "GetDigitalReceipt");
         Assert.Equal(1106, result.Receipts.First(r => r.ExternalId.StartsWith("receipt-", StringComparison.Ordinal))
             .Total.Value);
     }
 
-    // ---- in-store receipts that only half-read -----------------------------
-
-    /// <summary>
-    /// A layout that yields a total but no items is still a purchase the user
-    /// made. It is emitted and flagged, never dropped - and never allowed to
-    /// claim it reconciles, because an empty item list reconciles trivially
-    /// and that would be the parser vouching for work it did not do.
-    /// </summary>
+    // a total without items is still a purchase: emitted and flagged, never claiming to reconcile
+    // (an empty list reconciles trivially)
     [Fact]
     public async Task A_receipt_whose_items_will_not_parse_is_emitted_unreconciled_rather_than_dropped()
     {
@@ -354,7 +284,6 @@ public sealed class JumboAdapterTests
         Assert.Empty(till.Items);
         Assert.False(till.Reconciled);
 
-        // The orders are untouched by the till template moving.
         Assert.Equal(3, result.Receipts.Count);
         Assert.All(result.Receipts.Where(r => r.ExternalId.StartsWith("order-", StringComparison.Ordinal)),
             r => Assert.True(r.Reconciled));
@@ -391,11 +320,7 @@ public sealed class JumboAdapterTests
         Assert.Contains("JSON", error.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The escape hatch: an operator meeting a legacy image-only receipt can
-    /// keep syncing tonight and fix the parser tomorrow - and the pass reports
-    /// itself partial rather than quietly returning fewer shops.
-    /// </summary>
+    // escape hatch: an operator can keep syncing past a legacy image-only receipt; the pass reports itself partial
     [Fact]
     public async Task An_operator_can_skip_an_unreadable_receipt_and_the_pass_says_it_is_partial()
     {
@@ -437,8 +362,6 @@ public sealed class JumboAdapterTests
         Assert.False(result.Complete);
     }
 
-    // ---- the window and the walk's guards ----------------------------------
-
     [Fact]
     public async Task A_page_entirely_older_than_the_window_ends_the_walk()
     {
@@ -448,9 +371,8 @@ public sealed class JumboAdapterTests
         var result = await Adapter(graphql).FetchAsync(
             ctx, Requests.Receipts(since: Requests.Day(2026, 8, 1)), CancellationToken.None);
 
-        // Newest first, so one whole page below the window means every later
-        // page is too - and walking the full history on every sync is the call
-        // pattern most likely to trip protection.
+        // newest first: one whole page below the window means every later page is older.
+        // walking full history each sync risks tripping protection
         Assert.Empty(result.Receipts);
         Assert.Single(graphql.ListCalls);
     }
@@ -458,8 +380,6 @@ public sealed class JumboAdapterTests
     [Fact]
     public async Task A_page_that_repeats_stops_the_walk_instead_of_replaying_it()
     {
-        // The last recorded page repeats, which is what a cursor that is not
-        // advancing anything upstream actually looks like from here.
         var graphql = FakeJumboGraphQl.Recorded(FixtureCatalog.Read("jumbo/walk-page-1.json"));
 
         using var ctx = new FakeJobContext { Material = JumboFixtures.LiveSession };
@@ -468,20 +388,12 @@ public sealed class JumboAdapterTests
         var result = await Adapter(graphql, options).FetchAsync(
             ctx, Requests.Receipts(since: Requests.Day(2026, 7, 1), items: false), CancellationToken.None);
 
-        // Two passes, not forty: the second sees nothing it has not already
-        // seen on either side.
         Assert.Equal(2, graphql.ListCalls.Count);
         Assert.Equal(3, result.Receipts.Count);
     }
 
-    // ---- session and resource ----------------------------------------------
-
-    /// <summary>
-    /// The device header is not required - the confirmed working client sends
-    /// none at all - so a bundle without one is served rather than sent back
-    /// through an Auth0 login behind Akamai for a header the API may never
-    /// read. This adapter used to refuse it.
-    /// </summary>
+    // the device header is not required (the confirmed client sends none):
+    // a bundle without one must not be bounced through an Auth0 login behind Akamai
     [Fact]
     public async Task A_session_with_no_device_id_is_still_fetched_for()
     {

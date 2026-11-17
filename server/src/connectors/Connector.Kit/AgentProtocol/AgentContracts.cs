@@ -7,14 +7,8 @@ using Connector.Kit.Security;
 
 namespace Connector.Kit.AgentProtocol;
 
-/// <summary>
-/// The wire contract between the control plane and an agent.
-///
-/// Every call is outbound FROM the agent: the control plane never initiates
-/// a connection to one. That single property is what lets an agent sit
-/// behind NAT on a residential line, in a home lab, or on a user's own
-/// machine, and it is why bring-your-own hardware needs no redesign.
-/// </summary>
+// every call is outbound FROM the agent: the control plane never connects to one, so an agent can sit behind NAT, in a home
+// lab or on a user's own machine
 public sealed record AgentCapabilities
 {
     /// <summary>Provider ids this agent can serve. Empty means any.</summary>
@@ -22,11 +16,8 @@ public sealed record AgentCapabilities
 
     public IReadOnlyList<ProviderRuntime> Runtimes { get; init; } = [];
 
-    /// <summary>
-    /// Where this agent's traffic leaves from. Null means it makes no claim,
-    /// and no claim satisfies no requirement - see
-    /// <see cref="EgressRequirement.IsSatisfiedBy"/>.
-    /// </summary>
+    // where this agent's traffic leaves from; null makes no claim, and no claim satisfies no requirement
+    // (EgressRequirement.IsSatisfiedBy)
     public EgressRequirement? Egress { get; init; }
 
     [JsonPropertyName("max_concurrency")]
@@ -35,70 +26,22 @@ public sealed record AgentCapabilities
     [JsonPropertyName("class")]
     public AgentClass Class { get; init; } = AgentClass.Pooled;
 
-    /// <summary>
-    /// The digest of the adapter catalogue this agent runs - the same
-    /// computation the control plane makes over its own manifests. An agent
-    /// whose digest differs is running other adapter code, or the same code
-    /// configured differently, and the control plane leases it nothing: a
-    /// login driven by a form the control plane never documented fails in
-    /// ways nobody can read. Null means the agent made no claim, which no
-    /// agent built from this repository does.
-    /// </summary>
+    // the digest of the adapter catalogue this agent runs; a differing digest means other adapter code or config and the
+    // control plane leases it nothing (a login driven by an undocumented form fails unreadably); null = no claim
     [JsonPropertyName("catalog_digest")]
     public string? CatalogDigest { get; init; }
 
-    /// <summary>
-    /// The browser this agent runs (<see cref="AgentBrowser.Version"/>, #562). Null from an agent
-    /// built before the claim existed - which is itself the answer to "is it behind".
-    /// </summary>
+    // the browser this agent runs (#562); null from an agent built before the claim, which itself answers "is it behind"
     [JsonPropertyName("browser_version")]
     public string? BrowserVersion { get; init; }
 
-    /// <summary>
-    /// Whether this agent's browser is one a human could actually reach.
-    ///
-    /// False by default, exactly as headless is the default everywhere: an
-    /// agent in a rack has nobody in front of it, and one that has a person
-    /// there has to say so. What it buys is that a login declaring
-    /// <see cref="ProviderManifest.LoginNeedsHeadedAgent"/> is never offered
-    /// to a machine that cannot finish it - previously such an agent leased it,
-    /// drove the sign-in for two minutes, met the widget and failed
-    /// <c>blocked_by_provider</c>, having learnt nothing the catalogue could
-    /// not have said before it started.
-    /// </summary>
+    // false by default (as headless is): a login declaring LoginNeedsHeadedAgent is never offered to a machine that cannot
+    // finish it; such an agent used to lease it, drive two minutes, meet the widget and fail blocked_by_provider
     public bool Headed { get; init; }
 
-    /// <summary>
-    /// Deliberately NOT a function of <see cref="Headed"/>. This answers "can
-    /// this agent serve this provider at all", and the headed requirement is
-    /// about one job kind: a headless agent is perfectly able to run Amazon's
-    /// FETCHES, and excluding it here would idle it for a constraint that
-    /// applies only to the login.
-    /// </summary>
-    /// <remarks>
-    /// THREE AXES, and the third was declared for months and compared by
-    /// nobody. An agent has always sent <see cref="Egress"/> on enrollment and
-    /// on every heartbeat, and thirteen manifests have always asked for one -
-    /// DUO and BKR for a Dutch residential line, and so do AH, Jumbo, Bol,
-    /// amazon.nl, Lidl Plus and ASN - and a grep for a READ of either found
-    /// nothing outside the assignment. So the field was documentation: the
-    /// operator's datacenter fleet was offered Jumbo's logins exactly as
-    /// readily as a machine on a domestic line, and what came back was the
-    /// tarpit rather than an explanation.
-    /// <para>
-    /// A manifest that asks for nothing is served by anybody, which is most of
-    /// them and is why turning this on is not a fleet-wide narrowing.
-    /// <see cref="EgressRequirement.IsSatisfiedBy"/> carries the rest of the
-    /// rule, including the two readings that would make it decorative.
-    /// </para>
-    /// <para>
-    /// The other side of this is <c>LoginEndpoints</c>: an exclusion here
-    /// strands any work no online agent can take, so a login for a provider
-    /// whose address nobody claims is refused while the caller is still
-    /// watching, rather than queued for the abandoned sweep to fail half an
-    /// hour later.
-    /// </para>
-    /// </remarks>
+    // not a function of Headed: the headed need is about the login job kind only; a headless agent can run Amazon's fetches
+    // Egress was compared by nobody: a datacenter fleet was offered Dutch-residential-line logins and met the tarpit
+    // a manifest asking nothing is served by anybody. LoginEndpoints: a login nobody can serve is refused at once
     public bool CanServe(ProviderManifest manifest) =>
         (Providers.Count == 0 || Providers.Contains(manifest.Id, StringComparer.Ordinal))
         && (Runtimes.Count == 0 || Runtimes.Contains(manifest.Runtime))
@@ -136,11 +79,8 @@ public sealed record HeartbeatRequest
 
     public int Running { get; init; }
 
-    /// <summary>
-    /// The agent wiped every browser profile since the beat that asked it to
-    /// (<see cref="HeartbeatResponse.ResetProfiles"/>). A released hosted
-    /// slot (#420 A2) is free to the next person only once this arrives.
-    /// </summary>
+    // the agent wiped every browser profile since the beat that asked (ResetProfiles); a released hosted slot (#420 A2)
+    // is free to the next person only once this arrives
     [JsonPropertyName("reset_done")]
     public bool ResetDone { get; init; }
 }
@@ -165,20 +105,13 @@ public sealed record HeartbeatResponse
     /// <summary>An agent that learns it is revoked stops and wipes its profiles.</summary>
     public bool Revoked { get; init; }
 
-    /// <summary>
-    /// Wipe every browser profile and carry on serving (#420 A2): this hosted
-    /// slot was released, and the next person must find nothing of the last.
-    /// Asked on every beat until the agent answers <see cref="HeartbeatRequest.ResetDone"/>.
-    /// </summary>
+    // wipe every browser profile and carry on (#420 A2): the hosted slot was released and the next person must find nothing of
+    // the last; asked every beat until the agent answers ResetDone
     [JsonPropertyName("reset_profiles")]
     public bool ResetProfiles { get; init; }
 
-    /// <summary>
-    /// The control plane's own catalogue digest, so an agent whose
-    /// <see cref="AgentCapabilities.CatalogDigest"/> differs can say so in
-    /// its log - the only place its operator will look when it stops
-    /// picking up work.
-    /// </summary>
+    // the control plane's digest, so an agent whose CatalogDigest differs can say so in its log, the only place its
+    // operator looks
     [JsonPropertyName("catalog_digest")]
     public string? CatalogDigest { get; init; }
 }
@@ -189,10 +122,7 @@ public sealed record LeaseRequest
         [JobKind.Login, JobKind.Fetch, JobKind.Refresh, JobKind.Logout];
 }
 
-/// <summary>
-/// A leased job, with its credential material unsealed exactly once. The
-/// agent holds it in memory for the life of the job and never persists it.
-/// </summary>
+// unsealed once; the agent holds it in memory for the job and never persists it
 public sealed record LeasedJob
 {
     [JsonPropertyName("job_id")]
@@ -227,11 +157,8 @@ public sealed record LeasedJob
 
     public JobLimits Limits { get; init; } = new();
 
-    /// <summary>
-    /// Record this run (#441 L3): the browser's and the HTTP client's calls,
-    /// redacted, posted to the control plane when the run ends. Set only on a
-    /// lab run - the control plane refuses it on any other door.
-    /// </summary>
+    // record this run (#441 L3): browser and HTTP calls, redacted, posted when the run ends; only on a lab run,
+    // refused on any other door
     public bool Record { get; init; }
 }
 
@@ -252,18 +179,12 @@ public sealed record ProgressReport
     [JsonPropertyName("steps_done")]
     public IReadOnlyList<JobStep> StepsDone { get; init; } = [];
 
-    /// <summary>
-    /// Latches true once a credential has gone upstream. After this a lost
-    /// lease fails the job permanently rather than requeuing it - retrying a
-    /// login that may already have counted is how accounts get locked.
-    /// </summary>
+    // latches true once a credential has gone upstream: a lost lease then fails the job instead of requeuing (a retried login
+    // that may have counted locks accounts)
     [JsonPropertyName("credential_submitted")]
     public bool CredentialSubmitted { get; init; }
 
-    /// <summary>
-    /// Records gathered so far. Null when the report carries no count, which
-    /// leaves the last one standing rather than resetting it.
-    /// </summary>
+    // null leaves the last count standing rather than resetting it
     [JsonPropertyName("found")]
     public int? Found { get; init; }
 }
@@ -272,12 +193,8 @@ public sealed record RaiseChallengeRequest
 {
     public required ChallengeType Type { get; init; }
 
-    /// <summary>
-    /// What the answer must contain. Without it every challenge an AGENT
-    /// raises reaches the consumer as <see cref="ChallengeAnswerKind.Text"/> -
-    /// inline providers would relay taps correctly and browser-tier ones,
-    /// which are the only providers that ever have a captcha, would not.
-    /// </summary>
+    // what the answer must contain: without it every agent-raised challenge reaches the consumer as Text, and browser-tier
+    // providers (the only ones with a captcha) would not relay taps
     [JsonPropertyName("answer_kind")]
     public ChallengeAnswerKind AnswerKind { get; init; } = ChallengeAnswerKind.Text;
 
@@ -322,16 +239,8 @@ public sealed record JobResultRequest
     /// <summary>What a registry states you owe. A standing position, not an event.</summary>
     public IReadOnlyList<CreditRegistration> Registrations { get; init; } = [];
 
-    /// <summary>
-    /// What a student-finance body states is owed.
-    /// </summary>
-    /// <remarks>
-    /// A separate list for the same reason <see cref="Registrations"/> is one:
-    /// a record shape that is not carried here is invisible however correctly
-    /// an adapter produced it. DUO shipped without this and the symptom was a
-    /// fetch that succeeded, reported "complete", and staged nothing - which
-    /// reads to a user as "you have no student debt".
-    /// </remarks>
+    // its own list like Registrations: a record shape not carried here is invisible however correctly an adapter produced it.
+    // DUO shipped without it and a fetch succeeded, "complete", staging nothing, which reads as "no student debt"
     public IReadOnlyList<StudentDebt> Debts { get; init; } = [];
 
     /// <summary>Sealed by the control plane into a new bundle for the caller.</summary>
@@ -350,41 +259,18 @@ public sealed record JobResultRequest
 
     public string? Via { get; init; }
 
-    /// <summary>
-    /// What the adapter said about this run, in the order it said it.
-    /// </summary>
-    /// <remarks>
-    /// Operator-facing prose, already scrubbed of credential values by the
-    /// agent - never localised, and deliberately NOT part of
-    /// <see cref="ProgressReport"/>, whose vocabulary is a closed translatable
-    /// set. These are the sentences that explain an outcome which already looks
-    /// like success: a partial page, an account type that could not be listed,
-    /// a balance a provider does not serve.
-    /// </remarks>
+    // operator-facing prose, scrubbed of credential values by the agent, never localised, and not part of ProgressReport
+    // (a closed translatable set); explains outcomes that look like success (a partial page, an unlistable account type)
     public IReadOnlyList<string> Notes { get; init; } = [];
 
-    /// <summary>
-    /// The provider's own payload per record, keyed by external id, when the
-    /// caller asked for it with <c>include=raw</c>.
-    ///
-    /// Carried over the agent wire like everything else here, and staged onto
-    /// the same row as the normalised record - so the ack that purges one
-    /// purges the other, and raw never acquires a lifetime of its own.
-    /// </summary>
+    // staged onto the same row as the normalised record, so the ack that purges one purges the other.
+    // raw gets no lifetime of its own
     public IReadOnlyDictionary<string, string> Raw { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// What the control plane RECORDED for a job that was reported failed.
-/// </summary>
-/// <remarks>
-/// The agent needs this and used to throw it away. A failure post does not
-/// always end a job: the queue may requeue a retriable code, and an agent that
-/// tidied up after attempt one would hand attempt two a dead session. So the
-/// host decides - it is the only side that knows the retry policy - and the
-/// agent acts, because it is the only side still holding the browser.
-/// </remarks>
+// the host decides (only it knows the retry policy) and the agent acts (only it holds the browser): the queue may requeue,
+// and an agent tidying up after attempt one would hand attempt two a dead session
 public sealed record AgentFailResponse
 {
     public required JobState State { get; init; }
@@ -398,16 +284,10 @@ public sealed record JobFailRequest
     /// <summary>Operator-facing. Never localised, never shown to an end user.</summary>
     public string? Detail { get; init; }
 
-    /// <summary>
-    /// What the adapter said BEFORE it failed, which is usually where the
-    /// reason is. See <see cref="JobResultRequest.Notes"/>.
-    /// </summary>
+    // what the adapter said BEFORE it failed, which is usually where the reason is
     public IReadOnlyList<string> Notes { get; init; } = [];
 
-    /// <summary>
-    /// Redacted screenshot and DOM digest. What makes a broken adapter
-    /// fixable; never captured while a secret field holds content.
-    /// </summary>
+    // redacted screenshot and DOM digest; never captured while a secret field holds content
     public FailureArtifacts? Artifacts { get; init; }
 }
 

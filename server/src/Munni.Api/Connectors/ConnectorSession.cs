@@ -1,71 +1,43 @@
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The binding between a connector session and the munni user it was
-/// started for (docs/connectors/relay.md, "What the relay guarantees"). Ids and state,
-/// never a bundle, never inputs, never data: it exists so the relay can
-/// answer "whose session is this" and so an operator's diagnosis can list
-/// a user's connections. One row per connection: a re-login of the same
-/// connection replaces the row.
-/// </summary>
+// ids and state, never a bundle, inputs or data; one row per connection: a re-login replaces the row
 public class ConnectorSession
 {
-    /// <summary>The connector's session id (<c>ses_…</c>).</summary>
     public required string Id { get; set; }
 
     public Guid UserId { get; set; }
 
-    /// <summary>The provider id from the catalogue (<c>mock-store-simple</c>, <c>ing</c>, …).</summary>
     public required string Provider { get; set; }
 
-    /// <summary>
-    /// The client's stable id for this connection, kept across re-logins so
-    /// what a connection pulled is keyed by the connection and not by the
-    /// session that happened to fetch it.
-    /// </summary>
+    // kept across re-logins so what a connection pulled is keyed by the connection, not by the session that fetched it
     public required string ConnectionId { get; set; }
 
-    /// <summary>The connector's session state as last seen (<c>active</c>, <c>awaiting_input</c>, …).</summary>
     public required string State { get; set; }
 
-    /// <summary>The user's own label for the connection, echoed by the connector.</summary>
     public string? Label { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset LastSeenAt { get; set; }
 
-    /// <summary>
-    /// The bundle of a household-agent-custody session (§5.5): it names an
-    /// agent and a profile and holds no secret, so the relay may keep it and
-    /// sync unattended. Null for every other custody — the write-path scan
-    /// proves a client-custody bundle never lands here.
-    /// </summary>
+    // names an agent and a profile, holds no secret (§5.5); null for every other custody: the write-path scan proves a
+    // client-custody bundle never lands here
     public string? KeptBundle { get; set; }
 
-    /// <summary>When the scheduler last ran a sync for this session; null until it has.</summary>
     public DateTimeOffset? LastScheduledSyncAt { get; set; }
 
-    /// <summary>The connector's error code the last scheduled sync ended on; null after a clean one.</summary>
     public string? LastScheduleError { get; set; }
 
-    /// <summary>A party's <c>retry_after</c> on a rate-limited refusal (§15): the scheduler waits it out before the next attempt.</summary>
+    // a party's retry_after on a rate-limited refusal (§15): the scheduler waits it out
     public DateTimeOffset? ScheduleNotBefore { get; set; }
 
-    /// <summary>
-    /// The older history a scheduled pass left behind (#460): the next
-    /// backfill pass asks from <see cref="BackfillSince"/> (null: the party's
-    /// floor) up to this day. Null when nothing is left.
-    /// </summary>
+    // #460: the older history a scheduled pass left; the next backfill pass asks from BackfillSince up to this day.
+    // null when nothing is left
     public DateOnly? BackfillUntil { get; set; }
 
-    /// <summary>Where that backfill ends: the since of the pass that came back partial; null for the party's own floor.</summary>
+    // null: the party's floor
     public DateOnly? BackfillSince { get; set; }
 
-    /// <summary>
-    /// The failed job whose last picture waits on this person's answer
-    /// (#441 L1), as the relay's own scheduled sync saw it — the hub asks
-    /// "report this failure?", the answer clears it. Null when nothing waits.
-    /// </summary>
+    // #441 L1: the failed job whose picture waits on the person's answer; null when nothing waits
     public string? PendingArtifactsJobId { get; set; }
 }

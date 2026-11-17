@@ -21,12 +21,10 @@ describe('Bars (user 2026-10-08: numbers on top, a pick with a ring)', () => {
     );
     const texts = [...screen.getByTestId('b').querySelectorAll('text')].map((node) => node.textContent);
     expect(texts).toEqual(['€10', 'Jan', '€0', '€25', 'Mar']);
-    // the label sits ABOVE the bar it names
     const bar = screen.getByTestId('b-bar-2');
     const rect = bar.querySelectorAll('rect');
     const label = bar.querySelector('text')!;
     expect(Number(label.getAttribute('y'))).toBeLessThan(Number(rect[1].getAttribute('y')));
-    // the ring wraps the picked bar only
     expect(screen.getByTestId('b-selected')).toBeTruthy();
     expect(screen.getByTestId('b-bar-0').querySelectorAll('rect')).toHaveLength(1);
     fireEvent.click(screen.getByTestId('b-bar-0'));
@@ -42,6 +40,17 @@ describe('Bars (user 2026-10-08: numbers on top, a pick with a ring)', () => {
     expect(Number(label.getAttribute('y'))).toBeLessThan(Number(line.getAttribute('y1')));
     render(<Bars testId="top" values={[100, 200]} average={1000} averageLabel="Budget €10.00" />);
     expect(Number(screen.getByTestId('top-average-label').getAttribute('y'))).toBeGreaterThan(Number(screen.getByTestId('top-average').getAttribute('y1')));
+  });
+
+  it('#375 r3: the words of the line label carry no outline of their own — the halo is a copy drawn under them', () => {
+    render(<Bars testId="halo" values={[500, 1500]} average={1000} averageLabel="Budget €10.00" />);
+    const label = screen.getByTestId('halo-average-label');
+    expect(label.getAttribute('stroke')).toBeNull();
+    const halo = label.previousElementSibling;
+    expect(halo?.textContent).toBe('Budget €10.00');
+    expect(halo?.getAttribute('stroke')).toBe('var(--m-surface)');
+    expect(halo?.getAttribute('aria-hidden')).toBe('true');
+    expect([halo?.getAttribute('x'), halo?.getAttribute('y')]).toEqual([label.getAttribute('x'), label.getAttribute('y')]);
   });
 
   it('without value labels the chart keeps its old shape', () => {

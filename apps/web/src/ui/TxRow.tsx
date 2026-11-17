@@ -10,28 +10,19 @@ import { Highlight, amountQueryFor } from './Highlight';
 import { Icon } from './Icon';
 import { Pill } from './primitives';
 
-/**
- * Split-aware row visual: a single category (or one split taking the
- * full amount) shows that category; several splits under ONE parent
- * show the parent; splits across different parents show a neutral
- * "mixed" mark.
- */
+// a single category (or one split taking the full amount) shows it; several splits under one parent show the parent;
+// across parents a neutral "mixed" mark
 function txVisual(
   tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits'>,
   cats: ReturnType<typeof useCategories>,
   t: TFunc,
 ): { icon: string; color: string; label: string } {
-  // #211: the row's own category spread and a container's parts wear the
-  // same face rules — several categories under one parent show the
-  // parent, across parents the neutral mixed mark
-  // the settled Reimbursed slice nullifies value, it is not what the row is
-  // ABOUT (user ss 2026-10-05): a dinner partly paid back wears the dinner's
-  // face; an expected or received reimbursement entry still counts, so a
-  // row that also carries one of those stays mixed
+  // #211: the row's own category spread and a container's parts share these face rules
+  // the settled Reimbursed slice is not what the row is ABOUT: a partly paid-back dinner wears the dinner's face,
+  // while an expected or received reimbursement entry still counts (the row stays mixed)
   const source = tx.splits?.length ? tx.splits : (tx.cats ?? []);
   const slices = source.filter((s) => s.amountCents !== 0 && s.catId !== REIMBURSED_ID);
-  // #493: an expected (or received) reimbursement its links settled in full
-  // is not waiting any more — it reads Reimbursed, like the credit that paid it
+  // #493: an expected/received reimbursement its links settled in full is not waiting: it reads Reimbursed
   if (
     slices.length === 0 &&
     REIMB_CAT_IDS.includes(tx.catId ?? '') &&
@@ -53,15 +44,10 @@ function txVisual(
   return { icon: cat.icon, color: cat.color ?? parent?.color ?? 'var(--m-ink-3)', label: catName(cat, t) };
 }
 
-/** #156 r2: where the row sits against its group card's rounded frame */
 export type TxRowEdge = 'first' | 'last' | 'both' | 'none';
 
-// #156 r2: the full-bleed selection follows the card's corner radius at
-// the card's edges (the square tint poked past the rounded frame), and
-// keyboard focus wears the IDENTICAL treatment — the background carries
-// focus, replacing the outline ring (suppressed via data-quiet-focus in
-// styles.css). Literal class strings per edge: Tailwind only extracts
-// complete names.
+// #156: the full-bleed selection follows the card's corner radius at its edges, and keyboard focus wears the same
+// tint (outline suppressed via data-quiet-focus in styles.css); literal class strings: Tailwind extracts only complete names
 const EDGE_SELECTED: Record<TxRowEdge, string> = {
   first: 'rounded-t-card rounded-b-none',
   last: 'rounded-t-none rounded-b-card',
@@ -97,16 +83,13 @@ export function TxRow({
   highlight?: string;
   /** lists without date group headers (Home) show it inline */
   showDate?: boolean;
-  /** lists already scoped to one category (drill) skip the redundant name */
   hideCategory?: boolean;
   /** bulk review sheet: every row is unreviewed — the badge is noise */
   hideUnreviewed?: boolean;
   /** scoped lists (drill) show their slice as the headline amount */
   amountOverrideCents?: number;
-  /** master–detail panes mark the row whose detail is open (§4.2) */
   selected?: boolean;
-  /** #156 r2: rows at the group card's rim round their selection/focus
-   *  tint to the card's own radius; only those styles consume it */
+  /** #156: rows at the group card's rim round their selection/focus tint to its radius */
   edge?: TxRowEdge;
   /** desktop density (D2): the account surfaces as an md+ column */
   accountName?: string;
@@ -117,15 +100,12 @@ export function TxRow({
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
-  // display-currency lens (currency plan): rows convert at their OWN
-  // day's rate — historically honest lists; without a preference this
-  // is plain fmtCents
+  // rows convert at their OWN day's rate (historically honest lists)
   const { fmt } = useDisplayMoney();
   const { icon: iconName, color, label: categoryLabel } = txVisual(tx, cats, t);
 
-  // reimbursements change what a transaction really cost — lists show
-  // the net truth, with the gross quietly struck through beside it;
-  // credits net out what they refunded elsewhere the same way
+  // reimbursements change what a transaction cost: lists show the net, the gross struck through;
+  // credits net out what they refunded
   const net = tx.amountCents > 0 ? netCreditCents(tx, givenCents) : netAmountCents(tx);
   const display = amountOverrideCents ?? net;
   const positive = display > 0;
@@ -136,22 +116,14 @@ export function TxRow({
       type="button"
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
-      // the open row of a desktop master–detail list is the current one
       aria-current={selected ? 'true' : undefined}
-      // #156 r2: styles.css skips the outline ring for this button — the
-      // focus-visible background below is the one focus signal
+      // styles.css skips the outline ring for this button: the focus-visible background is the one focus signal
       data-quiet-focus=""
-      // #156: the selected row (desktop master–detail) tints edge to edge
-      // — the list card's px-3 left white slivers beside the highlight;
-      // keyboard focus paints the same full-bleed tint (one style, r2)
       className={`m-tap flex items-center gap-3 border-none py-2.5 text-left md:py-2 ${
         selected
           ? `${SELECTED_BLEED} ${EDGE_SELECTED[edge]}`
-          : // #198 r7 (user, desktop ss): NO base radius — divide-y draws
-            // the hairline through this element's border-bottom, and a
-            // border on a rounded element CURVES at both ends (the
-            // "thick 3D" edge between rows). The focus/selected tints
-            // carry their own edge-aware radii.
+          : // #198: no base radius: divide-y's hairline is this element's border-bottom, which curves on a rounded element
+            // the focus/selected tints carry their own edge-aware radii
             `w-full bg-transparent px-1 ${FOCUS_BLEED} ${EDGE_FOCUS[edge]}`
       }`}
     >
@@ -182,7 +154,7 @@ export function TxRow({
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
           )}
-          {/* #547 (user): "an icon … indicating that manual and auto transactions are merged" — and an entry still waiting for its bank row says so */}
+          {/* #547: an icon marks manual and auto transactions merged; an entry still waiting for its bank row says so */}
           {(tx as { entry?: unknown }).entry !== undefined && (
             <span className="ml-1.5 inline-flex align-middle" title={t('entry.linkedTitle')} data-testid={`tx-row-entry-${tx.id}`}>
               <Icon name="link-variant" size={12} color="var(--m-accent-deep)" />
@@ -207,14 +179,11 @@ export function TxRow({
       )}
       <span className="shrink-0 text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-          {/* #267: amount hits light up like text hits (comma/dot agnostic) */}
           {(() => {
             const amountText = fmt(display, tx.currency, { sign: true, date: tx.date });
             return <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />;
           })()}
         </span>
-        {/* #250 (user): the 2px category-ratio bar is gone — noise over
-            value; the parts tell their own story in the split group */}
         {amountOverrideCents === undefined && reimbursed && (
           <span className="m-num block text-[11px] text-ink-4 line-through">
             {fmt(tx.amountCents, tx.currency, { sign: true, date: tx.date })}

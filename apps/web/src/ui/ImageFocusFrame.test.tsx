@@ -36,10 +36,8 @@ describe('ImageFocusFrame (#446: drag the picture to choose what shows)', () => 
     expect(onFocus).toHaveBeenLastCalledWith({ x: 75, y: 50 });
 
     fireEvent.pointerMove(frame, { pointerId: 1, clientX: 20, clientY: 120 });
-    // far past the overhang: pinned to the right edge; the vertical axis fits, so y stays
     expect(onFocus).toHaveBeenLastCalledWith({ x: 100, y: 50 });
 
-    // a pointer that is not the dragging one is ignored, and so is a move after release
     const calls = onFocus.mock.calls.length;
     fireEvent.pointerMove(frame, { pointerId: 2, clientX: 150, clientY: 50 });
     fireEvent.pointerUp(frame, { pointerId: 1 });

@@ -39,7 +39,6 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         var result = await push.Content.ReadFromJsonAsync<PushResponse>();
         Assert.Equal(1, result!.Accepted);
 
-        // retrying the same op is a no-op
         var retry = await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [op]));
         var retryResult = await retry.Content.ReadFromJsonAsync<PushResponse>();
         Assert.Equal(0, retryResult!.Accepted);
@@ -73,15 +72,12 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         var spaceId = $"space_{Guid.NewGuid():N}";
         var alice = ClientFor("alice");
 
-        // device A: create with name+color at t=100
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("devA",
             [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "category", "c1",
                 new() { ["name"] = JsonSerializer.SerializeToElement("A"), ["color"] = JsonSerializer.SerializeToElement("red") },
                 "000000100-0000-devA")]));
-        // device B (later clock): rename at t=200
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push",
             new PushRequest("devB", [Op(spaceId, "c1", "name", "B", "000000200-0000-devB")]));
-        // device A: stale rename at t=150 arrives last
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push",
             new PushRequest("devA", [Op(spaceId, "c1", "name", "stale", "000000150-0000-devA")]));
 
@@ -114,7 +110,6 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.False(SyncWriter.IsUniqueViolation(new DbUpdateException("save failed", new InvalidOperationException())));
     }
 
-    /// <summary>#606: a device without the space takes its rows as they stand, a page at a time, and pulls from the first page's head.</summary>
     [Fact]
     public async Task A_snapshot_comes_in_pages_and_names_where_the_history_continues()
     {
@@ -166,7 +161,6 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
     {
         var spaceId = $"space_{Guid.NewGuid():N}";
         var alice = ClientFor("alice");
-        // three rows, each holding close to half a page's worth of data (a picture): two fit, the third starts the next page
         var heavy = new string('x', SyncEndpoints.SnapshotPageChars * 45 / 100);
         foreach (var id in new[] { "p1", "p2", "p3" })
         {
@@ -191,8 +185,7 @@ public class SyncApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("environment", "Development");
         builder.ConfigureServices(services =>
         {
-            // strip the Npgsql registration entirely (EF 10 also registers
-            // IDbContextOptionsConfiguration) before adding InMemory
+            // strip the Npgsql registration entirely (EF 10 also registers IDbContextOptionsConfiguration)
             foreach (var d in services
                          .Where(d =>
                              d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
@@ -210,7 +203,6 @@ public class SyncApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>ipwho.is stand-in: every public IP resolves to NL</summary>
 internal sealed class FakeGeoLookupHandler : HttpMessageHandler
 {
     public static int Calls;

@@ -4,14 +4,7 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// Everything replaying a tap needs from a browser: a point to click, and a
-/// wait between two of them.
-///
-/// Narrow on purpose. The rule being implemented - where a normalised tap
-/// lands, and what must NOT be clicked - is arithmetic and refusals, and a
-/// seam this small is what lets that be proved without a browser at all.
-/// </summary>
+// narrow on purpose: where a tap lands and what must not be clicked is arithmetic and refusals, provable without a browser
 internal interface IPointerSurface
 {
     Task ClickAsync(double x, double y, CancellationToken ct);
@@ -19,69 +12,31 @@ internal interface IPointerSurface
     Task PauseAsync(TimeSpan gap, CancellationToken ct);
 }
 
-/// <summary>
-/// The real surface: Playwright's mouse.
-///
-/// <c>page.Mouse</c> and not <c>frame.ClickAsync</c>, and that is the premise
-/// of this whole feature. An hCaptcha challenge lives in a cross-origin iframe
-/// whose contents no selector of ours can reach, but a mouse event is
-/// dispatched at the browser level, at a point in the page - so it arrives
-/// inside that iframe exactly as a real one would. We carry the picture out
-/// and the taps back; the human solved it.
-/// </summary>
+// page.Mouse, not frame.ClickAsync: hCaptcha is in a cross-origin iframe no selector reaches; a mouse event arrives there
 internal sealed class MousePointer(IMouse mouse, TimeProvider time) : IPointerSurface
 {
-    /// <summary>
-    /// How long the button stays down. A press is an event pair with a
-    /// duration; dispatching down and up in the same instant is not a shorter
-    /// click, it is a shape no pointing device produces, and a widget that
-    /// listens for both may see only one.
-    /// </summary>
+    // a press has a duration: down and up in the same instant is a shape no device produces; a widget may see only one
     private const float PressMs = 40;
 
     public Task ClickAsync(double x, double y, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
-        // Playwright takes floats. The taps were rounded to four decimals of
-        // the image on the way in, so the cast cannot move one across a tile
-        // boundary of any grid a human can see.
+        // taps are rounded to four decimals of the image, so the float cast cannot cross a tile boundary
         return mouse.ClickAsync((float)x, (float)y, new MouseClickOptions { Delay = PressMs });
     }
 
     public Task PauseAsync(TimeSpan gap, CancellationToken ct) => Task.Delay(gap, time, ct);
 }
 
-/// <summary>
-/// Turns the human's taps back into clicks on the page they were taken from.
-///
-/// The mapping itself is <see cref="Tap.ToPagePixels"/> - it lives on the wire
-/// type so the two ends cannot disagree about what a coordinate means. What
-/// lives here is everything around it: the refusals, the order, and the gap.
-/// </summary>
+// the mapping lives on the wire type (Tap.ToPagePixels) so both ends agree on what a coordinate means
 internal static class TapReplay
 {
-    /// <summary>
-    /// The gap between two taps.
-    ///
-    /// Not an evasion measure and not a disguise: three clicks in the same
-    /// millisecond are three events a widget's own handlers cannot process as
-    /// separate selections, and the page needs the time to paint the tile it
-    /// just accepted before the next one arrives. It is the same reason a real
-    /// finger cannot do it either.
-    /// </summary>
+    // not evasion: same-millisecond clicks are not separate selections, and the page needs time to paint the accepted tile
     internal static readonly TimeSpan DefaultGap = TimeSpan.FromMilliseconds(180);
 
-    /// <summary>
-    /// Replays <paramref name="taps"/> into the region
-    /// <paramref name="capture"/> came from, and reports how many clicks were
-    /// actually dispatched.
-    ///
-    /// Zero is a real answer, not an error: it is what a refusal returns, and
-    /// the caller's cue that the challenge went unanswered. Every refusal
-    /// happens BEFORE the first click, because the one outcome worth more
-    /// engineering than any other is never half-clicking a live page.
-    /// </summary>
+    // returns clicks dispatched; zero is a refusal, not an error; every refusal comes BEFORE the first click
+    // so a live page is never half-clicked
     internal static async Task<int> ReplayAsync(
         IReadOnlyList<Tap> taps,
         RegionCapture capture,
@@ -95,9 +50,7 @@ internal static class TapReplay
         ArgumentNullException.ThrowIfNull(pointer);
         ArgumentNullException.ThrowIfNull(logger);
 
-        // No image ever left this machine, so nobody saw anything and these
-        // taps cannot be answers to it. This is the redactor's refusal arriving
-        // here: it produces no clicks, exactly as it produced no picture.
+        // no image left this machine, so these taps answer nothing: the redactor's refusal arriving here
         if (!capture.Captured)
         {
             logger.LogWarning(
@@ -109,11 +62,7 @@ internal static class TapReplay
 
         var region = capture.Region;
 
-        // The crop is measured against the viewport, and so is the mouse. A box
-        // that no longer fits inside it means the page scrolled or re-laid
-        // itself since the capture - the taps are then answers to a picture of
-        // somewhere else, and clicking them would hit whatever has since moved
-        // under those coordinates.
+        // crop and mouse are measured against the viewport: a region that no longer fits means the page scrolled or re-laid out
         if (viewport is { } screen && !Fits(region, screen))
         {
             logger.LogWarning(
@@ -122,12 +71,8 @@ internal static class TapReplay
             return 0;
         }
 
-        // Mapped in full before anything is clicked. A tap is a fraction of the
-        // image by construction, so a point outside the box it was measured
-        // against cannot happen today - which is precisely why the check is
-        // cheap enough to keep: it is the one place where a future change on
-        // either side of the wire would otherwise become a click somewhere
-        // nobody chose.
+        // all taps are mapped before any click; out-of-box cannot happen today, the check guards a future change on either
+        // side of the wire
         var points = new (double X, double Y)[taps.Count];
         for (var i = 0; i < taps.Count; i++)
         {

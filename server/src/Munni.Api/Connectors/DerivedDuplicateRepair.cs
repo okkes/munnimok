@@ -6,25 +6,9 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The 2026-10-07 repair: rows whose id the connector derived once carried
-/// the login session in that id, so every new ING sign-in re-keyed the
-/// fetched window - the card's repayments, the loan and savings movements
-/// landed a second time, identical in every fact. The adapter's seed is
-/// stable now and <see cref="DerivedRowReconciler"/> catches the next
-/// re-key; this takes the copies that are already there back out, once.
-/// <para>
-/// Per account, rows with a derived reference are grouped by their facts
-/// (booked date, amount, currency, counterparty). A group is one real
-/// transaction fetched several times, except that two identical payments
-/// on one day are two rows: so the rows are clustered by the fetch that
-/// wrote them (their birth stamps, two minutes apart or more), the oldest
-/// cluster says how many are real, and only a later cluster LARGER than
-/// that adds to the count. The surplus goes - the untouched copies first
-/// (no pairing, no reimbursement, no category a device filed), the newest
-/// first among equals - as ordinary tombstones every device pulls.
-/// </para>
-/// </summary>
+// 2026-10-07: derived ids once carried the login session, so every ING sign-in re-keyed the window
+// and repayments landed twice; copies are clustered by fetch (births 2+ min apart),
+// the oldest cluster says how many are real; the surplus goes as tombstones, untouched and newest first
 public static class DerivedDuplicateRepair
 {
     public const string SettingKey = "repair:derived-duplicates:2026-10-07";
@@ -46,7 +30,6 @@ public static class DerivedDuplicateRepair
         return removed;
     }
 
-    /// <summary>The repair itself, idempotent by op id: every surplus copy of a derived row is tombstoned in its feed.</summary>
     public static async Task<int> RepairAsync(AppDbContext db, CancellationToken ct)
     {
         var feedIds = await db.EntityRows
@@ -75,7 +58,6 @@ public static class DerivedDuplicateRepair
     /// <summary>One row as the repair weighs it. A tombstoned row still counts for the size of the fetch that wrote it, so a second pass changes nothing.</summary>
     private sealed record Copy(string Id, string AccountId, string Key, long BornMs, bool Deleted, int Touched);
 
-    /// <summary>The ids in one feed that are copies of an older row.</summary>
     private static async Task<List<string>> SurplusAsync(AppDbContext db, string feedId, CancellationToken ct)
     {
         var rows = await db.EntityRows
@@ -109,7 +91,6 @@ public static class DerivedDuplicateRepair
             var keep = RealCount(ordered);
             var alive = ordered.Where(c => !c.Deleted).ToList();
             if (keep >= alive.Count) continue;
-            // the copies to let go: the least touched first, the newest first among equals
             var drop = alive
                 .OrderBy(c => c.Touched)
                 .ThenByDescending(c => c.BornMs)
@@ -139,7 +120,6 @@ public static class DerivedDuplicateRepair
         return Math.Max(keep, cluster);
     }
 
-    /// <summary>A row's weight in the person's hands, summed over every space its account is attached to.</summary>
     private static async Task<Dictionary<string, int>> TouchedAsync(AppDbContext db, string feedId, List<string> ids, CancellationToken ct)
     {
         var spaceIds = await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feedId).Select(l => l.SpaceId).Distinct().ToListAsync(ct);
@@ -174,7 +154,6 @@ public static class DerivedDuplicateRepair
         return weight;
     }
 
-    /// <summary>The wall-clock milliseconds inside a stamp (its first, base36 part), or 0 when there is none.</summary>
     internal static long WallMs(string? hlc)
     {
         if (string.IsNullOrEmpty(hlc)) return 0;

@@ -13,11 +13,9 @@ interface Rect {
 
 const FIND_TRIES = 12; // ~1.5s for screen transitions to land the anchor
 const PAD = 6;
-/** the card's distance from the frame's edges (the inset-x-4 it falls back to) */
 const CARD_GUTTER = 16;
 
-/** #558: the card spans the app's frame (side panel + content), not the
- *  whole window — on a phone the frame IS the window; no frame, no change */
+/** #558: the card spans the app's frame (side panel + content), not the window; with no frame it is untouched */
 function placeCardInFrame(card: HTMLElement): void {
   const frame = document.querySelector('[data-app-frame]')?.getBoundingClientRect();
   if (!frame || frame.width === 0) {
@@ -39,12 +37,7 @@ function isDrawn(el: Element): boolean {
   return document.documentElement.getBoundingClientRect().height === 0;
 }
 
-/**
- * Layer 3: the "try it yourself" walkthrough — dims the screen, cuts a
- * hole around the real element and explains it. Steps whose anchor is
- * missing (empty states) show their sample illustration instead of
- * being skipped (ruling: no empty-state tours).
- */
+// a step whose anchor is missing (empty state) shows its sample illustration instead of being skipped
 export function SpotlightOverlay({
   tour,
   step,
@@ -104,10 +97,8 @@ export function SpotlightOverlay({
 
   const spotlight = phase === 'found' && rect !== null;
 
-  // card placement is measured, not CSS-anchored: bottom-anchoring above
-  // a TALL anchor (the review card) pushed the card's top clean off the
-  // screen (user ss 2026-07-28) — measure the card, place it under/over
-  // the anchor, then clamp inside the viewport + status-bar safe area
+  // card placement is measured, not CSS-anchored: bottom-anchoring above a TALL anchor (the review card)
+  // pushed the card's top off the screen
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = cardRef.current;
@@ -131,7 +122,6 @@ export function SpotlightOverlay({
 
   return createPortal(
     <div className="fixed inset-0 z-[120]" data-testid="spotlight-overlay">
-      {/* backdrop with a cutout (four panes when anchored, full when not) */}
       {spotlight ? (
         <>
           <div className="absolute inset-x-0 top-0 bg-black/55" style={{ height: Math.max(0, rect.top) }} />
@@ -150,7 +140,6 @@ export function SpotlightOverlay({
         <div className="absolute inset-0 bg-black/55" />
       )}
 
-      {/* the step card (top written by the measuring effect above) */}
       <div
         ref={cardRef}
         data-testid="spotlight-card"

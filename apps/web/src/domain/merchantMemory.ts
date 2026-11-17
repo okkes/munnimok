@@ -2,22 +2,8 @@ import { REIMBURSED_ID, UNCATEGORIZED_ID } from './categories';
 import { merchantKey } from './merchantKey';
 import type { TxSplitCat } from '@/db/types';
 
-/**
- * History-based prediction: how the user actually handled a merchant
- * before is the strongest signal there is. Only human-confirmed rows
- * count (needsReview must be 0 AND a real category set) — imported
- * keyword guesses must never masquerade as history, or fifty
- * auto-guessed "groceries" would outvote the user's deliberate
- * corrections.
- *
- * #161 (user): decisions carry WEIGHT, not just a timestamp — every
- * occurrence votes with a recency-decayed weight (half-life ~6
- * months), so "almost always groceries" survives one dinner out, and
- * a habit that genuinely shifts flips the winner after a few repeats.
- * The memory also remembers more than the category: a percentage
- * category spread the user keeps confirming, and the event the recent
- * charges joined.
- */
+// only human-confirmed rows count (needsReview 0, a real category): keyword guesses must not masquerade as history
+// votes are recency-decayed (half-life ~6 months): one dinner out never beats a habit, a real shift flips it (#161)
 
 /** recency half-life in days — one occurrence six months old counts half */
 const HALF_LIFE_DAYS = 180;
@@ -33,10 +19,7 @@ export interface MerchantStats {
   catId: string;
   /** money direction this stat was learned from (refunds ≠ purchases) */
   sign: 1 | -1;
-  /** #564: the ledger it was learned on — a savings, loan or brokerage
-   *  account's own rows (their stamp) read the movement from the pot's
-   *  side, so they never teach an ordinary account's rows; absent = an
-   *  ordinary account */
+  /** #564: stamp of a savings/loan/brokerage ledger, whose rows never teach an ordinary account; absent = ordinary */
   ledger?: string;
   count: number;
   /** recency-decayed vote mass (#161) — the winner has the most */
@@ -44,11 +27,9 @@ export interface MerchantStats {
   lastDate: string;
   /** recent absolute amounts (minor units) — powers the same-amount boost */
   amounts: number[];
-  /** #161: occurrences that were a percentage category SPREAD, and the
-   *  latest such spread — predicted when spreads dominate this stat */
+  /** #161: occurrences that were a percentage SPREAD, and the latest one — predicted when spreads dominate */
   spreadCount: number;
   lastSpread?: { catId: string; pct: number }[];
-  /** #161: recency-decayed votes for the event the charges joined */
   eventVotes: Map<string, number>;
 }
 
@@ -63,7 +44,6 @@ export interface MemoryInput {
   /** the row's category spread — only complete pct partitions teach */
   cats?: TxSplitCat[];
   eventId?: string;
-  /** #564: the stamp of the account the row sits on (absent = ordinary) */
   ledger?: string;
 }
 
@@ -75,7 +55,6 @@ const teachableSpread = (cats: TxSplitCat[] | undefined): { catId: string; pct: 
   return cats.map((c) => ({ catId: c.catId, pct: c.pct! }));
 };
 
-/** one confirmed row's votes land on its stat (S3776: out of the loop) */
 function absorbRow(entry: MerchantStats, row: MemoryInput, weight: number): void {
   entry.count += 1;
   entry.weight += weight;
@@ -94,10 +73,7 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
   const memory: MerchantMemory = new Map();
   for (const row of rows) {
     if (row.needsReview === 1 || !row.catId || row.catId === UNCATEGORIZED_ID) continue;
-    // a credit filed as Reimbursed is settlement bookkeeping a link wrote,
-    // never a habit: the next credit from the same person must not be
-    // predicted as Reimbursed (user ss 2026-10-06 — the category only ever
-    // arrives through an actual reimbursement link)
+    // a credit filed Reimbursed is settlement bookkeeping a link wrote, never a habit: the category only arrives through a link
     if (row.catId === REIMBURSED_ID) continue;
     const key = merchantKey(row.merchant);
     if (!key) continue;
@@ -129,20 +105,16 @@ const closeAmounts = (a: number, b: number): boolean => Math.abs(a - b) <= Math.
 
 export interface MemoryHit {
   catId: string;
-  /** occurrences backing this prediction */
   evidence: number;
   /** an earlier occurrence had ~this exact amount (subscription-like) */
   amountMatch: boolean;
-  /** #161: the pct spread the user keeps confirming for this merchant */
   cats?: { catId: string; pct: number }[];
   /** #161: the event the recent charges joined (own-space memory only) */
   eventId?: string;
 }
 
-/** the stat's extras, attached only when they genuinely dominate */
 function hitFrom(stat: MerchantStats, amountMatch: boolean): MemoryHit {
-  // a spread predicts only when MOST confirmations of this stat were
-  // spreads — an occasional split must not fragment every future charge
+  // a spread predicts only when most confirmations were spreads: an occasional split must not fragment future charges
   const cats = stat.lastSpread && stat.spreadCount * 2 > stat.count ? stat.lastSpread : undefined;
   let eventId: string | undefined;
   let best = 0;
@@ -171,9 +143,7 @@ export function predictFromMemory(memory: MerchantMemory, merchant: string, amou
     return hitFrom(best, true);
   }
 
-  // #161 (user rule): the HEAVIEST habit wins — recency-decayed votes,
-  // so one dinner never beats years of groceries, while a real habit
-  // shift takes the lead after a few recent repeats
+  // the heaviest recency-decayed habit wins: one dinner never beats years of groceries
   const best = [...sameSide].sort((a, b) => b.weight - a.weight || b.lastDate.localeCompare(a.lastDate))[0];
   return hitFrom(best, false);
 }

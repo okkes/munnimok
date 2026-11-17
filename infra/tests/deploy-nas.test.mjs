@@ -1,8 +1,5 @@
-// The Deploy-to-NAS contract: the workflow names every secret it passes
-// (user ruling 2026-09-16: no secrets-context dump — the pattern GitHub's
-// scanner holds public-repo runs for), so every placeholder of a rendered
-// env template must be listed by its own name; render-env.sh then fills
-// the template from the environment.
+// the workflow lists each secret by its own name, never a secrets-context dump
+// (GitHub's scanner holds such public-repo runs)
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -22,7 +19,6 @@ test.after(() => fx.cleanup());
 const ROOT = new URL('../../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
 
-/** the env entries of one job (NAME → secrets | vars), each filled from its own name */
 function passedBy(workflow, jobId) {
   const job = workflow.split(new RegExp(`^  ${jobId}:$`, 'm'))[1]?.split(/^  [a-z-]+:$/m)[0] ?? '';
   assert.ok(job.length > 100, `job ${jobId} found in deploy-nas.yml`);
@@ -63,7 +59,6 @@ test('deploy-nas: the deploy job passes every placeholder of the shared and the 
   for (const name of ['LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET', 'GLITCHTIP_API_TOKEN']) assert.equal(passed.get(name), 'secrets', `${name} lets after-apply see whether the seed landed`);
 });
 
-/** render-env.sh on a template: {out, rendered, status} */
 function renderEnv(template, env) {
   const dir = mkdtempSync(join(tmpdir(), 'munni-render-env-'));
   const tpl = join(dir, 'template.env');

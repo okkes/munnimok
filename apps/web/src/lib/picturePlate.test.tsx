@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-// harness registers RTL cleanup between tests
 import '@/test/harness';
 import { Picture } from '@/ui/Picture';
 import { pictureStats, plateFor } from './picturePlate';

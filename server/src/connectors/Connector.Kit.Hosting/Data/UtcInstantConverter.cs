@@ -3,22 +3,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Connector.Kit.Hosting.Data;
 
-/// <summary>
-/// Every timestamp is stored as a fixed-width UTC instant in ISO-8601 text.
-///
-/// This is not a stylistic choice. Sqlite refuses to ORDER BY a
-/// <see cref="DateTimeOffset"/> at all - its native encoding keeps the offset,
-/// which makes byte order and chronological order different things - so the
-/// queue's "oldest job first", the newest-challenge lookup and the staged-row
-/// ordering would all work on Postgres and throw in a test. Normalising to a
-/// single zero-offset form of fixed length makes lexicographic order exactly
-/// chronological order on both providers, keeps range comparisons correct,
-/// and leaves the column readable to a human with a SQL prompt.
-///
-/// The invariant this depends on: nothing writes a non-UTC value. Every
-/// timestamp in the platform comes from <c>TimeProvider.GetUtcNow()</c>, and
-/// the conversion normalises anything that did not.
-/// </summary>
+/// stored as fixed-width zero-offset UTC ISO-8601 text: Sqlite cannot ORDER BY a DateTimeOffset,
+/// and this makes lexicographic order chronological on both providers
+/// invariant: nothing writes a non-UTC value (the conversion normalises anything that did)
 public sealed class UtcInstantConverter() : ValueConverter<DateTimeOffset, string>(
     value => value.ToUniversalTime().ToString(Format, CultureInfo.InvariantCulture),
     stored => DateTimeOffset.ParseExact(stored, Format, CultureInfo.InvariantCulture, Styles))
@@ -28,6 +15,5 @@ public sealed class UtcInstantConverter() : ValueConverter<DateTimeOffset, strin
 
     internal const DateTimeStyles Styles = DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
 
-    /// <summary>Length of <see cref="Format"/> rendered. Used to size the column.</summary>
     public const int StoredLength = 28;
 }

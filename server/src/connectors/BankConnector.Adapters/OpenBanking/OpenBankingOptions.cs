@@ -1,10 +1,6 @@
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// The operator's GoCardless Bank Account Data credentials
-/// (<c>BankAdapters:GoCardless:*</c>). A party exists only when both are set —
-/// <see cref="BankAdapters.Real"/> registers it then, never a stand-in.
-/// </summary>
+// a party exists only when both are set: BankAdapters.Real registers it then, never a stand-in
 public sealed record GoCardlessOptions
 {
     public string? SecretId { get; init; }
@@ -16,12 +12,7 @@ public sealed record GoCardlessOptions
     public bool Configured => !string.IsNullOrWhiteSpace(SecretId) && !string.IsNullOrWhiteSpace(SecretKey);
 }
 
-/// <summary>
-/// The operator's Enable Banking application (<c>BankAdapters:EnableBanking:*</c>):
-/// the application id is the JWT's key id, the PEM signs it. Environment
-/// files carry the PEM as one line with <c>\n</c> escapes; the client
-/// unescapes.
-/// </summary>
+// environment files carry the PEM as one line with \n escapes; the client unescapes
 public sealed record EnableBankingOptions
 {
     public string? ApplicationId { get; init; }

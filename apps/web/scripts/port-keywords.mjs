@@ -1,5 +1,4 @@
-// One-shot port of apollousa's category keyword predictor data to TS.
-// Usage: node scripts/port-keywords.mjs
+// one-shot port of apollousa's category keyword predictor data
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,7 +10,6 @@ const dataDir = path.resolve(
 );
 const out = path.resolve(here, '../src/domain/keyword-categories.ts');
 
-// CategoryEnum name -> our catalog id (apps/web/src/domain/categories.ts)
 const ENUM_TO_ID = {
   ConsumptionAlcoholAndTobacco: 'alcohol',
   ConsumptionBreakfastAndBrunch: 'breakfast',
@@ -92,7 +90,6 @@ const FILES = {
   tr: 'TurkishCategoryKeyWordsMapping.cs',
 };
 
-// validate ids against the generated catalog
 const catalogSrc = readFileSync(path.resolve(here, '../src/domain/categories.ts'), 'utf8');
 for (const id of Object.values(ENUM_TO_ID)) {
   if (!catalogSrc.includes(`"id":"${id}"`)) throw new Error(`catalog id not found: ${id}`);
@@ -134,9 +131,8 @@ ${rules.map((r) => `  ${JSON.stringify(r)},`).join('\n')}
 );
 console.log(`written ${rules.length} rules to ${out}`);
 
-// Also emit the server-side variant (embedded resource) with direction +
-// txType resolved from the catalog, so GoCardless ingestion categorizes
-// identically to client-side CAMT import.
+// also emits the server-side variant (embedded resource) with direction + txType from the catalog, so GoCardless
+// ingestion categorizes like client-side CAMT import
 const catalog = new Map(
   catalogSrc
     .split('\n')

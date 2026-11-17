@@ -59,25 +59,21 @@ const MENU: {
   { id: 'reorder', icon: 'sort-variant', key: 'plan.menu.reorder' },
   { id: 'pool', icon: 'bank-outline', key: 'plan.menu.pool' },
   { id: 'insights', icon: 'chart-line', key: 'plan.menu.insights' },
-  // start over (user 2026-10-08): only a plan that can still be edited in full offers it
+  // start over: only a plan that can still be edited in full offers it
   { id: 'startOver', icon: 'restart', key: 'plan.menu.startOver' },
 ];
 
-/** how far the pager walks into the future (the funded periods ahead and the empty ones after them) */
 const MAX_AHEAD = 12;
 
-/** the n-th period after the current one */
 const aheadPeriodAt = (model: PlanningModel, n: number): Period =>
   periodsAhead(model.data.space ?? { periodType: 'month', periodDay: 1 }, n, parseLocalDate(model.today))[n - 1];
 
-/** the period the pager shows: the current one, one of the past, or one ahead (negative) */
 const viewedPeriod = (model: PlanningModel, viewBack: number): Period => {
   if (viewBack === 0) return model.period;
   if (viewBack > 0) return model.pastPeriods.at(-viewBack) ?? model.period;
   return aheadPeriodAt(model, -viewBack);
 };
 
-/** the actual plan of the viewed period, or the sandbox beside the current one */
 function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean): PlanRow | null {
   if (viewBack === 0) return sandboxMode && model.sandbox ? model.sandbox : model.plan;
   const period = viewedPeriod(model, viewBack);
@@ -87,7 +83,6 @@ function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean
 
 const UNPLANNED_ROW_CLASS = 'm-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0';
 
-/** a row funded for this period only (#494): what it holds against what it spent, under the name */
 function OneOffLine({ row, fmt, currency }: Readonly<{ row: UnplannedRow; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
   if (!row.fundedCents) return null;
@@ -98,7 +93,6 @@ function OneOffLine({ row, fmt, currency }: Readonly<{ row: UnplannedRow; fmt: M
   );
 }
 
-/** an unplanned main: its tile, its name, what it spent, its subs */
 function UnplannedCategoryRow({ row, fmt, currency, onOpen }: Readonly<{ row: Extract<UnplannedRow, { kind: 'category' }>; fmt: MoneyFmt; currency: string; onOpen: () => void }>) {
   const { t } = useLang();
   const cats = useCategories();
@@ -125,7 +119,6 @@ function UnplannedCategoryRow({ row, fmt, currency, onOpen }: Readonly<{ row: Ex
   );
 }
 
-/** an unplanned source (user 2026-10-09): the source's own face, its kind under the name, what it took */
 function UnplannedSourceRow({
   row,
   model,
@@ -158,11 +151,7 @@ function UnplannedSourceRow({
   );
 }
 
-/**
- * #455 (user 2026-11-12): what a cashed-out goal bought sits under Goals as
- * the goal itself, not under its category — the whole purchase, which its
- * savings paid. Nothing to fund; the row opens the goal.
- */
+// #455: what a cashed-out goal bought sits under Goals as the goal itself (the whole purchase); nothing to fund
 function GoalBoughtRow({ purchase, model, fmt, currency }: Readonly<{ purchase: GoalPurchase; model: PlanningModel; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -187,13 +176,8 @@ function GoalBoughtRow({ purchase, model, fmt, currency }: Readonly<{ purchase: 
   );
 }
 
-/**
- * The money no subject answers for — a row opens the sheet that plans it
- * (user 2026-10-07; the set-aside door went 2026-10-08). Since 2026-10-09
- * the recurring costs, loans and goals the period paid for without a subject
- * sit here too, each a mirrored subject away, so the head counts them before
- * and after they are planned alike.
- */
+// recurring costs, loans and goals paid for without a subject sit here too,
+// so the head counts them before and after planning
 function UnplannedSection({
   rows,
   model,
@@ -229,7 +213,6 @@ function UnplannedSection({
   );
 }
 
-/** the sandbox strip: actual ↔ sandbox, and the sandbox's three verbs */
 function SandboxStrip({
   model,
   sandboxMode,
@@ -290,7 +273,6 @@ function SandboxStrip({
   );
 }
 
-/** the period pager: the past (reading, the previous one moving money), the current period, the periods ahead */
 function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: PlanningModel; viewBack: number; onViewBack: (next: number) => void }>) {
   const { lang } = useLang();
   const period = viewedPeriod(model, viewBack);
@@ -309,14 +291,6 @@ function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: Planning
   );
 }
 
-/**
- * Planning (#128): money gets a job before it is spent. The pool (the
- * checking and cash balances) is handed out to the plan's subjects —
- * recurring costs and debts first, then your own expenses, budgets and
- * goals — and what each subject holds is read against what it needs and
- * what was spent. Periods ahead fill from what is left; blueprints keep a
- * shape; the sandbox is a copy to try things in.
- */
 export function PlanningScreen() {
   const { t } = useLang();
   const { store, spaceId, engine } = useData();
@@ -325,7 +299,7 @@ export function PlanningScreen() {
   const currency = space?.currency ?? 'EUR';
   const model = usePlanning();
   const ops = usePlanningOps();
-  // #505 (user): a space this identity only reads shows its plan like a past period — nothing to change
+  // #505: a space this identity only reads shows its plan like a past period
   const canEdit = useCanEdit();
 
   const [viewBack, setViewBack] = useState(0);
@@ -342,8 +316,7 @@ export function PlanningScreen() {
   const cats = useCategories();
   const overBudget = useOverBudgetGuard(spaceId);
 
-  // #557 (user 2026-10-23): a new period carries the last plan over by itself instead of showing the
-  // start screen — once per period here; while it runs the start screen stays away
+  // #557: a new period carries the last plan over by itself, once per period; the start screen stays away meanwhile
   const unreachable = useOfflineReason() !== null;
   const synced = useCarryGate(engine, unreachable);
   const carrying = useCarryOver({
@@ -353,7 +326,7 @@ export function PlanningScreen() {
     synced,
     carry: ops.continuePlan,
   });
-  // which segments are folded: this device remembers (user 2026-10-07)
+  // folds are remembered per device
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
   const toggleSegmentFold = (kind: PlanSegmentKind) =>
     setFolds((prev) => {
@@ -383,8 +356,6 @@ export function PlanningScreen() {
     setSheet(item);
   };
 
-  // the one-tap funding doors (user 2026-10-07): a segment to its targets, a subject to its target —
-  // each through the beyond-the-pool guard with what the pool would still have to give
   const needOf = (kind: PlanSegmentKind): number =>
     views.filter((v) => v.subject.segment === kind && v.subject.snoozed !== 1).reduce((sum, v) => sum + shortfallCents(v), 0);
   const fundSegment = (kind: PlanSegmentKind) => {
@@ -454,7 +425,6 @@ export function PlanningScreen() {
           </p>
         );
       }
-      // a period ahead without a plan yet: it takes the current shape and what is left (user request 2026-10-02)
       return (
         <div className="rounded-card border border-line bg-surface p-4 text-center" data-testid="plan-ahead-empty">
           <p className="text-[13px] text-ink-3">{t('plan.aheadEmpty')}</p>
@@ -502,7 +472,7 @@ export function PlanningScreen() {
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         )}
-        {/* the red ones, one by one (#557): the pill opens a review that walks them — no auto-fix */}
+        {/* #557: the pill opens a review that walks the red ones; no auto-fix */}
         {model.attention.length > 0 && plan.kind === 'actual' && viewBack === 0 && (
           <div className="mt-3 px-1" data-testid="plan-attention">
             <button
@@ -550,8 +520,7 @@ export function PlanningScreen() {
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {/* #505: a reader's menu keeps what only shows. Start over stays with this period: a period ahead started
-              over keeps the mark of it, and would not continue the plan once it arrives */}
+          {/* #505: a reader's menu keeps what only shows; no Start over on a period ahead: it would not continue the plan */}
           {MENU.filter((item) => (item.id !== 'startOver' || (editable && viewBack >= 0)) && (canEdit || item.id === 'insights')).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
@@ -601,7 +570,7 @@ export function PlanningScreen() {
               setEditing({ subject: null, preset: { name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: row.cents } });
             }}
             onMirror={(row) => {
-              // a source needs no editor (user 2026-10-09): its subject mirrors the row, born unfunded like every other
+              // a source needs no editor: its subject mirrors the row, born unfunded
               const source = { id: row.sourceId, name: row.name, icon: row.kind === 'debt' ? undefined : row.icon, color: row.kind === 'recurring' ? undefined : row.color };
               void ops.addMirrored(plan.id, UNPLANNED_SEGMENT[row.kind], source).then(() => setUnplannedOpen(null));
             }}
@@ -611,7 +580,7 @@ export function PlanningScreen() {
           {reviewOpen && model.plan && (
             <OverspentReview onClose={() => setReviewOpen(false)} model={model} plan={model.plan} ops={ops} fmt={fmt} currency={currency} />
           )}
-          {/* start over (user 2026-10-08): every subject goes — a big move, so it asks first, with no countdown */}
+          {/* start over removes every subject: asks first, no countdown */}
           <DangerConfirmSheet
             open={startOverOpen}
             onOpenChange={setStartOverOpen}

@@ -20,7 +20,6 @@ export const SETTLED_KEY: Partial<Record<PlanSegmentKind, TranslationKey>> = {
   events: 'plan.settled.events',
 };
 
-/** the status chip's text: the shortfall or the overspend when the status carries an amount */
 export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency: string): string {
   const key = STATUS_KEY[view.status];
   if (view.status === 'underfunded') return t(key, { amount: fmt(shortfallCents(view), currency) });
@@ -29,7 +28,7 @@ export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency:
   return t(key);
 }
 
-/** the funding bar in the status's colour (#517); spent past the target but covered wears orange stripes over the green */
+/** spent past the target but covered wears orange stripes over the green (#517) */
 export function StatusBar({ view, testId }: Readonly<{ view: SubjectView; testId?: string }>) {
   const target = view.targetCents ?? 0;
   const barMax = Math.max(target, view.fundedCents, view.realizedCents, 1);
@@ -60,7 +59,6 @@ export function StatusBar({ view, testId }: Readonly<{ view: SubjectView; testId
   );
 }
 
-/** one subject: its face, what it holds against what it needs, how far it is spent */
 export function SubjectRow({
   view,
   model,
@@ -76,9 +74,8 @@ export function SubjectRow({
     <button
       data-testid={`plan-subject-${subject.id}`}
       onClick={(e) => {
-        // a Needs chip funds with one tap (user 2026-10-07); the rest of the row
-        // stays the sheet's door — one button, so the markup keeps no button
-        // inside a button, and the sheet's "Fill to target" is the keyboard's road
+        // the Needs chip funds in one tap; one button, so no button inside a button;
+        // the sheet's Fill to target is the keyboard route
         const chip = (e.target as HTMLElement).closest('[data-testid^="plan-subject-need-"]');
         if (chip && onFundToTarget) onFundToTarget();
         else onClick();
@@ -87,7 +84,6 @@ export function SubjectRow({
       data-settled={view.settledAhead}
       className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 || view.settledAhead ? ' opacity-55' : ''}`}
     >
-      {/* a mirrored source wears its logo here too (user 2026-10-09), so the plan reads like the recurring list */}
       <SourceTile segment={subject.segment} sourceId={subject.sourceId} icon={subject.icon} color={subject.color} model={model} testId={`plan-subject-logo-${subject.id}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
@@ -116,7 +112,7 @@ export function SubjectRow({
             {view.carriedCents > 0 && ` · ${t('plan.carried', { amount: fmt(view.carriedCents, currency) })}`}
           </span>
         </span>
-        {/* #557: ahead, funding before this period already settles it — it stays in the list and asks for nothing */}
+        {/* #557: ahead, funding before this period already settles it: stays listed, asks for nothing */}
         {view.settledAhead && (
           <span className="mt-1 block text-[11px] text-ink-4" data-testid={`plan-subject-settled-${subject.id}`}>
             {t(SETTLED_KEY[subject.segment] ?? 'plan.settled.events')}
@@ -144,7 +140,6 @@ export function SubjectRow({
   );
 }
 
-/** a segment: its caption with the subtotal, the fill and add doors, the subjects */
 export function SegmentSection({
   kind,
   views,
@@ -165,21 +160,16 @@ export function SegmentSection({
   views: SubjectView[];
   /** rows of the segment that are no subjects, under them (#455: what a cashed-out goal bought) */
   extra?: ReactNode;
-  /** the source rows behind the mirrored subjects — their logos */
   model?: PlanningModel;
-  /** adding and editing subjects is allowed */
   editable: boolean;
   /** money can be moved (the previous period allows that much) */
   canFill: boolean;
   fmt: MoneyFmt;
   currency: string;
-  /** Fund all (user 2026-10-07): every subject of the segment to its target */
   onFill: () => void;
-  /** one subject to its target, from its Needs chip */
   onFundToTarget: (view: SubjectView) => void;
   onAdd: () => void;
   onOpen: (view: SubjectView) => void;
-  /** folded (user 2026-10-07): the list gives way to one summary line */
   folded?: boolean;
   onToggleFold?: () => void;
 }>) {
@@ -199,7 +189,6 @@ export function SegmentSection({
           onClick={onToggleFold}
           className="m-tap flex min-w-0 items-center gap-1.5 border-none bg-transparent p-0 text-left text-inherit"
         >
-          {/* the chevron turns as the segment folds (user 2026-10-21, #518) */}
           <Icon name="chevron-down" size={14} style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform 200ms ease-out' }} />
           <Icon name={meta.icon} size={14} />
           <span className="truncate">{t(meta.labelKey)}</span>
@@ -229,7 +218,6 @@ export function SegmentSection({
           )}
         </span>
       </div>
-      {/* folding animates both ways (user 2026-10-21, #518): the list closes as the summary line opens */}
       <Collapse open={folded}>
         <button
           type="button"

@@ -20,7 +20,6 @@ async function createBudget(name: string, amount: string, catTestId = 'budget-ca
   fireEvent.change(screen.getByTestId('budgetform-anchor'), {
     target: { value: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-01` },
   });
-  // mains start collapsed now (user request) — unfold before picking
   fireEvent.click(await screen.findByTestId('budgetform-fold-consumption'));
   fireEvent.click(await screen.findByTestId(catTestId));
   fireEvent.click(screen.getByTestId('budgetform-save'));
@@ -75,7 +74,6 @@ describe('Budgets (demo identity)', () => {
     fireEvent.click(coffee);
     expect(coffee.dataset.state).toBe('off');
     expect(main.dataset.state).toBe('half');
-    // the half main's tap picks every free sub again; the next one lets them all go
     fireEvent.click(main);
     expect(coffee.dataset.state).toBe('checked');
     fireEvent.click(main);
@@ -98,7 +96,6 @@ describe('Budgets (demo identity)', () => {
     fireEvent.click(card);
     await screen.findByTestId('budgetdetail-hero');
     const label = screen.getByTestId('budgetdetail-period').textContent;
-    // #375 r2: the dashed line says what it is — the budget per period
     expect((await screen.findByTestId('budgetdetail-bars-average-label')).textContent).toMatch(/Budget €500\.00/);
     expect(screen.getByTestId('budgetdetail-limit-legend').textContent).toMatch(/dashed line is your budget per period/);
     fireEvent.click(await screen.findByTestId('budgetdetail-bars-bar-0'));
@@ -128,25 +125,20 @@ describe('Budgets (demo identity)', () => {
     fireEvent.click(card);
     await screen.findByTestId('budgetdetail-hero');
     await waitFor(() => expect(screen.getByTestId('budgetdetail-spent').textContent).toMatch(/€/));
-    // the current cycle announces its remaining days (user request)
     expect(screen.getByTestId('budgetdetail-daysleft').textContent).toMatch(/\d+/);
 
-    // category rows are FILTERS now (user request): tapping narrows the
-    // payments list and tapping again clears
     const catRow = screen.getByTestId('budgetdetail-cat-groceries');
     fireEvent.click(catRow);
     await waitFor(() => expect(catRow.className).toContain('bg-accent-soft'));
     fireEvent.click(catRow);
     await waitFor(() => expect(catRow.className).not.toContain('bg-accent-soft'));
 
-    // period nav walks backwards and returns
     const label = screen.getByTestId('budgetdetail-period').textContent;
     fireEvent.click(screen.getByTestId('budgetdetail-prev'));
     await waitFor(() => expect(screen.getByTestId('budgetdetail-period').textContent).not.toBe(label));
     fireEvent.click(screen.getByTestId('budgetdetail-next'));
     await waitFor(() => expect(screen.getByTestId('budgetdetail-period').textContent).toBe(label));
 
-    // edit opens prefilled; delete needs a second tap and lands on the list
     fireEvent.click(screen.getByTestId('budgetdetail-edit'));
     await screen.findByTestId('screen-budget-form');
     await waitFor(() => expect((screen.getByTestId('budgetform-name') as HTMLInputElement).value).toBe('Food'));
@@ -183,7 +175,6 @@ describe('Budgets (demo identity)', () => {
       return el as HTMLElement;
     });
     expect(part.textContent).toContain('30.00');
-    // the transport part is not the budget's business
     expect(list.querySelector('[data-testid="tx-part-solo-split579-0"]')).toBeNull();
     fireEvent.click(part);
     await screen.findByTestId('screen-tx-detail');
@@ -221,7 +212,6 @@ describe('Budgets (demo identity)', () => {
     fireEvent.click(screen.getByTestId('budgetform-save'));
     await screen.findByTestId('screen-budgets');
 
-    // reopen: the configuration round-trips
     const card = await waitFor(() => {
       const el = document.querySelector('[data-testid^="budget-card-"]');
       expect(el).toBeTruthy();

@@ -28,7 +28,6 @@ describe('#544: an account leaving a space takes its counterparty references wit
     return { store, repo };
   }
 
-  /** a PayPal feed account attached to the space, with one of its rows */
   async function attachedFeed(repo: Repo) {
     await repo.upsert('account', FEED, 'pp', { name: 'Okkes Doker', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { feedSpaceId: FEED, accountId: 'pp', type: 'checking' });
@@ -43,12 +42,10 @@ describe('#544: an account leaving a space takes its counterparty references wit
     const { store, repo } = await fresh();
     await attachedFeed(repo);
     await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    // the screenshot: the bank's PayPal charge points at the PayPal account, paired with its row
     await repo.upsert('transaction', SPACE, 'bankRow', {
       accountId: 'main', date: '2026-10-13', amountCents: -2999, currency: 'EUR', merchant: 'PayPal (Europe)', catId: 'transferOut', needsReview: 0,
     });
     await writeTxTransform(repo, own('bankRow', {}), { linkedAccountId: 'pp', transferPeerId: 'ppRow' });
-    // the PayPal row's own overlay in this space pairs back — and a second PayPal row set money aside in the manual pot
     await writeTxTransform(repo, { id: 'ppRow', spaceId: SPACE, feedSpaceId: FEED, needsReview: 1 }, { linkedAccountId: 'main', transferPeerId: 'bankRow', catId: 'transferIn' });
     await repo.upsert('transaction', FEED, 'ppRow2', { accountId: 'pp', date: '2026-10-14', amountCents: -1000, currency: 'EUR', merchant: 'Pot', needsReview: 1 });
     await writeTxTransform(repo, { id: 'ppRow2', spaceId: SPACE, feedSpaceId: FEED, needsReview: 1 }, { linkedAccountId: 'pot', catId: 'savingDeposit' });
@@ -74,7 +71,6 @@ describe('#544: an account leaving a space takes its counterparty references wit
     expect(ppMeta?.catId).toBe('transferIn');
     expect(ppMeta?.linkedAccountId ?? undefined).toBeUndefined();
     expect((await store.get('recurring', 'rec1'))?.linkedAccountId ?? undefined).toBeUndefined();
-    // nothing left to let go
     expect(await releaseAccountReferences(store, repo, SPACE, 'pp')).toBe(0);
   });
 
@@ -97,7 +93,6 @@ describe('#544: an account leaving a space takes its counterparty references wit
         { id: 'p2', catId: 'loanRepayment', amountCents: 6000, linkedAccountId: 'loan' },
       ],
     });
-    // a row recorded ON the loan by hand
     await repo.upsert('transaction', SPACE, 'onLoan', {
       accountId: 'loan', date: '2026-09-01', amountCents: -500, currency: 'EUR', merchant: 'Fee', catId: 'debtFees', needsReview: 0,
     });
@@ -124,7 +119,6 @@ describe('#544: an account leaving a space takes its counterparty references wit
     const { store, repo } = await fresh();
     await attachedFeed(repo);
     await repo.upsert('account', SPACE, 'old', { name: 'Old loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -5000 });
-    // linked while everything was live …
     await repo.upsert('transaction', SPACE, 'toFeed', {
       accountId: 'main', date: '2026-10-13', amountCents: -2999, currency: 'EUR', merchant: 'PayPal', catId: 'transferOut', needsReview: 0, linkedAccountId: 'pp',
     });
@@ -136,7 +130,6 @@ describe('#544: an account leaving a space takes its counterparty references wit
     await repo.upsert('transaction', SPACE, 'toUnknown', {
       accountId: 'main', date: '2026-10-02', amountCents: -100, currency: 'EUR', merchant: 'X', catId: 'transferOut', needsReview: 0, linkedAccountId: 'ghost',
     });
-    // … then detached and deleted the old way: nothing let go
     await repo.remove('accountLink', SPACE, accountLinkId(SPACE, FEED));
     await repo.remove('account', SPACE, 'old');
 
@@ -144,10 +137,8 @@ describe('#544: an account leaving a space takes its counterparty references wit
     expect((await store.get('transaction', 'toFeed'))?.linkedAccountId ?? undefined).toBeUndefined();
     expect((await store.get('transaction', 'toFeed'))?.needsReview).toBe(1);
     expect((await store.get('transaction', 'toOld'))?.linkedAccountId ?? undefined).toBeUndefined();
-    // the leg the dead loan still held goes with the link
     expect((await store.get('transaction', mirrorTxId('toOld')))?.deleted).toBe(1);
     expect((await store.get('transaction', 'toUnknown'))?.linkedAccountId).toBe('ghost');
-    // idempotent: every boot, nothing left the second time
     expect(await repairDanglingCounterparties(store, repo)).toBe(0);
   });
 });

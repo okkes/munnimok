@@ -14,7 +14,6 @@ const openScreen = async () => {
 
 const expandGroup = (id: string) => fireEvent.click(screen.getByTestId(`cats-group-${id}`));
 
-/** press-and-hold on a group header opens its action menu */
 const openGroupMenu = async (id: string) => {
   fireEvent.pointerDown(screen.getByTestId(`cats-group-${id}`));
   await new Promise((resolve) => setTimeout(resolve, 550));
@@ -39,15 +38,12 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('#261: Adjustment is a locked special — ◆-marked, no add-sub door through either entrance', async () => {
     await openScreen();
-    // the ◆ wears on the locked main's header row
     await screen.findByTestId('cats-group-adjustment');
     expect(screen.getByTestId('speccat-adjustment')).toBeTruthy();
-    // the + door is absent…
     expect(screen.queryByTestId('cats-addsub-adjustment')).toBeNull();
-    // …and the hold menu hides its add-sub entry too (it slipped the gate)
+    // the hold menu must hide add-sub too (#261: it slipped the gate)
     await openGroupMenu('adjustment');
     expect(screen.queryByTestId('cats-menu-addsub-adjustment')).toBeNull();
-    // an open main keeps both doors for contrast
     expect(screen.getByTestId('cats-togglemain-adjustment')).toBeTruthy();
   });
 
@@ -69,21 +65,18 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await openScreen();
     fireEvent.click(screen.getByTestId('cats-add'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Music lessons' } });
-    // #244: no type question — the form SAYS a new parent tracks spending
     expect(screen.getByTestId('catform-expense-note')).toBeTruthy();
     expect(screen.queryByTestId('catform-type-income')).toBeNull();
     fireEvent.click(screen.getByTestId('catform-color-3498DB'));
     fireEvent.click(screen.getByTestId('catform-icon-laptop'));
     fireEvent.click(screen.getByTestId('catform-save'));
 
-    // the new main appears as a group header with its type badge…
-    // (generous timeout: coverage instrumentation slows the live query)
+    // generous timeout: coverage instrumentation slows the live query
     await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
     const header = screen.getByText('Music lessons').closest('button')!;
     expect(header.textContent).toContain('Expense');
-    fireEvent.click(header); // groups start collapsed — unfold the new main
-    // …and the auto "Other" sub exists but is not editable (it lands in a
-    // second write — wait for its own live-query emission)
+    fireEvent.click(header);
+    // the auto "Other" sub lands in a second write: wait for its own live-query emission
     const group = header.closest('[data-cat-group]')!;
     await waitFor(() => {
       const other = [...group.querySelectorAll('[data-testid^="managecat-"]')].find((b) =>
@@ -98,14 +91,11 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await openScreen();
     expandGroup('pet');
     await screen.findByTestId('managecat-petFood');
-    // hide "pet" for this space (visibility lives in the hold menu now)
     await openGroupMenu('pet');
     fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
     await screen.findByTestId('cats-hiddennote-pet', {}, { timeout: 5000 });
-    // its subs are folded away and no sub can be added while hidden
     expect(screen.queryByTestId('managecat-petFood')).toBeNull();
     expect(screen.queryByTestId('cats-addsub-pet')).toBeNull();
-    // the menu brings it back
     await openGroupMenu('pet');
     fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
     await screen.findByTestId('managecat-petFood', {}, { timeout: 5000 });
@@ -117,7 +107,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     expect((await screen.findByTestId('catform-inherited-type')).textContent).toBe('Expense');
     fireEvent.change(screen.getByTestId('catform-name'), { target: { value: 'Padel' } });
-    // #244: the direction question is gone from the form
     expect(screen.queryByTestId('catform-direction-debit')).toBeNull();
     // #389: "gym" already wears the dumbbell under sport — the grid shows it asleep and refuses the tap
     const dumbbell = screen.getByTestId('catform-icon-dumbbell') as HTMLButtonElement;
@@ -130,7 +119,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
     // live query re-render after the write can lag under coverage load
     const custom = await screen.findByText('Padel', {}, { timeout: 5000 });
-    // #386: no badge — the row is simply editable (and carries its pencil)
     expect(custom.closest('button')!.dataset.custom).toBe('1');
     expect((custom.closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
@@ -147,7 +135,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     const subId = subRow.getAttribute('data-testid')!.replace('cats-subrow-', '');
     const handle = screen.getByTestId(`cats-drag-${subId}`);
 
-    // lift: every main folds into a drop row, the ghost floats on the rail
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 120 });
     const drop = await screen.findByTestId('cats-drop-entertainment');
     expect(screen.getByTestId('cats-drag-ghost')).toBeTruthy();
@@ -158,13 +145,11 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     try {
       fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: 440 });
       fireEvent.pointerUp(window, { pointerId: 1 });
-      // release opens the confirmation sheet; only confirm commits
       fireEvent.click(await screen.findByTestId('cats-move-confirm'));
     } finally {
       document.elementFromPoint = originalFromPoint;
     }
 
-    // the sub now lives under Entertainment (types match: both expense)
     await waitFor(async () => {
       const { MunniDB } = await import('@/db/schema');
       const db = new MunniDB('munni_demo');
@@ -176,7 +161,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('drop conflicts show the drag error; cancel paths commit nothing', async () => {
     await openScreen();
-    // a sub named like one the target already has → duplicateSub on drop
     expandGroup('entertainment');
     fireEvent.click(screen.getByTestId('cats-addsub-entertainment'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
@@ -196,14 +180,12 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await waitFor(() => expect(findSportRow()).toBeTruthy(), { timeout: 5000 });
     const subId = findSportRow()!.getAttribute('data-testid')!.replace('cats-subrow-', '');
 
-    // a cancelled drag leaves fold mode with no confirm sheet
     fireEvent.pointerDown(screen.getAllByTestId(`cats-drag-${subId}`).at(-1)!, { pointerId: 1, clientY: 120 });
     await screen.findByTestId('cats-drop-entertainment');
     fireEvent.pointerCancel(window, { pointerId: 1 });
     await waitFor(() => expect(screen.queryByTestId('cats-drop-entertainment')).toBeNull());
     expect(screen.queryByTestId('cats-move-confirm')).toBeNull();
 
-    // dropping onto a parent that already owns the name → error banner
     fireEvent.pointerDown(screen.getAllByTestId(`cats-drag-${subId}`).at(-1)!, { pointerId: 2, clientY: 120 });
     const drop = await screen.findByTestId('cats-drop-entertainment');
     const originalFromPoint = document.elementFromPoint;
@@ -332,7 +314,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(screen.getByTestId('cats-copy-sub-fam-bread')).toBeTruthy();
     expect(screen.queryByTestId('cats-copy-sub-fam-other')).toBeNull();
     expect(screen.getByTestId('cats-copy-into-s-family-sport')).toBeTruthy();
-    // a sub brings its main along; with Bread left behind the main is only partly coming
     fireEvent.click(screen.getByTestId('cats-copy-sub-fam-spices'));
     expect([main.checked, main.indeterminate]).toEqual([false, true]);
     fireEvent.click(main);
@@ -383,13 +364,11 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     const row = (await screen.findByText('Padel', {}, { timeout: 5000 })).closest('button')!;
     const catId = row.getAttribute('data-testid')!.replace('managecat-', '');
 
-    // press-and-hold on the row (drag is retired) opens the sub menu
     fireEvent.pointerDown(screen.getByTestId(`managecat-${catId}`));
     await new Promise((resolve) => setTimeout(resolve, 550));
     fireEvent.pointerUp(screen.getByTestId(`managecat-${catId}`));
     await screen.findByTestId('cats-sub-menu');
 
-    // Move to… opens the edit form WITH the move picker on top
     fireEvent.click(screen.getByTestId(`cats-movesub-${catId}`));
     fireEvent.click(await screen.findByTestId('catform-move-entertainment'));
     fireEvent.click(screen.getByTestId('catform-save'));
@@ -412,9 +391,8 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     const row = (await screen.findByText('Padel')).closest('button')!;
 
     fireEvent.click(row);
-    // the move target lives behind a picker row now (chips didn't scale)
     fireEvent.click(await screen.findByTestId('catform-move-open'));
-    fireEvent.click(await screen.findByTestId('catform-move-entertainment')); // expense -> expense
+    fireEvent.click(await screen.findByTestId('catform-move-entertainment'));
     fireEvent.click(screen.getByTestId('catform-save'));
     expandGroup('entertainment');
     await waitFor(() => {
@@ -434,7 +412,6 @@ describe('category impact warnings (demo identity)', { timeout: 15_000 }, () => 
   it('deleting a category that transactions use warns first, then detaches them', async () => {
     await openScreen();
     expandGroup('consumption');
-    // create a sub, assign it to a demo transaction, then delete the sub
     fireEvent.click(screen.getByTestId('cats-addsub-consumption'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Doomed' } });
     fireEvent.click(screen.getByTestId('catform-save'));

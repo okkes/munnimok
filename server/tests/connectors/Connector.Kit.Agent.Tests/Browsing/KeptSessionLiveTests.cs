@@ -4,39 +4,15 @@ using Xunit.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Browsing;
 
-/// <summary>
-/// Whether a session survives a browser, against a REAL Chromium driven
-/// through a real <see cref="BrowserLease"/>.
-///
-/// <para>
-/// It has to be real, because every claim here is a claim about what Chromium
-/// and Playwright actually do with a persistent profile, and a fake would
-/// agree with whatever we assumed - which is precisely how this bug shipped.
-/// "The profile keeps the session" was assumed for the whole life of the BYO
-/// tier and was never once true: the first test below is the measurement that
-/// found it, made repeatable.
-/// </para>
-///
-/// <para>
-/// Two leases on one profile directory is not an artificial arrangement. It is
-/// exactly what a connect followed by a fetch is on a household's own agent -
-/// the same profile id, the same agent, one browser closing and the next
-/// opening - and the live failure it reproduces happened twenty-nine seconds
-/// apart.
-/// </para>
-/// </summary>
+// real Chromium on purpose: a fake agrees with what we assumed, which is how "the profile keeps the session" shipped untrue
+// two leases on one profile dir = a connect then a fetch on a household's own agent
 public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
 {
     private const string SessionCookie = "PD-S-SESSION-ID";
 
     private const string PersistentCookie = "_pk_id";
 
-    /// <summary>
-    /// A real https origin, never visited. Cookies are put in through the
-    /// browser's own API rather than by serving a page, because what is under
-    /// test is what Chromium does with its jar between two launches - not how
-    /// the cookie got into it.
-    /// </summary>
+    // a real https origin, never visited: cookies go in through the browser API, as the jar between launches is under test
     private const string Origin = "https://mijn.duo.nl/";
 
     private readonly string _root = Path.Combine(
@@ -59,26 +35,8 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
         }
     }
 
-    /// <summary>
-    /// THE MEASUREMENT: a persistent profile loses its session cookie between
-    /// two browsers, and keeps the analytics beside it.
-    /// </summary>
-    /// <remarks>
-    /// This is the live DUO failure in one test. The profile's own cookie
-    /// database had all four of DUO's session cookies in it -
-    /// <c>has_expires=0 is_persistent=0</c> - and Chromium simply does not load
-    /// them on a fresh launch; session RESTORE is what would, and Playwright's
-    /// persistent context does not do it. The persistent cookie coming back
-    /// perfectly in the same breath is what made the bug so hard to see: the
-    /// profile was obviously working.
-    /// <para>
-    /// It is ALSO the pooled tier's guarantee, which is why it is asserted
-    /// with the carry turned off rather than by deleting the profile. An agent
-    /// that is not somebody's own machine must behave exactly like this - a
-    /// container that resurrected a bank session after its browser closed would
-    /// be the opposite of what that tier promises.
-    /// </para>
-    /// </remarks>
+    // DUO's session cookies (has_expires=0, is_persistent=0) are not loaded on a fresh launch; persistent ones are
+    // also the pooled tier's guarantee, asserted with the carry off: a container must not resurrect a bank session
     [Fact]
     public async Task A_browser_that_may_not_keep_a_session_loses_it_exactly_as_chromium_does()
     {
@@ -92,21 +50,10 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
 
         Assert.DoesNotContain(cookies, cookie => cookie.Name == SessionCookie);
 
-        // And the one Chromium does keep is still there, which is what made
-        // "the profile is fine" so believable while every login was being lost.
         Assert.Single(cookies, cookie => cookie.Name == PersistentCookie);
     }
 
-    /// <summary>
-    /// THE FIX: on somebody's own machine the next browser on that profile has
-    /// the session back.
-    /// </summary>
-    /// <remarks>
-    /// The whole BYO promise in one assertion - sign in once on your own
-    /// machine and the next run is free. The value is asserted as well as the
-    /// name because a cookie restored empty is a cookie that fails the
-    /// provider's check while looking present to ours.
-    /// </remarks>
+    // the BYO promise: sign in once, the next run is free; the value is asserted as an empty cookie fails the provider's check
     [Fact]
     public async Task A_session_cookie_is_back_in_the_next_browser_on_that_profile()
     {
@@ -122,26 +69,14 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal("pd-session-value", restored.Value);
         Assert.Equal("mijn.duo.nl", restored.Domain);
 
-        // Still a session cookie, not one we invented an expiry for.
         Assert.True(
             KeptSessionStore.IsSessionCookie(restored.Expires),
             "a restored session cookie must not become a persistent one");
 
-        // Exactly one of the persistent cookie: Chromium loaded it, and the
-        // store did not put a stale second copy in beside it.
         Assert.Single(cookies, cookie => cookie.Name == PersistentCookie);
     }
 
-    /// <summary>
-    /// AND A SESSION PAST THE BOUND IS NOT OFFERED BACK, on the live path.
-    /// </summary>
-    /// <remarks>
-    /// The bound is the judgment this change rests on - the browser's rule is
-    /// that a session cookie dies with the browser, and breaking it is only
-    /// defensible with a limit on how far. Zero is the setting that hands the
-    /// browser's rule back, and driving it through the lease proves the option
-    /// reaches the browser rather than only the store.
-    /// </remarks>
+    // the bound limits how far the browser's rule is broken; zero hands it back, proving the option reaches the browser
     [Fact]
     public async Task A_session_past_its_bound_is_not_put_back()
     {
@@ -155,18 +90,7 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(await CookiesAsync(second), cookie => cookie.Name == SessionCookie);
     }
 
-    /// <summary>
-    /// What Playwright's .NET binding actually reports for an expiry, since
-    /// the whole filter rests on reading it correctly.
-    /// </summary>
-    /// <remarks>
-    /// <c>BrowserContextCookiesResult.Expires</c> is a non-nullable
-    /// <see cref="float"/>, so there is no null to look for: a session cookie
-    /// comes back as <c>-1</c> and a persistent one as a Unix time in seconds.
-    /// Guessing either way costs everything - too loose and a cookie the
-    /// browser was about to drop gets resurrected, too strict and nothing is
-    /// ever kept and this change does nothing at all.
-    /// </remarks>
+    // Playwright .NET's Expires is a non-nullable float: a session cookie is -1, a persistent one a Unix time in seconds
     [Fact]
     public async Task Playwright_reports_a_session_cookie_as_having_no_expiry()
     {
@@ -181,16 +105,10 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(-1f, session);
         Assert.True(persistent > 0, "a persistent cookie carries a Unix time in seconds");
 
-        // And the reading the store filters on is the one a live browser
-        // produces, rather than a second opinion asserted beside it.
         Assert.True(KeptSessionStore.IsSessionCookie(session));
         Assert.False(KeptSessionStore.IsSessionCookie(persistent));
     }
 
-    /// <summary>
-    /// Puts one session cookie and one persistent cookie into this browser's
-    /// jar, shaped like the pair the DUO capture actually held.
-    /// </summary>
     private static async Task SeedAsync(BrowserLease lease)
     {
         var page = await lease.PageAsync(CancellationToken.None);
@@ -205,8 +123,6 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
                 HttpOnly = true,
                 Secure = true,
 
-                // Left unset, which is what makes it a session cookie and what
-                // Chromium then declines to load again.
                 Expires = null,
             },
             new Cookie
@@ -215,10 +131,7 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
                 Value = "analytics-value",
                 Url = Origin,
 
-                // Dated from NOW rather than written down, because a fixed
-                // epoch becomes a date in the past and Chromium drops such a
-                // cookie on the way in - which reads as "the profile keeps
-                // nothing", the exact claim these tests exist to settle.
+                // dated from now: a fixed epoch goes stale and Chromium drops the cookie, which reads as "the profile keeps nothing"
                 Expires = DateTimeOffset.UtcNow.AddDays(30).ToUnixTimeSeconds(),
             },
         ]);
@@ -230,10 +143,6 @@ public sealed class KeptSessionLiveTests(ITestOutputHelper output) : IDisposable
         return await page.Context.CookiesAsync();
     }
 
-    /// <summary>
-    /// A lease on ONE profile directory, so two of them in a row are the same
-    /// machine's browser opened twice.
-    /// </summary>
     private BrowserLease Lease(bool keepsSession, TimeSpan? lifetime = null)
     {
         var logger = new TestOutputLogger(output);

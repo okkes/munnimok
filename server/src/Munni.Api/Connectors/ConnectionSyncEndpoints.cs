@@ -5,14 +5,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// Opt-in E2EE sync of connector credential bundles. The server is DUMB
-/// STORAGE plus a tiny approval handshake: it keeps device public keys,
-/// per-device wrapped copies of the user's Connection Sync Key, and the
-/// AES-GCM ciphertext of one connection's credential bundle. No plaintext,
-/// no server-side crypto — the server cannot read any of it, which is the
-/// whole point.
-/// </summary>
+// opt-in E2EE sync of connector credential bundles: the server is dumb storage (device public keys, wrapped sync keys,
+// AES-GCM ciphertext) and cannot read any of it
 public sealed record RegisterDeviceRequest(string DeviceId, string PublicJwk, string Name);
 public sealed record WrapRequest(string WrappedCsk);
 public sealed record ConnectionCipherRequest(string Cipher);
@@ -32,7 +26,6 @@ public static class ConnectionSyncEndpoints
         // announce this device (idempotent — reinstall reuses the id)
         group.MapPost("/devices", RegisterDevice).WithValidation<RegisterDeviceRequest>();
 
-        // every device of mine + whether it can already decrypt
         group.MapGet("/devices", async (AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
@@ -40,7 +33,6 @@ public static class ConnectionSyncEndpoints
             return Results.Ok(devices.Select(d => new ConnectionSyncDeviceDto(d.DeviceId, d.PublicJwk, d.Name, d.WrappedCsk != null, d.CreatedAt)));
         });
 
-        // approval: an enrolled device publishes the CSK wrapped to another
         group.MapPost("/devices/{deviceId}/wrap", async (string deviceId, WrapRequest request, AppDbContext db, HttpContext http) =>
         {
             if (request.WrappedCsk.Length is 0 or > 4096) return Results.BadRequest();
@@ -52,7 +44,6 @@ public static class ConnectionSyncEndpoints
             return Results.Ok();
         }).WithValidation<WrapRequest>();
 
-        // my wrap (the new device polls this after asking for approval)
         group.MapGet("/devices/{deviceId}/wrap", async (string deviceId, AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();

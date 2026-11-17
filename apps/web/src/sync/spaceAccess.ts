@@ -10,12 +10,8 @@ export const UNSAVED_UNDONE_KEY = 'unsavedUndone';
 
 const ROLES: ReadonlySet<string> = new Set<SpaceRole>(['owner', 'contributor', 'reader']);
 
-/**
- * #505: a write into a space this identity may only read. The Repo throws it
- * before the row changes or an op is queued — the server would refuse the
- * push, and a change kept only here would show the reader something no
- * other member ever sees.
- */
+// #505: thrown by the Repo before the row changes or an op is queued: the server would refuse the push, and a change
+// kept only here would show the reader something no other member sees
 export class SpaceReadOnlyError extends Error {
   constructor(readonly spaceId: string) {
     super(`space ${spaceId} is read-only for this identity`);
@@ -23,13 +19,11 @@ export class SpaceReadOnlyError extends Error {
   }
 }
 
-/** one space's changes that never landed, for the notice */
 export interface UnsavedUndone {
   spaceId: string;
   spaceName: string;
   /** set where the changes sat in a feed — another member's account, which has no space row to name */
   accountName?: string;
-  /** rows undone */
   count: number;
 }
 
@@ -43,7 +37,6 @@ export async function readUnsavedUndone(store: StorageBackend): Promise<UnsavedU
   return Array.isArray(value) ? (value as UnsavedUndone[]) : [];
 }
 
-/** adds a space's undone changes to the notice (one entry per space, counts add up) */
 export async function noteUnsavedUndone(store: StorageBackend, entry: UnsavedUndone): Promise<void> {
   const list = await readUnsavedUndone(store);
   const prior = list.find((e) => e.spaceId === entry.spaceId);
@@ -58,13 +51,8 @@ const sameRoles = (a: Readonly<Record<string, SpaceRole>>, b: Readonly<Record<st
   return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
 };
 
-/**
- * #505: what this identity may do in each space, as the server last said —
- * kept on the device (a reader stays a reader offline) and held in memory,
- * because the Repo asks on every write. A space the server never named — a
- * new space not pushed yet, every space of an identity that never syncs —
- * is writable.
- */
+// #505: what this identity may do per space, as the server last said: persisted (a reader stays a reader offline) and held
+// in memory because the Repo asks on every write; a space the server never named (new, unpushed, never syncing) is writable
 export class SpaceAccess {
   private roles: Readonly<Record<string, SpaceRole>> = {};
   private readonly listeners = new Set<() => void>();
@@ -84,11 +72,7 @@ export class SpaceAccess {
     return this.roles[spaceId] === 'reader';
   }
 
-  /**
-   * The round's heads: every space the identity reaches with its role there —
-   * the whole picture replaces the last one. A server that names no role
-   * (older than #505) leaves what is known alone.
-   */
+  // the heads replace the whole picture; a server that names no role (older than #505) leaves what is known alone
   async record(heads: readonly { spaceId: string; role?: string }[]): Promise<void> {
     const named = heads.filter((h): h is { spaceId: string; role: SpaceRole } => !!h.role && ROLES.has(h.role));
     if (named.length === 0) return;

@@ -104,7 +104,7 @@ describe('redesign primitives', () => {
     const tiles = [...container.querySelectorAll('span')].filter((s) => s.querySelector('i, img'));
     expect(tiles[0].querySelector('i')?.className).toContain('mdi-bank');
     expect(tiles[1].querySelector('img')?.getAttribute('alt')).toBe('Acme');
-    expect(tiles[1].querySelector('i')).toBeNull(); // the content replaces the icon
+    expect(tiles[1].querySelector('i')).toBeNull();
   });
 
   it('Row: a nav row is a button with a chevron affordance; a data row is inert and shows its record', () => {
@@ -121,7 +121,7 @@ describe('redesign primitives', () => {
     fireEvent.click(nav);
     expect(onClick).toHaveBeenCalled();
     const data = screen.getByTestId('data-row');
-    expect(data.tagName).toBe('DIV'); // no onClick -> not a button
+    expect(data.tagName).toBe('DIV');
     expect(data.querySelector('.mdi-chevron-right')).toBeNull();
     expect(container.textContent).toContain('12 items');
     expect(container.textContent).toContain('€3');
@@ -164,7 +164,6 @@ describe('redesign primitives', () => {
         <ProgressBar value={0.5} testId="bar3" />
       </>,
     );
-    // a native <progress> carries the value for assistive tech
     const valueOf = (id: string) => screen.getByTestId(id).querySelector('progress')?.getAttribute('value');
     expect(valueOf('bar')).toBe('100');
     expect(screen.getByTestId('stripes')).toBeTruthy();
@@ -182,7 +181,6 @@ describe('redesign primitives', () => {
   });
 
   it('MasterDetailLayout: detail replaces the list below lg, panes beside it at lg', () => {
-    // no detail child: the list owns the screen (any viewport)
     routerStub.childMatches = [];
     const { unmount } = render(<MasterDetailLayout list={<div data-testid="pane-list" />} />);
     expect(screen.queryByTestId('split-pane')).toBeNull();

@@ -5,8 +5,7 @@ import { useDragReorder } from './dragReorder';
 
 afterEach(cleanup);
 
-/** three 40px rows stacked from y=0 — happy-dom rects are all zero, so
- *  each row fakes its own box for the midpoint math */
+/** three 40px rows from y=0: happy-dom rects are all zero, so each row fakes its own box */
 function Harness({ onMove }: Readonly<{ onMove: (from: number, to: number) => void }>) {
   const { drag, setRowRef, handleProps } = useDragReorder(3, onMove);
   return (
@@ -37,11 +36,10 @@ describe('useDragReorder', () => {
     const handle = screen.getByTestId('handle-0');
 
     fireEvent.pointerDown(handle, { pointerId: 1, clientY: 10 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 90 }); // row 2's midpoint zone
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 90 });
     expect(screen.getByTestId('row-2').className).toContain('over');
     fireEvent.pointerUp(handle, { pointerId: 1 });
 
-    // v3 settles the ghost into its slot before committing (drop animation)
     await waitFor(() => expect(onMove).toHaveBeenCalledWith(0, 2));
     expect(onMove).toHaveBeenCalledTimes(1);
   });
@@ -52,11 +50,11 @@ describe('useDragReorder', () => {
     const handle = screen.getByTestId('handle-1');
 
     fireEvent.pointerDown(handle, { pointerId: 1, clientY: 50 });
-    fireEvent.pointerUp(handle, { pointerId: 1 }); // released in place
+    fireEvent.pointerUp(handle, { pointerId: 1 });
 
     fireEvent.pointerDown(handle, { pointerId: 2, clientY: 50 });
     fireEvent.pointerMove(handle, { pointerId: 2, clientY: 110 });
-    fireEvent.pointerCancel(handle, { pointerId: 2 }); // e.g. scroll takeover
+    fireEvent.pointerCancel(handle, { pointerId: 2 });
 
     expect(onMove).not.toHaveBeenCalled();
   });

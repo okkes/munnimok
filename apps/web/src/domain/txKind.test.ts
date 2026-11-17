@@ -12,8 +12,6 @@ describe('txKind', () => {
     expect(kindOf('saving')).toBe('transfer');
     expect(kindOf('debtPayment')).toBe('transfer');
     expect(kindOf('investment')).toBe('transfer');
-    // funding derives from a funding-pot counterparty (#152) and reads
-    // as standard here — the story lives on the category
     expect(kindOf('funding')).toBe('standard');
     expect(kindOf('adjustment')).toBe('adjustment');
     // the mapping must stay total — a new TxType without a kind is a bug

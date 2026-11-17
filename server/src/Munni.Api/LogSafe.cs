@@ -2,42 +2,22 @@ using System.Text;
 
 namespace Munni.Api;
 
-/// <summary>
-/// A value somebody else chose, made safe for one log line.
-///
-/// A request's path or method, a lab query's name or a party's reason key
-/// is written into the log exactly as it arrived, and a line break inside
-/// it forges a second entry that looks like the API's own (CodeQL
-/// cs/log-forging, 2026-10-09). Every such value goes through
-/// <see cref="Line"/>: line breaks and the other control characters become
-/// a space, the Unicode line separators too, and the length is capped so
-/// one request cannot flood an aggregator.
-/// </summary>
-/// <remarks>
-/// The same helper as <c>Connector.Kit.Logging.LogSafe</c>, kept here
-/// because the API does not reference the kit; the two stay identical.
-/// </remarks>
+// a value somebody else chose, safe for one log line: a line break in it forges a second entry (CodeQL cs/log-forging)
+// identical to Connector.Kit.Logging.LogSafe, copied because the API does not reference the kit
 public static class LogSafe
 {
     /// <summary>Longer values are cut here; a log line is a sentence, not a payload.</summary>
     public const int MaxLength = 200;
 
-    /// <summary>The mark a cut value ends on.</summary>
     public const char Ellipsis = '…';
 
-    /// <summary>
-    /// The value on one line, at most <paramref name="max"/> characters
-    /// (plus the ellipsis when it was cut). Null and empty come back empty,
-    /// so a caller's own <c>?? "-"</c> keeps working on the way in.
-    /// </summary>
+    // null and empty come back empty, so a caller's own `?? "-"` keeps working
     public static string Line(string? value, int max = MaxLength)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
 
-        // The two literal replacements are what CodeQL's log-forging model
-        // recognises as the sanitiser; the loop below is for everything the
-        // model does not name (tabs, escapes, NEL, the Unicode separators).
+        // the two literal replacements are what CodeQL's log-forging model recognises as the sanitiser; the loop covers the rest
         var flat = value.Replace("\r", " ").Replace("\n", " ");
 
         var line = new StringBuilder(Math.Min(flat.Length, max) + 1);

@@ -4,20 +4,12 @@ using Connector.Kit.Normalization;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// A receipt's total, and whether it is the provider's own figure or our
-/// sum of the lines - a sum can never be reconciled against itself.
-/// </summary>
+/// a derived total is our sum of the lines, which can never be reconciled against itself
 internal readonly record struct ReceiptTotal(Money Amount, bool IsDerived = false);
 
-/// <summary>
-/// The single construction point for an emitted receipt, so that no adapter
-/// can forget the two things every receipt owes the consumer: a
-/// reconciliation verdict and a content hash.
-/// </summary>
+/// the single construction point: no adapter can forget the reconciliation verdict and the content hash
 internal static class ReceiptFactory
 {
-    /// <summary>A total the provider stated.</summary>
     public static Receipt Build(
         string sessionId,
         string externalId,
@@ -37,16 +29,8 @@ internal static class ReceiptFactory
         ReceiptPayment payment,
         IReadOnlyList<ReceiptItem> items)
     {
-        // Reconcile first, hash second. The hash covers the facts, not the
-        // verdict, so the order is not load-bearing today - fixing it here
-        // keeps it from becoming load-bearing by accident later.
-        //
-        // Whether the total is derived travels WITH the total rather than
-        // being something an adapter stamps on afterwards, because the
-        // verdict is computed FROM it: a receipt whose total is our own sum
-        // of its lines cannot be reconciled, and
-        // `receipt with { TotalIsDerived = true }` on a finished receipt
-        // would leave Reconciled saying it had been.
+        // derivation travels WITH the total: the verdict is computed from it, and `with { TotalIsDerived = true }`
+        // on a finished receipt would leave Reconciled lying
         var receipt = new Receipt
         {
             Id = Ids.ForRecord(Ids.Receipt, sessionId, externalId),
@@ -62,20 +46,13 @@ internal static class ReceiptFactory
         return receipt with { ContentHash = ContentHash.Of(receipt) };
     }
 
-    /// <summary>
-    /// A payment block with every field stated, including the ones we do
-    /// not have. The consumer matches receipts to transactions partly on
-    /// the payment tail; an explicit null tells it the match will be weaker,
-    /// where an omitted field would just look like an oversight.
-    /// </summary>
+    /// every field stated, nulls included: the consumer matches on the payment tail,
+    /// and an explicit null says the match is weaker
     public static ReceiptPayment Payment(string? method = null, string? cardLast4 = null, string? ibanTail = null) =>
         new() { Method = method, CardLast4 = cardLast4, IbanTail = ibanTail };
 
-    /// <summary>
-    /// Inclusive window filter. The platform has already widened any
-    /// caller-supplied <c>since</c> by the provider's settlement lag, so
-    /// this compares against the request as given.
-    /// </summary>
+    /// the platform already widened a caller's since by the provider's settlement lag,
+    /// so this compares against the request as given
     public static bool InWindow(DateTimeOffset purchasedAt, ResourceRequest request)
     {
         var day = DateOnly.FromDateTime(purchasedAt.Date);

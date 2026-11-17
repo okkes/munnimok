@@ -4,17 +4,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// CAMT.053 against the two reference dialects this assembly ships: a bank
-/// that populates almost every optional element, and one that populates
-/// almost none.
-///
-/// The point of two fixtures is that the differences between them are all
-/// FIXTURE problems, not code branches: a different namespace version, a
-/// missing account currency, a different entry reference element, proprietary
-/// transaction codes instead of the ISO tree, and a batched entry. A parser
-/// that only survives one of them survives one bank.
-/// </summary>
+// two dialect fixtures: their differences are fixture problems, not code branches (namespace version, missing
+// currency, entry reference, proprietary codes, batched entry)
 public sealed class Camt053ParserTests
 {
     private const string SessionId = "ses_0123456789abcdef0123456789abcdef";
@@ -33,8 +24,6 @@ public sealed class Camt053ParserTests
     private static Camt053Statement Asn() => Assert.Single(Camt053Parser.Parse(
         BankFixtures.Read(BankFixtures.Camt053AsnCurrent), Options(AccountType.Current)));
 
-    // ---- the rich dialect: camt.053.001.02 ---------------------------------
-
     [Fact]
     public void The_account_comes_from_the_elements_the_bank_actually_populated()
     {
@@ -45,7 +34,6 @@ public sealed class Camt053ParserTests
         Assert.Equal("NL91INGB0417164300", statement.Account.Iban);
         Assert.Equal("EUR", statement.Account.Currency);
 
-        // Acct/Nm, which this bank fills in and the sparse one does not.
         Assert.Equal("Oranje Spaarrekening", statement.Account.DisplayName);
 
         // CAMT.053 has no notion of "savings": the standard identifies an
@@ -129,7 +117,6 @@ public sealed class Camt053ParserTests
     {
         var statement = Ing();
 
-        // RmtInf/Ustrd is what a user recognises on their own statement.
         Assert.Equal("Maandelijkse inleg", statement.Transactions[0].Description);
         Assert.Equal("Opname naar betaalrekening", statement.Transactions[1].Description);
 
@@ -190,8 +177,6 @@ public sealed class Camt053ParserTests
         Assert.All(first.Transactions, t => Assert.Equal(first.Account.Id, t.AccountId));
         Assert.All(first.Transactions, t => Assert.StartsWith("txn_", t.Id, StringComparison.Ordinal));
     }
-
-    // ---- the sparse dialect: camt.053.001.08 -------------------------------
 
     [Fact]
     public void A_different_message_version_is_read_by_the_same_parser()
@@ -256,7 +241,6 @@ public sealed class Camt053ParserTests
         Assert.Equal("WONINGSTICHTING DE KLEINE", statement.Transactions[0].Counterparty?.Name);
         Assert.Equal("NL22RABO0123409876", statement.Transactions[0].Counterparty?.Iban);
 
-        // The older, unwrapped shape, in the same file and with no account.
         Assert.Equal("JUMBO 1234 UTRECHT", statement.Transactions[1].Counterparty?.Name);
         Assert.Null(statement.Transactions[1].Counterparty?.Iban);
     }

@@ -5,16 +5,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// What happens when the export's shape moves.
-///
-/// The whole taxonomy rests on one distinction. An OPTIONAL element that is
-/// absent is a bank being a bank, and must parse. A REQUIRED element that is
-/// missing, or a value that will not parse, means the export changed - and
-/// that is <see cref="ErrorCode.ProviderChanged"/>, which pages an operator
-/// and degrades the provider, never <see cref="ErrorCode.Internal"/>, which
-/// would be retried forever, and never a plausible-looking statement.
-/// </summary>
+// an optional element absent must parse; a missing REQUIRED element or unparseable value is ProviderChanged (pages
+// an operator, degrades the provider), never Internal (retried forever) and never a plausible-looking statement
 public sealed class Camt053DefensiveTests
 {
     private static Camt053Options Options() => new()
@@ -41,7 +33,6 @@ public sealed class Camt053DefensiveTests
         return error;
     }
 
-    /// <summary>Removes the first occurrence of a self-contained element.</summary>
     private static string Without(string xml, string fragment)
     {
         var index = xml.IndexOf(fragment, StringComparison.Ordinal);

@@ -8,11 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// The outermost filter on every route. Nothing gets past it as an
-/// unmodelled failure, which is what makes "never a bare 500" structural
-/// rather than aspirational.
-/// </summary>
+/// the outermost filter: no unmodelled failure gets past it, so "never a bare 500" is structural
 public sealed class ConnectorExceptionFilter(ILoggerFactory loggers) : IEndpointFilter
 {
     private readonly ILogger _logger = loggers.CreateLogger("Connector.Endpoints");
@@ -28,9 +24,7 @@ public sealed class ConnectorExceptionFilter(ILoggerFactory loggers) : IEndpoint
         }
         catch (Exception ex)
         {
-            // A response that has already begun cannot be replaced by an
-            // envelope; SSE and image streams are the cases. Aborting is the
-            // only honest signal left.
+            // a started response cannot take an envelope (SSE and image streams): aborting is the only signal left
             if (context.HttpContext.Response.HasStarted)
             {
                 _logger.LogError(ex, "failure after the response had started; aborting");
@@ -50,11 +44,8 @@ public static class RequestContext
     public const string ManifestVersionHeader = "X-Manifest-Version";
     public const string IdempotencyHeader = "Idempotency-Key";
 
-    /// <summary>
-    /// Reads the declared device class. Absent means native - the historical
-    /// default and the safe one, since the web rules only ever shorten a
-    /// bundle's life. Anything else is rejected rather than guessed.
-    /// </summary>
+    /// absent means native: the historical default, safe as the web rules only shorten a bundle's life
+    /// anything else is rejected
     public static DeviceClass DeviceClassOf(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -83,14 +74,8 @@ public static class RequestContext
     public const string SubjectHeader = "X-Connector-Subject";
     public const string TriggerHeader = "X-Connector-Trigger";
 
-    /// <summary>
-    /// The user this call is made for. Every route that names a session, a
-    /// job, a ticket or an agent answers only its owner, and "not yours" is
-    /// indistinguishable from "does not exist". The header is required rather
-    /// than optional on purpose: a relay that forgot it would otherwise read
-    /// everything, which is the failure that goes unnoticed - a relay that
-    /// reads nothing is noticed on the first call.
-    /// </summary>
+    /// every route naming a session, job, ticket or agent answers only its owner; "not yours" looks like "does not exist"
+    /// the header is required: a relay that forgot it would silently read everything
     public static string RequireSubject(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -101,10 +86,7 @@ public static class RequestContext
             : subject;
     }
 
-    /// <summary>
-    /// A route whose body names the subject may also carry the header; the
-    /// two must agree, or the call is refused before it does anything.
-    /// </summary>
+    /// a body that names the subject may also carry the header; they must agree or the call is refused
     public static void RequireSubjectAgreement(HttpContext http, string bodySubject)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -116,12 +98,7 @@ public static class RequestContext
         }
     }
 
-    /// <summary>
-    /// Who asked for this run: a person who pressed a button, or a schedule.
-    /// Absent means a person - the historical default, and the one that is
-    /// never throttled by a provider's sync interval.
-    /// </summary>
-    /// <summary>The trigger as a job row records it: <see cref="JobRow.UserTrigger"/>, <see cref="JobRow.ScheduleTrigger"/>, <see cref="JobRow.BackfillTrigger"/> or <see cref="JobRow.LabTrigger"/>.</summary>
+    /// absent means a person: the historical default, never throttled by a provider's sync interval
     public static string TriggerNameOf(HttpContext http) => TriggerOf(http) switch
     {
         FetchTrigger.Schedule => JobRow.ScheduleTrigger,
@@ -130,12 +107,7 @@ public static class RequestContext
         _ => JobRow.UserTrigger,
     };
 
-    /// <summary>
-    /// Whether this run is recorded (#441 L3): only when asked AND the caller
-    /// is the lab. Asked without the lab trigger is refused rather than
-    /// ignored - a consumer that sends the flag has misread the contract, and
-    /// a silent no would hide that.
-    /// </summary>
+    /// recorded only when asked AND the caller is the lab; the flag without the lab trigger is refused, not ignored
     public static bool RecordOf(HttpContext http, bool requested)
     {
         if (!requested) return false;
@@ -171,10 +143,8 @@ public static class RequestContext
             "user" => FetchTrigger.User,
             "schedule" => FetchTrigger.Schedule,
             "backfill" => FetchTrigger.Backfill,
-            // The operator's word, for the operator only: a lab run's failure
-            // pictures are retained without asking anyone, so a consumer that
-            // could claim the word for a person's run would be claiming that
-            // person's consent. In development everybody is the operator.
+            // "lab" is the operator's word only: a lab run's failure pictures are retained without asking,
+            // so a consumer claiming it would claim a person's consent; in development everybody is the operator
             "lab" => http.RequestServices.GetRequiredService<Auth.ConnectorAuth>().IsOperator(http)
                 ? FetchTrigger.Lab
                 : throw ConnectorException.InvalidRequest($"{TriggerHeader} 'lab' needs the admin scope"),
@@ -182,7 +152,6 @@ public static class RequestContext
         };
     }
 
-    /// <summary>Every response that touched a provider says which contract version answered.</summary>
     public static void StampManifestVersion(HttpContext http, int manifestVersion)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -197,7 +166,6 @@ public static class RequestContext
         return string.IsNullOrWhiteSpace(key) ? null : key;
     }
 
-    /// <summary>The query string as the binder wants it: every key, every repeat.</summary>
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> Query(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -212,14 +180,8 @@ public static class RequestContext
     }
 }
 
-/// <summary>
-/// Server-sent events, written by hand rather than through a helper.
-///
-/// The stream re-reads state and emits on change; it holds no subscription
-/// that could go stale, so a consumer that reconnects sees the current truth
-/// immediately instead of waiting for the next transition.
-/// </summary>
-/// <summary>What started a login or a fetch, as declared in <see cref="RequestContext.TriggerHeader"/>.</summary>
+/// the stream re-reads state and emits on change, holding no subscription
+/// a reconnecting consumer sees the current truth at once
 public enum FetchTrigger
 {
     /// <summary>A person, just now. Held to the provider's request pacing only.</summary>
@@ -228,11 +190,8 @@ public enum FetchTrigger
     /// <summary>A schedule. Held to the provider's <c>min_interval_seconds</c> as well.</summary>
     Schedule,
 
-    /// <summary>
-    /// A schedule's pass over older history (#460), after a pass that brought
-    /// only the newest part. Unattended like a schedule and held to the same
-    /// interval on a clock of its own: a party sees one of each per interval.
-    /// </summary>
+    /// a schedule's pass over older history (#460): unattended, held to the same interval on its own clock
+    /// a party sees one of each per interval
     Backfill,
 
     /// <summary>The operator's lab (#441): paced like a person's, and its failures are the operator's own to read.</summary>
@@ -265,20 +224,8 @@ public static class EventStream
         var deadline = DateTimeOffset.UtcNow + maximum;
         string? last = null;
 
-        // A reader that goes away is the ordinary end of an event stream, not
-        // a failure of one. Somebody refreshes the page, closes the tab, or
-        // walks through a lift, and the next write throws.
-        //
-        // Letting that escape did real damage: the exception reached the error
-        // middleware, which tried to write a JSON envelope onto a response
-        // whose headers were long gone, and the "Headers are read-only,
-        // response has already started" that came back buried the actual
-        // cause. Observed live, mid-captcha, and it presented as the whole app
-        // hanging.
-        //
-        // Nothing is lost by returning quietly. The stream carries no state of
-        // its own - every frame is a projection of rows that are still there,
-        // and a client that comes back re-reads them.
+        // a vanished reader is the ordinary end of a stream: letting it escape made the error middleware write an envelope
+        // onto a started response, and "Headers are read-only" buried the cause. The stream carries no state; a client re-reads rows
         try
         {
             while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
@@ -297,20 +244,18 @@ public static class EventStream
 
                 if (!await signals.WaitAsync(signalKey, TimeSpan.FromSeconds(5), ct))
                 {
-                    // A comment frame keeps proxies and load balancers from
-                    // reaping an idle stream during a two-minute bank login.
+                    // a comment frame keeps proxies and load balancers from reaping an idle stream during a long bank login
                     await Emit(http, null, null, ct);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // The request was aborted, or the caller's token fired.
+            // the request was aborted or the caller's token fired
         }
         catch (IOException)
         {
-            // The socket went while a frame was half written. Kestrel's
-            // ConnectionResetException arrives as one of these.
+            // the socket went mid-frame; Kestrel's ConnectionResetException arrives as one of these
         }
     }
 

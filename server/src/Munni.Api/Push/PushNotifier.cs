@@ -5,29 +5,21 @@ using WebPush;
 
 namespace Munni.Api.Push;
 
-/// <summary>
-/// One stored push subscription of a user (a device). Web Push rows
-/// carry endpoint+keys; native (fcm) rows keep the device token in
-/// Endpoint and leave the keys null.
-/// </summary>
+// fcm rows keep the device token in Endpoint and leave the keys null
 public class PushSubscriptionRow
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
-    /// <summary>"webpush" (browser) or "fcm" (native shell device token)</summary>
     public string Kind { get; set; } = "webpush";
     public required string Endpoint { get; set; }
     public string? P256dh { get; set; }
     public string? Auth { get; set; }
-    /// <summary>the device's UI language at registration — native pushes
-    /// carry a visible notification block (iOS shows nothing for
-    /// data-only messages when the app is closed), and its text is
-    /// localized server-side per device</summary>
+    // the device's UI language: native pushes carry a visible notification block, localized server-side
+    // (iOS shows nothing for data-only messages)
     public string Lang { get; set; } = "en";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>Transport abstraction so tests can fake the push service.</summary>
 public interface IPushSender
 {
     /// <returns>false when the subscription is gone (410/404) and should be deleted</returns>
@@ -65,12 +57,7 @@ public sealed class WebPushSender(IConfiguration config) : IPushSender
     }
 }
 
-/// <summary>
-/// Sends Web Push notifications: sync announcements (new transactions
-/// arrived — the app preloads them the moment it opens) and social
-/// events (friend requests, space invites). Payloads carry raw facts;
-/// the service worker localizes the visible text.
-/// </summary>
+// payloads carry raw facts; the service worker localizes the visible text
 public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<PushNotifier> logger)
 {
     /// <summary>"n new transactions arrived" to the members who keep the space's notifications on (#549), the space
@@ -84,15 +71,12 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
         await SendToUsersAsync(userIds, new { type = "new-transactions", spaceId, spaceName = await SpaceNameAsync(spaceId, ct), count }, ct);
     }
 
-    /// <summary>"{fromName} sent you a friend request"</summary>
     public Task NotifyFriendRequestAsync(Guid toUserId, string? fromName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "friend-request", fromName }, ct);
 
-    /// <summary>"{fromName} accepted your friend request"</summary>
     public Task NotifyFriendAcceptedAsync(Guid toUserId, string? fromName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "friend-accept", fromName }, ct);
 
-    /// <summary>"{fromName} invited you to {spaceName}"</summary>
     public Task NotifySpaceInviteAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "space-invite", fromName, spaceName }, ct);
 
@@ -124,9 +108,8 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
             ? Task.CompletedTask
             : SendToUsersAsync(toUserIds, new { type = "split", kind, splitId = split.Id, splitName = split.Name, currency = split.Currency, fromName, cents }, ct);
 
-    /// <summary>"Test notification" to every device of ONE user — the Settings row that proves push works end to
-    /// end (user request 2026-09-28); sent from a space's settings it names that space (#551). Returns how many
-    /// devices were tried.</summary>
+    // "Test notification" to every device of ONE user; sent from a space's settings it names that space (#551).
+    // returns how many devices were tried
     public async Task<int> NotifyTestAsync(Guid userId, string? spaceId, CancellationToken ct)
     {
         var member = spaceId is { Length: > 0 and <= 64 }

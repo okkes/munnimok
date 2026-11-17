@@ -25,9 +25,7 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
       }),
     );
     expect(views).toHaveLength(3);
-    // magnitudes wear the row's sign; the bare slice inherits the row type
     expect(views[0]).toMatchObject({ amountCents: -5240, effType: 'expense', sliceId: undefined, count: 3 });
-    // a typed part carries its own story
     expect(views[1]).toMatchObject({
       amountCents: -2500, effType: 'debtPayment', catId: 'loanRepayment', sliceId: 's2', label: "Sarah's loan", linkedAccountId: 'loan',
     });
@@ -105,7 +103,6 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
       amountCents: -6000, catId: 'groceries', effType: 'expense', eventId: 'trip', recurringId: 'rec', fromParts: false, count: 2,
     });
     expect(views[1]).toMatchObject({ amountCents: -2740, catId: 'householdSupplies', fromParts: false, index: 1 });
-    // a refund row's spread stays signed — positive entries
     const refund = txSliceViews(row({ amountCents: 500, cats: [{ catId: 'a', amountCents: 300 }, { catId: 'b', amountCents: 200 }] }));
     expect(refund.map((v) => v.amountCents)).toEqual([300, 200]);
   });
@@ -124,7 +121,6 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(views[0]).toMatchObject({ effType: 'saving', linkedAccountId: 'row-acct', transferPeerId: 'row-peer' });
     expect(views[1]).toMatchObject({ linkedAccountId: 'row-acct' });
 
-    // a PART's spread entries ride the part's story the same way
     const partViews = txSliceViews(
       row({
         splits: [
@@ -172,8 +168,6 @@ describe('scaleSplitsTo (#141: the split bulk copy)', () => {
     const scaled = scaleSplitsTo(source, 13000, mint());
     expect(scaled.map((s) => s.amountCents)).toEqual([8000, 5000]);
     expect(scaled[0]).toMatchObject({ id: 'id-1', catId: 'telecom', label: 'Base', txType: 'expense' });
-    // the linked part travels as its category only — no account, no
-    // event, no recurring link, no type that leans on the link
     expect(scaled[1].txType).toBeUndefined();
     expect(scaled[1].linkedAccountId).toBeUndefined();
     expect(scaled[1].transferPeerId).toBeUndefined();
@@ -199,7 +193,6 @@ describe('scaleSplitsTo (#141: the split bulk copy)', () => {
     expect(scaleSplitsTo([{ catId: 'g', amountCents: 10 }], 100, () => 'x')).toEqual([]);
     expect(scaleSplitsTo([{ catId: 'g', amountCents: 0 }, { catId: 'h', amountCents: 0 }], 100, () => 'x')).toEqual([]);
     expect(scaleSplitsTo([{ catId: 'g', amountCents: 5 }, { catId: 'h', amountCents: 5 }], 0, () => 'x')).toEqual([]);
-    // a settled Reimbursed slice never travels
     const withSettled: TxSplit[] = [
       { catId: 'g', amountCents: 30 },
       { catId: 'h', amountCents: 30 },

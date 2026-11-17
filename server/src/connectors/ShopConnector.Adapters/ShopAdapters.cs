@@ -10,23 +10,10 @@ using ShopConnector.Adapters.Mock;
 
 namespace ShopConnector.Adapters;
 
-/// <summary>
-/// Everything the shopping connector knows how to talk to, bound in one
-/// place from one settings object.
-///
-/// Providers are code, not rows - the registry is built at startup from this
-/// and only a provider's health is ever state. A host constructs
-/// <see cref="ProviderRegistry"/> over <see cref="All"/>, which validates
-/// every manifest and refuses to boot on a bad one.
-/// </summary>
+/// providers are code, not rows: the registry is built at startup from this and refuses to boot on a bad manifest
 public static class ShopAdapters
 {
-    /// <summary>
-    /// Real providers plus the mock set. The mocks are registered in every
-    /// environment on purpose: they are the only providers that can be
-    /// exercised end to end without an account, and an environment that
-    /// cannot demonstrate its own protocol is one nobody can debug.
-    /// </summary>
+    /// the mocks register in every environment on purpose: only they can be exercised end to end without an account
     public static IReadOnlyList<IProviderAdapter> All(ShopAdapterOptions? options = null, TimeProvider? time = null) =>
         [.. Real(options, time), .. MockStoreAdapters.All(options?.Mock, time)];
 
@@ -37,13 +24,11 @@ public static class ShopAdapters
 
         return
         [
-            // Groceries. AH and Lidl drive a browser once; Jumbo's session is a
-            // ~24h cookie, so it drives one whenever it has gone stale.
+            // AH and Lidl drive a browser once; Jumbo's session is a ~24h cookie, so it drives one whenever it has gone stale
             new AlbertHeijnAdapter(settings.Ah, time),
             new LidlPlusAdapter(settings.Lidl, time),
             new JumboAdapter(settings.Jumbo, graphql: null, time),
 
-            // General retail.
             BolAdapters.Create(settings.Bol, time),
             CoolblueAdapters.Create(settings.Coolblue, time),
             AmazonAdapters.Create(settings.Amazon, time),
@@ -52,12 +37,8 @@ public static class ShopAdapters
     }
 }
 
-/// <summary>
-/// The binding target for a host's configuration section. Every provider's
-/// unconfirmed values - endpoints, client ids, selectors, money units - are
-/// reachable from here, so correcting one after a provider changes is a
-/// deploy-time edit rather than a release.
-/// </summary>
+/// every provider's unconfirmed values (endpoints, client ids, selectors, money units) are bindable here: a fix is a
+/// deploy-time edit, not a release
 public sealed record ShopAdapterOptions
 {
     public AlbertHeijnOptions Ah { get; init; } = new();

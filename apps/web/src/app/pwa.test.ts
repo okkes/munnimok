@@ -27,7 +27,6 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/friends'));
     handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
-    // budget alerts land on their detail screen
     handleWorkerMessage({ type: 'NAVIGATE', url: './#/budgets/b42' });
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/budgets/b42'));
   });
@@ -61,7 +60,6 @@ describe('handleWorkerMessage (notification deep-link)', () => {
 
   it('notificationHref keeps to the whitelist and to id-shaped spaces', () => {
     expect(notificationHref('./#/planning?space=sp1')).toBe('/planning?space=sp1');
-    // the worker's message names the space on the warm path
     expect(notificationHref('./#/review', 'sp9')).toBe('/review?space=sp9');
     expect(notificationHref('./#/review?space=..%2Fx')).toBe('/review');
     expect(notificationHref('./#/budgets/new')).toBeNull();
@@ -84,11 +82,10 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     handleWorkerMessage(undefined);
     handleWorkerMessage('NAVIGATE');
     handleWorkerMessage({ type: 'SKIP_WAITING' });
-    handleWorkerMessage({ type: 'NAVIGATE' }); // no url
-    handleWorkerMessage({ type: 'NAVIGATE', url: './#/settings/global' }); // not a notification target
+    handleWorkerMessage({ type: 'NAVIGATE' });
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/settings/global' });
     handleWorkerMessage({ type: 'NAVIGATE', url: 'https://evil.example/#/friends/../../x' });
 
-    // nothing above may have moved the router
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(router.state.location.pathname).toBe('/spaces');
   });
@@ -130,7 +127,7 @@ describe('the phone app opens a tapped notification (#551)', () => {
     try {
       registered = null;
       initPwa();
-      expect(registered).toBeNull(); // no service worker in the shell
+      expect(registered).toBeNull();
       listeners.pushNotificationActionPerformed({
         notification: { data: { payload: JSON.stringify({ type: 'new-transactions', spaceId: 'sp5', spaceName: 'Home', count: 2 }) } },
       });

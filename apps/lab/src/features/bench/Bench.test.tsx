@@ -6,7 +6,7 @@ import { cellText, columnsOf, encodeTaps, paramsBody } from './benchFacts';
 import { agentWhere, waitingLine } from './ConnectScreen';
 import { parseSize } from './LiveView';
 
-/** an explore run the relay last read while it was starting (#576: the operator walked away before the live view came up) */
+/** an explore run the relay last read while it was starting (#576) */
 const EXPLORE_ROW = { sessionId: 'ses_x', provider: 'explore', label: null, state: 'running', hasBundle: false, preferAgent: null, createdAt: '2026-11-02T15:08:04Z', lastUsedAt: '2026-11-02T15:08:04Z', lastError: null };
 const EXPLORE_JOB = (over: Record<string, unknown>) => ({ ...JOBS.jobs[2], jobId: 'job_x', sessionId: 'ses_x', providerId: 'explore', kind: 'login', resource: null, ...over });
 
@@ -66,7 +66,7 @@ describe('Bench', () => {
     renderLab('#/bench/connect/mock-store-simple');
     expect((await screen.findByTestId('bench-connect-title')).textContent).toContain('Connect to Mock store');
     const start = screen.getByTestId('bench-start') as HTMLButtonElement;
-    expect(start.disabled).toBe(true); // the required fields are empty
+    expect(start.disabled).toBe(true);
     fireEvent.change(screen.getByTestId('bench-input-username'), { target: { value: 'shopper' } });
     fireEvent.change(screen.getByTestId('bench-input-password'), { target: { value: 'hunter2' } });
     fireEvent.change(screen.getByTestId('bench-label'), { target: { value: 'a bench run' } });
@@ -330,7 +330,6 @@ describe('Bench — the edges', () => {
     await screen.findByTestId('bench-challenge-image');
     fireEvent.change(screen.getByTestId('bench-answer'), { target: { value: 'MOCK1' } });
     fireEvent.click(screen.getByTestId('bench-answer-send'));
-    // running now: the poll reads the run afresh and finds it connected
     await screen.findByTestId('bench-open-session', {}, { timeout: 4000 });
     expect(screen.getByTestId('bench-run').textContent).toContain('Shopper');
   }, 10_000);
@@ -413,7 +412,6 @@ describe('Bench — the edges', () => {
     fireEvent.change(screen.getByTestId('bench-live-text'), { target: { value: 'abc' } });
     fireEvent.click(screen.getByTestId('bench-live-send'));
     await waitFor(() => expect(inputs.length).toBeGreaterThan(0), { timeout: 3000 });
-    // the view is over: the run is read afresh and found connected
     await screen.findByTestId('bench-open-session', {}, { timeout: 6000 });
     expect(ended).toBeGreaterThan(0);
   }, 12_000);
@@ -497,7 +495,7 @@ describe('Bench — explore and record', () => {
     renderLab('#/bench/sessions/ses_x');
     await screen.findByTestId('bench-live-surface');
     expect(screen.getByTestId('bench-session-state').textContent).toBe('awaiting_input'); // the run read just now, not the relay's older word
-    expect(screen.getByTestId('bench-live-nav')).toBeTruthy(); // the explore vocabulary: an address, back, reload
+    expect(screen.getByTestId('bench-live-nav')).toBeTruthy();
     expect(screen.getByTestId('bench-explore-done')).toBeTruthy();
     expect(screen.getByTestId('bench-run').textContent).toContain('yours to drive');
     expect(screen.queryByTestId('bench-fetch-card')).toBeNull();

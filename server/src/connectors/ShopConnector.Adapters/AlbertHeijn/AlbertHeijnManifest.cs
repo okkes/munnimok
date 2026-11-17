@@ -6,34 +6,10 @@ namespace ShopConnector.Adapters.AlbertHeijn;
 
 internal static class AlbertHeijnManifest
 {
-    /// <summary>
-    /// Bumped to 2 when the login stopped being a pasted redirect and became
-    /// an e-mail and a password. Sealed into every bundle as AAD, so a bundle
-    /// minted under version 1 is rejected outright rather than reinterpreted
-    /// against a contract it was never issued for.
-    /// </summary>
+    /// 2 since the login became e-mail and password; sealed into every bundle as AAD, so a version-1 bundle is rejected
     public const int Version = 2;
 
-    /// <summary>
-    /// T2. A browser drives the OAuth login once and the refresh token serves
-    /// every fetch after that with no browser, no human and no stored
-    /// password.
-    ///
-    /// The predecessor made the human read a failed <c>appie://</c>
-    /// navigation out of their browser's console and paste it back. That is
-    /// unusable anywhere, and impossible on a phone, so the agent now types
-    /// the credentials and captures the redirect itself.
-    /// </summary>
-    /// <param name="liveLogin">
-    /// When true the manifest declares <see cref="AuthFlow.RemoteBrowser"/> and
-    /// NO fields, because the human signs in on Albert Heijn's own page
-    /// streamed to their device and this platform never sees the password.
-    ///
-    /// Built from the option rather than declared twice, so the flow, the
-    /// steps and the challenge list cannot drift apart from what the adapter
-    /// actually does - a manifest promising a password form for a login that
-    /// never asks for one is a consumer drawing two boxes nobody can fill.
-    /// </param>
+    /// <param name="liveLogin">true: RemoteBrowser, no fields; the human signs in on AH's page, no password reaches us</param>
     public static ProviderManifest Build(bool liveLogin = true) => new()
     {
         Id = AlbertHeijnAdapter.ProviderId,
@@ -51,10 +27,7 @@ internal static class AlbertHeijnManifest
             Egress = new EgressRequirement { Country = "NL", Kind = "residential" },
         },
         UnattendedFetch = true,               // the refresh token works headlessly
-        // Follows the login this manifest describes, so the two cannot drift.
-        // The streamed login relays AH's own page to whoever owns the account,
-        // wall and all, so any agent will do; the typed path meets hCaptcha
-        // itself and can reach a widget nobody remote can answer.
+        // the streamed login relays AH's page wall and all, so any agent will do; the typed path meets hCaptcha itself
         LoginNeedsHeadedAgent = !liveLogin,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
@@ -64,10 +37,7 @@ internal static class AlbertHeijnManifest
         {
             Flow = liveLogin ? AuthFlow.RemoteBrowser : AuthFlow.Password,
 
-            // Empty under the live login, and the validator enforces that it
-            // stays empty: there is no form, because there is nothing for a
-            // consumer to ask. The human types their e-mail and password into
-            // Albert Heijn's own page, which they can see.
+            // empty under the live login (the validator enforces it): the human types into AH's own page
             Steps = liveLogin ? [] :
             [
                 new AuthStep
@@ -76,9 +46,7 @@ internal static class AlbertHeijnManifest
                     LabelKey = MessageKeys.StepCredentials,
                     Fields =
                     [
-                        // An e-mail address, not a member number or a phone.
-                        // Getting this wrong in the consumer's form costs the
-                        // user a failed attempt against a defended page.
+                        // an e-mail address, not a member number or a phone: a wrong form costs a failed attempt on a defended page
                         new FieldSpec
                         {
                             Key = "username",
@@ -100,23 +68,9 @@ internal static class AlbertHeijnManifest
                     ],
                 },
             ],
-            // Image for a plain captcha, which is a picture and a text box
-            // and can be relayed. AppApproval for hCaptcha, which cannot: the
-            // widget is passed in the agent's own window by whoever is
-            // sitting at it, and the challenge exists only to ask them and
-            // wait - which is exactly the passive contract. Redirect stays
-            // declared as the last resort: when the agent's browser cannot
-            // get through, the human finishing on AH's own page in their own
-            // browser still can.
-            //
-            // Adding a challenge type does not change what a bundle means, so
-            // ManifestVersion deliberately stays at 2: bumping it would
-            // invalidate every live AH connection to announce a new question.
-            //
-            // Under the live login the list is LiveView and Redirect: the
-            // whole page is streamed, so a captcha inside it needs no separate
-            // relay - the human is already looking at it and already has a
-            // pointer on it. Redirect stays as the last resort either way.
+            // Image: a plain captcha can be relayed. AppApproval: hCaptcha is passed in the agent's window by whoever sits at it.
+            // adding a challenge type keeps ManifestVersion at 2: a bump would invalidate every live AH connection
+            // live login: LiveView and Redirect (last resort); the streamed page already shows any captcha to the human
             Challenges = liveLogin
                 ? [ChallengeType.LiveView, ChallengeType.Redirect]
                 : [ChallengeType.Image, ChallengeType.AppApproval, ChallengeType.Redirect],
@@ -133,11 +87,7 @@ internal static class AlbertHeijnManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    // raw returns AH's own detail document beside each receipt.
-                    // Declared so the validator will accept it and a consumer
-                    // can see it is offerable; it is never a default, and it
-                    // only means anything alongside items, because the detail
-                    // call is the only place a raw document exists.
+                    // raw returns AH's detail document; only meaningful with items, as the detail call is the only place it exists
                     new ParamSpec
                     {
                         Key = "include",
@@ -146,9 +96,7 @@ internal static class AlbertHeijnManifest
                         Multi = true,
                     },
                 ],
-                // A first connect walks the whole history (user request
-                // 2026-10-02): two thousand receipts is forty list calls and a
-                // detail each.
+                // a first connect walks the whole history: two thousand receipts is forty list calls and a detail each
                 TypicalDurationSeconds = 120,
                 MaxRecordsPerFetch = 2_000,
             },

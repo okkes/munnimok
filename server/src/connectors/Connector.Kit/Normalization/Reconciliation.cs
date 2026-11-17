@@ -2,38 +2,22 @@ using Connector.Kit.Errors;
 
 namespace Connector.Kit.Normalization;
 
-/// <summary>
-/// Where a provider gives us a redundant fact, check it.
-///
-/// Running balances, stated totals versus summed line items, counts in an
-/// export header - redundancy that goes unchecked is redundancy wasted, and
-/// every one of these catches a class of error that otherwise produces
-/// plausible-looking output no human reviewer would spot.
-/// </summary>
+// a provider's redundant fact (running balance, stated total vs lines, header count) is checked: unchecked it hides errors
 public static class Reconciliation
 {
     /// <summary>One cent, to absorb the provider's own rounding.</summary>
     public const long ToleranceMinorUnits = 1;
 
-    /// <summary>
-    /// Do the line items, net of discounts, sum to the stated total?
-    ///
-    /// A receipt that fails is emitted with <see cref="Receipt.Reconciled"/>
-    /// false rather than dropped - the consumer decides. Silently dropping
-    /// it would hide a real purchase; silently trusting it would hand over
-    /// a total we know is inconsistent with its own contents.
-    /// </summary>
+    // a failing receipt is emitted with Reconciled false, not dropped: dropping hides a real purchase,
+    // trusting it hands over a total we know is inconsistent
     public static bool ItemsReconcile(Receipt receipt)
     {
         ArgumentNullException.ThrowIfNull(receipt);
 
-        // A total this connector summed itself agrees with its own lines by
-        // construction, so checking it proves nothing. Reporting that as a
-        // pass would make the flag mean "reconciled" on one provider and
-        // "nothing was checked" on another, which is worse than either.
+        // a self-summed total agrees by construction: report "not reconciled", so the flag never means "nothing was checked"
         if (receipt.TotalIsDerived) return false;
 
-        if (receipt.Items.Count == 0) return true;   // nothing to check against
+        if (receipt.Items.Count == 0) return true;
 
         var sum = 0L;
         foreach (var item in receipt.Items)
@@ -45,14 +29,10 @@ public static class Reconciliation
         return Math.Abs(sum - receipt.Total.Value) <= ToleranceMinorUnits;
     }
 
-    /// <summary>Applies the check and stamps the outcome onto the record.</summary>
     public static Receipt WithReconciliation(this Receipt receipt) =>
         receipt with { Reconciled = ItemsReconcile(receipt) };
 
-    /// <summary>
-    /// The signed gap between what the merchant said the receipt came to and
-    /// what it itemised. Zero when they agree.
-    /// </summary>
+    // signed gap between the merchant's stated total and the itemised sum; zero when they agree
     public static long Unattributed(Receipt receipt)
     {
         ArgumentNullException.ThrowIfNull(receipt);
@@ -68,20 +48,8 @@ public static class Reconciliation
         return receipt.Total.Value - itemised;
     }
 
-    /// <summary>
-    /// Closes the gap with one explicitly DERIVED line, so a consumer can show
-    /// a breakdown that adds up to what was actually paid.
-    ///
-    /// Merchants routinely charge things they do not itemise - a delivery fee,
-    /// a deposit - and the alternative to naming that gap is a receipt whose
-    /// lines quietly total less than its total, which reads as a bug in us
-    /// rather than an omission by them.
-    ///
-    /// Deliberately NOT called a fee. We know the amount and not the reason,
-    /// and inventing a reason for money is how a receipt stops being evidence.
-    /// The total is never touched: it remains the merchant's own figure,
-    /// because that is what a bank transaction is matched against.
-    /// </summary>
+    // closes the gap with one DERIVED line, not named a fee (amount known, reason not); the total stays the merchant's
+    // own figure, because a bank transaction is matched against it
     public static Receipt WithUnattributedLine(this Receipt receipt, string labelKey)
     {
         ArgumentNullException.ThrowIfNull(receipt);
@@ -100,22 +68,11 @@ public static class Reconciliation
     }
 }
 
-/// <summary>
-/// Verifies a provider's own running balances against its own amounts.
-///
-/// For each adjacent pair the earlier resulting balance plus the later
-/// signed amount must equal the later resulting balance. A mismatch means
-/// rows arrived out of order, a decimal separator was misread, a
-/// debit/credit flag was inverted, or a row was dropped - all of which
-/// otherwise produce believable garbage.
-/// </summary>
+// verifies a provider's running balances: earlier balance + later amount = later balance; a break means misordered rows,
+// a misread decimal, an inverted debit/credit flag or a dropped row
 public static class BalanceChain
 {
-    /// <summary>
-    /// <paramref name="ordered"/> must be oldest-first. Returns the index of
-    /// the first transaction that breaks the chain, or null when it holds.
-    /// Transactions without a stated balance are skipped, not guessed at.
-    /// </summary>
+    // oldest-first; returns the first index that breaks the chain; rows with no stated balance are skipped
     public static int? FindBreak(IReadOnlyList<Transaction> ordered)
     {
         ArgumentNullException.ThrowIfNull(ordered);
@@ -136,11 +93,7 @@ public static class BalanceChain
         return null;
     }
 
-    /// <summary>
-    /// Fails the run rather than emitting data we cannot vouch for. This is
-    /// <see cref="ErrorCode.ProviderChanged"/>, not <c>Internal</c>: the
-    /// export's shape moved, and an adapter needs fixing.
-    /// </summary>
+    // fails the run as ProviderChanged, not Internal: the export's shape moved and an adapter needs fixing
     public static void Verify(IReadOnlyList<Transaction> ordered, string providerId)
     {
         if (FindBreak(ordered) is not { } index) return;

@@ -5,60 +5,33 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.AlbertHeijn;
 
-/// <summary>One row of <c>posReceiptsPage</c>, before any detail call.</summary>
 internal sealed record AhReceiptSummary
 {
     public required string Id { get; init; }
 
     public required DateTimeOffset PurchasedAt { get; init; }
 
-    /// <summary>
-    /// The only total AH states. The detail operation selects none, which is
-    /// what makes the two a real reconciliation pair rather than one number
-    /// repeated back at us.
-    /// </summary>
+    /// the only total AH states; the detail selects none, so list and detail are a real reconciliation pair
     public required Money Total { get; init; }
 
-    /// <summary>
-    /// This receipt's own row from the list response, verbatim, when
-    /// <c>include=raw</c> asked for one - and null otherwise, because keeping
-    /// the text of every row on a two-hundred-receipt page nobody asked about
-    /// is a cost paid for nothing.
-    ///
-    /// The row and never the page: the page carries every other receipt in the
-    /// pass, and handing one caller somebody else's rows would be a worse leak
-    /// than the shape change this exists to diagnose.
-    /// </summary>
+    /// this receipt's own list row when include=raw asked, else null; the row and never the page, which holds other receipts
     public string? Raw { get; init; }
 }
 
-/// <summary>
-/// Parses Albert Heijn's receipt payloads, which are GraphQL and not REST.
-///
-/// The field names here are confirmed from <c>gwillem/appie-go</c> v0.0.12
-/// and are read exactly - see <see cref="TryField"/> for why this is the one
-/// place in the service where alias tolerance would be a mistake. Amounts
-/// are JSON numbers in euros and their unit is declared per field by
-/// <see cref="AlbertHeijnOptions"/>, never inferred from the value's shape.
-/// </summary>
+/// field names confirmed from gwillem/appie-go v0.0.12 and read exactly (see TryField);
+/// amounts are JSON numbers in euros, unit declared per field in the options
 internal static class AlbertHeijnReceiptParser
 {
     private const string ProviderId = AlbertHeijnAdapter.ProviderId;
 
-    /// <summary>
-    /// GraphQL reports a failure in the body with a 200 status. A client that
-    /// only checks the status code returns nothing and calls it an empty
-    /// history - which reads to a user as "you have never shopped here", a
-    /// worse lie than an outage.
-    /// </summary>
+    /// GraphQL reports a failure in the body with a 200; a status-only check would return an empty history,
+    /// which reads as "never shopped here"
     public static void ThrowOnErrors(JsonElement root)
     {
         var errors = JsonAccess.Array(root, "errors");
         if (errors.Count == 0) return;
 
-        // The first message only. The rest are usually the same fault
-        // restated per selected field, and a detail nobody can act on is
-        // noise in an operator's log.
+        // the first message only: the rest usually restate the same fault per selected field
         var first = errors[0];
         var message = JsonAccess.StrOf(first, "message")
                       ?? (JsonAccess.TryProp(first, out var extensions, "extensions")
@@ -69,10 +42,6 @@ internal static class AlbertHeijnReceiptParser
         throw ConnectorException.ProviderChanged($"{ProviderId}: graphql returned an error ({message})");
     }
 
-    /// <param name="keepRaw">
-    /// Keep each row's own text on the summary. Off unless the caller asked for
-    /// raw, so the common fetch does not pay to stringify a page it will drop.
-    /// </param>
     public static IReadOnlyList<AhReceiptSummary> ParseList(
         JsonElement root, AlbertHeijnOptions options, bool keepRaw = false)
     {
@@ -82,8 +51,7 @@ internal static class AlbertHeijnReceiptParser
                 $"{ProviderId}: the response carries no posReceiptsPage; the receipts operation moved");
         }
 
-        // A null page is an answer - an account with nothing on it - and not
-        // a shape change.
+        // a null page is an answer (nothing on the account), not a shape change
         if (page.ValueKind == JsonValueKind.Null) return [];
 
         if (page.ValueKind != JsonValueKind.Object)
@@ -94,9 +62,7 @@ internal static class AlbertHeijnReceiptParser
 
         var node = page.Child("posReceipts");
 
-        // Undefined, not null: a stated null is an answer - an account with
-        // nothing on it - and only an ABSENT field is a query we have stopped
-        // sending.
+        // undefined, not null: only an ABSENT field means a query we have stopped sending
         if (node.ValueKind == JsonValueKind.Undefined)
         {
             throw ConnectorException.ProviderChanged($"{ProviderId}: posReceiptsPage carries no posReceipts");
@@ -117,15 +83,8 @@ internal static class AlbertHeijnReceiptParser
         {
             var row = rows[index];
 
-            // A ROW WITHOUT AN ID IS A SHAPE CHANGE, and this used to skip it.
-            //
-            // Skipping made the page SHORTER than AH said it was, and the
-            // caller reads a short page as the end of the history - so one
-            // unkeyable receipt would stop the walk there, and everything older
-            // than it would be missing from a pass that reported itself
-            // complete. The rest of this row already throws when a field goes
-            // missing: the total via MoneyReader.Require, the date via
-            // ReceiptTime.Parse. The id was the one that quietly gave up.
+            // a row without an id is a shape change: skipping it shortened the page, which the caller reads as the end of history,
+            // hiding everything older from a pass reporting itself complete
             if (JsonAccess.StrOf(row, "id") is not { } id || string.IsNullOrWhiteSpace(id))
             {
                 throw ConnectorException.ProviderChanged(
@@ -137,10 +96,8 @@ internal static class AlbertHeijnReceiptParser
             summaries.Add(new AhReceiptSummary
             {
                 Id = id,
-                // AH sends a local Dutch wall clock. Interpreted in
-                // Europe/Amsterdam rather than the agent's own zone: a
-                // near-midnight purchase dated a day out is worse than one
-                // that was never matched.
+                // AH sends a local Dutch wall clock: read in Europe/Amsterdam, not the agent's zone
+                // (a near-midnight purchase dated a day out is worse than one never matched)
                 PurchasedAt = ReceiptTime.Parse(
                     JsonAccess.StrOf(row, "dateTime"), zone, ProviderId, "posReceipt.dateTime"),
                 Total = MoneyReader.Require(row, options.ListTotalUnit, options.Currency,
@@ -152,15 +109,7 @@ internal static class AlbertHeijnReceiptParser
         return summaries;
     }
 
-    /// <summary>
-    /// Line items from <c>posReceiptDetails</c>, with the discounts folded in.
-    ///
-    /// AH states discounts in their own array with nothing linking one to a
-    /// product, so each becomes its own negative line rather than being
-    /// attached to a guess. Both readings reconcile identically against the
-    /// list's stated total; only one of them invents a fact the receipt does
-    /// not state.
-    /// </summary>
+    /// AH states discounts in their own array linked to no product, so each is its own negative line, not attached to a guess
     public static IReadOnlyList<ReceiptItem> ParseItems(JsonElement root, AlbertHeijnOptions options)
     {
         var detail = RequireDetail(root);
@@ -183,9 +132,7 @@ internal static class AlbertHeijnReceiptParser
             {
                 Name = name,
                 Quantity = JsonAccess.Quantity(product, "quantity"),
-                // Only ever AH's own unit price. Dividing a total by a
-                // quantity produces a number that looks authoritative and is
-                // wrong for anything sold by weight.
+                // only AH's own unit price: total divided by quantity is wrong for anything sold by weight
                 UnitPrice = MoneyReader.Optional(product, options.ItemAmountUnit, currency,
                     $"product[{name}].price", "price"),
                 Total = amount,
@@ -194,10 +141,7 @@ internal static class AlbertHeijnReceiptParser
 
         foreach (var discount in discounts)
         {
-            // A confirmed field that is absent is a shape change, and this
-            // one moves money: dropping the line would leave every
-            // promotion-heavy receipt failing its own arithmetic with nothing
-            // to explain why.
+            // an absent confirmed field is a shape change that moves money: dropping the line would break the receipt's arithmetic
             var label = JsonAccess.StrOf(discount, "name")
                         ?? throw ConnectorException.ProviderChanged(
                             $"{ProviderId}: a discount line carries no name");
@@ -208,8 +152,7 @@ internal static class AlbertHeijnReceiptParser
             items.Add(new ReceiptItem
             {
                 Name = label,
-                // Negative by contract, whichever sign AH chose, so that
-                // summing a receipt is unconditional.
+                // negative by contract whichever sign AH chose, so summing a receipt is unconditional
                 Total = amount.Value > 0 ? amount.Negated() : amount,
             });
         }
@@ -217,15 +160,7 @@ internal static class AlbertHeijnReceiptParser
         return items;
     }
 
-    /// <summary>
-    /// The payment tail, as far as AH states one.
-    ///
-    /// The confirmed operation selects a method and an amount and nothing
-    /// that could carry a card number or an IBAN, so both tails are null by
-    /// construction rather than by oversight. They stay explicit: the
-    /// consumer matches receipts to transactions partly on the tail and needs
-    /// to know its match here will be weaker.
-    /// </summary>
+    /// both tails are null by construction (the operation selects neither); explicit because the consumer's match is weaker here
     public static ReceiptPayment ParsePayment(JsonElement root, AlbertHeijnOptions options)
     {
         var detail = RequireDetail(root);
@@ -238,8 +173,7 @@ internal static class AlbertHeijnReceiptParser
             var stated = Normalize(JsonAccess.StrOf(payment, "method"));
             if (stated is null) continue;
 
-            // A split tender lists more than one leg. The largest is the one
-            // a consumer will match a bank transaction against.
+            // split tender: the largest leg is the one a bank transaction matches
             var amount = MoneyReader.Optional(payment, options.PaymentAmountUnit, options.Currency,
                 "payment.amount", "amount")?.Abs().Value ?? 0L;
 
@@ -263,29 +197,15 @@ internal static class AlbertHeijnReceiptParser
     {
         if (!TryField(root, "posReceiptDetails", out var detail) || detail.ValueKind != JsonValueKind.Object)
         {
-            // Not an empty receipt: a receipt the list just named and the
-            // detail then denies is a shape change worth paging someone
-            // about, and "you bought nothing" is the wrong thing to emit.
+            // not an empty receipt: the list named it, so a denied detail is a shape change
             throw ConnectorException.ProviderChanged($"{ProviderId}: the detail carries no posReceiptDetails");
         }
 
         return detail;
     }
 
-    /// <summary>
-    /// A field under the <c>data</c> envelope, or at the root when a caller
-    /// already unwrapped it.
-    ///
-    /// Exact and case-sensitive, with no aliases - the one place in this
-    /// service where tolerance would be a mistake. A GraphQL response can
-    /// only answer with the names the query asked for, so accepting a
-    /// different spelling could never repair a real payload and would only
-    /// hide a query we have stopped sending.
-    ///
-    /// A JSON null is returned rather than skipped, because "the page is
-    /// null" is an answer and telling it apart from "no such field" is the
-    /// whole difference between an empty history and a broken one.
-    /// </summary>
+    /// exact and case-sensitive, no aliases: a GraphQL response only has the names the query asked for.
+    /// A JSON null is returned, not skipped: "page is null" (empty history) differs from "no such field" (broken).
     private static bool TryField(JsonElement root, string name, out JsonElement value)
     {
         value = root.Child("data").Child(name);

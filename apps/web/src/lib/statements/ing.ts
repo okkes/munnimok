@@ -1,27 +1,9 @@
 import type { CamtEntry, CamtStatement } from '@/lib/camt053/parse';
 import { euAmountToCents, normalizeDate, parseCsv } from './csv';
 
-/**
- * ING CSV exports (ING offers no CAMT.053 to consumers). Verified
- * against the user's REAL 2026 exports (manual-exports-ing-example/):
- * every shape ships in BOTH Dutch and English, all semicolon-separated
- * (older current-account exports were comma-separated — still
- * accepted), and the English credit-card file uses DOT decimals while
- * everything else uses commas. Five shapes per language:
- *
- * - current-account transactions (yyyymmdd dates, running balance)
- * - current-account BALANCE history (Boeksaldo / Book balance)
- * - savings transactions (account ref like "V28681505" + display name)
- * - savings BALANCE history
- * - credit card (masked card number, no balance file)
- *
- * Balance-only files import as zero-entry statements that update the
- * account's stored balance. None of the files carry a bank transaction
- * id, so the dedupe ref is synthesized deterministically: identical
- * rows on the same day get a stable ordinal, files are normalized
- * oldest-first before numbering — overlapping exports of the same
- * account produce identical refs and re-imports skip cleanly.
- */
+// ING offers no CAMT.053 to consumers: every shape ships in NL and EN, semicolon-separated (older current exports: comma);
+// the EN credit-card file has DOT decimals. No file carries a bank id: the dedupe ref is synthesized (stable per-day
+// ordinal, oldest-first) so overlapping exports re-import as skips. Balance-only files are zero-entry statements
 
 export interface ParsedStatement extends CamtStatement {
   /** checking | savings | credit — drives the created account's type */
@@ -35,7 +17,6 @@ const sign = (marker: string): 1 | -1 => {
   return m === 'bij' || m === 'credit' ? 1 : -1;
 };
 
-/** simple stable string hash for the synthetic ref */
 function tinyHash(input: string): string {
   let h = 5381;
   for (let i = 0; i < input.length; i++) h = ((h << 5) + h + input.charCodeAt(i)) >>> 0; // NOSONAR(S3776) djb2
@@ -50,7 +31,6 @@ interface RawEntry {
   description: string;
 }
 
-/** assigns deterministic refs (date + content hash + per-day ordinal) */
 function toEntries(raws: RawEntry[]): CamtEntry[] {
   const sorted = [...raws].sort((a, b) => a.date.localeCompare(b.date));
   const ordinals = new Map<string, number>();
@@ -71,7 +51,6 @@ function toEntries(raws: RawEntry[]): CamtEntry[] {
   });
 }
 
-/** first matching header name (each shape ships in NL and EN) */
 const headerIndex = (header: string[], names: readonly string[]): number =>
   header.findIndex((h) => names.includes(h.trim()));
 
@@ -83,7 +62,6 @@ function sniffRows(content: string): string[][] {
   return parseCsv(content, delimiter);
 }
 
-/** shared: newest date wins as the closing balance */
 function newestBalance(rows: string[][], dateCol: number, balanceCol: number): { date: string; cents: number } | null {
   let closing: { date: string; cents: number } | null = null;
   for (const row of rows.slice(1)) {
@@ -94,7 +72,6 @@ function newestBalance(rows: string[][], dateCol: number, balanceCol: number): {
   return closing;
 }
 
-/** ING current account transactions (NL/EN, yyyymmdd dates) */
 export function parseIngCurrentCsv(content: string): ParsedStatement[] {
   const rows = sniffRows(content);
   const header = rows[0];
@@ -142,7 +119,6 @@ export function parseIngCurrentCsv(content: string): ParsedStatement[] {
   ];
 }
 
-/** ING savings transactions (NL/EN, running balance, "V…" account ref) */
 export function parseIngSavingsCsv(content: string): ParsedStatement[] {
   const rows = sniffRows(content);
   const header = rows[0];
@@ -189,7 +165,6 @@ export function parseIngSavingsCsv(content: string): ParsedStatement[] {
   ];
 }
 
-/** ING credit card (NL/EN; the EN file uses DOT decimals — handled) */
 export function parseIngCreditcardCsv(content: string, fileName?: string): ParsedStatement[] {
   const rows = sniffRows(content);
   const header = rows[0];
@@ -221,7 +196,7 @@ export function parseIngCreditcardCsv(content: string, fileName?: string): Parse
   }
   return [
     {
-      iban: card.replaceAll(/[^0-9A-Za-z]/g, ''), // stable normalized card ref
+      iban: card.replaceAll(/[^0-9A-Za-z]/g, ''),
       currency: 'EUR',
       closingBalanceCents: null,
       entries: toEntries(raws),
@@ -231,11 +206,6 @@ export function parseIngCreditcardCsv(content: string, fileName?: string): Parse
   ];
 }
 
-/**
- * ING balance-history exports (current + savings, NL/EN): no
- * transactions, just day-by-day book balances — imported as a
- * zero-entry statement that refreshes the account's stored balance.
- */
 export function parseIngBalanceCsv(content: string): ParsedStatement[] {
   const rows = sniffRows(content);
   const header = rows[0];

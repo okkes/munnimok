@@ -40,7 +40,6 @@ describe('collapsePairedLegs (user ss 2026-10-06: Debt Payment counted both legs
     const { kept, counterparts } = collapsePairedLegs('debt', txs, accounts);
     expect(kept.map((t) => t.id)).toEqual(['in']);
     expect(counterparts.get('in')?.id).toBe('out');
-    // the total and the drill agree with it
     expect(overviewSummary(txs, accounts, PERIOD).debtCents).toBe(5_208);
     const drill = txsForCategory('debt', txs, accounts, PERIOD, 'debt', debtCatalog);
     expect(drill.totalCents).toBe(5_208);
@@ -66,19 +65,19 @@ describe('collapsePairedLegs (user ss 2026-10-06: Debt Payment counted both legs
 
 describe('periodHistory', () => {
   it('monthly periods start on the configured day', () => {
-    const periods = periodHistory('month', 20, 3, new Date(2026, 6, 7)); // 7 Jul, before day 20
+    const periods = periodHistory('month', 20, 3, new Date(2026, 6, 7));
     expect(periods).toHaveLength(3);
-    expect(periods.at(-1)).toEqual({ start: '2026-06-20', end: '2026-07-19' }); // current
+    expect(periods.at(-1)).toEqual({ start: '2026-06-20', end: '2026-07-19' });
     expect(periods[0]).toEqual({ start: '2026-04-20', end: '2026-05-19' });
   });
 
   it('monthly after the start day rolls into the new period', () => {
-    const [current] = periodHistory('month', 5, 1, new Date(2026, 6, 7)); // 7 Jul, after day 5
+    const [current] = periodHistory('month', 5, 1, new Date(2026, 6, 7));
     expect(current).toEqual({ start: '2026-07-05', end: '2026-08-04' });
   });
 
   it('weekly periods are Monday-anchored and contiguous', () => {
-    const periods = periodHistory('week', 1, 2, new Date(2026, 6, 8)); // Wed 8 Jul 2026
+    const periods = periodHistory('week', 1, 2, new Date(2026, 6, 8));
     expect(periods[1]).toEqual({ start: '2026-07-06', end: '2026-07-12' });
     expect(periods[0]).toEqual({ start: '2026-06-29', end: '2026-07-05' });
   });
@@ -91,15 +90,12 @@ describe('periodHistory', () => {
   });
 
   it('weekly/biweekly periods start on the chosen weekday', () => {
-    // periodDay 3 = Wednesday; on Wed 8 Jul 2026 the current week IS 8 Jul…
     const [wed] = periodHistory('week', 3, 1, new Date(2026, 6, 8));
     expect(wed).toEqual({ start: '2026-07-08', end: '2026-07-14' });
-    // …and on Tue 7 Jul it is still the week that began the previous Wednesday
     const [prev] = periodHistory('week', 3, 1, new Date(2026, 6, 7));
     expect(prev).toEqual({ start: '2026-07-01', end: '2026-07-07' });
-    // sunday-start biweekly stays 14 days on the sunday grid
     const [sun] = periodHistory('biweekly', 7, 1, new Date(2026, 6, 8));
-    expect(new Date(sun.start).getDay()).toBe(0); // JS Sunday
+    expect(new Date(sun.start).getDay()).toBe(0);
     expect((Date.parse(sun.end) - Date.parse(sun.start)) / 86_400_000 + 1).toBe(14);
   });
 });
@@ -138,7 +134,7 @@ describe('overviewSummary', () => {
       tx({ txType: 'expense', catId: 'fundingOut', amountCents: -50_000 }),
       tx({ txType: 'income', catId: 'fundingIn', amountCents: 10_000 }),
       tx({ txType: 'debtPayment', catId: 'loanRepayment', amountCents: -30_000 }),
-      tx({ amountCents: -99_900, date: '2026-06-30' }), // outside period
+      tx({ amountCents: -99_900, date: '2026-06-30' }),
       tx({ amountCents: -99_900, deleted: 1 } as Partial<TxView>),
     ];
     const summary = overviewSummary(txs, accounts, PERIOD);
@@ -175,14 +171,13 @@ describe('overviewSummary', () => {
       tx({ txType: 'investment', catId: 'investDividend', amountCents: 700, accountId: 'broker' }),
     ];
     const summary = overviewSummary(txs, accounts, PERIOD);
-    expect(summary.savingCents).toBe(22); // +52 interest − 30 fees
-    expect(summary.investmentCents).toBe(700); // dividends only
+    expect(summary.savingCents).toBe(22);
+    expect(summary.investmentCents).toBe(700);
   });
 
   it('#455: what a reached goal cashed out leaves the saving — the rest of the period and the other buckets stay as they are', () => {
     const txs = [
       tx({ id: 'dep', txType: 'saving', catId: 'savingDeposit', amountCents: -40_000 }),
-      // the car: the savings leg filed Withdraw, the checking leg a transfer
       tx({ id: 'car-out', txType: 'saving', catId: 'savingWithdraw', amountCents: -1_800_000, accountId: 'savings', transferPeerId: 'car-in' }),
       tx({ id: 'car-in', txType: 'transfer', catId: 'transferIn', amountCents: 1_800_000, accountId: 'checking', transferPeerId: 'car-out' }),
       tx({ id: 'buy', catId: 'transportCar', amountCents: -1_800_000 }),
@@ -191,7 +186,6 @@ describe('overviewSummary', () => {
     const cashedOut = new Set(['car-out', 'car-in']);
     const summary = overviewSummary(txs, accounts, PERIOD, cashedOut);
     expect(summary.savingCents).toBe(40_000);
-    // buying the car is still spending
     expect(summary.expenseCents).toBe(1_800_000);
     expect(overviewSummarySeries(txs, accounts, [PERIOD], cashedOut)[0].savingCents).toBe(40_000);
     const catalog = { byId: (id: string | undefined) => ({ id: id ?? 'uncategorized', parentId: id?.startsWith('saving') ? 'saving' : undefined }) };

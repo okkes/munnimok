@@ -11,11 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Execution;
 
-/// <summary>
-/// The host's life around the job loop: how it gets (or keeps) its
-/// enrollment, what it does when the control plane will not have it, and
-/// how it lets go of a job that outlives the drain window at shutdown.
-/// </summary>
 public sealed class AgentHostTests
 {
     private const string ControlPlane = "https://control-plane.test/";
@@ -90,9 +85,7 @@ public sealed class AgentHostTests
 
         await host.StartAsync(CancellationToken.None);
         await Box.WaitUntil(() => box.Control.Enrollments.Count == 1);
-        // The "enrolled as" line is written a beat after the control plane
-        // records the enrolment; stopping on the count alone raced it on a
-        // slow runner (CI, 2026-10-02). Wait for the line itself.
+        // the "enrolled as" line is logged a beat after the enrolment is recorded; stopping on the count raced it on slow CI
         await Box.WaitUntil(() => box.Log.Lines.Any(line => line.Contains("enrolled as agt_new", StringComparison.Ordinal)));
         await host.StopAsync(CancellationToken.None);
 
@@ -211,11 +204,6 @@ public sealed class AgentHostTests
         Assert.DoesNotContain(box.Log.Lines, line => line.Contains("runs adapter catalogue", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// A released hosted slot (#420 A2): the control plane asks for a wipe
-    /// on the beat; the host wipes the previous person's profile, stays
-    /// enrolled and serving, says so on the next beat - and only once.
-    /// </summary>
     [Fact]
     public async Task A_released_hosted_slot_wipes_its_profiles_on_request_and_keeps_serving()
     {
@@ -244,7 +232,6 @@ public sealed class AgentHostTests
     private static bool Ends(HttpRequestMessage request, string suffix) =>
         request.RequestUri!.AbsolutePath.EndsWith(suffix, StringComparison.Ordinal);
 
-    /// <summary>One machine with one connector, built the way the real composition builds it.</summary>
     private sealed class Box : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "agent-host-tests", Guid.NewGuid().ToString("N"));

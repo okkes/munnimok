@@ -20,11 +20,6 @@ import { TxPartRow } from '@/ui/TxPartRow';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
-/**
- * One budget in full: the current cycle's numbers, older cycles via the
- * ‹ › period nav, per-category spend (tap → the category drill) and the
- * cycle's transactions. Editing sits behind the pencil.
- */
 export function BudgetDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -33,15 +28,13 @@ export function BudgetDetailScreen() {
   const budgets = useBudgets();
   const txs = useSpaceTransactions();
   const cats = useCategories();
-  const canEdit = useCanEdit(); // #505
+  const canEdit = useCanEdit();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [offset, setOffset] = useState(0); // 0 = current cycle, negative = past
 
   const budget = budgets?.find((b) => b.id === budgetId);
   const today = localToday();
 
-  // tap a category row to FILTER the payments below (user request: the
-  // old navigation to a separate list read as a context switch)
   const [catFilter, setCatFilter] = useState<string | null>(null);
 
   const view = useMemo(() => {
@@ -62,9 +55,6 @@ export function BudgetDetailScreen() {
       catId,
       spentCents: budgetSpentCents(txs, budgetFamily([catId], cats), period),
     }));
-    // spend per cycle, oldest → running (the overview-style bar view);
-    // the bars follow the budget's OWN period, weekly bars for weekly
-    // budgets — everything derives from the same transactions
     const historyStart = Math.max(0, currentIndex - 7);
     const history = [];
     for (let i = historyStart; i <= currentIndex; i += 1) {
@@ -79,7 +69,6 @@ export function BudgetDetailScreen() {
     return <div className="h-full" data-testid="screen-budget-detail" />;
 
   const { period, spent, limit, list, perCat, history, historyStart, currentIndex, status, atStart } = view;
-  // whole days until the next cycle starts (user request, current cycle only)
   const daysLeft = Math.max(0, Math.round((Date.parse(period.end) - Date.parse(today)) / 86_400_000)) + 1;
   const ratio = limit > 0 ? spent / limit : 0;
   const over = ratio > 1;
@@ -110,11 +99,8 @@ export function BudgetDetailScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* period nav */}
         <div className="flex items-center justify-center gap-3 pt-1 pb-3">
-          {/* HARD stop at the first cycle: the offset used to keep
-              decrementing past it, so "back ×3 too far" needed "forward
-              ×3" to recover (user report) */}
+          {/* HARD stop at the first cycle: the offset must not decrement past it */}
           <IconButton label="‹" testId="budgetdetail-prev" onClick={() => setOffset((o) => (atStart ? o : o - 1))}>
             <Icon name="chevron-left" size={20} color={atStart ? 'var(--m-ink-4)' : undefined} />
           </IconButton>
@@ -138,7 +124,6 @@ export function BudgetDetailScreen() {
           </p>
         )}
 
-        {/* the cycle's numbers */}
         <HeroCard
           testId="budgetdetail-hero"
           tile={<Tile size={48} icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />}
@@ -175,9 +160,7 @@ export function BudgetDetailScreen() {
           }
         />
 
-        {/* spend per cycle — the same bar view the overview drills have;
-            weekly budgets get weekly bars, the running cycle is hollow,
-            the dashed line is the limit */}
+        {/* weekly budgets get weekly bars, the running cycle is hollow, the dashed line is the limit */}
         {history.length > 1 && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">{t('budgets.historyCap')}</div>
@@ -189,7 +172,7 @@ export function BudgetDetailScreen() {
                 ariaLabels={history.map((h) => `${fmtDate(h.start)}: ${money(h.spentCents)}`)}
                 hollowLast
                 average={budget.amountCents}
-                // #375 r2 (user: "is that the average? … it should be clear"): the line names itself
+                // #375: the dashed line names itself
                 averageLabel={t('budgets.limitLine', { amount: money(budget.amountCents) })}
                 height={100}
                 // #375 (user): a tap on a bar walks the period nav to that cycle
@@ -202,7 +185,6 @@ export function BudgetDetailScreen() {
           </>
         )}
 
-        {/* per-category spend — tapping FILTERS the payments below */}
         <div className="m-cap mt-5 mb-1 px-1">{t('screen.categories')}</div>
         <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid="budgetdetail-cats">
           {perCat.map(({ catId, spentCents }) => {
@@ -237,7 +219,6 @@ export function BudgetDetailScreen() {
           <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetdetail-txs">
             {list.map(({ tx, part, spentCents }) => {
               const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-              // a real split shows the part the budget counts, opening the part's page
               if (part && rowParts.length > 1) {
                 const index = rowParts.indexOf(part);
                 return (

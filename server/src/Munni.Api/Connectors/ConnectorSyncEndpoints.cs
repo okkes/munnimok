@@ -4,13 +4,7 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The sync half of the relay: one call with the bundle, the data lands
-/// through the feeds, the rotated bundle comes back. A run the provider
-/// could not finish inside the window is a job the app follows through
-/// <c>/sync/events</c> or by polling, answers when it asks, and collects
-/// with the bundle once it has succeeded.
-/// </summary>
+// a run the provider cannot finish inside the window is a job the app follows and collects with the bundle
 public static partial class ConnectorRelayEndpoints
 {
     private static void MapSync(RouteGroupBuilder group)
@@ -54,12 +48,8 @@ public static partial class ConnectorRelayEndpoints
         return Results.Json(outcome.Body, statusCode: outcome.Status);
     }
 
-    /// <summary>
-    /// The person says the operator may see the picture a failed run left
-    /// behind: relayed under their subject (the control plane holds it to
-    /// the session's owner), and the hub's open question — a scheduled
-    /// run's — is closed on the binding.
-    /// </summary>
+    // relayed under their subject (the control plane holds it to the session's owner).
+    // closes the hub's open question on the binding
     private static async Task<IResult> ShareArtifacts(string provider, string jobId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.PostAsync($"v1/{provider}/jobs/{jobId}/artifacts/share", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
@@ -68,7 +58,6 @@ public static partial class ConnectorRelayEndpoints
         return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
-    /// <summary>The person says no: the control plane deletes the picture, and the hub's question is closed the same way.</summary>
     private static async Task<IResult> DeclineArtifacts(string provider, string jobId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.DeleteAsync($"v1/{provider}/jobs/{jobId}/artifacts", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);

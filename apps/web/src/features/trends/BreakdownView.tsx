@@ -9,12 +9,6 @@ import { Icon } from '@/ui/Icon';
 
 const TOP = 6;
 
-/**
- * The picked period by subcategory inside the card's scope (user
- * 2026-10-08, "another valuable visual"): the six largest as horizontal
- * bars with their face, amount and share, the rest folded into Other.
- * A row opens the transactions behind it.
- */
 export function BreakdownView({
   graphId,
   period,

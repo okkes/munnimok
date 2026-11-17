@@ -8,31 +8,9 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The wall a real Albert Heijn login actually met, driven offline.
-///
-/// login.ah.nl is fronted by hCaptcha - confirmed by probing it - and hCaptcha
-/// asks with pictures. The old answer to that was to tell whoever was sitting
-/// at the agent to solve it in the browser window we had opened, which is a
-/// usable instruction for about nobody: the person connecting an account is
-/// holding a phone, in another building, and the agent is a process in a rack.
-/// So the picture now travels to them instead. The challenge iframe is
-/// photographed, relayed as an <see cref="ChallengeType.Image"/> whose
-/// <see cref="ChallengeAnswerKind"/> is <see cref="ChallengeAnswerKind.Taps"/>,
-/// and the points they tapped are replayed onto the same page with the mouse.
-///
-/// The line that does not move is which of us solves it. We carry a picture
-/// out and gestures back; nobody here reads a grid, scores one, or asks a
-/// service to. Every test below is about the carrying.
-///
-/// The live failure this suite was born from is still asserted, because it is
-/// still one line away: the redactor refused to photograph a page whose
-/// password field was full, the relay saw no bytes, and a job died of its
-/// budget with nobody ever having been asked anything.
-///
-/// No browser and no network: the page, the redirect and the mouse are the
-/// three seams a live login is met through.
-/// </summary>
+// login.ah.nl is fronted by hCaptcha (probed): the challenge iframe is photographed, relayed as Image with answer kind Taps,
+// and the taps are replayed with the mouse; nobody here reads or scores a grid.
+// the redactor refusing a page with a full password field once killed a job with nobody asked
 public sealed class AlbertHeijnCaptchaTests
 {
     private const string Redirect = "appie://login-exit?code=arrived-after-the-wall";
@@ -41,68 +19,28 @@ public sealed class AlbertHeijnCaptchaTests
 
     private static readonly AlbertHeijnOptions Options = new();
 
-    /// <summary>
-    /// hCaptcha's grid, and its "I am human" box: two frames, one widget.
-    /// </summary>
-    /// <remarks>
-    /// WRITTEN OUT rather than read off the adapter's own list. These were
-    /// <c>Options.CaptchaGridSelectors[0]</c> and its siblings, which makes the
-    /// fixture a restatement of the question: the page becomes "whatever this
-    /// adapter looks for first", so a list that is entirely wrong still passes.
-    /// That is the fixture shape that cost a live ASN fetch.
-    /// <para>
-    /// hCaptcha's two frames differ only by their <c>#frame=</c> fragment, and
-    /// telling them apart is the whole of this file - so a fixture that names
-    /// them by position rather than by markup cannot fail the way the live
-    /// widget does.
-    /// </para>
-    /// </remarks>
+    // literal, not Options.CaptchaGridSelectors[0]: the adapter's own list would let a wrong list pass (cost a live ASN fetch).
+    // hCaptcha's two frames differ only by their #frame= fragment
     private const string Grid = "iframe[src*='hcaptcha.com'][src*='#frame=challenge']";
 
     private const string Checkbox = "iframe[src*='hcaptcha.com'][src*='#frame=checkbox']";
 
-    /// <summary>
-    /// A widget whose parts we cannot name - what the fallback list matches
-    /// when the two frames above are not distinguishable.
-    /// </summary>
+    // a widget whose parts we cannot name: what the fallback list matches when the two frames are not distinguishable
     private const string OpaqueWidget = "[data-hcaptcha-widget-id]";
 
-    // ---- what the page saw, in order ---------------------------------------
-
-    /// <summary>A grid alone: the password leaves the DOM, then the widget is settled, photographed and tapped.</summary>
     private static readonly string[] GridRelayed = ["clear-secrets", "settle", "screenshot", "tap"];
 
-    /// <summary>A checkbox alone: one click, nothing to relay.</summary>
     private static readonly string[] CheckboxTicked = ["clear-secrets", "click"];
 
     /// <summary>A checkbox that escalated: the tick, then the relay, and never a second tick.</summary>
     private static readonly string[] CheckboxTickedThenGridRelayed = ["clear-secrets", "click", "settle", "screenshot", "tap"];
 
-    /// <summary>A widget with nothing to relay: only the password ever left the DOM.</summary>
     private static readonly string[] SecretsClearedOnly = ["clear-secrets"];
 
     private static AlbertHeijnAdapter Adapter() => new(Options, new FixedTimeProvider(Now));
 
-    // ---- the probe order, which is why any of this reaches a human --------
-
-    /// <summary>
-    /// A GRID THAT ALSO MATCHES THE GENERIC WIDGET SELECTORS IS STILL A GRID.
-    /// </summary>
-    /// <remarks>
-    /// The three selector lists overlap BY CONSTRUCTION - hCaptcha's two frames
-    /// differ only in a URL fragment, and the container Albert Heijn embeds
-    /// matches whatever is inside it - so the gate probes most-specific-first
-    /// and the order is the whole mechanism.
-    /// <para>
-    /// Every other test here shows the grid ALONE, which is the one arrangement
-    /// where the order cannot matter: reverse the probes and they all still
-    /// pass. What that order actually buys is this case, where both match at
-    /// once - and getting it wrong does not fail, it silently downgrades every
-    /// solvable puzzle to "a token minted inside somebody else's JavaScript",
-    /// relays nothing, and leaves the account holder with a login that cannot
-    /// be completed from anywhere.
-    /// </para>
-    /// </remarks>
+    // the three selector lists overlap by construction, so probe order (most specific first) is the mechanism.
+    // reversed, every solvable puzzle silently downgrades to the generic widget and no other test fails
     [Fact]
     public async Task A_grid_that_also_matches_the_widget_selectors_is_relayed_as_a_grid()
     {
@@ -121,14 +59,11 @@ public sealed class AlbertHeijnCaptchaTests
 
         var challenge = Assert.Single(ctx.Asked);
 
-        // Taps, because the grid won. Had the generic widget been probed first
-        // this would be an AppApproval carrying nothing anybody can act on.
+        // taps because the grid won; probed the other way it would be an AppApproval nobody can act on
         Assert.Equal(ChallengeType.Image, challenge.Type);
         Assert.Equal(ChallengeAnswerKind.Taps, challenge.AnswerKind);
         Assert.NotEmpty(challenge.Image!);
     }
-
-    // ---- the grid: photographed out, tapped back --------------------------
 
     [Theory]
     [InlineData(true)]
@@ -141,10 +76,8 @@ public sealed class AlbertHeijnCaptchaTests
 
         using var ctx = new FakeJobContext
         {
-            // Both, and the same result: a phone in another room is a better
-            // place to answer this than the chair in front of the agent, and
-            // the account's owner is the right person either way. Attendance
-            // is what the OLD answer turned on, and that is the whole point.
+            // both attendance values give the same result: a phone elsewhere answers better,
+            // and attendance is what the old answer turned on
             Attended = attended,
             Browser = lease,
             Answer = _ => new TapAnswer
@@ -161,27 +94,21 @@ public sealed class AlbertHeijnCaptchaTests
 
         var challenge = Assert.Single(ctx.Asked);
 
-        // An image with taps for an answer - not an AppApproval, which is what
-        // "go and solve it where the browser is" was, and not a text box,
-        // which no grid has ever been answerable with.
+        // an image with taps: not AppApproval ("solve it where the browser is"), not text, which no grid can be answered with
         Assert.Equal(ChallengeType.Image, challenge.Type);
         Assert.Equal(ChallengeAnswerKind.Taps, challenge.AnswerKind);
         Assert.NotEqual(ChallengeType.AppApproval, challenge.Type);
         Assert.False(challenge.IsPassive);
 
-        // The picture, and the rectangle it is a picture of. The crop is what
-        // lets the redactor drop the rest of the page rather than obscure it,
-        // and it is also the frame the answer is measured against.
+        // the crop lets the redactor drop the rest of the page, and is the frame the answer is measured against
         Assert.NotEmpty(challenge.Image!);
         Assert.Equal(StubLoginPage.Box, challenge.Crop);
         Assert.Equal(StubLoginPage.Box, lease.LastCrop);
 
-        // A key, never prose, and the same key a typed captcha uses: this is
-        // not a different question, it is the same question answered with a
-        // finger. Which control to draw is answer_kind's job.
+        // a key, never prose, and the same as a typed captcha: answer_kind says which control to draw
         Assert.Equal("connect.challenge.captcha", challenge.PromptKey);
 
-        // Long enough to cover somebody noticing a prompt on a phone.
+        // long enough to cover noticing a prompt on a phone
         Assert.Equal(Now.AddSeconds(600), challenge.ExpiresAt);
         Assert.Equal(600, Options.InteractiveCaptchaSeconds);
 
@@ -195,9 +122,7 @@ public sealed class AlbertHeijnCaptchaTests
         var page = StubLoginPage.Showing(Grid);
         var taps = new StubTapSurface(page);
 
-        // The two corners and the middle: enough to pin both halves of the
-        // mapping, since an origin that was forgotten and a scale that was
-        // wrong look identical from any single point.
+        // corners and middle pin both origin and scale: a forgotten origin and a wrong scale look alike from one point
         using var ctx = new FakeJobContext
         {
             Browser = new StubBrowserLease(page),
@@ -211,14 +136,10 @@ public sealed class AlbertHeijnCaptchaTests
         await Adapter().SettleAsync(
             ctx, page, new StubRedirectWaiter(Redirect, afterWaits: 1), taps, CancellationToken.None);
 
-        // Box is (12, 34) 300x80. A normalised tap is a fraction of the
-        // RELAYED IMAGE, so 0 is that rectangle's own left edge and not the
-        // viewport's - an agent that dropped the origin would click the top
-        // left of the page with perfectly valid coordinates.
+        // box is (12, 34) 300x80; taps are fractions of the relayed image, so 0 is its left edge, not the viewport's
         Assert.Equal(new[] { (12d, 34d), (162d, 54d), (312d, 114d) }, taps.Points);
 
-        // In the order the human made them, because some grids ask for tiles
-        // in sequence and the order cannot be recovered once it is dropped.
+        // in the human's order: some grids want tiles in sequence
         Assert.Equal(1, taps.Dispatches);
     }
 
@@ -237,15 +158,11 @@ public sealed class AlbertHeijnCaptchaTests
         await Adapter().SettleAsync(
             ctx, page, new StubRedirectWaiter(Redirect, afterWaits: 1), taps, CancellationToken.None);
 
-        // The order is the whole fix, and it is now three deep. The redactor
-        // refuses - correctly, and this stub refuses with it - to photograph a
-        // page while a secret field holds content, so a capture attempted
-        // first comes back empty, nobody is ever asked anything, and nothing
-        // is ever clicked.
+        // the order is the fix: the redactor refuses to photograph while a secret field holds content,
+        // so a capture made first comes back empty
         Assert.Equal(GridRelayed, page.Calls);
         Assert.False(page.HoldsSecret);
 
-        // Bytes, therefore: the picture the human tapped exists.
         var challenge = Assert.Single(ctx.Asked);
         Assert.NotEmpty(challenge.Image!);
     }
@@ -256,8 +173,7 @@ public sealed class AlbertHeijnCaptchaTests
         var page = StubLoginPage.Showing(Grid);
         var taps = new StubTapSurface(page);
 
-        // The redactor's other refusal: it declines whatever it cannot verify,
-        // not only a page still holding a password.
+        // the redactor also declines whatever it cannot verify, not only a page still holding a password
         var lease = new StubBrowserLease(page) { Refuses = true };
 
         using var ctx = new FakeJobContext { Attended = true, Browser = lease };
@@ -266,9 +182,7 @@ public sealed class AlbertHeijnCaptchaTests
             () => Adapter().SettleAsync(
                 ctx, page, new StubRedirectWaiter(redirect: null, afterWaits: 0), taps, CancellationToken.None));
 
-        // Named, and immediate. Showing somebody a blank rectangle is worse
-        // than admitting we are stuck, and clicking a grid nobody looked at is
-        // the line this whole design exists on the right side of.
+        // named and immediate: a blank rectangle is worse than admitting we are stuck, and a grid nobody looked at is never clicked
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.Contains("photographed", error.Detail, StringComparison.Ordinal);
 
@@ -282,11 +196,8 @@ public sealed class AlbertHeijnCaptchaTests
         var page = StubLoginPage.Showing(Grid);
         var taps = new StubTapSurface(page);
 
-        // A consumer that ignored answer_kind, drew a text box over the
-        // picture and sent back what the human typed into it. This is the
-        // degradation the contract promises, and the promise is that nothing
-        // happens - a tap inferred from prose is a click at a point no human
-        // chose.
+        // a consumer ignoring answer_kind sends typed text: the contract is that nothing happens,
+        // a tap inferred from prose is a click no human chose
         using var ctx = new FakeJobContext { Browser = new StubBrowserLease(page), Answer = _ => "7GQX" };
 
         var error = await Assert.ThrowsAsync<ConnectorException>(
@@ -296,8 +207,7 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(0, taps.Dispatches);
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
 
-        // The grid, then the last resort: finish on AH's own page and hand
-        // back the redirect. "7GQX" is not one of those either.
+        // the grid, then the last resort: finish on AH's own page and hand back the redirect
         Assert.Equal([ChallengeType.Image, ChallengeType.Redirect], ctx.Asked.Select(c => c.Type));
     }
 
@@ -313,8 +223,7 @@ public sealed class AlbertHeijnCaptchaTests
             Answer = _ => new TapAnswer { Taps = [new Tap(0.5, 0.5)], Submit = true }.Format(),
         };
 
-        // The redirect that never comes, and a widget that keeps asking. The
-        // exit condition here would otherwise belong to hCaptcha's JavaScript.
+        // the redirect never comes and the widget keeps asking: the exit would otherwise belong to hCaptcha's JavaScript
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().SettleAsync(
                 ctx, page, new StubRedirectWaiter(redirect: null, afterWaits: 0), taps, CancellationToken.None));
@@ -322,21 +231,12 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(Options.CaptchaRelayRounds, ctx.Asked.Count);
         Assert.Equal(4, Options.CaptchaRelayRounds);
 
-        // Unattended, so there is nobody at the browser to hand it to either.
+        // unattended: nobody at the browser to hand it to either
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
     }
 
-    /// <summary>
-    /// The same widget, answered by somebody who has not finished yet.
-    ///
-    /// This is the case that broke a working login. Once the client could send
-    /// taps without ending the relay - the only way to press a verify button
-    /// that lives inside the relayed picture - every tap spent one of the
-    /// provider's four rounds. Live, that meant four drawn puzzles, four
-    /// correct answers, nothing failing anywhere, and then the paste-a-URL
-    /// fallback. Being made to start again is what the budget is for; working
-    /// through a grid is not.
-    /// </summary>
+    // once taps can be sent without ending the relay, each tap spent one of the provider's four rounds:
+    // four correct answers, nothing failing, then the paste-a-URL fallback
     [Fact]
     public async Task A_human_still_working_through_a_grid_does_not_spend_the_providers_rounds()
     {
@@ -346,7 +246,6 @@ public sealed class AlbertHeijnCaptchaTests
         using var ctx = new FakeJobContext
         {
             Browser = new StubBrowserLease(page),
-            // Taps, and never the marker: "show me what that did".
             Answer = _ => new TapAnswer { Taps = [new Tap(0.5, 0.5)], Submit = false }.Format(),
         };
 
@@ -356,15 +255,13 @@ public sealed class AlbertHeijnCaptchaTests
 
         var pictures = ctx.Asked.Count(c => c.Type == ChallengeType.Image);
 
-        // Well past four. It stops on the loop's own backstop instead, which
-        // exists because the wall clock deliberately does not bound this: every
-        // ask parks the job budget while a human thinks.
+        // it stops on the loop's own backstop: the wall clock does not bound this,
+        // every ask parks the job budget while a human thinks
         Assert.True(
             pictures > Options.CaptchaRelayRounds,
             $"a human answering was cut off after {pictures} picture(s), the provider's escalation budget");
         Assert.Equal(24, pictures);
 
-        // Every one of them was replayed onto the page.
         Assert.Equal(pictures, taps.Dispatches);
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
     }
@@ -380,8 +277,7 @@ public sealed class AlbertHeijnCaptchaTests
         {
             Browser = new StubBrowserLease(page),
 
-            // Taps now, finished later: the marker left off means the human is
-            // still choosing, which is a legal thing for a client to send.
+            // taps now, finished later: leaving the marker off means the human is still choosing, which a client may send
             Answer = _ => new TapAnswer
             {
                 Taps = [new Tap(0.5, 0.5)],
@@ -397,13 +293,9 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(2, ctx.Asked.Count);
         Assert.Equal(2, taps.Dispatches);
 
-        // One poll before the wall was found and one after the round the human
-        // called finished - and none in between, because a grid somebody is
-        // halfway through has given the provider nothing to move on from.
+        // one poll before the wall and one after the finished round, none between: a half-done grid gives nothing to move on
         Assert.Equal(2, watcher.Waits);
     }
-
-    // ---- the checkbox: one real click on one real control -----------------
 
     [Fact]
     public async Task A_checkbox_on_its_own_is_ticked_and_nobody_is_asked_anything()
@@ -419,9 +311,6 @@ public sealed class AlbertHeijnCaptchaTests
 
         Assert.Equal(Redirect, captured);
 
-        // Clicking it is the gesture the control exists to receive, and
-        // frequently the whole of what the widget asks. There is nothing to
-        // relay yet: no picture has been drawn.
         Assert.Equal(CheckboxTicked, page.Calls);
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
@@ -433,9 +322,7 @@ public sealed class AlbertHeijnCaptchaTests
     [Fact]
     public async Task A_checkbox_that_escalates_into_a_grid_relays_the_grid_and_is_never_ticked_twice()
     {
-        // hCaptcha decides after the tick: sometimes it is satisfied, and
-        // sometimes it draws the pictures. The box stays on the page either
-        // way - which is exactly why a second tick would undo the first.
+        // hCaptcha decides after the tick; the box stays on the page either way, so a second tick would undo the first
         var page = StubLoginPage.Showing(Checkbox);
         page.WhenClicked = (clicked, _) => clicked.Reveal(Grid);
 
@@ -452,8 +339,6 @@ public sealed class AlbertHeijnCaptchaTests
 
         Assert.Equal(Redirect, captured);
 
-        // Tick, then picture, then taps - and the box, still on the page and
-        // still matching its selector, is left alone.
         Assert.Equal(CheckboxTickedThenGridRelayed, page.Calls);
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
@@ -466,11 +351,8 @@ public sealed class AlbertHeijnCaptchaTests
     [Fact]
     public async Task A_tick_that_does_not_take_relays_the_box_so_the_human_can_press_it_themselves()
     {
-        // Our click lands in the middle of the frame, and the middle of
-        // hCaptcha's checkbox frame is the words beside the box. Nothing here
-        // guesses how far left the box is - an offset measured off somebody
-        // else's widget is wrong the week they restyle it, and wrong
-        // invisibly. The frame is a picture, so it is relayed like one.
+        // our click lands mid-frame, which is the words beside the box; no offset is guessed (wrong the week they restyle),
+        // so the frame is relayed as a picture
         var page = StubLoginPage.Showing(Checkbox);
         var lease = new StubBrowserLease(page);
         var taps = new StubTapSurface(page);
@@ -487,27 +369,22 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(Redirect, captured);
         Assert.Equal(CheckboxTickedThenGridRelayed, page.Calls);
 
-        // Ticked once and then asked - not ticked again, which would undo it.
+        // ticked once, not again: that would undo it
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal(ChallengeAnswerKind.Taps, challenge.AnswerKind);
         Assert.Equal(StubLoginPage.Box, challenge.Crop);
 
-        // Against the box the CHECKBOX frame occupies, which is the rectangle
-        // that was photographed - not the grid's, which is not on the page.
+        // against the box the CHECKBOX frame occupies, the rectangle that was photographed
         Assert.Equal([(27d, 74d)], taps.Points);
     }
-
-    // ---- the walls this seam must not have changed ------------------------
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task A_plain_image_captcha_is_still_relayed_as_a_picture_and_answered_in_text(bool attended)
     {
-        // A picture and a box to type the answer into - the captcha a relay
-        // has always been able to carry, to a human anywhere.
         var page = StubLoginPage.Showing("img[alt*='captcha' i]", "input[name='captcha']");
         var lease = new StubBrowserLease(page);
         var taps = new StubTapSurface(page);
@@ -527,9 +404,7 @@ public sealed class AlbertHeijnCaptchaTests
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal(ChallengeType.Image, challenge.Type);
 
-        // Text, and stated rather than assumed: the same challenge type now
-        // carries two kinds of answer, and a consumer that drew a tappable
-        // grid over this one would be showing the wrong control.
+        // text, stated not assumed: one challenge type carries two answer kinds, and a tappable grid here would be the wrong control
         Assert.Equal(ChallengeAnswerKind.Text, challenge.AnswerKind);
 
         Assert.Equal("connect.challenge.captcha", challenge.PromptKey);
@@ -537,10 +412,7 @@ public sealed class AlbertHeijnCaptchaTests
         Assert.Equal(StubLoginPage.Box, challenge.Crop);
         Assert.Equal(StubLoginPage.Box, lease.LastCrop);
 
-        // The human's answer goes into the captcha's own box, and nothing is
-        // clicked anywhere. The credentials are deliberately not resubmitted:
-        // a second submission of a password that may already have counted is
-        // how an account gets locked.
+        // credentials are not resubmitted: a second submission of a password that may have counted is how an account gets locked
         Assert.Equal("7GQX", page.Answered);
         Assert.Equal(0, taps.Dispatches);
     }
@@ -553,27 +425,22 @@ public sealed class AlbertHeijnCaptchaTests
 
         using var ctx = new FakeJobContext { Browser = new StubBrowserLease(page) };
 
-        // The redirect that never comes. If the adapter waited for one, this
-        // test would hang exactly as the live run did.
+        // the redirect never comes; waiting for one would hang as the live run did
         var watcher = new StubRedirectWaiter(redirect: null, afterWaits: 0);
 
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().SettleAsync(ctx, page, watcher, taps, CancellationToken.None));
 
-        // Blocked, not internal and not invalid_credentials: nothing is wrong
-        // with the password and nothing is wrong with us. There is no grid to
-        // photograph and nobody at this browser to show it to.
+        // blocked, not internal nor invalid_credentials: the password and we are fine,
+        // there is no grid and nobody at this browser to show it to
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.Contains("unattended", error.Detail, StringComparison.Ordinal);
 
-        // Not one question, because there is nobody to answer it. A challenge
-        // raised here is a job pinned to an agent until its budget expires -
-        // which is the failure this whole path exists to remove.
+        // no question: a challenge here pins a job to an agent until its budget expires
         Assert.Empty(ctx.Asked);
         Assert.Equal(0, taps.Dispatches);
 
-        // Immediately: one poll of the redirect, then the refusal. The live
-        // failure was 300 seconds of exactly this loop.
+        // immediately: one redirect poll, then the refusal; the live failure was 300 seconds of this loop
         Assert.Equal(1, watcher.Waits);
     }
 
@@ -593,18 +460,14 @@ public sealed class AlbertHeijnCaptchaTests
 
         var challenge = Assert.Single(ctx.Asked);
 
-        // The surviving fallback, and passive because it has to be: there is
-        // no picture to send and nothing to type back, so the redirect is the
-        // only proof the wall came down.
+        // passive: no picture and nothing to type back, so the redirect is the only proof the wall came down
         Assert.Equal(ChallengeType.AppApproval, challenge.Type);
         Assert.True(challenge.IsPassive);
         Assert.Equal(ChallengeAnswerKind.Text, challenge.AnswerKind);
         Assert.Null(challenge.Image);
         Assert.Equal("connect.challenge.captcha_in_browser", challenge.PromptKey);
 
-        // Nothing is relayed for it, so nothing is captured either - but the
-        // job may still fail later, and the artifact the runner takes on the
-        // way out must not be refused over a password nobody needs any more.
+        // nothing captured, but the job may fail later and the runner's artifact must not be refused over a password nobody needs
         Assert.Equal(SecretsClearedOnly, page.Calls);
         Assert.Equal(0, lease.Captures);
     }
@@ -614,9 +477,7 @@ public sealed class AlbertHeijnCaptchaTests
     {
         var page = StubLoginPage.Showing(OpaqueWidget);
 
-        // Nobody ever answers the challenge - which is the normal case, not
-        // the edge one: the person solving the widget in the browser has no
-        // reason to go back to the consumer's UI and click anything.
+        // nobody answers: the normal case, the person solves it in the browser and has no reason to return to the consumer's UI
         using var ctx = new FakeJobContext
         {
             Attended = true,
@@ -624,8 +485,7 @@ public sealed class AlbertHeijnCaptchaTests
             AnswersNothing = true,
         };
 
-        // A ceiling, so a regression into awaiting the answer fails here
-        // rather than hanging the suite.
+        // a ceiling so a regression into awaiting the answer fails instead of hanging the suite
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var captured = await Adapter().SettleAsync(
@@ -645,9 +505,8 @@ public sealed class AlbertHeijnCaptchaTests
             () => Adapter().SettleAsync(
                 ctx, page, new StubRedirectWaiter(redirect: null, afterWaits: 0), CancellationToken.None));
 
-        // The only path allowed to say this, and nothing retries it: guessing
-        // "wrong password" from silence sends a user to reset a password that
-        // was fine.
+        // the only path allowed to say this, and never retried: guessing "wrong password" from silence
+        // sends a user to reset a fine one
         Assert.Equal(ErrorCode.InvalidCredentials, error.Code);
         Assert.Empty(ctx.Asked);
     }

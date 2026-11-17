@@ -5,8 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp, renderWithProviders } from '@/test/harness';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 
-// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
-// here we care about the flow around it (#301)
+// happy-dom has no canvas: the downscaler is covered by lib/image.test.ts (#301)
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
 vi.mock('@/lib/image', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/image')>()),
@@ -49,18 +48,14 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Side hustle' } });
-    // #147: the private lock is a real choice now — ticked by default,
-    // so the bare "name + Create" path still births a locked space
     expect((screen.getByTestId('space-create-lock') as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByTestId('space-create-save'));
 
-    // new space appears and becomes active
     await waitFor(() => {
       expect(screen.getByText('Side hustle')).toBeTruthy();
       expect(activeRow()!.textContent).toContain('Side hustle');
     });
 
-    // born private (arc 4) with the persisted defaults
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     const made = (await db.spaces.toArray()).find((s) => s.name === 'Side hustle');
@@ -68,7 +63,6 @@ describe('SpacesScreen (demo identity)', () => {
     expect(made?.historyStartDate).toBeTruthy();
     db.close();
 
-    // switch back to the original space
     fireEvent.click(screen.getByTestId(first));
     await waitFor(() => expect(activeRow()!.getAttribute('data-testid')).toBe(first));
   });
@@ -103,21 +97,17 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Reis' } });
     fireEvent.click(screen.getByTestId('space-create-icon-airplane'));
 
-    // period: weekly, starting Wednesday — the settings screen's controls
     fireEvent.click(screen.getByTestId('space-create-period'));
-    // #137: the period sheet explains itself like its settings twin
     expect(await screen.findByTestId('space-create-period-explain')).toBeTruthy();
     fireEvent.click(await screen.findByTestId('space-period-week'));
     fireEvent.click(screen.getByTestId('space-weekday-3'));
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('space-create-period').textContent).toContain('Weekly'));
 
-    // currency: USD via the chip sheet (closes itself on pick)
     fireEvent.click(screen.getByTestId('space-create-currency'));
     fireEvent.click(await screen.findByTestId('space-create-currency-USD'));
     await waitFor(() => expect(screen.getByTestId('space-create-currency').textContent).toContain('USD'));
 
-    // history start: an explicit date + the start-small hint
     fireEvent.click(screen.getByTestId('space-create-history'));
     await screen.findByTestId('space-create-history-hint');
     fireEvent.change(screen.getByTestId('space-create-history-date'), { target: { value: '2026-06-01' } });
@@ -157,13 +147,11 @@ describe('SpacesScreen (demo identity)', () => {
     });
     db.close();
 
-    // the dot computes on mount — a fresh Home sees the other space's backlog
     cleanup();
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await screen.findByTestId('home-space-switcher-dot', {}, { timeout: 5000 });
 
-    // the sheet counts lazily on open: the busy space wears its pill
     fireEvent.click(screen.getByTestId('home-space-switcher'));
     const pill = await screen.findByTestId('space-attn-busy', {}, { timeout: 5000 });
     expect(pill.textContent).toContain('1');
@@ -174,7 +162,6 @@ describe('SpacesScreen (demo identity)', () => {
     setSpacesCreateIntent();
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the create sheet is open without touching the + button
     expect(await screen.findByTestId('space-create-name')).toBeTruthy();
   });
 
@@ -185,11 +172,10 @@ describe('SpacesScreen (demo identity)', () => {
     const name = await screen.findByTestId('space-create-name');
     fireEvent.change(name, { target: { value: '   ' } });
     const save = screen.getByTestId('space-create-save') as HTMLButtonElement;
-    expect(save.disabled).toBe(false); // never disabled for validity
+    expect(save.disabled).toBe(false);
     fireEvent.click(save);
     expect(await screen.findByTestId('space-create-blocker')).toBeTruthy();
     expect(name.getAttribute('aria-invalid')).toBe('true');
-    // a real name clears the block and creates
     fireEvent.change(name, { target: { value: 'Blocked no more' } });
     fireEvent.click(save);
     await waitFor(() => expect(screen.getByText('Blocked no more')).toBeTruthy(), { timeout: 5000 });
@@ -198,7 +184,6 @@ describe('SpacesScreen (demo identity)', () => {
   it('back with unsaved edits asks first; Stay keeps editing, Leave discards (#164)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -218,14 +203,12 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('spacesettings-back'));
     expect(await screen.findByTestId('screen-discard')).toBeTruthy();
     fireEvent.click(screen.getByTestId('screen-discard-stay'));
-    // still on the settings screen, edits intact
     expect(screen.getByTestId('screen-space-settings')).toBeTruthy();
     expect((screen.getByTestId('space-edit-name') as HTMLInputElement).value).toBe('Dirty name');
 
     fireEvent.click(screen.getByTestId('spacesettings-back'));
     fireEvent.click(await screen.findByTestId('screen-discard-leave'));
     await screen.findByTestId('screen-spaces');
-    // the rename was discarded (the list re-queries after the remount)
     await waitFor(
       () => expect(screen.getByTestId(`space-row-${id}`).textContent).not.toContain('Dirty name'),
       { timeout: 5000 },
@@ -235,7 +218,6 @@ describe('SpacesScreen (demo identity)', () => {
   it('renames a space from the edit sheet', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -258,7 +240,6 @@ describe('SpacesScreen (demo identity)', () => {
   it('saves icon and color from the slimmed settings screen (period/currency/history moved out)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -272,12 +253,9 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.click(await screen.findByTestId('space-icon-briefcase-outline'));
     fireEvent.click(screen.getByTestId('space-color-3498DB'));
-    // extracted settings must be GONE from this screen (user request:
-    // only the space's identity + danger zone live here)
     expect(screen.queryByTestId('space-currency-TRY')).toBeNull();
     expect(screen.queryByTestId('space-period-week')).toBeNull();
     expect(screen.queryByTestId('space-history-start')).toBeNull();
-    // #162: the private lock moved to the Settings tab
     expect(screen.queryByTestId('space-invite-lock')).toBeNull();
     fireEvent.click(screen.getByTestId('space-edit-save'));
 
@@ -294,7 +272,6 @@ describe('SpacesScreen (demo identity)', () => {
     );
     db.close();
 
-    // the list row shows the chosen icon (live query re-render — must wait)
     await waitFor(
       () => {
         expect(screen.getByTestId(`space-row-${id}`).innerHTML).toContain('briefcase-outline');
@@ -306,7 +283,6 @@ describe('SpacesScreen (demo identity)', () => {
   it('a set picture puts the symbol and color pickers to sleep (#146)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -317,7 +293,6 @@ describe('SpacesScreen (demo identity)', () => {
     });
     const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
-    // seed the picture directly — the file input needs a real image decoder
     const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
       import('@/db/schema'),
       import('@/db/backend'),
@@ -331,18 +306,14 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     await screen.findByTestId('screen-space-settings');
-    // the note says WHY; both pickers refuse taps while the picture rules
     expect(await screen.findByTestId('space-icon-picture-note')).toBeTruthy();
     expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('space-color-3498DB') as HTMLButtonElement).disabled).toBe(true);
-    // #444 (user): and they LOOK refused — the glyph drops to the muted ink,
-    // the tile fades, the selection ring is off — not just unresponsive
     const sleepingTile = screen.getByTestId('space-icon-briefcase-outline');
     expect((sleepingTile.querySelector('i') as HTMLElement).style.color).toBe('var(--m-ink-4)');
     expect(sleepingTile.className).toContain('disabled:opacity-45');
     expect(sleepingTile.className).not.toContain('border-accent');
     expect(screen.getByTestId('space-color-3498DB').className).toContain('disabled:opacity-45');
-    // clearing the picture wakes them up again
     fireEvent.click(screen.getByTestId('space-photo-clear'));
     await waitFor(() => expect(screen.queryByTestId('space-icon-picture-note')).toBeNull());
     expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(false);
@@ -354,21 +325,17 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('screen-spaces');
     const firstId = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
-    // active space cannot be deleted
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));
     fireEvent.click(await screen.findByTestId('space-edit-delete'));
     expect(await screen.findByTestId('space-delete-error')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('spacesettings-back')); // settings is a screen now
+    fireEvent.click(screen.getByTestId('spacesettings-back'));
 
-    // create a second space (becomes active), then the first is deletable
     fireEvent.click(await screen.findByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Temp' } });
     fireEvent.click(screen.getByTestId('space-create-save'));
     await waitFor(() => expect(activeRow()!.textContent).toContain('Temp'));
 
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));
-    // destructive: the shared danger sheet asks with the consequences
-    // spelled out (cooldown is 0 in tests)
     fireEvent.click(await screen.findByTestId('space-edit-delete'));
     expect(await screen.findByTestId('space-delete-body')).toBeTruthy();
     fireEvent.click(screen.getByTestId('space-delete-confirm'));
@@ -377,15 +344,11 @@ describe('SpacesScreen (demo identity)', () => {
   }, 15_000);
 
   it('lists the accounts attached to the space behind its own door', async () => {
-    // the only door is on Settings now (user remark: the space-settings
-    // doors were redundant) — it targets the active space
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
-    // #206: a manual (space-owned) row opens the EDITOR directly — the
-    // tap-through info sheet is for feed-fed rows only now
     const row = [...section.querySelectorAll('[data-testid^="space-account-"]')].find((el) =>
       el.textContent?.includes('Demo Savings'),
     ) as HTMLElement;
@@ -403,7 +366,6 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('space-accounts');
 
     fireEvent.click(screen.getByTestId('space-accounts-add'));
-    // #527: the space's Add door offers connect, import and manual — a manual account lives in this space
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     expect(await screen.findByTestId('chooser-manual-form')).toBeTruthy();
     fireEvent.click(screen.getByTestId('chooser-accttype-cash'));
@@ -442,14 +404,11 @@ describe('SpacesScreen (demo identity)', () => {
     renderApp('/spaces');
     const row = await screen.findByTestId('space-row-sh1', {}, { timeout: 5000 });
     expect(screen.getByTestId('space-shared-badge-sh1')).toBeTruthy();
-    // the creator line no longer waits for a name collision (#277)
     expect(row.textContent).toContain('created by Bob');
-    // personal rows carry neither badge nor creator
     expect(screen.queryByTestId('space-shared-badge-demo_space')).toBeNull();
     expect(screen.getByTestId('space-row-demo_space').textContent).not.toContain('created by');
   }, 15_000);
 
-  // the glyph's live color — Icon paints an inline style from the prop
   const glyphColor = (tileTestId: string) => {
     const glyph = screen.getByTestId(tileTestId).querySelector('i') as HTMLElement;
     return glyph.style.color.replace(/\s+/g, '').toLowerCase();
@@ -461,22 +420,17 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     await screen.findByTestId('space-create-name');
-    // curated set by default — the full-font glyph is not offered yet
     expect(screen.getByTestId('space-create-icon-leaf')).toBeTruthy();
     expect(screen.queryByTestId('space-create-icon-rocket-launch')).toBeNull();
 
-    // searching swaps the grid to the FULL mdi set (non-curated result)
     fireEvent.change(screen.getByTestId('space-create-icon-search'), { target: { value: 'rocket-lau' } });
     const found = await screen.findByTestId('space-create-icon-rocket-launch');
-    // …and the curated rows stand down while a query narrows the grid
     expect(screen.queryByTestId('space-create-icon-leaf')).toBeNull();
 
-    // the grid previews the picked color live (default first, then a swatch)
     expect(glyphColor('space-create-icon-rocket-launch')).toMatch(/#08372b|rgb\(8,55,43\)/);
     fireEvent.click(screen.getByTestId('space-create-color-E74C3C'));
     await waitFor(() => expect(glyphColor('space-create-icon-rocket-launch')).toMatch(/#e74c3c|rgb\(231,76,60\)/));
 
-    // a searched glyph is a real pick — it lands on the created space
     fireEvent.click(found);
     fireEvent.change(screen.getByTestId('space-create-name'), { target: { value: 'Launchpad' } });
     fireEvent.click(screen.getByTestId('space-create-save'));
@@ -495,7 +449,6 @@ describe('SpacesScreen (demo identity)', () => {
   it('#285: settings icon search narrows and extends the grid; color previews live', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -515,14 +468,11 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('space-icon-campfire');
     expect(screen.queryByTestId('space-icon-briefcase-outline')).toBeNull();
 
-    // a swatch pick recolors every glyph in the grid on the spot
     fireEvent.click(screen.getByTestId('space-color-3498DB'));
     await waitFor(() => expect(glyphColor('space-icon-campfire')).toMatch(/#3498db|rgb\(52,152,219\)/));
 
-    // a hopeless query says so instead of showing an empty void
     fireEvent.change(screen.getByTestId('space-icon-search'), { target: { value: 'zzqx' } });
     expect(await screen.findByTestId('space-icon-none')).toBeTruthy();
-    // clearing the query brings the curated set back
     fireEvent.click(screen.getByTestId('space-icon-search-clear'));
     expect(await screen.findByTestId('space-icon-briefcase-outline')).toBeTruthy();
   }, 15_000);
@@ -533,18 +483,13 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     await screen.findByTestId('space-create-name');
-    // the settings strip, re-housed: upload tile + hidden input
     const file = new File(['x'], 'photo.png', { type: 'image/png' });
     expect(screen.getByTestId('space-create-photo-upload')).toBeTruthy();
     fireEvent.change(screen.getByTestId('space-create-photo-input'), { target: { files: [file] } });
 
-    // the picked picture shows as the clear tile and puts the symbol +
-    // color pickers to sleep with the #146 note, like its settings twin
     expect(await screen.findByTestId('space-create-photo-clear')).toBeTruthy();
     expect(await screen.findByTestId('space-create-icon-picture-note')).toBeTruthy();
     expect((screen.getByTestId('space-create-icon-leaf') as HTMLButtonElement).disabled).toBe(true);
-    // #444 (user): the create form is where the ticket saw live-looking
-    // tiles that took no tap — the glyphs are muted and the tiles faded now
     expect((screen.getByTestId('space-create-icon-leaf').querySelector('i') as HTMLElement).style.color).toBe('var(--m-ink-4)');
     expect(screen.getByTestId('space-create-icon-leaf').className).toContain('disabled:opacity-45');
     expect(screen.getByTestId('space-create-color-custom').className).toContain('disabled:opacity-45');
@@ -552,7 +497,6 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('space-create-name'), { target: { value: 'Pictured' } });
     fireEvent.click(screen.getByTestId('space-create-save'));
 
-    // the picture persists ON the new space
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(
@@ -566,9 +510,7 @@ describe('SpacesScreen (demo identity)', () => {
   }, 15_000);
 
   it('#304: the leave/remove danger confirm arms only after the 5s countdown', () => {
-    // the flows pass no cooldown prop, so they inherit the standard
-    // (5s in production, 0 in test mode) — the countdown machinery is
-    // proven here with the prod value and fake timers
+    // no cooldown prop in the flows: they inherit 5s (0 in test mode); proven here with the prod value and fake timers
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     try {
       renderWithProviders(
@@ -614,7 +556,6 @@ describe('the space picture is framed and zoomed (user 2026-10-06)', () => {
   it('an uploaded picture gets the round frame with a zoom; the focus is saved and the circles draw at it', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    // the 'Active space' badge resolves inside waitFor (the file's own rule)
     let active: Element | undefined;
     await waitFor(() => {
       active = screen
@@ -639,12 +580,10 @@ describe('the space picture is framed and zoomed (user 2026-10-06)', () => {
 
     fireEvent.click(screen.getByTestId('space-edit-save'));
     await screen.findByTestId('screen-spaces');
-    // the list's circle draws at the stored focus…
     await waitFor(() => {
       const circle = screen.getByTestId(`space-row-${id}`).querySelector('[data-testid="space-picture"] img') as HTMLElement | null;
       expect(circle?.style.transform).toBe('scale(2)');
     });
-    // …which the row carries
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {

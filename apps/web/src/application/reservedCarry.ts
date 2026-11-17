@@ -12,20 +12,9 @@ import { decodeHlc } from '@/sync/hlc';
 import { DELETED_FIELD } from '@/sync/merge';
 import { removeMirrorForDeletedSource } from './mirrorMint';
 
-/**
- * #533 (user): what a person set on a reserved (pending) charge comes
- * along when the bank books it. The settle takes the reserved row out of
- * the feed once the bank stops reporting it (#508); its booked twin is a
- * new row with a new reference (domain/reservedTwin pairs the two). The
- * twin takes the reserved row's category, note, event, recurring cost,
- * counterparty and links — and keeps waiting in the review, as the user
- * asked: a booked amount may differ from the hold. The rows that pointed
- * at the reserved one (a reimbursement it paid, a transfer leg, a
- * receipt) point at the twin. The reserved row's overlay is retired once
- * carried, so every device and member converges on one carry; a
- * reservation that never booked lets its overlay go once no booking can
- * follow any more.
- */
+// #533: what a person set on a reserved charge follows to its booked twin (domain/reservedTwin pairs them)
+// the twin keeps waiting in the review (the booked amount may differ); rows that pointed at the hold point at the twin
+// the hold's overlay is retired once carried, so devices converge, or when no booking can follow any more
 
 const DAY_MS = 86_400_000;
 /** a reserved row gone longer than a booking may follow was released, not booked */
@@ -34,7 +23,6 @@ export const GIVE_UP_MS = TWIN_DAYS_AFTER * DAY_MS;
 const REACH_MS = (TWIN_DAYS_BEFORE + TWIN_DAYS_AFTER) * DAY_MS;
 const FINGERPRINT_KEY = 'reservedCarryFingerprint';
 
-/** an overlay that says something a person (or the review) decided */
 const holdsOpinion = (meta: TxMetaRow): boolean =>
   (!!meta.catId && meta.catId !== UNCATEGORIZED_ID) ||
   !!meta.cats?.length ||
@@ -47,13 +35,11 @@ const holdsOpinion = (meta: TxMetaRow): boolean =>
   !!meta.reimbursements?.length ||
   !!meta.transferPeerId;
 
-/** the wall-clock ms of a row's tombstone */
 export const tombstoneMs = (row: TransactionRow): number => {
   const stamp = row.fieldVersions[DELETED_FIELD];
   return stamp ? decodeHlc(stamp).wallMs : 0;
 };
 
-/** parts resized onto the booked amount, each keeping its story */
 function rescaledParts(parts: readonly TxSplit[], targetAbs: number): TxSplit[] {
   const sizes = scaleCatsTo(
     parts.map((part) => ({ catId: part.catId, amountCents: Math.abs(part.amountCents) })),
@@ -67,7 +53,6 @@ function rescaledParts(parts: readonly TxSplit[], targetAbs: number): TxSplit[] 
   }));
 }
 
-/** links never promise more than the booked row is worth */
 function cappedLinks(links: readonly TxReimbursement[], targetAbs: number): TxReimbursement[] {
   let left = targetAbs;
   const out: TxReimbursement[] = [];
@@ -82,7 +67,7 @@ function cappedLinks(links: readonly TxReimbursement[], targetAbs: number): TxRe
 
 type AmountBoundFields = Pick<TxTransformFields, 'cats' | 'splits' | 'reimbursements'>;
 
-/** the opinions bound to the amount — category split, parts, links — resized onto the booked amount when it differs from the hold (S3776) */
+/** category split, parts and links are resized onto the booked amount when it differs from the hold (S3776) */
 function amountBoundFields(meta: TxMetaRow, same: boolean, targetAbs: number): AmountBoundFields {
   const fields: AmountBoundFields = {};
   if (meta.cats?.length) {
@@ -98,7 +83,7 @@ function amountBoundFields(meta: TxMetaRow, same: boolean, targetAbs: number): A
 const withoutOwnLegs = (parts: readonly TxSplit[], holdId: string): TxSplit[] =>
   parts.map((part) => (part.id && part.transferPeerId === mirrorTxId(partMirrorSourceId(holdId, part.id)) ? { ...part, transferPeerId: undefined } : part));
 
-/** the reserved row's opinions as the booked row's fields — the review flag stays the booked row's own */
+/** the review flag stays the booked row's own */
 export function carriedFields(meta: TxMetaRow, reserved: TransactionRow, booked: TransactionRow): TxTransformFields {
   const bound = amountBoundFields(meta, reserved.amountCents === booked.amountCents, Math.abs(booked.amountCents));
   const { cats, reimbursements } = bound;
@@ -127,7 +112,6 @@ const mirrorSourceOf = (row: TransactionRow) => ({
   merchant: row.merchant,
 });
 
-/** the counter legs minted for the hold — its own and its parts' — go with it */
 async function retireHoldLegs(store: StorageBackend, repo: Repo, raw: TransactionRow, meta: TxMetaRow): Promise<void> {
   if (meta.linkedAccountId) await removeMirrorForDeletedSource(store, repo, mirrorSourceOf(raw), meta.linkedAccountId).catch(() => undefined);
   const sign = raw.amountCents < 0 ? -1 : 1;
@@ -138,14 +122,12 @@ async function retireHoldLegs(store: StorageBackend, repo: Repo, raw: Transactio
   }
 }
 
-/** #547: the entries linked to a row follow it to the row that took its place */
 async function repointEntries(store: StorageBackend, repo: Repo, spaceId: string, fromId: string, toId: string): Promise<void> {
   for (const row of await store.bySpace('transaction', spaceId)) {
     if (row.deleted === 0 && row.bankTxId === fromId) await repo.upsert('transaction', spaceId, row.id, { bankTxId: toId });
   }
 }
 
-/** the rows of this space that pointed at one row now point at the row that took its place (a reserved row's booked twin; #547: an entry's bank row) */
 export async function repointReferences(store: StorageBackend, repo: Repo, spaceId: string, viewed: readonly SpaceTx[], fromId: string, toId: string) {
   for (const row of viewed) {
     // the hold's own minted leg is retired, never re-pointed
@@ -163,7 +145,6 @@ export async function repointReferences(store: StorageBackend, repo: Repo, space
   await repointEntries(store, repo, spaceId, fromId, toId);
 }
 
-/** the receipts linked to the reserved row, or asked about on it, now name its twin; how many did (S3776) */
 async function repointReceiptLinks(store: StorageBackend, repo: Repo, spaceId: string, fromId: string, toId: string): Promise<number> {
   let moved = 0;
   for (const link of await store.bySpace('receiptLink', spaceId)) {
@@ -189,13 +170,11 @@ async function freeProposals(store: StorageBackend, repo: Repo, spaceId: string,
   }
 }
 
-/** a reserved row the bank took out of its feed */
 interface GoneHold {
   raw: TransactionRow;
   feedSpaceId: string;
 }
 
-/** the space's attached feeds: the reserved rows the bank took out, and the booked rows per account (S3776) */
 async function feedRows(store: StorageBackend, spaceId: string): Promise<{ gone: Map<string, GoneHold>; booked: Map<string, TransactionRow[]> }> {
   const gone = new Map<string, GoneHold>();
   const booked = new Map<string, TransactionRow[]>();
@@ -209,7 +188,6 @@ async function feedRows(store: StorageBackend, spaceId: string): Promise<{ gone:
   return { gone, booked };
 }
 
-/** a hold with a story, and the booked twin it pairs with */
 interface Carry extends GoneHold {
   /** absent when a receipt is all the hold carried */
   meta: TxMetaRow | undefined;
@@ -217,7 +195,6 @@ interface Carry extends GoneHold {
   twinMeta: TxMetaRow | undefined;
 }
 
-/** the twin takes the hold's story, the rows that named the hold name the twin, and the hold's overlay goes (S3776) */
 async function carryOnto(store: StorageBackend, repo: Repo, spaceId: string, carry: Carry, viewed: readonly SpaceTx[]): Promise<void> {
   const { raw, feedSpaceId, meta, twin, twinMeta } = carry;
   if (meta) {
@@ -270,7 +247,6 @@ function twinsOf(waiting: readonly GoneHold[], gone: readonly GoneHold[], booked
   return twins;
 }
 
-/** one space's reserved rows the bank took out, carried onto their twins; how many were carried */
 async function carryInSpace(store: StorageBackend, repo: Repo, spaceId: string, now: number): Promise<number> {
   const { gone, booked } = await feedRows(store, spaceId);
   if (gone.size === 0) return 0;
@@ -325,7 +301,6 @@ async function stillWaiting({ store, repo, spaceId, metas }: CarryAt, holds: rea
   return waiting;
 }
 
-/** one hold onto its twin; whether anything of it was carried */
 async function carryHold({ store, repo, spaceId, metas }: CarryAt, { raw, feedSpaceId }: GoneHold, twin: TransactionRow, view: () => Promise<SpaceTx[]>): Promise<boolean> {
   const meta = metas.get(raw.id);
   const twinMeta = metas.get(twin.id);
@@ -346,7 +321,6 @@ function groupBy<T>(items: readonly T[], keyOf: (item: T) => string): Map<string
   return groups;
 }
 
-/** every real space's reserved rows carried onto their booked twins; how many were carried */
 export async function carryReservedOpinions(store: StorageBackend, repo: Repo, now = Date.now()): Promise<number> {
   let carried = 0;
   for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind)) {
@@ -378,7 +352,6 @@ async function pullFingerprint(store: StorageBackend): Promise<string> {
 
 let running = false;
 
-/** the after-sync pass: only when a pull brought something since the last one, one pass at a time */
 export async function carryReservedOpinionsWhenDue(store: StorageBackend, repo: Repo): Promise<number> {
   if (running) return 0;
   running = true;

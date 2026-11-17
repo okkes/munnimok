@@ -3,14 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Security;
 
-/// <summary>
-/// Key rotation is a <c>kid</c> bump: new bundles seal with the new key,
-/// existing ones keep validating under their own until they expire, then
-/// die naturally. No mass re-login event, ever.
-/// </summary>
+// rotation is a kid bump: new bundles seal with the new key, existing ones validate under their own until they expire.
+// no mass re-login
 public interface IBundleKeyRing
 {
-    /// <summary>The key new bundles are sealed with.</summary>
     (string Kid, byte[] Key) Current { get; }
 
     bool TryGet(string kid, out byte[] key);
@@ -47,21 +43,13 @@ public sealed class BundleKeyRing : IBundleKeyRing
 
     public bool TryGet(string kid, out byte[] key) => _keys.TryGetValue(kid, out key!);
 
-    /// <summary>
-    /// Builds a ring from configuration of the form
-    /// <c>{ "CurrentKid": "k1", "Keys": { "k1": "&lt;base64&gt;" } }</c>.
-    /// </summary>
     public static BundleKeyRing FromBase64(string currentKid, IReadOnlyDictionary<string, string> base64Keys)
     {
         var keys = base64Keys.ToDictionary(kv => kv.Key, kv => Convert.FromBase64String(kv.Value), StringComparer.Ordinal);
         return new BundleKeyRing(currentKid, keys);
     }
 
-    /// <summary>
-    /// A throwaway ring for local development and tests. Never reachable in
-    /// a deployed configuration - the host refuses to start without real
-    /// keys unless it is explicitly in development.
-    /// </summary>
+    // never reachable when deployed: the host refuses to start without real keys unless in development
     public static BundleKeyRing Ephemeral(string kid = "dev")
     {
         var keys = new Dictionary<string, byte[]>(StringComparer.Ordinal) { [kid] = RandomNumberGenerator.GetBytes(32) };
@@ -69,10 +57,6 @@ public sealed class BundleKeyRing : IBundleKeyRing
     }
 }
 
-/// <summary>
-/// The credential material a bundle carries. Which fields are populated is
-/// determined entirely by the provider's runtime tier.
-/// </summary>
 public sealed record SessionMaterial
 {
     /// <summary>T1/T2: the bearer token, if the provider issues one.</summary>
@@ -86,19 +70,11 @@ public sealed record SessionMaterial
     [JsonPropertyName("access_token_expires_at")]
     public DateTimeOffset? AccessTokenExpiresAt { get; init; }
 
-    /// <summary>
-    /// T2/T3: a Playwright storage state. Persisting this is the cheap 80%
-    /// win - the second fetch skips a full login and 2FA without any
-    /// password ever being stored.
-    /// </summary>
+    // T2/T3: a Playwright storage state; the second fetch skips login and 2FA without storing a password
     [JsonPropertyName("storage_state")]
     public string? StorageState { get; init; }
 
-    /// <summary>
-    /// A stable per-connection device identifier where a provider expects
-    /// one. Rotating it every run is a fraud signal, so it is minted at
-    /// connect time and carried for the life of the session.
-    /// </summary>
+    // minted at connect time and kept for the session's life: rotating it every run is a fraud signal
     [JsonPropertyName("device_id")]
     public string? DeviceId { get; init; }
 
@@ -114,7 +90,6 @@ public sealed record SessionMaterial
     public IReadOnlyDictionary<string, string> Extra { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>True when this material is only a pointer, holding no credential at all.</summary>
     [JsonIgnore]
     public bool IsAgentPointer => AgentId is not null && AccessToken is null && RefreshToken is null && StorageState is null;
 

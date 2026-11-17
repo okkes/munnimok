@@ -10,16 +10,8 @@ namespace Munni.Api.Connectors;
 
 public static partial class ConnectorRelayEndpoints
 {
-    /// <summary>
-    /// The live view pushed (#429). The app holds one response here for the
-    /// whole streamed login and this API holds one stream to the control
-    /// plane, handing each frame on as it arrives. The device talks to this
-    /// API and nothing else: the control plane and the agents stay on the
-    /// private network, and every tap still travels through
-    /// <see cref="LiveInput"/>. Refusals come back before the first byte with
-    /// the status the frame poll would answer, so a client that cannot hold a
-    /// stream polls instead and loses nothing.
-    /// </summary>
+    // the device talks only to this API (control plane and agents stay private); refusals come before the first byte
+    // with the frame poll's status, so a client that cannot hold a stream polls instead (#429)
     private static async Task<IResult> LiveStream(
         string provider, string sessionId, string challengeId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -44,30 +36,19 @@ public static partial class ConnectorRelayEndpoints
     }
 }
 
-/// <summary>
-/// The relay's half of the pushed live view: what it reads from the control
-/// plane, what it writes to the app, and the one stream it keeps per viewer.
-/// </summary>
 internal static class LiveStreamRelay
 {
     public const string ContentType = "text/event-stream";
 
-    /// <summary>
-    /// The control plane writes a keep-alive after ten quiet seconds, so three
-    /// of them missing is an upstream that is gone without having said so; the
-    /// app reconnects past the frame it drew.
-    /// </summary>
+    // the control plane keeps alive every 10 s: three missed is an upstream gone unannounced.
+    // the app reconnects past its last frame
     public static readonly TimeSpan UpstreamSilence = TimeSpan.FromSeconds(30);
 
-    /// <summary>A frame slot holds at most a megabyte, which is under 1.4 MB of base64; anything longer is not a frame.</summary>
+    // a frame slot holds at most 1 MB, under 1.4 MB of base64: a longer event is not a frame
     public const int MaxEventBytes = 2 * 1024 * 1024;
 
-    /// <summary>
-    /// The stream each viewer holds, by user, session and challenge. A phone
-    /// that switched networks reconnects while its old connection still looks
-    /// open here - for as long as TCP takes to give up on it - so the newer
-    /// stream takes the place and the older one lets its upstream go at once.
-    /// </summary>
+    // a newer stream of the same viewer replaces the old one: a phone that changed networks reconnects while the old
+    // connection still looks open (until TCP gives up)
     private static readonly ConcurrentDictionary<string, StreamClaim> Open = new(StringComparer.Ordinal);
 
     /// <summary>The frame the viewer last drew: <c>Last-Event-ID</c> on a reconnect, else <c>?after=</c>; null when it is not a number.</summary>
@@ -82,11 +63,9 @@ internal static class LiveStreamRelay
             : null;
     }
 
-    /// <summary>One viewer of one live view: the person, and the challenge they are watching.</summary>
     public static string ViewerKey(Guid userId, string provider, string sessionId, string challengeId) =>
         $"{userId:N}|{provider}|{sessionId}|{challengeId}";
 
-    /// <summary>Whether the relay holds a stream for this viewer right now.</summary>
     public static bool Holds(string key) => Open.ContainsKey(key);
 
     public static StreamClaim Claim(string key, CancellationToken aborted)
@@ -100,13 +79,8 @@ internal static class LiveStreamRelay
         return claim;
     }
 
-    /// <summary>
-    /// Hands the control plane's events on until either end stops: frames
-    /// re-written from what was validated, keep-alives passed through, the
-    /// platform's <c>end</c> passed through and final. Nothing after the first
-    /// byte throws back at the framework - the response has started, and an
-    /// envelope written over it would bury the cause.
-    /// </summary>
+    // nothing after the first byte throws back at the framework: an envelope written over a started response
+    // would bury the cause
     public static async Task PumpAsync(HttpResponseMessage upstream, HttpContext http, StreamClaim claim, TimeSpan silence)
     {
         var response = http.Response;
@@ -135,9 +109,7 @@ internal static class LiveStreamRelay
         }
         catch (OperationCanceledException) when (claim.Superseded)
         {
-            // A newer stream of the same viewer took over. Said rather than
-            // dropped, so a second tab watching the same login stops
-            // reconnecting into the first and polls beside it instead.
+            // said rather than dropped, so a second tab on the same login stops reconnecting into the first and polls beside it
             await TryWriteAsync(response, "event: superseded\ndata: {}\n\n", http.RequestAborted);
         }
         catch (OperationCanceledException)
@@ -151,7 +123,6 @@ internal static class LiveStreamRelay
         }
     }
 
-    /// <summary>What the app is handed for one upstream event, or null when it is nobody's business but the relay's.</summary>
     internal static string? Render(SseEvent next)
     {
         if (next.IsComment) return ": keep-alive\n\n";
@@ -164,10 +135,7 @@ internal static class LiveStreamRelay
         };
     }
 
-    /// <summary>
-    /// A frame as the app reads it, rebuilt from what was checked: the fields
-    /// the app draws with and nothing a future control plane might add.
-    /// </summary>
+    // rebuilt from what was validated: only the fields the app draws with, nothing a future control plane adds
     private static string? RenderFrame(SseEvent next)
     {
         if (!long.TryParse(next.Id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) return null;
@@ -226,7 +194,6 @@ internal static class LiveStreamRelay
         }
     }
 
-    /// <summary>The platform's reason, kept to the one field the app reads.</summary>
     private static string EndData(string? data)
     {
         string? code = null;
@@ -260,7 +227,6 @@ internal static class LiveStreamRelay
         }
     }
 
-    /// <summary>One viewer's hold on a stream; disposing it lets the place go unless a newer stream took it.</summary>
     internal sealed class StreamClaim : IDisposable
     {
         private readonly string _key;
@@ -298,17 +264,9 @@ internal static class LiveStreamRelay
     }
 }
 
-/// <summary>
-/// One server-sent event: its name (<c>message</c> when it gave none), id and
-/// data, or a comment block - which is how a keep-alive arrives.
-/// </summary>
 internal sealed record SseEvent(string Name, string? Id, string? Data, bool IsComment);
 
-/// <summary>
-/// Reads server-sent events off a stream, bounded: an event longer than the
-/// limit is refused rather than buffered, so a stream that never sends a
-/// newline cannot grow this process without end.
-/// </summary>
+// bounded: an event over the limit is refused, so a stream that never sends a newline cannot grow this process
 internal sealed class SseReader(Stream stream, int maxEventBytes)
 {
     private readonly byte[] _chunk = new byte[16 * 1024];
@@ -317,7 +275,7 @@ internal sealed class SseReader(Stream stream, int maxEventBytes)
     private int _end;
     private int _eventBytes;
 
-    /// <summary>The next complete event, or null at the end of the stream (a half-written event is dropped).</summary>
+    // null at the end of the stream; a half-written event is dropped
     public async Task<SseEvent?> ReadAsync(CancellationToken ct)
     {
         var block = new Block();
@@ -332,7 +290,6 @@ internal sealed class SseReader(Stream stream, int maxEventBytes)
         return null;
     }
 
-    /// <summary>The lines of one event as they arrive; a blank line hands it over.</summary>
     private sealed class Block
     {
         private string? _name;

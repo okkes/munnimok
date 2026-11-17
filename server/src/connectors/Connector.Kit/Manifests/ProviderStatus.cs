@@ -2,11 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Manifests;
 
-/// <summary>
-/// The kill switch, and the thing that lets a consumer degrade honestly -
-/// "Jumbo connections are paused, we're fixing it" instead of a mystery
-/// spinner. Provider definitions are code; only their health is state.
-/// </summary>
+// the kill switch, so a consumer degrades honestly ("Jumbo connections are paused"); only health is state, not definitions
 public sealed record ProviderStatus
 {
     public required string ProviderId { get; init; }
@@ -18,22 +14,17 @@ public sealed record ProviderStatus
     /// <summary>Consumer-owned copy key. Never prose.</summary>
     public string? ReasonKey { get; init; }
 
-    /// <summary>What the party last said about its budget, when it says anything (an aggregator's daily allowance); on the status document only.</summary>
+    // what the party last said about its budget (an aggregator's daily allowance); on the status document only
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Adapters.ProviderQuota? Quota { get; init; }
 
-    /// <summary>
-    /// Whether the party keeps an inventory at the operator's account (an
-    /// aggregator's consents, <see cref="Adapters.IRemoteInventory"/>), so a
-    /// console offers it for these parties alone; on the status document only.
-    /// </summary>
+    // whether the party keeps an inventory at the operator's account (an aggregator's consents); status document only
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Inventory { get; init; }
 
     public static ProviderStatus Healthy(string providerId, DateTimeOffset at) =>
         new() { ProviderId = providerId, State = ProviderState.Healthy, Since = at };
 
-    /// <summary>Whether new work may be started for this provider.</summary>
     public bool AcceptsWork => State is ProviderState.Healthy or ProviderState.Degraded;
 }
 

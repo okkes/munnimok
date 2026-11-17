@@ -16,15 +16,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// The catalogue, health and the kill switch.
-///
-/// The catalogue is the only contract a consumer codes against: it renders
-/// login forms from it, decides which resources to offer from it, and knows
-/// before asking whether scheduled sync is offerable. Its digest is an ETag
-/// so a consumer can cache it and revalidate instead of refetching a document
-/// that changes on a deploy at most.
-/// </summary>
+/// the catalogue is the only contract a consumer codes against
+/// its digest is the ETag so consumers revalidate instead of refetching
 internal static class CatalogEndpoints
 {
     public static void Map(
@@ -39,13 +32,8 @@ internal static class CatalogEndpoints
             ProviderStatusService statuses,
             CancellationToken ct) =>
         {
-            // Health is read BEFORE the ETag is decided, because health is part
-            // of the document and therefore part of what the ETag identifies.
-            // Hashing the manifests alone made a degraded provider that
-            // recovered answer 304 for ever: the body said "degraded", the card
-            // said "a run that succeeds clears this", and no run ever could.
-            // One indexed read per revalidation is the price of the ETag
-            // meaning what HTTP says it means.
+            // health is read before the ETag: it is part of the document, and hashing manifests alone
+            // made a recovered provider answer 304 forever
             var health = await statuses.AllAsync(ct);
 
             var etag = $"\"{registry.CatalogDigest}:{HealthDigest(health.Values)}\"";
@@ -53,8 +41,7 @@ internal static class CatalogEndpoints
 
             http.Response.Headers.ETag = etag;
 
-            // An operator-only provider (#441 L3) is left out: the catalogue is
-            // what a person may connect to, and the lab knows its own by name.
+            // an operator-only provider (#441 L3) is left out: the catalogue is what a person may connect to
             var providers = registry.Manifests
                 .Where(m => !m.OperatorOnly)
                 .Select(m => Describe(m, health.GetValueOrDefault(m.Id)))
@@ -66,9 +53,7 @@ internal static class CatalogEndpoints
                 Service = Descriptor(platform, registry),
             });
         })
-        // Named here rather than inferred: this handler also answers 304, so
-        // its declared type is the bare IResult the two branches share and the
-        // funnel's own claim never reaches the document.
+        // declared here: the handler also answers 304, so its inferred type is the bare IResult
         .Produces<CatalogResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status304NotModified);
 
@@ -82,8 +67,7 @@ internal static class CatalogEndpoints
             var manifest = registry.RequireManifest(id);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            // Same reason as above: this document carries this provider's
-            // health, so the ETag has to move when that health does.
+            // this document carries the provider's health too, so the ETag moves with it
             var status = await statuses.GetAsync(manifest.Id, ct);
 
             var etag = $"\"{registry.CatalogDigest}:{manifest.Id}:{HealthDigest([status])}\"";
@@ -92,15 +76,11 @@ internal static class CatalogEndpoints
             http.Response.Headers.ETag = etag;
             return ConnectorResults.Json(Describe(manifest, status));
         })
-        // A free-form object, exactly as CatalogResponse.Providers already
-        // declares one: the manifest is serialised through a node so the
-        // document's shape stays the spec's, and a wrapper type here would
-        // describe our storage rather than the contract.
+        // a free-form object, serialised through a node so the document's shape stays the spec's
         .Produces<JsonObject>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status304NotModified);
 
-        // Liveness carries no auth and no data: a probe that needs a
-        // credential is a probe that fails for the wrong reason.
+        // liveness needs no auth: a probe that needs a credential fails for the wrong reason
         root.MapGet("/v1/health", () => ConnectorResults.Json(new HealthResponse
         {
             Status = "ok",
@@ -144,9 +124,7 @@ internal static class CatalogEndpoints
             });
         });
 
-        // The kill switch. Pausing a provider stops new work for every user of
-        // it within one lease poll, and lets the consumer say something true
-        // instead of showing a spinner.
+        // the kill switch: pausing stops new work for every user of the provider within one lease poll
         admin.MapPost("/providers/{id}/status", async (
             string id,
             ProviderStatusUpdate update,
@@ -159,9 +137,7 @@ internal static class CatalogEndpoints
 
             if (update.State == ProviderState.Retired)
             {
-                // Retired means gone for good, so existing sessions are not
-                // merely paused - they are invalid, and saying so now beats
-                // failing every one of them individually later.
+                // Retired is for good: existing sessions are invalid, so expire them now rather than failing each later
                 var live = await db.Sessions
                     .Where(s => s.ProviderId == id && s.State != SessionState.Disabled && s.State != SessionState.Expired)
                     .ToListAsync(ct);
@@ -178,17 +154,7 @@ internal static class CatalogEndpoints
         MapCanaries(admin);
     }
 
-    /// <summary>
-    /// The operator's own connections: enrol one, list what they last said,
-    /// forget one.
-    /// </summary>
-    /// <remarks>
-    /// Admin-only, and under <c>/admin</c> beside the kill switch rather than
-    /// on the provider's public surface, because none of this is a consumer's
-    /// business. What it manages is the single credential this platform keeps
-    /// at rest - see <see cref="Data.CanaryRow"/> - so the routes that write it
-    /// sit where the other operator powers do.
-    /// </remarks>
+    /// admin-only, under /admin: these routes write the single credential the platform keeps at rest (CanaryRow)
     private static void MapCanaries(IEndpointRouteBuilder admin)
     {
         admin.MapGet("/canaries", async (CanaryService canaries, CancellationToken ct) =>
@@ -224,9 +190,7 @@ internal static class CatalogEndpoints
             var row = await canaries.EnrolAsync(
                 id, request.Subject, request.Bundle, request.Resource, request.IntervalMinutes, ct);
 
-            // THE BUNDLE IS NEVER ECHOED. It went in; there is no reason for it
-            // to come back out, and a response that carried it would put a live
-            // credential into every proxy log between here and the operator.
+            // the bundle is never echoed: a live credential in the response would reach every proxy log
             return ConnectorResults.Json(new CanaryView
             {
                 ProviderId = row.ProviderId,
@@ -246,13 +210,7 @@ internal static class CatalogEndpoints
             await canaries.RemoveAsync(id, ct) ? Results.NoContent() : Results.NotFound());
     }
 
-    /// <summary>
-    /// The manifest exactly as the kit defines it, with its health grafted on.
-    ///
-    /// Serialising through a node rather than a wrapper type keeps the
-    /// document's shape identical to the schema in the spec - a consumer
-    /// should never have to unwrap our storage decisions to read a manifest.
-    /// </summary>
+    /// the manifest as the kit defines it with health grafted on; a node, not a wrapper type, keeps the shape the spec's
     private static JsonObject Describe(ProviderManifest manifest, ProviderStatus? status)
     {
         var node = JsonSerializer.SerializeToNode(manifest, ConnectorJson.Options)!.AsObject();
@@ -271,29 +229,13 @@ internal static class CatalogEndpoints
         ManifestDigest = registry.CatalogDigest,
     };
 
-    /// <summary>
-    /// The mutable half of the catalogue's identity.
-    /// </summary>
-    /// <remarks>
-    /// State and reason only, deliberately not <c>Since</c>. A provider that
-    /// has never had an incident carries no stored row and is reported healthy
-    /// "as of now", so a timestamp here would move on every single request and
-    /// the ETag would never match anything - which is the opposite failure to
-    /// the one this fixes, and a worse one for a document consumers are told
-    /// to cache. State and reason are what a consumer branches on; a `since`
-    /// that drifts while nothing has happened carries no information.
-    /// </remarks>
-    /// <summary>
-    /// ASCII unit separator, as a numeric escape rather than a literal so this
-    /// source carries no invisible control characters - the same convention
-    /// <see cref="Connector.Kit.Normalization.ContentHash"/> follows.
-    /// </summary>
+    /// state and reason only, not Since: a never-incident provider reads healthy "as of now", so a timestamp
+    /// would change every request and the ETag never match. Separator: a numeric escape, no invisible control characters
     private const char Separator = (char)0x1F;
 
     private static string HealthDigest(IEnumerable<ProviderStatus> statuses)
     {
-        // Ordered, so two servers with the same health agree on the tag and a
-        // load-balanced consumer does not thrash between two of them.
+        // ordered, so load-balanced servers with the same health agree on the tag
         var parts = statuses
             .OrderBy(s => s.ProviderId, StringComparer.Ordinal)
             .Select(s => $"{s.ProviderId}={s.State}:{s.ReasonKey ?? "-"}");

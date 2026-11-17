@@ -10,13 +10,8 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { eventPicture, eventPictureStyle } from './EventsScreen';
 
-/**
- * #537 (user): every event picker lists the same way — active events
- * first, archived ones after them with a label, the date range under the
- * name, and a peek that unfolds the event (picture, money, note) under
- * its row before anything is chosen. A peek inside the picker rather than
- * a sheet of its own: a sheet never opens inside another.
- */
+// #537: all event pickers list alike (active first, archived labelled after, a peek before choosing);
+// the peek lives inside the picker because a sheet never opens inside another
 export function EventPickList({
   events,
   selectedId,
@@ -117,8 +112,7 @@ function EventPickRow({
   );
 }
 
-/** the unfolded event: its picture, what it holds so far and its note —
- *  its transactions are read from the event's own space */
+/** the unfolded event; its transactions are read from the event's own space */
 function EventPeek({ event, testId }: Readonly<{ event: EventRow; testId: string }>) {
   const { t } = useLang();
   const { store } = useData();

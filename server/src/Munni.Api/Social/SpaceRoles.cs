@@ -16,13 +16,9 @@ public static class SpaceRoles
 
     public static bool IsOwner(string role) => role == Owner;
 
-    /// <summary>#505: the error a reader's write gets.</summary>
     public const string ReadOnlyError = "space_read_only";
 
-    /// <summary>
-    /// #505: a member who may read but never change the space — a 403 that
-    /// names why, so a device tells it apart from lost membership (a bare
-    /// Forbid) and stops offering the write instead of retrying it.
-    /// </summary>
+    /// #505: a 403 that names why, so a device tells it from lost membership (a bare Forbid) and stops offering the write
+    /// instead of retrying it
     public static IResult ReadOnly() => Results.Json(new { error = ReadOnlyError }, statusCode: StatusCodes.Status403Forbidden);
 }

@@ -5,12 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Connector.Kit.Hosting.Providers;
 
-/// <summary>
-/// What a party lists at connect time and what the operator's account at it
-/// holds (#414), reached with the platform's own provider HTTP client and no
-/// session. A lookup's logos are vendored here, once a month each, so no
-/// person's browser fetches from an aggregator's CDN.
-/// </summary>
+/// logos are vendored here, once a month each, so no person's browser fetches from an aggregator's CDN (#414)
 public sealed class LookupService(IProviderRegistry registry, IHttpClientFactory httpClients, IMemoryCache cache)
 {
     private static readonly TimeSpan LogoFor = TimeSpan.FromDays(30);

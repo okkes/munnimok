@@ -8,13 +8,7 @@ using Connector.Kit.Errors;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// GoCardless Bank Account Data (<c>bankaccountdata.gocardless.com/api/v2</c>),
-/// as the api once spoke it: a bearer token minted from the operator's secret
-/// pair and cached until a minute before it expires, an end-user agreement
-/// for deep history when the institution offers it, and the per-account
-/// daily budget read back from the response headers.
-/// </summary>
+// the per-account daily budget is read back from the response headers
 internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider time)
 {
     private const string ProviderId = GoCardlessAdapter.ProviderId;
@@ -23,8 +17,6 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
     private readonly SemaphoreSlim _tokenGate = new(1, 1);
     private string? _token;
     private DateTimeOffset _tokenExpires = DateTimeOffset.MinValue;
-
-    // ── wire shapes ─────────────────────────────────────────────────────
 
     public sealed record GcInstitution(
         [property: JsonPropertyName("id")] string Id,
@@ -99,8 +91,6 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
 
     private sealed record TxEnvelope([property: JsonPropertyName("transactions")] TxList Transactions);
 
-    // ── calls ───────────────────────────────────────────────────────────
-
     public async Task<IReadOnlyList<GcInstitution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct) =>
         await GetAsync<List<GcInstitution>>(http, $"institutions/?country={Uri.EscapeDataString(country)}", "institutions", ct).ConfigureAwait(false);
 
@@ -173,8 +163,6 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
                        ?? throw ConnectorException.ProviderChanged($"{ProviderId}: transactions came back empty");
         return (envelope.Transactions.Booked, envelope.Transactions.Pending ?? [], quota);
     }
-
-    // ── plumbing ────────────────────────────────────────────────────────
 
     private async Task<string> TokenAsync(HttpClient http, CancellationToken ct)
     {

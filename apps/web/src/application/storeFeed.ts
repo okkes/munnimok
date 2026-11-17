@@ -3,12 +3,8 @@ import { readSessionIdentity } from '@/app/session';
 import { storeFeedId } from '@/domain/feedIds';
 import type { StorageBackend } from '@/db/backend';
 
-/**
- * The owner's personal STORE FEED (receipts v3): one server-registered
- * sync space per user holding the GLOBAL layer — receipts pulled once,
- * connection-instance metadata visible on all of the owner's devices.
- * Feed-shaped ids must be registered before the first push (S1 guard).
- */
+// the owner's personal store feed: one server-registered sync space per user holding the global layer;
+// feed-shaped ids must be registered before the first push (S1 guard)
 const REGISTERED_KEY = 'storeFeedRegistered';
 
 /** the demo's store feed lives only on the device — the demo seed writes it */

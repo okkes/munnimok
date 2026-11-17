@@ -1,11 +1,6 @@
 import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 
-/**
- * Just enough zip to read a GitHub Actions artifact (one file inside)
- * and to build one for tests — no dependency, no temp files. Reading is
- * central-directory driven: streamed zips leave the LOCAL headers with
- * zero sizes (data-descriptor flag), the directory always has them.
- */
+// reading is central-directory driven: streamed zips leave the LOCAL headers with zero sizes (data-descriptor flag)
 const SIG_LOCAL = 0x04034b50;
 const SIG_CENTRAL = 0x02014b50;
 const SIG_EOCD = 0x06054b50;
@@ -37,10 +32,8 @@ function* centralEntries(buf) {
   }
 }
 
-/** the entry names, for error messages */
 export const zipNames = (buf) => [...centralEntries(buf)].map((e) => e.name);
 
-/** the decompressed bytes of ONE entry (stored or deflated) */
 export function zipEntry(buf, name) {
   for (const e of centralEntries(buf)) {
     if (e.name !== name) continue;
@@ -54,7 +47,6 @@ export function zipEntry(buf, name) {
   throw new Error(`zip has no entry named ${name} (entries: ${zipNames(buf).join(', ') || 'none'})`);
 }
 
-/** build a zip from {name: Buffer|string} — deflated unless told otherwise */
 export function zipBuild(entries, { deflate = true } = {}) {
   const locals = [];
   const centrals = [];

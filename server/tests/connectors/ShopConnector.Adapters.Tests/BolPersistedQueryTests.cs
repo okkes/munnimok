@@ -4,10 +4,6 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The hash bol's page sends, read as bol sends it - and nothing that is
-/// not that operation.
-/// </summary>
 public sealed class BolPersistedQueryTests
 {
     private const string Operation = "OrdersOverviewClient";
@@ -49,11 +45,7 @@ public sealed class BolPersistedQueryTests
         Assert.Equal("{}", sealed_.StorageState);
     }
 
-    /// <summary>
-    /// 2026-10-07 (prod): the page's own request rides beside its hash - the
-    /// body verbatim, the headers as one JSON object - every value a string,
-    /// as everything in Extra is.
-    /// </summary>
+    // prod 2026-10-07: the page's request rides beside its hash: body verbatim, headers one JSON object, all strings
     [Fact]
     public void The_page_s_own_request_rides_the_material_beside_the_hash_and_reads_back()
     {

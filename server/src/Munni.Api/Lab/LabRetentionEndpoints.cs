@@ -8,16 +8,13 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Lab;
 
-/// <summary>A retention bench run to start: the agent, the party and the resource it exercises.</summary>
 public sealed record LabRetentionRunRequest(string Provider, string Resource, string? AgentId = null, string? AgentName = null, string? Label = null);
 
 /// <summary>One step's verdict, written as the lab takes it; a step written twice is replaced by name.</summary>
 public sealed record LabRetentionStepRequest(string Name, string State, string? Detail = null, string? JobId = null, string? SessionId = null);
 
-/// <summary>The run's end: passed, failed or aborted.</summary>
 public sealed record LabRetentionFinishRequest(string State);
 
-/// <summary>A run as the lab lists it.</summary>
 public sealed record LabRetentionRunDto(
     string Id,
     string? AgentId,
@@ -63,13 +60,8 @@ public sealed class LabRetentionFinishRequestValidator : AbstractValidator<LabRe
     }
 }
 
-/// <summary>
-/// The retention bench's report store (#441 L4): the lab drives the scenario
-/// through the bench's own routes and writes each step's verdict here, so a
-/// run survives the tab that started it and the history can be read per
-/// agent. Nothing here touches the control plane; the operator's own runs,
-/// listed to the operator who made them.
-/// </summary>
+// the report store (#441 L4): a run survives the tab that started it; nothing here touches the control plane.
+// listed only to its operator
 public static class LabRetentionEndpoints
 {
     public const string Running = "running";
@@ -132,7 +124,6 @@ public static class LabRetentionEndpoints
         return row is null ? Results.NotFound() : Results.Ok(Dto(row));
     }
 
-    /// <summary>A step's verdict, written in the order taken; the same name again replaces what it said before.</summary>
     private static async Task<IResult> Step(string runId, LabRetentionStepRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var row = await OwnAsync(relay, http, runId, ct);

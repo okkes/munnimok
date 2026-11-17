@@ -6,15 +6,8 @@ using Microsoft.Playwright;
 
 namespace BankConnector.Adapters.Tests.Support;
 
-/// <summary>
-/// The adapter's whole world, offline.
-///
-/// Both refusals are deliberate. <see cref="Browser"/> throws on any use, so
-/// a mock that declares a browser tier for ROUTING purposes and then quietly
-/// started Chromium would fail here rather than in a CI image. And the
-/// default <see cref="Http"/> handler throws and counts, so "opened no
-/// socket" is asserted rather than assumed.
-/// </summary>
+// Browser and the default Http handler throw on any use (Http also counts): a mock declaring a browser tier for routing
+// must fail here, and "opened no socket" is asserted rather than assumed
 internal sealed class FakeJobContext : IJobContext, IDisposable
 {
     private static readonly IReadOnlyDictionary<string, string> None =
@@ -55,24 +48,11 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public IBrowserLease Browser { get; init; } = new NoBrowserLease();
 
-    /// <summary>
-    /// Whether this job's browser opens onto something an earlier run left.
-    ///
-    /// TRUE BY DEFAULT HERE, AND ONLY HERE. Every browser test in this suite
-    /// drives ASN, whose persistent tier is a kept profile by definition -
-    /// <c>browser_persistent</c> plus a BYO agent, so <c>ResolveProfile</c>
-    /// always hands it a directory and the real context always answers true.
-    /// A fixture defaulting to false would model a run this provider cannot
-    /// have, and would make every signed-in test say so explicitly for no
-    /// reason. The test that cares about the gate turns it OFF.
-    /// </summary>
+    // true by default only here: every browser test drives ASN, whose persistent tier is a kept profile (browser_persistent
+    // plus a BYO agent), so ResolveProfile always hands it a directory; the test of the gate turns it off
     public bool KeepsSession { get; init; } = true;
 
-    /// <summary>
-    /// How the human answers. Refusing by default, so an adapter that raises
-    /// an unexpected challenge fails loudly rather than receiving an empty
-    /// string and carrying on.
-    /// </summary>
+    // refuses by default, so an unexpected challenge fails loudly instead of getting an empty answer
     public Func<Challenge, string> Answer { get; init; } =
         challenge => throw new InvalidOperationException($"unexpected challenge of type {challenge.Type}");
 
@@ -80,29 +60,17 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public IReadOnlyList<Challenge> Asked => _asked;
 
-    /// <summary>
-    /// What the adapter told the operator.
-    ///
-    /// Kept because several of this connector's decisions are only visible
-    /// here: a skipped reservation, a savings list ING refused, a sign-out that
-    /// could not be found. All three are cases where the fetch succeeds and the
-    /// note is the ONLY difference between "nothing was there" and "we could
-    /// not read it", which is precisely the confusion the note exists to end.
-    /// </summary>
+    // several decisions show only here (skipped reservation, refused savings list, missing sign-out): the note is the only
+    // difference between "nothing was there" and "we could not read it"
     public IReadOnlyList<string> Notes => _notes;
 
-    /// <summary>
-    /// The latch that decides whether a lost lease requeues a job or fails
-    /// it permanently. Three retries locks a real bank account, so this is
-    /// asserted directly rather than trusted.
-    /// </summary>
+    // the latch deciding whether a lost lease requeues a job or fails it permanently; three retries locks a real bank account
     public bool CredentialWasSubmitted { get; private set; }
 
     public string WorkDirectory => _workDirectory.Value;
 
     public void Progress(JobStep step) => _steps.Add(step);
 
-    /// <summary>Every count the adapter reported, in order.</summary>
     public IReadOnlyList<int> Counted => _counted;
 
     public void Found(int records) => _counted.Add(records);
@@ -113,44 +81,15 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public void ReportQuota(ProviderQuota quota) => Quotas.Add(quota);
 
-    /// <summary>
-    /// Nobody ever comes back to the browser tab.
-    /// </summary>
-    /// <remarks>
-    /// The realistic case for a passive challenge, and the one worth pinning:
-    /// the human approves on their PHONE, the provider's own page advances, and
-    /// the card in the consumer is never touched. An adapter that only works
-    /// when somebody also presses a button has not solved anything.
-    /// </remarks>
+    // nobody returns to the browser tab: a passive challenge is approved on the phone and the provider's page advances itself
     public bool AnswersNever { get; init; }
 
-    /// <summary>
-    /// How many raised challenges were abandoned by their asker.
-    /// </summary>
-    /// <remarks>
-    /// Asserted rather than assumed, because the platform releases the job's
-    /// budget park on exactly this unwind: an adapter that drops the task
-    /// without cancelling stops the run's working clock for the rest of the
-    /// login, and nothing else in the suite would notice.
-    /// <para>
-    /// Interlocked, and paired with <see cref="AbandonedAsync"/>: the count is
-    /// incremented on whichever thread resumes the cancelled wait, which is not
-    /// the one asserting on it.
-    /// </para>
-    /// </remarks>
+    // the platform releases the job's budget park on this unwind: an adapter that drops the task without cancelling stops
+    // the run's clock; Interlocked because the resuming thread is not the asserting one
     public int ChallengesAbandoned => Volatile.Read(ref _challengesAbandoned);
 
-    /// <summary>
-    /// Waits until an abandonment has actually been RECORDED.
-    /// </summary>
-    /// <remarks>
-    /// <c>CancellationTokenSource.CancelAsync</c> completes when the
-    /// cancellation callbacks have run - not when the continuation waiting on
-    /// the token has been rescheduled and resumed. So a test that cancels and
-    /// immediately reads the counter is racing the thread pool, and loses it
-    /// only on a loaded machine: this test passed alone and failed in a full
-    /// run, which is the worst way for a race to introduce itself.
-    /// </remarks>
+    // CancelAsync completes when the callbacks ran, not when the waiting continuation resumed: reading the counter right after
+    // races the thread pool and loses only on a loaded machine
     public async Task<bool> AbandonedAsync(int count = 1, int timeoutMs = 10_000)
     {
         for (var i = 0; i < count; i++)
@@ -222,10 +161,7 @@ internal sealed class NoBrowserLease : IBrowserLease
     private static InvalidOperationException Refused() => new("this test must not start a browser");
 }
 
-/// <summary>
-/// Counts as well as throws: an adapter that swallowed the exception would
-/// still be caught by the count, and "made zero network calls" is the claim.
-/// </summary>
+// counts as well as throws: an adapter that swallowed the exception is still caught, and "zero network calls" is the claim
 internal sealed class ThrowingHttpHandler : HttpMessageHandler
 {
     public int Calls { get; private set; }
@@ -240,10 +176,7 @@ internal sealed class ThrowingHttpHandler : HttpMessageHandler
     }
 }
 
-/// <summary>
-/// A clock pinned to the ledger's anchor, so a window is a fixed range
-/// rather than a function of the day the suite happens to run.
-/// </summary>
+// pinned to the ledger's anchor so a window is a fixed range, not a function of the day the suite runs
 internal sealed class FixedTimeProvider : TimeProvider
 {
     private readonly DateTimeOffset _now;

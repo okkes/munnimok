@@ -11,7 +11,6 @@ import { StateChip } from './StateChip';
 
 type Inventory = 'closed' | 'loading' | 'none' | RemoteConsent[];
 
-/** one party in full: what the manifest promises, the status with its switch, the inventory, the canary */
 export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const [entry, setEntry] = useState<ProviderEntry | null | 'unreachable' | 'loading'>('loading');
   const [canaries, setCanaries] = useState<Canary[]>([]);
@@ -29,7 +28,7 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
     setHealth(h && h !== 'unreachable' ? (h.providers.find((p) => p.providerId === id) ?? null) : null);
   }, [call, id]);
 
-  // the canary now, not on its next due minute: the control plane answers 202 with the run to follow
+  // runs the canary now, not on its next due minute; the control plane answers 202 with the run to follow
   const runCanary = async () => {
     if (await act(() => call(`/lab/canaries/${encodeURIComponent(id)}/run`, { method: 'POST' }))) await load();
   };

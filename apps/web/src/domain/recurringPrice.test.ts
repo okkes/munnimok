@@ -18,7 +18,6 @@ describe('detectPriceChange', () => {
     expect(
       detectPriceChange([charge('2026-01-05', 1399), charge('2026-02-05', 899), charge('2026-03-05', 1399)]),
     ).toBeNull();
-    // the newest charge alone is not sustained either
     expect(
       detectPriceChange([charge('2026-01-05', 1399), charge('2026-02-05', 1399), charge('2026-03-05', 1599)]),
     ).toBeNull();
@@ -32,7 +31,7 @@ describe('detectPriceChange', () => {
   it('detects decreases too and ignores credits/order', () => {
     const change = detectPriceChange([
       charge('2026-03-05', 899),
-      { date: '2026-02-20', amountCents: 500 }, // a refund is not a charge
+      { date: '2026-02-20', amountCents: 500 },
       charge('2026-01-05', 1099),
       charge('2026-04-05', 899),
     ]);

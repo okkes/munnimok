@@ -10,9 +10,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Firebase only when a real config ships in the bundle — the committed
-        // placeholder (empty GOOGLE_APP_ID) keeps builds green until the
-        // Firebase console files land; without it push degrades to raw APNs.
+        // Firebase only with a real config (the committed placeholder has an empty GOOGLE_APP_ID); without it push is raw APNs
         if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
            let options = FirebaseOptions(contentsOfFile: path), !options.googleAppID.isEmpty {
             FirebaseApp.configure(options: options)
@@ -20,9 +18,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    // Without these two forwards the Capacitor push plugin never fires its
-    // 'registration'/'registrationError' events on iOS — enabling
-    // notifications hung for 10s and silently stayed off.
+    // without these two forwards the Capacitor push plugin never fires 'registration'/'registrationError' on iOS
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         guard FirebaseApp.app() != nil else {
             NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
@@ -45,8 +41,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
     }
 
-    // §5 quick actions: reuse the munni:// deep-link path the webview
-    // already parses (deepLinkToPath accepts munni:// in both channels)
+    // quick actions reuse the munni:// deep-link path (deepLinkToPath accepts it in both channels)
     func application(_ application: UIApplication, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
         if let url = URL(string: "munni://\(shortcutItem.type)") {
             _ = ApplicationDelegateProxy.shared.application(application, open: url, options: [:])
@@ -93,14 +88,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 }
 
-// MARK: - the platform auth session (docs/native-auth-popupless.md, NA1)
+// MARK: - the platform auth session (docs/native-auth-popupless.md)
 //
-// Sign-in runs in ASWebAuthenticationSession: the system sheet shares
-// Safari's cookies, and the callback scheme is handed straight back to
-// JS — no "Open in munni?" question at the end of the flow, which every
-// Safari-redirect login is structurally bound to. One consent alert at
-// the start is the sanctioned price (prefersEphemeralWebBrowserSession
-// stays false so the Logto cookie survives and later logins are instant).
+// ASWebAuthenticationSession hands the callback scheme straight to JS: no "Open in munni?" question at the end,
+// at the price of one consent alert at the start. prefersEphemeralWebBrowserSession stays false so the Logto cookie survives.
 @objc(AuthSessionPlugin)
 public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "AuthSessionPlugin"
@@ -145,12 +136,8 @@ public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    // Ends a session whose page can no longer finish. A bank app hands its
-    // https return to Safari, never to the sheet it left, so the consent
-    // completes there and reaches the app on its scheme while this sheet
-    // sits on "returning…" for ever (user ss 2026-10-03). Cancelling runs
-    // the completion handler above with canceledLogin, which resolves the
-    // pending start as cancelled.
+    // a bank app hands its https return to Safari, not to this sheet: the consent finishes there and the sheet
+    // would sit on "returning…" for ever; cancelling resolves the pending start as cancelled
     @objc func cancel(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.session?.cancel()
@@ -163,10 +150,8 @@ public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
 private class AuthSessionPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
     private let window: UIWindow?
     init(window: UIWindow?) { self.window = window }
-    // GlitchTip 15 (2026-10-05): the view's window is nil for a moment after the
-    // app comes back, and a fresh unattached anchor made the session refuse to
-    // start (error 3). The key window of the moment the session asks is the
-    // anchor; the captured window is the fallback, an empty anchor the last.
+    // the view's window is nil for a moment after the app comes back, and an unattached anchor makes the session
+    // refuse to start (error 3): prefer the key window of the moment, then the captured one
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         let key = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -176,8 +161,7 @@ private class AuthSessionPresenter: NSObject, ASWebAuthenticationPresentationCon
     }
 }
 
-// Main.storyboard names this controller so the plugin is registered on the
-// bridge (the pattern Capacitor documents for a plugin that lives in the app)
+// Main.storyboard names this controller: that is how the in-app plugin gets registered on the bridge
 class MunniViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(AuthSessionPlugin())

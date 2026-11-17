@@ -14,7 +14,6 @@ import { Sheet } from '@/ui/Sheet';
 import { SourceTile } from './SourceTile';
 import { SEGMENT_META } from './planningUi';
 
-/** the rows a mirrored segment can still take: every live source not yet in the plan */
 export function mirrorCandidates(model: PlanningModel, plan: PlanRow, segment: PlanSegmentKind): MirroredSource[] {
   const taken = new Set(model.subjectsOf(plan).filter((s) => s.segment === segment).map((s) => s.sourceId));
   const free = <T extends { id: string }>(rows: readonly T[]) => rows.filter((r) => !taken.has(r.id));
@@ -27,7 +26,7 @@ export function mirrorCandidates(model: PlanningModel, plan: PlanRow, segment: P
     case 'budgets':
       return free(model.data.budgets.filter((b) => b.active === 1)).map((b) => ({ id: b.id, name: b.name, icon: b.icon }));
     case 'events': {
-      // the ones still to come or without a date (#504): an event over before this period is no plan's business
+      // an event over before this period is no plan's business; still to come or undated stays (#504)
       const period = model.periodOf(plan);
       return free(model.data.events.filter((e) => e.archived !== 1 && !isEventPast(e, period))).map((e) => ({ id: e.id, name: e.name, icon: e.icon, color: e.color }));
     }
@@ -45,7 +44,7 @@ export function budgetOverlaps(model: PlanningModel, plan: PlanRow, budgetId: st
   return overlapsOf('', budgetFamily(budget.catIds, model.data.catalog), model.reservationsOf(plan));
 }
 
-/** why a candidate is blocked, and the one tap that frees it right here (user 2026-10-21: no going back and forth) */
+/** why a candidate is blocked, and the one tap that frees it right here (no going back and forth) */
 function BlockedNote({ overlap, model, ops }: Readonly<{ overlap: Overlap; model: PlanningModel; ops: PlanningOps }>) {
   const { t } = useLang();
   const { holder } = overlap;
@@ -65,11 +64,6 @@ function BlockedNote({ overlap, model, ops }: Readonly<{ overlap: Overlap; model
   );
 }
 
-/**
- * Add budgets, recurring costs, loans or goals to the plan — each mirrors its
- * source row. Several at once (user 2026-10-07): a tap ticks a row, the header
- * row ticks them all, one button adds the pick.
- */
 export function AddSourceSheet({
   segment,
   model,
@@ -87,7 +81,7 @@ export function AddSourceSheet({
     [candidates, model, plan, segment],
   );
   const open = candidates.filter((c) => !blocked.has(c.id));
-  // the pick is the segment's (user ss 2026-10-07: "4 of 1" — four recurring costs ticked earlier counted on the goals sheet)
+  // the pick is the segment's: ticks from another segment counted on this sheet ("4 of 1")
   useEffect(() => setPicked(new Set()), [segment]);
   const pickedHere = open.filter((c) => picked.has(c.id)).length;
   if (!segment) return null;
@@ -166,7 +160,7 @@ export function AddSourceSheet({
                 >
                   {on && <Icon name="check" size={12} />}
                 </span>
-                {/* the source's own face (user 2026-10-09): a recurring cost's logo, a loan's logo, the plan's tile otherwise */}
+                {/* the source's own face: a recurring cost's logo, a loan's logo, the plan's tile otherwise */}
                 <SourceTile segment={segment} sourceId={source.id} icon={source.icon} color={source.color} model={model} testId={`plan-add-source-logo-${source.id}`} />
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{source.name}</span>
               </button>

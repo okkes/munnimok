@@ -11,14 +11,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// The mock fleet driven through the real fetch path, so the balance-chain
-/// check is reached the way a live adapter reaches it rather than being
-/// called directly by a test.
-///
-/// The negative rules are the ones worth holding: no socket, no browser, and
-/// nothing that moves with the calendar.
-/// </summary>
+// driven through the real fetch path so the balance-chain check is reached as a live adapter reaches it; no
+// socket, no browser, nothing that moves with the calendar
 public sealed class MockBankAdapterTests
 {
     /// <summary>Pinned so a window is a fixed range; the ledger runs through whatever day the clock says.</summary>
@@ -63,7 +57,6 @@ public sealed class MockBankAdapterTests
 
     private static string AnswerFor(Challenge challenge) => challenge.Type switch
     {
-        // The device turns the displayed number into a six-digit response.
         ChallengeType.CodeDisplay => "550193",
 
         // Passive: the human approves in an app and there is nothing to type.
@@ -80,10 +73,8 @@ public sealed class MockBankAdapterTests
         Assert.Equal(6, registry.Manifests.Count);
         Assert.All(registry.Manifests, ManifestValidator.Validate);
 
-        // Only the providers whose manifest says agent.required: false may
-        // run in a browserless control plane; registering more would mean
-        // leasing a job no local process can serve. The consent mock is the
-        // aggregator shape (#414): http, inline, a redirect for a login.
+        // only providers whose manifest says agent.required: false may run in a browserless control plane, or a job is
+        // leased that no local process can serve; the consent mock is the aggregator shape (#414)
         Assert.Equal(
             ["mock-bank-broken", "mock-bank-consent", "mock-bank-simple"],
             BankAdapters.InlineOnly().Select(a => a.Describe().Id).Order(StringComparer.Ordinal));
@@ -117,9 +108,7 @@ public sealed class MockBankAdapterTests
 
         Assert.Equal(0, handler.Calls);
 
-        // The T3 and T4 mocks declare a browser tier because that is what
-        // routing and agent-class logic must see - never as an instruction to
-        // start Chromium.
+        // the T3 and T4 mocks declare a browser tier for routing and agent-class logic, never to start Chromium
         Assert.False(ctx.Browser.Started);
     }
 
@@ -143,9 +132,7 @@ public sealed class MockBankAdapterTests
         Assert.Equal("fixture", result.Via);
         Assert.True(result.Complete);
 
-        // Emitted only because the chain verified: BankEmission.Verified is
-        // the only way a mock adapter returns a FetchResult, so the check
-        // cannot be skipped by accident.
+        // BankEmission.Verified is the only way a mock returns a FetchResult, so the chain check cannot be skipped
         BankEmission.VerifyPerAccount(MockBankSimpleAdapter.ProviderId, result.Transactions);
     }
 
@@ -157,10 +144,8 @@ public sealed class MockBankAdapterTests
         var result = await Adapter(MockBankSimpleAdapter.ProviderId)
             .FetchAsync(ctx, Transactions(), CancellationToken.None);
 
-        // A card payment made on the 19th can surface on the 21st still dated
-        // the 19th. Fetching strictly since the last sync loses it
-        // permanently and invisibly, so the window is widened and the content
-        // hash absorbs the overlap.
+        // a card payment on the 19th can surface on the 21st still dated the 19th: fetching strictly since the last sync
+        // loses it, so the window is widened and the content hash absorbs the overlap
         var earliest = result.Transactions.Min(t => t.BookedAt);
         var floor = Today.AddDays(-(BankWindow.DefaultSinceDays + BankLimits.DutchCardSettlementLagDays));
 
@@ -168,12 +153,8 @@ public sealed class MockBankAdapterTests
         Assert.True(earliest < Today.AddDays(-BankWindow.DefaultSinceDays));
     }
 
-    /// <summary>
-    /// The ledger ends on the provider's own today, so its history limit is
-    /// filled on any clock: years on, a fetch asking for more than the limit
-    /// still gets rows from the limit's first week to the last week. With a
-    /// fixed last day this came back empty from 2027-01-23 on.
-    /// </summary>
+    // the ledger ends on the provider's own today, so its history limit is filled on any clock; a fixed last day came
+    // back empty from 2027-01-23 on
     [Fact]
     public async Task The_history_follows_the_clock_and_always_reaches_back_its_limit()
     {
@@ -226,8 +207,7 @@ public sealed class MockBankAdapterTests
             },
             CancellationToken.None));
 
-        // Never a silent empty result, which reads to a caller as "you have no
-        // loan transactions" rather than "you asked wrong".
+        // never a silent empty result: it reads as "no loan transactions" rather than "you asked wrong"
         Assert.Equal(ErrorCode.UnsupportedResource, error.Code);
         Assert.Contains("reachable:", error.Detail, StringComparison.Ordinal);
     }
@@ -242,9 +222,7 @@ public sealed class MockBankAdapterTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // The failure comes from BalanceChain.Verify running on deliberately
-        // inconsistent data, not from a hand-thrown message - so this tests
-        // the chain check as well as the alert path.
+        // the failure comes from BalanceChain.Verify on deliberately inconsistent data, not from a hand-thrown message
         Assert.Contains("balance chain broken", error.Detail, StringComparison.Ordinal);
     }
 
@@ -258,17 +236,13 @@ public sealed class MockBankAdapterTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // The shape moved before we got as far as a password, which is the
-        // honest ordering for a real adapter whose login selector vanished -
-        // and it means the job may be requeued safely.
+        // the login fails before any password is sent, the honest order for a vanished login selector: the job may be
+        // requeued safely
         Assert.False(ctx.CredentialWasSubmitted);
     }
 
-    /// <summary>
-    /// The providers that actually submit a credential. The broken one fails
-    /// before the form and the persistent one authenticated on the user's own
-    /// hardware, so neither has a credential to latch.
-    /// </summary>
+    // the broken one fails before the form and the persistent one authenticated on the user's hardware: neither has a
+    // credential to latch
     public static TheoryData<string> CredentialSubmitters =>
         new(MockBankSimpleAdapter.ProviderId, MockBankScaAdapter.ProviderId, MockBankSlowAdapter.ProviderId);
 
@@ -294,9 +268,8 @@ public sealed class MockBankAdapterTests
         Assert.False(error.Retriable);
         Assert.Contains(ErrorCode.InvalidCredentials, ErrorCatalog.NeverRetry);
 
-        // Latched before the verdict, not after: once a credential has gone
-        // upstream a lost lease must fail the job permanently whether or not
-        // the attempt succeeded. Three retries locks a real bank account.
+        // latched before the verdict: once a credential has gone upstream a lost lease must fail the job permanently.
+        // three retries locks a real bank account
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
@@ -309,17 +282,14 @@ public sealed class MockBankAdapterTests
 
         Assert.Equal(2, ctx.Asked.Count);
 
-        // The one case where the code travels OUTWARD: we show it, the human
-        // keys it into a device, and reads back what the device returns.
+        // the one case where the code travels outward: shown, keyed into a device, the device's answer read back
         Assert.Equal(ChallengeType.CodeDisplay, ctx.Asked[0].Type);
         Assert.Equal(MockBankCredentials.DisplayedCode, ctx.Asked[0].Code);
 
         Assert.Equal(ChallengeType.AppApproval, ctx.Asked[1].Type);
         Assert.True(ctx.Asked[1].IsPassive);
 
-        // Mandatory and short: a challenge holds a live browser hostage, and
-        // a stale one has to release its agent rather than pin it for the
-        // whole job timeout.
+        // mandatory and short: a stale challenge must release its agent instead of pinning it for the whole job timeout
         Assert.All(ctx.Asked, challenge => Assert.True(challenge.ExpiresAt > Now));
     }
 
@@ -349,9 +319,7 @@ public sealed class MockBankAdapterTests
         var result = await Adapter(MockBankScaAdapter.ProviderId)
             .FetchAsync(ctx, Transactions(), CancellationToken.None);
 
-        // Reusing the stored storage state is what turns T3 into T2-in-practice
-        // for most of a session's life; asking again when it is present would
-        // waste a human.
+        // a stored storage state turns T3 into T2 for most of a session; asking again would waste a human
         Assert.Empty(ctx.Asked);
         Assert.NotEmpty(result.Transactions);
     }
@@ -370,16 +338,14 @@ public sealed class MockBankAdapterTests
 
         var result = await Adapter(MockBankPersistentAdapter.ProviderId).LoginAsync(ctx, CancellationToken.None);
 
-        // Agent custody: a breach of the connector yields nothing, because
-        // the connector never held anything.
+        // agent custody: a breach of the connector yields nothing, it never held anything
         Assert.True(result.Material.IsAgentPointer);
         Assert.Equal(agentId, result.Material.AgentId);
         Assert.StartsWith("prf_", result.Material.ProfileId, StringComparison.Ordinal);
         Assert.Null(result.Material.AccessToken);
         Assert.Null(result.Material.StorageState);
 
-        // Nothing was submitted upstream: the human authenticated into the
-        // profile on their own machine long before this job ran.
+        // the human authenticated into the profile on their own machine long before this job
         Assert.False(ctx.CredentialWasSubmitted);
     }
 
@@ -392,8 +358,7 @@ public sealed class MockBankAdapterTests
             () => Adapter(MockBankPersistentAdapter.ProviderId)
                 .FetchAsync(ctx, Transactions(), CancellationToken.None));
 
-        // If the user's agent is off, the honest answer is "start your agent",
-        // not a retry loop against a host that is not there.
+        // an agent that is off gets "start your agent", not a retry loop against a missing host
         Assert.Equal(ErrorCode.AgentUnavailable, error.Code);
         Assert.Equal(UserAction.StartYourAgent, ErrorCatalog.ActionFor(error.Code));
     }
@@ -457,11 +422,7 @@ public sealed class MockBankAdapterTests
         Assert.Equal(ErrorCode.InvalidRequest, error.Code);
     }
 
-    /// <summary>
-    /// Runs a call whose failure is a legitimate outcome for some members of
-    /// the fleet, so a whole-fleet assertion can be about the invariant the
-    /// test is actually making rather than about which provider it is.
-    /// </summary>
+    /// <summary>A provider's legitimate failure must not decide a whole-fleet assertion, which is about the invariant.</summary>
     private static async Task Swallow(Func<Task> call)
     {
         try
@@ -470,8 +431,7 @@ public sealed class MockBankAdapterTests
         }
         catch (ConnectorException)
         {
-            // mock-bank-broken raises provider_changed by design, and it has
-            // to do so without contacting anything either.
+            // mock-bank-broken raises provider_changed by design, also without contacting anything
         }
     }
 }

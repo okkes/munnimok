@@ -3,14 +3,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Admin;
 
-/// <summary>
-/// The lab's probe (#441): behind the same `admin` scope as /admin and
-/// /control, mapped whether or not this environment runs connectors — the
-/// lab asks it first (200 = admin, 403 = signed in without the scope) and
-/// reads an environment without connectors from the 404 of the relayed
-/// routes, never from a refusal here. Everything else of the lab lives in
-/// <see cref="Connectors.ConnectorLabEndpoints"/>.
-/// </summary>
+// mapped whether or not this environment runs connectors (#441): the lab reads one without connectors
+// from the 404 of the relayed routes, never from a refusal here
 public static class LabEndpoints
 {
     public static void MapLab(this IEndpointRouteBuilder app)

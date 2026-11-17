@@ -21,7 +21,6 @@ import type { ScopedTx } from './GraphTxSheet';
 import { GRAPH_VIEWS, compactMoney, periodRangeText, recallGraphView, rememberGraphView } from './format';
 import type { GraphView } from './format';
 
-/** what a card charts: the built-in scope or a custom graph, with its face */
 export interface GraphDef {
   id: string;
   name: string;
@@ -75,11 +74,6 @@ function PeriodNav({
   );
 }
 
-/**
- * One spending card (user 2026-10-08): a scope, three views — the bars
- * per period with their numbers, today against the same day last period,
- * the period by subcategory — and the transactions behind the number.
- */
 export function SpendingCard({
   graph,
   header,
@@ -96,7 +90,6 @@ export function SpendingCard({
   currentTestId,
 }: Readonly<{
   graph: GraphDef;
-  /** the card's title row (the built-in's scope picker, a custom graph's name and pencil) */
   header: ReactNode;
   periods: readonly Period[];
   labels: readonly string[];
@@ -134,8 +127,6 @@ export function SpendingCard({
   const period = periods[index];
   const isCurrent = index === periods.length - 1;
 
-  // the door counts the period's rows in the card's scope; the sheet may
-  // narrow to one subcategory picked in the breakdown
   const sheetIds = useMemo(() => (sheet.subId === null ? ids : scopeIds(cats, [sheet.subId])), [sheet.subId, ids, cats]);
   const periodTxs = useMemo(() => txs.filter((tx) => tx.date >= period.start && tx.date <= period.end), [txs, period]);
   const doorCount = useMemo(() => periodTxs.filter((tx) => scopedContribution(tx, ids) > 0).length, [periodTxs, ids]);
@@ -182,7 +173,7 @@ export function SpendingCard({
               testId={chartTestId}
               values={values}
               labels={[...labels]}
-              // an empty period says nothing — a row of "€0" under the bars read as noise (gallery 2026-10-08)
+              // an empty period says nothing: a row of "€0" under the bars read as noise
               valueLabels={values.map((cents) => (cents > 0 ? compactMoney(cents, currency, lang) : ''))}
               ariaLabels={values.map((cents, i) => periodAria(i, cents))}
               color={graph.color}

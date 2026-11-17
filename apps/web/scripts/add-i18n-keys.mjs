@@ -1,5 +1,4 @@
-// Append new translation keys to all three i18n files (UTF-8 safe).
-// Edit the KEYS map, run: node scripts/add-i18n-keys.mjs
+// appends the KEYS map to all three i18n files (UTF-8 safe): node scripts/add-i18n-keys.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

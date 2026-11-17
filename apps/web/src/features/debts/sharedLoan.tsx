@@ -10,7 +10,6 @@ export function useLoanWritable(): (account: AccountRow) => boolean {
   return (account) => canEdit && !readOnly.has(account.spaceId);
 }
 
-/** whose account it is, where the space is the person's to change but this account is not */
 export function OthersLoanNote({ account, testId, className = '' }: Readonly<{ account: AccountRow; testId: string; className?: string }>) {
   const { t } = useLang();
   const name = (account as SpaceAccount).link?.attachedByName;

@@ -4,33 +4,14 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Normalization;
 
-/// <summary>
-/// The reader that exists because <c>Try</c> does not mean what it says.
-///
-/// An audit of ten adapters found this same mistake in four of them, written by
-/// different hands at different times, and every one of them read as correct.
-/// These tests hold both halves of the reason: that the raw API really does
-/// throw, and that nothing here does.
-/// </summary>
+// the Try accessors throw on a wrong-kind element (four of ten adapters made that mistake).
+// these tests hold that the raw API throws and nothing here does
 public sealed class JsonReadTests
 {
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
 
-    /// <summary>
-    /// THE HAZARD ITSELF, ASSERTED.
-    /// </summary>
-    /// <remarks>
-    /// Written as a test rather than as a comment because it is the whole
-    /// premise: if a future runtime made these return false, this file could be
-    /// deleted, and nobody would find that out by reading the docs. It fails
-    /// loudly on the day the assumption changes.
-    /// <para>
-    /// Note WHICH exception. <see cref="InvalidOperationException"/> is not a
-    /// <see cref="JsonException"/>, so it walks past every catch written for
-    /// "the provider sent something unreadable" and surfaces as an internal
-    /// error - retriable, blamed on us, and fatal to a whole fetch.
-    /// </para>
-    /// </remarks>
+    // asserted so a runtime that makes these return false is noticed; InvalidOperationException is no JsonException,
+    // so it passes every catch and surfaces as an internal error: retriable, blamed on us, fatal to a whole fetch
     [Fact]
     public void The_runtimes_own_try_methods_throw_rather_than_answering_false()
     {
@@ -43,15 +24,8 @@ public sealed class JsonReadTests
         Assert.Throws<InvalidOperationException>(() => notANumber.TryGetDecimal(out _));
     }
 
-    /// <summary>
-    /// And every kind a provider can send answers "not there" instead.
-    /// </summary>
-    /// <remarks>
-    /// <c>null</c> is the one that actually happens - a GraphQL server sends it
-    /// for any non-nullable child that errored, and DUO's own fixtures carry
-    /// explicit nulls on number-typed fields - but a reader that handled only
-    /// the observed shape would be one payload away from the same failure.
-    /// </remarks>
+    // null really happens: GraphQL sends it for a non-nullable child that errored, and DUO's fixtures carry explicit nulls
+    // on number fields
     [Theory]
     [InlineData("null")]
     [InlineData("[]")]
@@ -73,10 +47,7 @@ public sealed class JsonReadTests
         Assert.Empty(element.Items("anything"));
     }
 
-    /// <summary>
-    /// A field of the wrong kind is not the field. A number where a string was
-    /// expected is drift, and answering with its digits would hide it.
-    /// </summary>
+    // a number where a string is expected is drift; answering with its digits would hide it
     [Fact]
     public void A_child_of_the_wrong_kind_reads_as_absent()
     {
@@ -91,10 +62,7 @@ public sealed class JsonReadTests
         Assert.Empty(row.Items("links"));
     }
 
-    /// <summary>
-    /// BLANK IS NOT A VALUE. ING's credit card states <c>id</c> as an empty
-    /// string on every row - present, worth nothing, and past a null check.
-    /// </summary>
+    // ING's credit card states id as "" on every row: present, worth nothing, past a null check
     [Fact]
     public void A_blank_string_reads_as_absent_and_a_padded_one_is_trimmed()
     {
@@ -105,10 +73,7 @@ public sealed class JsonReadTests
         Assert.Equal("Incasso ING creditcard", row.Text("subject"));
     }
 
-    /// <summary>
-    /// An explicit null is not "present". A provider stating a field as null is
-    /// saying it has no value for it, exactly as an absent field does.
-    /// </summary>
+    // an explicit null means the provider has no value, like an absent field
     [Fact]
     public void Has_tells_a_stated_null_apart_from_a_stated_value()
     {
@@ -120,16 +85,10 @@ public sealed class JsonReadTests
         Assert.False(row.Has("empty", out _));
         Assert.False(row.Has("missing", out _));
 
-        // Blank IS present - it is a string, and only Text() judges its
-        // emptiness. Has() answers about the provider's intent to state
-        // something, which is a different question.
+        // blank is present: only Text() judges emptiness; Has() asks whether the provider stated something
         Assert.True(row.Has("blank", out _));
     }
 
-    /// <summary>
-    /// A chain of missing children is walkable without a guard at each step,
-    /// which is what makes the safe form shorter than the unsafe one.
-    /// </summary>
     [Fact]
     public void An_undefined_child_can_be_read_straight_through()
     {
@@ -139,11 +98,8 @@ public sealed class JsonReadTests
         Assert.Null(row.Child("nope").Child("nor this").Text("c"));
     }
 
-    /// <summary>
-    /// ONLY THE LITERAL TRUE. A flag decides whether a row is published at all -
-    /// ING skips a transaction on <c>reservation: true</c> - so "true", 1 and
-    /// "yes" must not quietly change what a statement contains.
-    /// </summary>
+    // only the literal true: a flag decides whether a row is published (ING skips reservation: true),
+    // so "true", 1 and "yes" must not change a statement
     [Fact]
     public void A_flag_is_the_json_literal_and_nothing_that_resembles_it()
     {
@@ -155,14 +111,7 @@ public sealed class JsonReadTests
         Assert.False(row.Flag("numbered"));
     }
 
-    /// <summary>
-    /// THE ONE THAT WOULD HAVE CAUGHT IT: an array with a null in it.
-    /// </summary>
-    /// <remarks>
-    /// This is not a hypothetical shape. GraphQL sends it whenever a
-    /// non-nullable child errors, and the cost of walking into it was a page of
-    /// orders rather than the one row the provider could not render.
-    /// </remarks>
+    // GraphQL sends null in an array when a non-nullable child errors; it must cost the row, not the page of orders
     [Fact]
     public void An_array_with_a_hole_in_it_costs_the_row_and_not_the_page()
     {
@@ -186,10 +135,7 @@ public sealed class JsonReadTests
         Assert.Null(row.Text("AccountId"));
     }
 
-    /// <summary>
-    /// Money keeps its precision. A decimal read that had been through a double
-    /// would be a balance nobody could reason about afterwards.
-    /// </summary>
+    // a decimal read via a double would lose money's precision
     [Fact]
     public void A_decimal_is_read_as_a_decimal()
     {
@@ -197,11 +143,9 @@ public sealed class JsonReadTests
 
         Assert.Equal(1730.01m, row.Decimal("balance"));
 
-        // Past 2^53, where a double stops being able to tell two integers
-        // apart.
+        // past 2^53 a double cannot tell two integers apart
         Assert.Equal(9007199254740993L, row.Int64("long"));
 
-        // And a value that does not fit answers null rather than wrapping.
         Assert.Null(row.Int32("long"));
     }
 }

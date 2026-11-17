@@ -6,11 +6,7 @@ import { DexieBackend, LIVE_QUERY_QUIET_MS } from './backend';
 import { Repo } from './repo';
 import { HlcClock } from '@/sync/hlc';
 
-/**
- * 2026-10-09 (user: Confirm stalled 3–4 s): the Dexie backend's live
- * queries coalesce a burst of commits into one re-run — and keep tracking
- * changes after it (the wait must not cost Dexie's observation zone).
- */
+// live queries coalesce a burst of commits into one re-run and keep tracking after it (the wait must not cost Dexie's zone)
 describe('DexieBackend.subscribe', () => {
   const dbs: MunniDB[] = [];
   afterEach(async () => {
@@ -40,12 +36,9 @@ describe('DexieBackend.subscribe', () => {
       (n) => seen.push(n),
     );
     await untilSeen(seen, 0);
-    expect(seen).toEqual([0]); // the first run is not delayed
+    expect(seen).toEqual([0]);
 
-    // a burst: twelve commits back to back, as the review's bulk writes land —
-    // a leading run (the first commit found the query idle; Dexie may abort it)
-    // and one trailing run after the burst, never one per write. Commits a slow
-    // machine spaced wider than the quiet window are separate bursts by design.
+    // a burst yields a leading and a trailing run, never one per write; commits spaced wider than the window are separate bursts
     let wideGaps = 0;
     let last = performance.now();
     for (let i = 1; i <= 12; i++) {
@@ -69,9 +62,7 @@ describe('DexieBackend.subscribe', () => {
       (n) => seen.push(n),
     );
     await untilSeen(seen, 0);
-    // each write is given until the count ARRIVES (a loaded machine stretches a run past the
-    // quiet window, which merged two writes into one re-run and failed the shape below), then a
-    // quiet beat — a duplicate re-run would still show up as an extra entry
+    // each write waits until its count arrives: a loaded machine merged two writes into one re-run and failed the shape below
     const arrived = async (count: number) => {
       await untilSeen(seen, count);
       await sleep(LIVE_QUERY_QUIET_MS * 2);
@@ -81,7 +72,6 @@ describe('DexieBackend.subscribe', () => {
       await arrived(i);
     }
     expect(seen).toEqual([0, 1, 2, 3]);
-    // a write to another table the query never read changes nothing
     await repo.upsert('space', 's', 's', { name: 'S' });
     await sleep(LIVE_QUERY_QUIET_MS * 4);
     expect(seen).toEqual([0, 1, 2, 3]);
@@ -105,7 +95,7 @@ describe('DexieBackend.subscribe', () => {
     });
     await untilSeen(seen, 4);
     await sleep(LIVE_QUERY_QUIET_MS * 2);
-    expect(seen).toEqual([0, 4]); // one update, with everything
+    expect(seen).toEqual([0, 4]);
     off();
   });
 

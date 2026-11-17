@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { focusEntryMode, nextAmountEntry } from './amountRegister';
 import type { AmountEntry } from './amountRegister';
 
-/** run a key sequence the way the input reports it: each key appends */
 function typeKeys(keys: string): AmountEntry {
   let entry: AmountEntry = { mode: 'register', text: '' };
   for (const key of keys) {
@@ -34,7 +33,7 @@ describe('nextAmountEntry — register style (user spec 2026-08-06)', () => {
   });
 
   it('backspace shifts right until the field empties', () => {
-    let entry = typeKeys('550'); // 5,50
+    let entry = typeKeys('550');
     entry = nextAmountEntry(entry.mode, entry.text, entry.text.slice(0, -1));
     expect(entry.text).toBe('0,55');
     entry = nextAmountEntry(entry.mode, entry.text, entry.text.slice(0, -1));

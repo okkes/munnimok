@@ -5,12 +5,7 @@ using Munni.Api.Social;
 
 namespace Munni.Api.Push;
 
-/// <summary>
-/// Routes each subscription to its transport: browser rows (webpush) to
-/// the VAPID sender, native shell rows (fcm) to Firebase. A kind whose
-/// transport is not configured reports success so the row survives
-/// until the transport arrives.
-/// </summary>
+// a kind whose transport is not configured reports success, so the row survives until the transport arrives
 public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : IPushSender
 {
     public Task<bool> SendAsync(PushSubscriptionRow subscription, string payload, CancellationToken ct)
@@ -20,13 +15,8 @@ public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : 
     }
 }
 
-/// <summary>
-/// Visible notification text for native pushes, per device language —
-/// the server-side twin of sw.ts/swNotifications (iOS displays NOTHING
-/// for data-only messages while the app is closed, so unlike web push
-/// the localization cannot happen on-device; user report: friend
-/// requests never showed on iPhone).
-/// </summary>
+// server-side twin of sw.ts/swNotifications: iOS shows nothing for data-only messages while the app is closed,
+// so native text is localized here
 public static class FcmTexts
 {
     private sealed record Texts(
@@ -49,6 +39,7 @@ public static class FcmTexts
             "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
     };
 
+    private const string NewTransactions = "new-transactions";
     private const string SettledGet = "settled-get";
     private const string SettledPay = "settled-pay";
     private const string SettledEven = "settled-even";
@@ -123,6 +114,41 @@ public static class FcmTexts
         return template.Replace("{name}", Str("fromName", someone)).Replace("{split}", Str("splitName", "")).Replace("{amount}", amount);
     }
 
+    private static readonly System.Text.RegularExpressions.Regex SpaceIdShape =
+        new("^[A-Za-z0-9_-]+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    private static readonly System.Text.RegularExpressions.Regex SplitIdShape =
+        new("^[A-Za-z0-9._:-]+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    /// <summary>#614: the tag the web worker shows the same payload under (sync/swNotifications.ts). An Android phone
+    /// files the notification by it, which is how the app finds and removes one that was handled.</summary>
+    public static string? Tag(JsonElement payload)
+    {
+        var type = Text(payload, "type");
+        return type switch
+        {
+            NewTransactions => $"new-tx-{Shaped(SpaceIdShape, Text(payload, "spaceId"), "all")}",
+            "split" => $"split-{SplitKind(payload)}-{Shaped(SplitIdShape, Text(payload, "splitId"), "")}",
+            "friend-request" or "friend-accept" or "space-invite" or "space-join" or "member-removed" or "member-role" or "test" => type,
+            _ => null,
+        };
+    }
+
+    private static string Text(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static string Shaped(System.Text.RegularExpressions.Regex shape, string value, string otherwise) =>
+        shape.IsMatch(value) ? value : otherwise;
+
+    /// `settled` is worded, and tagged, by the receiver's own figure
+    private static string SplitKind(JsonElement payload)
+    {
+        var kind = Text(payload, "kind");
+        if (kind != "settled") return kind;
+        var cents = payload.TryGetProperty("cents", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt64() : 0;
+        return cents switch { > 0 => SettledGet, < 0 => SettledPay, _ => SettledEven };
+    }
+
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
     public static (string Title, string Body)? Build(JsonElement payload, string lang)
     {
@@ -136,9 +162,9 @@ public static class FcmTexts
 
         var body = type switch
         {
-            "new-transactions" when payload.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) && n != 1 =>
+            NewTransactions when payload.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) && n != 1 =>
                 texts.Many.Replace("{n}", n.ToString()),
-            "new-transactions" => texts.One,
+            NewTransactions => texts.One,
             "friend-request" => Social(texts.FriendRequest),
             "friend-accept" => Social(texts.FriendAccept),
             "space-invite" => Social(texts.SpaceInvite),
@@ -153,18 +179,14 @@ public static class FcmTexts
         // #551: a notification about one space wears its name as the title — the lock screen already says
         // "munni" above it; the social ones name their space in the sentence
         var spaceName = Str("spaceName", "").Trim();
-        var title = (type is "new-transactions" or "test") && spaceName.Length > 0 ? spaceName : "munni";
+        var title = (type is NewTransactions or "test") && spaceName.Length > 0 ? spaceName : "munni";
         return (title, body);
     }
 }
 
-/// <summary>
-/// FCM HTTP v1 (native-apps design N4): a service-account JWT buys a
-/// short-lived OAuth token. Messages carry the data payload for in-app
-/// handling PLUS a notification block localized per device (FcmTexts) —
-/// without it, closed iOS apps never display anything.
-/// Configured via Fcm:ServiceAccountJson (the downloaded key file).
-/// </summary>
+// FCM HTTP v1: a service-account JWT buys a short-lived OAuth token
+// the message carries data plus a notification block localized per device (FcmTexts):
+// closed iOS apps show nothing without it
 public sealed class FcmPushSender : IPushSender
 {
     // omit the notification field entirely when a payload type has no
@@ -193,6 +215,7 @@ public sealed class FcmPushSender : IPushSender
         var token = await GetAccessTokenAsync(ct);
         using var doc = JsonDocument.Parse(payload);
         var visible = FcmTexts.Build(doc.RootElement, subscription.Lang);
+        var tag = visible is null ? null : FcmTexts.Tag(doc.RootElement);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"v1/projects/{_projectId}/messages:send");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(JsonSerializer.Serialize(new
@@ -200,12 +223,11 @@ public sealed class FcmPushSender : IPushSender
             message = new
             {
                 token = subscription.Endpoint,
-                // data for the in-app handlers (routing, refresh) …
                 data = new { payload },
-                // … and the OS-rendered notification: closed iOS apps show
-                // nothing for data-only messages (user report)
+                // the OS-rendered notification: closed iOS apps show nothing for data-only messages
                 notification = visible is null ? null : new { title = visible.Value.Title, body = visible.Value.Body },
-                android = new { priority = "high" },
+                // #614: Android only — iOS hands the app the data payload of a delivered notification, which names it as well
+                android = new { priority = "high", notification = tag is null ? null : new { tag } },
                 apns = new { headers = new Dictionary<string, string> { ["apns-priority"] = "10" }, payload = new { aps = new { sound = "default" } } },
             },
         }, JsonOptions), Encoding.UTF8, "application/json");

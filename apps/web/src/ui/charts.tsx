@@ -1,8 +1,3 @@
-/**
- * Tiny dependency-free chart primitives for the overview screens
- * (ported look from the legacy BarChart/StackedBar).
- */
-
 interface BarChartProps {
   values: number[];
   labels: string[];
@@ -10,14 +5,11 @@ interface BarChartProps {
   onSelect: (index: number) => void;
   height?: number;
   accent?: string;
-  /** formatted amount shown on top of each non-empty bar (user request) */
   valueLabels?: string[];
 }
 
-/** selectable period bars, each carrying its amount on top.
- *  #354: the chart caps its own width and centers — full-bleed desktop
- *  containers made slab-wide bars with unreadable 8px sums; on lg the
- *  labels grow instead of the bars */
+/** #354: caps its own width and centers — full-bleed desktop made slab-wide bars with unreadable sums;
+ *  on lg the labels grow */
 export function BarChart({ values, labels, selected, onSelect, height = 90, accent = 'var(--m-accent)', valueLabels }: BarChartProps) {
   const max = Math.max(...values.map((v) => Math.abs(v)), 1);
   const reserve = valueLabels ? 50 : 38; // label rows around the bar need their share
@@ -65,9 +57,7 @@ interface StackedBarProps {
   height?: number;
 }
 
-/** proportional composition bar (only positive contributions are drawn);
- *  segments keyed by id keep their identity across period switches, so
- *  the widths GLIDE to the new proportions instead of snapping */
+/** segments keyed by id keep their identity across period switches, so widths glide instead of snapping */
 export function StackedBar({ segments, height = 10 }: StackedBarProps) {
   const positive = segments.filter((s) => s.value > 0);
   const total = positive.reduce((sum, s) => sum + s.value, 0);

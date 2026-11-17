@@ -4,17 +4,10 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The relay renders every connector document in munni's own casing: the
-/// connector speaks snake_case, the rest of this API speaks camelCase, and
-/// the app should not have to know where a field came from. Keys that hold
-/// DATA rather than schema — a provider's config, the inputs a user typed,
-/// fetch params, a raw payload — keep their keys verbatim, because renaming
-/// data corrupts it.
-/// </summary>
+// the connector speaks snake_case, this API camelCase; keys that hold DATA (config, inputs, fetch params, raw payload)
+// keep their keys verbatim, renaming corrupts them
 public static class ConnectorJson
 {
-    /// <summary>Object-valued fields whose keys are data, never renamed.</summary>
     private static readonly HashSet<string> DataKeys = new(StringComparer.Ordinal)
     {
         "config", "inputs", "params", "raw",
@@ -25,7 +18,6 @@ public static class ConnectorJson
 
     public static JsonNode? ToCamel(JsonNode? node) => Walk(node, rename: true, CamelCase);
 
-    /// <summary>The other direction, for a body the app wrote that the relay hands on verbatim (the live view's input).</summary>
     public static JsonNode? ToSnake(JsonNode? node) => Walk(node, rename: true, SnakeCase);
 
     public static string SnakeCase(string key)
@@ -46,7 +38,6 @@ public static class ConnectorJson
         return builder.ToString();
     }
 
-    /// <summary>A copy without the bundle-carrying fields, for a stream or a log line.</summary>
     public static JsonObject WithoutSecrets(JsonObject view)
     {
         var copy = (JsonObject)view.DeepClone();
@@ -95,11 +86,9 @@ public static class ConnectorJson
         }
     }
 
-    /// <summary>Reads a string property, or null when it is absent or not a string.</summary>
     public static string? Text(this JsonObject obj, string property) =>
         obj[property] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
-    /// <summary>Serialises an app-facing object with this API's default (camelCase) encoding.</summary>
     public static string Serialize(object value) => JsonSerializer.Serialize(value, Web);
 
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);

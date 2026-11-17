@@ -8,11 +8,8 @@ import { DexieBackend } from '@/db/backend';
 import { linkAllCounterparties } from './counterLink';
 import { mirrorTxId } from '@/domain/feedIds';
 
-/**
- * User rule 2026-07-17: connect the credit card AFTER months of checking
- * history → every old top-up (matching counter-IBAN) links to the card
- * and becomes a transfer. Deliberate types and existing links survive.
- */
+// connecting a credit card after months of checking history links every old top-up (matching counter-IBAN) to it;
+// deliberate types and existing links survive
 describe('linkAllCounterparties', () => {
   const setup = async () => {
     const db = new MunniDB(`counterlink_${Math.random().toString(36).slice(2)}`);
@@ -42,13 +39,11 @@ describe('linkAllCounterparties', () => {
       counterIban: 'NL00LANDLORD000001',
     });
 
-    // the card arrives later — the sweep runs
     await repo.upsert('account', 's1', 'acct-cc', { name: 'Card', type: 'credit', source: 'manual', currency: 'EUR', iban: 'NL91ABNA0417164300' });
     expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(2);
 
     const topup = await db.transactions.get('tx-topup');
-    // credit = transfer (user ruling); the placeholder category files the
-    // sign-picked locked sub at the write edge (arc 2)
+    // credit = transfer (ruling); the placeholder category files the sign-picked locked sub at the write edge
     expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', catId: 'transferOut' });
     const deliberate = await db.transactions.get('tx-deliberate');
     expect(deliberate).toMatchObject({ linkedAccountId: 'acct-cc', adjustment: 1 }); // linked, the correction marker kept
@@ -56,7 +51,6 @@ describe('linkAllCounterparties', () => {
     expect((await db.transactions.get('tx-linked'))?.linkedAccountId).toBe('acct-other'); // untouched
     expect((await db.transactions.get('tx-foreign'))?.linkedAccountId).toBeUndefined();
 
-    // idempotent: a second pass changes nothing
     expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });
@@ -69,12 +63,9 @@ describe('linkAllCounterparties', () => {
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, iban: 'NL02 SAVE 0000 0000 02' });
     await linkAllCounterparties(new DexieBackend(db), repo, 's1');
-    // the bijection: the counter's kind names the family — the source
-    // leg reads "Set aside", never a blanket Transfer out
+    // the counter's kind names the family: the source leg reads "Set aside", never a blanket Transfer out
     const source = await db.transactions.get('tx-save');
     expect(source).toMatchObject({ linkedAccountId: 'acct-save', catId: 'savingDeposit' });
-    // …and the linked MANUAL pot got its mirror leg minted: the pot's own
-    // ledger holds the saving story, and its balance moved with it
     expect(source?.transferPeerId).toBe(mirrorTxId('tx-save'));
     const mirror = await db.transactions.get(mirrorTxId('tx-save'));
     expect(mirror).toMatchObject({ accountId: 'acct-save', amountCents: 10000, catId: 'savingDeposit', transferPeerId: 'tx-save' });

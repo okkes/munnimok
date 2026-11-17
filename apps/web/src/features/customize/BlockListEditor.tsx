@@ -10,13 +10,7 @@ export interface BlockRow {
   hidden: boolean;
 }
 
-/**
- * The shared customize list (Home blocks, transaction-detail sections):
- * eye toggles visibility, the right-side handle drags to reorder. The
- * floating ghost is PORTALED to document.body — rendered inside a
- * transformed ancestor (a sheet mid-gesture) its fixed coordinates
- * resolved against the transform and drifted wildly (user report).
- */
+// the ghost is portaled to document.body: inside a transformed ancestor (a sheet mid-gesture) its fixed coordinates drift
 export function BlockListEditor({
   rows,
   testPrefix,
@@ -54,7 +48,6 @@ export function BlockListEditor({
           >
             <Icon name={entry.hidden ? 'eye-off-outline' : 'eye-outline'} size={18} color={entry.hidden ? 'var(--m-ink-4)' : 'var(--m-accent-deep)'} />
           </button>
-          {/* handle on the RIGHT, matching the category manager (user request) */}
           <button
             aria-label={t('home.dragHandle')}
             data-testid={`${testPrefix}-drag-${entry.id}`}
@@ -65,8 +58,7 @@ export function BlockListEditor({
           </button>
         </div>
       ))}
-      {/* the floating clone that follows the finger — `top` is written
-          imperatively (per-frame follow + the settle-into-slot drop) */}
+      {/* ghost `top` is written imperatively: per-frame follow and the settle-into-slot drop */}
       {drag && ghostRect &&
         createPortal(
           <div

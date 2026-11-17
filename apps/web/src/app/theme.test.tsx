@@ -45,17 +45,16 @@ describe('ThemeProvider', () => {
         <Probe />
       </ThemeProvider>,
     );
-    expect(api.mode).toBe('system'); // nothing stored = follow the device
+    expect(api.mode).toBe('system');
     act(() => api.toggle());
     expect(screen.getByTestId('theme').textContent).toBe('dark');
-    expect(api.mode).toBe('dark'); // the quick toggle pins an explicit theme
+    expect(api.mode).toBe('dark');
     expect(localStorage.getItem('munni_theme')).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#191714');
     act(() => api.setMode('light'));
     expect(screen.getByTestId('theme').textContent).toBe('light');
     expect(localStorage.getItem('munni_theme')).toBe('light');
-    // "follow device" clears the pin
     act(() => api.setMode('system'));
     expect(api.mode).toBe('system');
     expect(localStorage.getItem('munni_theme')).toBeNull();

@@ -5,7 +5,6 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'inputMode' | 
   onValue: (text: string) => void;
 };
 
-/** what a number field let through, plus the comma */
 export const decimalText = (raw: string): string => raw.replaceAll(/[^\d.,]/gu, '');
 
 /**

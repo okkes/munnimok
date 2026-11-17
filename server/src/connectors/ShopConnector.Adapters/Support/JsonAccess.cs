@@ -5,29 +5,15 @@ using Connector.Kit.Normalization;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// Alias-tolerant, case-insensitive reads over a provider payload.
-///
-/// Retailers rename and re-case fields between releases without telling
-/// anyone, so a parser bound to one spelling breaks on a change that meant
-/// nothing. Tolerating extra fields and aliases is the rule here. The one
-/// deliberate exception is money, which is never inferred - see
-/// <see cref="MoneyReader"/>.
-/// </summary>
+/// retailers rename and re-case fields unannounced, so aliases and extra fields are tolerated; money is the one
+/// exception and is never inferred (MoneyReader)
 internal static partial class JsonAccess
 {
-    /// <summary>
-    /// Leading numeric token of a loosely formatted quantity: providers
-    /// write "2", "2 x", "0,750 kg" and "1.000" for the same idea.
-    /// </summary>
+    /// providers write "2", "2 x", "0,750 kg" and "1.000" for the same quantity
     [GeneratedRegex(@"-?\d+(?:[.,]\d+)?")]
     private static partial Regex NumericToken { get; }
 
-    /// <summary>
-    /// First property matching any of <paramref name="names"/>. Exact
-    /// matches win over case-insensitive ones, and the name order is the
-    /// preference order - put the confirmed spelling first.
-    /// </summary>
+    /// exact matches beat case-insensitive ones; name order is preference order, so put the confirmed spelling first
     public static bool TryProp(JsonElement parent, out JsonElement value, params string[] names)
     {
         value = default;
@@ -57,7 +43,6 @@ internal static partial class JsonAccess
         return false;
     }
 
-    /// <summary>Walks a dotted path, e.g. <c>data.orders.items</c>.</summary>
     public static bool TryPath(JsonElement root, string path, out JsonElement value)
     {
         value = root;
@@ -87,11 +72,7 @@ internal static partial class JsonAccess
     public static string? StrOf(JsonElement parent, params string[] names) =>
         TryProp(parent, out var value, names) ? Str(value) : null;
 
-    /// <summary>
-    /// A count, not an amount. Loose parsing is safe here precisely because
-    /// a quantity is never money: a misread quantity fails reconciliation
-    /// loudly instead of corrupting a total silently.
-    /// </summary>
+    /// loose parsing is safe because a quantity is never money: a misread one fails reconciliation loudly
     public static decimal? Quantity(JsonElement parent, params string[] names)
     {
         if (!TryProp(parent, out var value, names)) return null;
@@ -109,11 +90,7 @@ internal static partial class JsonAccess
             : null;
     }
 
-    /// <summary>
-    /// The first named property that is an array. Returns an empty list
-    /// rather than throwing: an absent collection is a normal provider
-    /// answer (a receipt with no discounts), not a shape change.
-    /// </summary>
+    /// empty list, not a throw: an absent collection is normal (a receipt with no discounts), not a shape change
     public static IReadOnlyList<JsonElement> Array(JsonElement parent, params string[] names)
     {
         if (!TryProp(parent, out var value, names) || value.ValueKind != JsonValueKind.Array) return [];
@@ -123,13 +100,7 @@ internal static partial class JsonAccess
     public static IReadOnlyList<JsonElement> AsArray(JsonElement element) =>
         element.ValueKind == JsonValueKind.Array ? [.. element.EnumerateArray()] : [];
 
-    /// <summary>
-    /// Last <paramref name="count"/> digits of a masked instrument, e.g.
-    /// <c>"•••• 1234"</c> or <c>"XXXXXXXXXXXX1234"</c>. Null when the
-    /// provider gave us nothing usable - and null must stay null, because
-    /// the consumer needs to know its match will be weaker rather than be
-    /// handed a guess.
-    /// </summary>
+    /// last digits of a masked instrument ("XXXX1234"); null stays null so the consumer knows its match is weaker
     public static string? Tail(string? masked, int count = 4)
     {
         if (string.IsNullOrWhiteSpace(masked)) return null;

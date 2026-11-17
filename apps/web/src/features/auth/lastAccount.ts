@@ -1,18 +1,6 @@
-/**
- * The account this device signed in with last (user 2026-10-07): Logto
- * carries ONE session per browser and continues it silently, so the app
- * puts the choice in front of the redirect — "Continue as <name>" or
- * "Use another account" — the way the big sign-in pages do.
- *
- * #559: once that session is gone (a sign-out ends it on purpose) a plain
- * sign-in landed on Logto's empty page. So the way the account signs in is
- * remembered with the name: a social-only account goes straight to its
- * provider (Logto's direct sign-in — Google's own session then continues
- * in one tap), a username account finds its username filled in. When the
- * way in is unknown the screen offers the plain "Sign in" instead of a
- * name it cannot keep its promise for. Never a token, a password or an
- * e-mail address.
- */
+// Logto continues ONE session per browser; once it is gone a plain sign-in lands on Logto's empty page (#559), so the way in
+// is remembered with the name: a social account goes straight to its provider, a username account gets it filled in
+// an unknown way in offers the plain "Sign in"; never a token, a password or an e-mail address is stored
 const KEY = 'munni_last_account';
 const SOCIAL_TARGET = /^[a-z0-9-]{1,40}$/;
 
@@ -21,11 +9,9 @@ export interface LastAccount {
   at: number;
   /** a social-only account's connector (Logto's direct sign-in target: google, apple, …) */
   social?: string;
-  /** a username account's username — Logto's page fills it in */
   username?: string;
 }
 
-/** how the account gets back in, as remembered at its last sign-in */
 export type SignInWay = Pick<LastAccount, 'social' | 'username'>;
 
 export function readLastAccount(): LastAccount | null {
@@ -58,27 +44,15 @@ export function rememberLastAccount(name: string | null | undefined, way: SignIn
   }
 }
 
-/**
- * The way in, read off Logto's userinfo: the account's one social
- * connector (the quickest way back — the provider's own session usually
- * answers in a tap), else its username. Several social identities and no
- * username stay unknown — guessing one would hand the person to the wrong
- * provider.
- */
+// several social identities and no username stay unknown: guessing would send the person to the wrong provider
 export function signInWayOf(info: { username?: string | null; identities?: Record<string, unknown> | null }): SignInWay {
   const socials = Object.keys(info.identities ?? {}).filter((target) => SOCIAL_TARGET.test(target));
   if (socials.length === 1) return { social: socials[0] };
   return info.username?.trim() ? { username: info.username.trim() } : {};
 }
 
-/**
- * The way in, asked of Logto's userinfo endpoint (the `identities` scope)
- * right after a sign-in. Best-effort and capped at 3 s: the token is the
- * one the code exchange just minted (no refresh, so no rotation race), the
- * call is our own (a failure never lands in the SDK's shared error, which
- * the callback screen reports), and a slow or failed answer only leaves the
- * social side unknown.
- */
+// best-effort, capped at 3 s; the token is the one the code exchange just minted (no refresh race) and the call is our own,
+// so a failure never lands in the SDK's shared error that the callback screen reports
 export async function readSignInWay(
   endpoint: string,
   username: string | null | undefined,

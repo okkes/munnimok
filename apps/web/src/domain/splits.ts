@@ -1,9 +1,6 @@
 import type { TxSplit } from '@/db/types';
 
-/**
- * Split math: when a transaction is split, the split amounts must exactly
- * partition the (absolute) transaction amount — no orphan cents, ever.
- */
+// split amounts must exactly partition the absolute transaction amount: no orphan cents
 
 export function splitsTotalCents(splits: TxSplit[]): number {
   return splits.reduce((sum, s) => sum + s.amountCents, 0);
@@ -24,22 +21,17 @@ export function validateSplits(amountCents: number, splits: TxSplit[]): SplitErr
   return null;
 }
 
-/** the category that represents the transaction as a whole: its largest slice */
 export function primaryCatId(splits: TxSplit[]): string | undefined {
   return [...splits].sort((a, b) => b.amountCents - a.amountCents)[0]?.catId;
 }
 
-/** the row auto-balance should fill: the first EMPTY one — the row the
- *  user is working on — else the last as the correction slot (#130:
- *  always writing the LAST row clobbered a filled value whenever an
- *  earlier row was the open one) */
+/** #130: the first empty row, else the last as correction slot (always writing the last clobbered a filled value) */
 export const balanceTargetIndex = (values: readonly number[]): number => {
   const empty = values.indexOf(0);
   return empty === -1 ? values.length - 1 : empty;
 };
 
-/** fill the still-open remainder into the balance target (never below
- *  zero); a forced index — the field the user balanced FROM — wins */
+/** a forced index (the field balanced FROM) wins; never below zero */
 export function balanceOpenRow(amountCents: number, splits: TxSplit[], forcedIndex?: number): TxSplit[] {
   if (splits.length === 0) return splits;
   const target = forcedIndex ?? balanceTargetIndex(splits.map((s) => s.amountCents));
@@ -48,13 +40,10 @@ export function balanceOpenRow(amountCents: number, splits: TxSplit[], forcedInd
   return splits.map((s, i) => (i === target ? { ...s, amountCents: open } : s));
 }
 
-// ── percentage splits (user feature): scale to any amount ───────────────
-
 export const splitsArePct = (splits: readonly TxSplit[] | undefined): boolean =>
   !!splits && splits.length > 0 && splits.every((s) => s.pct !== undefined);
 
-/** pct splits materialized against an amount — remainder cents go to the
- *  largest slices so the partition stays exact for every charge */
+/** remainder cents go to the largest slices so the partition stays exact */
 export function resolveSplitsFor(amountCents: number, splits: readonly TxSplit[]): TxSplit[] {
   if (!splitsArePct(splits)) return [...splits];
   const abs = Math.abs(amountCents);
@@ -77,6 +66,5 @@ export function validatePctSplits(splits: readonly TxSplit[]): SplitError | null
   return null;
 }
 
-/** the remaining percentage while editing in % mode */
 export const pctRemainder = (splits: readonly TxSplit[]): number =>
   100 - splits.reduce((sum, s) => sum + (s.pct ?? 0), 0);

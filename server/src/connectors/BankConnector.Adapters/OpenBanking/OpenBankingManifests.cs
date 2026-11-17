@@ -3,19 +3,8 @@ using Connector.Kit.Manifests;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// What the two aggregator parties share: the step (a country, then the
-/// institution the party lists), the return address the consumer sends as
-/// config, the consent-shaped session, the nightly schedule.
-/// </summary>
-/// <remarks>
-/// A consent is reused unattended for its whole life, which is what
-/// <c>refreshable</c> means to the validator; it never rotates on its own
-/// (<c>rotates_on_use</c> is still true so the material learned at fetch
-/// time — the accounts' details — is kept). When it ends, the person
-/// consents again: the reauth is not cheap and <c>consent_expired</c> is its
-/// trigger.
-/// </remarks>
+// a consent is reused unattended for its life (refreshable); rotates_on_use stays true so material learned at fetch is kept
+// when it ends the person consents again: reauth is not cheap and consent_expired is its trigger
 internal static class OpenBankingManifests
 {
     public const string CountryField = "country";

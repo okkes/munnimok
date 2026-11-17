@@ -46,7 +46,6 @@ export const GOAL_PICTURES = [
   '/goals/bike.jpg',
 ] as const;
 
-/** create/edit sheet */
 export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow | 'new' | null; onClose: () => void }>) {
   const { t } = useLang();
   const ops = useGoalOps();
@@ -73,7 +72,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   }, [initial, editing]);
 
   const uploadRef = useRef<HTMLInputElement>(null);
-  // #160: desktop-only webcam tile beside the upload tile
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
   const onUpload = async (file: File | undefined) => {
@@ -114,7 +112,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     onClose();
   };
 
-  // dirty vs the seeded values (user request 2026-08-01)
   const dirty =
     initial !== null &&
     (name !== (editing?.name ?? '') ||
@@ -125,7 +122,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
-        {/* optional cover, same mechanics as events (user request) */}
         <ScrollRow testId="goalform-pictures">
           <button
             data-testid="goalform-pic-none"
@@ -145,7 +141,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             <Icon name="image-plus" size={16} />
             {t('events.uploadPicture')}
           </button>
-          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
           {webcamDoor && (
             <button
               data-testid="goalform-webcam"
@@ -177,7 +172,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         {pictureSheet}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
-        {/* #563 (user): the goal's suggestions lead, the whole icon font follows — to scroll or to search */}
         <IconPicker value={icon} onChange={setIcon} featured={GOAL_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="goalform-icon" />
         <input
           data-testid="goalform-name"
@@ -187,7 +181,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           aria-invalid={attempted && nameMissing}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
         />
-        {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && nameMissing} text={t('form.needName')} testId="goalform-save-blocker" />
         <div className="m-cap px-1">{t('goals.target')}</div>
         <DecimalInput
@@ -229,13 +222,11 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
       </div>
     </Sheet>
-    {/* #160: snapshot feeds the same downscale path as the file input */}
     <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
     </>
   );
 }
 
-/** All goals + the honesty header: saved vs allocated vs unallocated. */
 /** #368: short-term money belongs in the plan — goals are the long game */
 function ShortTermNote({ targetDate }: Readonly<{ targetDate: string }>) {
   const { t } = useLang();
@@ -256,8 +247,7 @@ function ShortTermNote({ targetDate }: Readonly<{ targetDate: string }>) {
   );
 }
 
-/** #368 (user): the savings accounts that feed the goals — every savings
- *  account counts until the user picks; the pick is a space fact (synced) */
+/** #368: every savings account counts until the person picks; the pick is a synced space fact */
 function GoalPoolCard({
   accounts,
   space,
@@ -366,8 +356,7 @@ export function GoalsScreen() {
       <div ref={(el) => attachScrollMemory(el, 'goals')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="goals" />
         <ReadOnlyNote className="mb-2.5" testId="goals-readonly-note" />
-        {/* the honesty header — negative unallocated is the rebalance signal.
-            Held back until both sides loaded so it never flashes €0 savings. */}
+        {/* negative unallocated is the rebalance signal; held back until both sides loaded so it never flashes €0 */}
         {goals && accounts && (
           <div className="rounded-card border border-line bg-surface p-4" data-testid="goals-overview">
             <div className="grid grid-cols-3 gap-3">
@@ -409,14 +398,11 @@ export function GoalsScreen() {
         <div className="flex flex-col gap-2.5 pt-3">
           {(goals ?? []).map((goal) => {
             const progress = goalProgress(goal);
-            // the pace counts the space's own periods (user 2026-10-04)
             const pace = paceCentsPerPeriod(goal, space, today);
             const reached = goal.allocatedCents >= goal.targetCents;
-            // #449 (user): what is still to add sits on the card itself, pace or no pace
             const toGo = t('goals.toGo', { amount: balance(goal.targetCents - goal.allocatedCents) });
             let subtitle = toGo;
             if (goal.cashOut) {
-              // #455: a spent goal says when — it sits with the archived ones
               const date = parseLocalDate(goal.cashOut.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
               subtitle = t('goals.cashedOutOn', { date });
             } else if (reached) subtitle = t('goals.reached');

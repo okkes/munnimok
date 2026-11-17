@@ -22,7 +22,6 @@ import type { JobView } from './types';
 import { CATALOGUE_META_KEY, refreshCatalogueCache, useCatalogue } from './useCatalogue';
 import type { Cached } from './useCatalogue';
 
-/** Home's door to the quick sync: only for a signed-in person who has a connection to sync by hand */
 export function QuickSyncButton() {
   const { t } = useLang();
   const { store } = useData();
@@ -66,19 +65,14 @@ export function QuickSyncButton() {
   );
 }
 
-/** a job's question while a sync runs from the sheet */
 interface JobAsk {
   job: JobView;
   provider: string;
   resolve: (value: string | null) => void;
 }
 
-/**
- * #548: the connections to sync by hand, each with when it last synced and
- * a Sync of its own. A session the party already ended is signed in again
- * first (the login kept on this device where the party offers that, #543),
- * and a question mid-fetch is asked right here.
- */
+// #548: a session the party already ended is signed in again first (the login kept on this device where the party
+// offers it, #543); a question mid-fetch is asked right here
 export function QuickSyncSheet({ onClose }: Readonly<{ onClose: () => void }>) {
   const { t, lang } = useLang();
   const catalogue = useCatalogue();
@@ -107,7 +101,6 @@ export function QuickSyncSheet({ onClose }: Readonly<{ onClose: () => void }>) {
     if (report.status === 'signin') signIn(view);
   };
 
-  /** where the connection stands: syncing now, what the last sync brought, or when it last synced */
   const line = (view: ConnectionView): { text: string; warn: boolean } => {
     const running = activity[view.meta.id];
     if (running?.phase === 'fetching') return { text: running.found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: running.found }), warn: false };
@@ -150,7 +143,6 @@ export function QuickSyncSheet({ onClose }: Readonly<{ onClose: () => void }>) {
 
       <ConnectSteps flow={flow} onFlowChange={setFlow} catalogue={catalogue} />
 
-      {/* a party's question while a sync runs from here */}
       <Sheet
         open={ask !== null}
         onOpenChange={(next) => {

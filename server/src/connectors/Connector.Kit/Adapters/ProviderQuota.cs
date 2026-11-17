@@ -2,12 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Adapters;
 
-/// <summary>
-/// What a party said about its budget in its last answer — an aggregator's
-/// per-account daily allowance, typically. Reported by the adapter through
-/// <see cref="IJobContext.ReportQuota"/>, kept by the platform as a fact
-/// about the provider (last seen, never persisted), shown to the operator.
-/// </summary>
+// last seen, never persisted: kept by the platform as a fact about the provider and shown to the operator
 public sealed record ProviderQuota
 {
     public int? Limit { get; init; }

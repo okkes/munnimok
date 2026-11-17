@@ -1,6 +1,3 @@
-// Secrets by scope (infra/secrets.manifest.json): what each stack owns,
-// what the shared stack mirrors into every environment of its platform,
-// minted shapes — and the GitHub side against a fake `gh` on PATH.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scratchPlatforms, fakeGh } from './fixture.mjs';
@@ -81,7 +78,6 @@ test('entriesFor: the shared stack owns the platform-scoped values (+ its own po
   assert.ok(names(staging).includes('PLAY_SERVICE_ACCOUNT_JSON'));
   assert.ok(names(staging).includes('LOGTO_INFRA_M2M_ID'), 'feature-less env entries are always there');
 
-  // the lcl platform: only entries that apply to it (the NAS account and the domain are nas-only)
   const lcl = entriesFor(loadStack('munni-lcl-shared'));
   assert.ok(lcl.every((e) => !e.platforms || e.platforms.includes('lcl')));
   for (const n of ['GLITCHTIP_API_TOKEN', 'VAULT_ADMIN_EMAIL', 'POSTGRES_PASSWORD']) assert.ok(names(lcl).includes(n));
@@ -142,14 +138,12 @@ test('ensureSecrets (shared stack): mints the platform secrets into <platform>-s
   }
   assert.ok(Object.keys(shared).every((n) => n === 'POSTGRES_PASSWORD' || platformNames.includes(n)), 'the shared environment holds platform values + its own postgres');
 
-  // the next environment run: nothing new to mint, the wait shrinks to the operator's platform values
   const prod = ensureSecrets(prodStack());
   assert.deepEqual(prod.minted, []);
   assert.deepEqual(prod.waitingForShared, ['PLATFORM_DOMAIN', 'SYNOLOGY_URL', 'SYNOLOGY_USER', 'SYNOLOGY_PASS', 'SYNOLOGY_PATH', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
   gh.seed('nas-prod', { secrets: { PLATFORM_DOMAIN: 'nas.example', SYNOLOGY_URL: 'https://nas:5001', SYNOLOGY_USER: 'deploy', SYNOLOGY_PASS: 'pw', SYNOLOGY_PATH: '/docker/munni-nas/published' } });
   assert.deepEqual(ensureSecrets(prodStack()).waitingForShared, ['VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
 
-  // idempotent: a second shared run re-mints nothing and rewrites nothing
   gh.resetCalls();
   assert.deepEqual(ensureSecrets(sharedStack()).minted, []);
   assert.deepEqual(gh.secrets('nas-shared'), shared);
@@ -203,7 +197,7 @@ test('verifySecrets: names what the manifest requires and is not there, and what
   assert.deepEqual([...v.missing].sort(), required([...entriesFor(prod), ...mirroredEntries(prod)]).filter((n) => !(n in gh.secrets('nas-prod'))));
   assert.ok(v.missing.includes('GOCARDLESS_SECRET_ID') && v.missing.includes('VAULT_ADMIN_EMAIL'));
   assert.deepEqual(v.unmanaged, []);
-  // one Apple membership (2026-10-05, the prod verify went red on exactly this): the App Store Connect tile's Team ID satisfies the sign-in tile's, and the certificate's serial is a manifest entry
+  // one Apple membership: the App Store Connect tile's Team ID satisfies the sign-in tile's (the prod verify went red on it)
   assert.ok(v.missing.includes('LOGTO_APPLE_TEAM_ID') && v.missing.includes('APPLE_TEAM_ID'), 'nothing of Apple stored yet');
   gh.seed('nas-prod', { secrets: { APPLE_TEAM_ID: 'TEAM123456', APPLE_DEV_CERT_SERIAL: '1A2B3C' } });
   const oneTeam = verifySecrets(prod);

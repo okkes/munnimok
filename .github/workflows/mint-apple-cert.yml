@@ -1,23 +1,14 @@
-# One-time (rerunnable) helper: mints a persistent Apple Development
-# certificate WITHOUT a Mac — openssl makes the key + CSR, the App Store
-# Connect API signs it, and the encrypted .p12 lands as a build artifact
-# (next to its serial). Afterwards store the artifact's content as the
-# APPLE_DEV_CERT_P12 secret (`gh secret set`) EVERYWHERE the secret lives
-# — repository level and each environment that overrides it — because
-# the whole Apple team shares this ONE certificate: the iOS workflow
-# then imports instead of minting, refuses to build with a revoked one,
-# and Apple's "certificate revoked" emails stop (native-setup §5b).
-#
-# The p12 is encrypted with the APPLE_DEV_CERT_PASSWORD secret, which
-# must exist BEFORE dispatching. The private key never appears in logs.
+# Mints the persistent Apple Development certificate without a Mac. Store the artifact as APPLE_DEV_CERT_P12
+# EVERYWHERE the secret lives (repo and every overriding environment): the Apple team shares this ONE
+# certificate, and the iOS workflow imports it instead of minting (native-setup §5b).
+# APPLE_DEV_CERT_PASSWORD must exist before dispatching.
 name: Mint Apple signing certificate
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        # the job must run INSIDE the environment that carries the store
-        # credentials (<platform>-<env> of an environment with the iOS app)
+        # the job must run inside the environment that carries the store credentials
         description: 'GitHub environment carrying ASC_KEY_* + APPLE_DEV_CERT_PASSWORD, e.g. lcl-prod'
         required: true
         type: string
@@ -27,10 +18,7 @@ permissions:
 
 jobs:
   mint:
-    # macOS: its LibreSSL writes p12s Apple's security tool actually
-    # reads, and the same run PROVES the import works before the file
-    # ever becomes a secret (the ubuntu/OpenSSL-3 attempt shipped a p12
-    # that `security import` rejected)
+    # macOS: its LibreSSL writes p12s `security import` accepts (OpenSSL 3 on ubuntu shipped one it rejected)
     runs-on: macos-26
     environment: ${{ inputs.environment }}
     steps:
@@ -54,13 +42,8 @@ jobs:
             -subj "/CN=munni CI Development/O=munni" \
             -out "$RUNNER_TEMP/dev.csr"
 
-      # Apple caps Development certificates per team and the throwaways
-      # CI minted while no persistent one was in place count against it
-      # (the twelfth was refused on 2026-09-09) — clear them, but NEVER
-      # the certificate this environment still holds: a re-mint while it
-      # is valid must not break the builds signing with it (the
-      # 2026-09-08 mint cleared the deck blindly and took the hosted
-      # track's certificate with it)
+      # Apple caps Development certificates per team (the twelfth is refused) and old CI throwaways count;
+      # never clear the certificate this environment still holds: a blind clear once broke the hosted track's builds
       - name: Clear throwaway Development certificates (never the one still in use)
         run: |
           PROTECT=""
@@ -98,15 +81,13 @@ jobs:
             -name "munni CI Development" \
             -passout env:P12_PASSWORD \
             -out "$RUNNER_TEMP/dev.p12"
-          # prove the exact bytes + password open in a keychain BEFORE
-          # they become the secret — no more mint-then-discover cycles
+          # prove the exact bytes + password open in a keychain before they become the secret
           security create-keychain -p ci "$RUNNER_TEMP/verify.keychain-db"
           security import "$RUNNER_TEMP/dev.p12" -k "$RUNNER_TEMP/verify.keychain-db" -P "$P12_PASSWORD" -A -f pkcs12
           security find-identity -v "$RUNNER_TEMP/verify.keychain-db" || true
           mkdir -p out
           base64 -i "$RUNNER_TEMP/dev.p12" | tr -d '\n' > out/APPLE_DEV_CERT_P12.b64
-          # the serial rides along: the wizard asks Apple by serial whether
-          # the machine's certificate is still valid before every build
+          # the wizard asks Apple by serial whether the certificate is still valid before every build
           openssl x509 -in "$RUNNER_TEMP/dev.pem" -noout -serial | cut -d= -f2 | sed 's/^0*//' | tr -d '\n' > out/APPLE_DEV_CERT_SERIAL.txt
         env:
           P12_PASSWORD: ${{ secrets.APPLE_DEV_CERT_PASSWORD }}

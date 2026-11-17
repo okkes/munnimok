@@ -17,8 +17,6 @@ describe('clearStaleLogtoState', () => {
     expect(localStorage.getItem('logto:app:refreshToken')).toBeNull();
     expect(sessionStorage.getItem('logto:app:signInSession')).toBeNull();
     expect(localStorage.getItem('munni_session')).toBe('s');
-    // the breadcrumb names the call site — the Diagnose report prints it
-    // to separate "app wiped the keys" from "keys never written"
     expect(localStorage.getItem(LOGTO_WIPE_KEY)).toContain('unit-test');
   });
 });

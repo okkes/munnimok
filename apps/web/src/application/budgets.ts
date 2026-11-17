@@ -9,7 +9,6 @@ import type { BudgetStatus } from '@/domain/budgets';
 import { useCategories } from '@/features/categories/useCategories';
 import type { BudgetRow } from '@/db/types';
 
-/** the active space's budgets, alphabetical */
 export function useBudgets(): BudgetRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -25,7 +24,6 @@ export function useBudgets(): BudgetRow[] | undefined {
   );
 }
 
-/** live per-budget numbers for the current cycle, most urgent first */
 export function useBudgetStatuses(): BudgetStatus[] | undefined {
   const { store, spaceId } = useData();
   const budgets = useBudgets();

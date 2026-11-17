@@ -31,7 +31,6 @@ describe('the cash wallet + the bare-row migration', () => {
     expect(id).toBe(cashWalletId(SPACE));
     const minted = await store.get('account', id);
     expect(minted).toMatchObject({ type: 'cash', source: 'manual', defaultFor: 'cash', balanceCents: 0, currency: 'EUR' });
-    // second call returns the same wallet without re-minting
     expect(await ensureCashWallet(store, repo, SPACE)).toBe(id);
     // #348: the person deleted it — automatic links leave it deleted, an explicit pick revives it
     await repo.remove('account', SPACE, id);
@@ -48,7 +47,6 @@ describe('the cash wallet + the bare-row migration', () => {
     await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     // a checking account named in the text is the wrong kind for a set-aside
     await repo.upsert('account', SPACE, 'other', { name: 'Holiday current', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    // the bare set-aside: ◆ movement category, no counterparty — its text names the pot
     await repo.upsert('transaction', SPACE, 'bare1', {
       accountId: 'main', date: '2026-07-01', amountCents: -5000, currency: 'EUR',
       merchant: 'To Holiday', catId: 'savingDeposit', needsReview: 0,
@@ -75,7 +73,6 @@ describe('the cash wallet + the bare-row migration', () => {
     const migrated = await store.get('transaction', 'bare1');
     expect(migrated?.linkedAccountId).toBe('pot');
     expect(migrated?.catId).toBe('savingDeposit');
-    // the pot's leg exists and carries the money
     expect(migrated?.transferPeerId).toBeTruthy();
     const mirror = await store.get('transaction', migrated!.transferPeerId!);
     expect(mirror).toMatchObject({ accountId: 'pot', amountCents: 5000 });
@@ -89,8 +86,6 @@ describe('the cash wallet + the bare-row migration', () => {
     for (const family of ['saving', 'debtPayment', 'transfer'] as const) {
       expect(await store.get('account', defaultAccountId(SPACE, family))).toBeUndefined();
     }
-    // the fold runs every boot; idempotence comes from linked rows skipping
-    // and bare rows without a clue writing nothing
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 
@@ -98,7 +93,6 @@ describe('the cash wallet + the bare-row migration', () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
-    // the screenshot case: munni predicted Cash Withdraw, no counterparty
     await repo.upsert('transaction', SPACE, 'atm1', {
       accountId: 'main', date: '2026-07-10', amountCents: -100, currency: 'EUR',
       merchant: 'Geldmaat', catId: 'cashWithdraw', needsReview: 1,
@@ -117,24 +111,19 @@ describe('the cash wallet + the bare-row migration', () => {
     const atm = await store.get('transaction', 'atm1');
     expect(atm?.linkedAccountId).toBe(cashWalletId(SPACE));
     expect(atm?.needsReview).toBe(1); // healing is not reviewing
-    // the wallet's leg files by ITS counter's kind (the checking source)
     const atmMirror = await store.get('transaction', atm!.transferPeerId!);
     expect(atmMirror).toMatchObject({ accountId: cashWalletId(SPACE), amountCents: 100, catId: 'transferIn' });
-    // the wallet's balance moved with the leg
     expect((await store.get('account', cashWalletId(SPACE)))?.balanceCents).toBe(100);
 
-    // #228 r3 (user rule): "Moved out" names no tracked account — the
-    // transfer stands down to Uncategorized and goes back to review
+    // #228 r3: "Moved out" names no tracked account, so the transfer stands down to Uncategorized and back to review
     const tout = await store.get('transaction', 'tout1');
     expect(tout).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(tout?.linkedAccountId).toBeUndefined();
-    // no funding account named: the row keeps its story and waits for the person
     const fund = await store.get('transaction', 'fund1');
     expect(fund).toMatchObject({ catId: 'fundingOut' });
     expect(fund?.linkedAccountId).toBeUndefined();
     expect(await store.get('account', defaultAccountId(SPACE, 'funding'))).toBeUndefined();
 
-    // every-boot idempotence: nothing left to do
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 
@@ -157,9 +146,7 @@ describe('the cash wallet + the bare-row migration', () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
-    // the user's PayPal case: a camt-imported PayPal account exists in the space
     await repo.upsert('account', SPACE, 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
-    // and a manual savings pot with a distinctive name
     await repo.upsert('account', SPACE, 'vak', { name: 'Vakantiepot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('transaction', SPACE, 'pp1', {
       accountId: 'main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
@@ -174,14 +161,11 @@ describe('the cash wallet + the bare-row migration', () => {
 
     expect(await migrateBareSpecialRows(store, repo)).toBe(2);
 
-    // the PayPal feed account is bank-fed: linked, no mirror minted —
-    // the real PayPal-side row pairs later
+    // a bank-fed (camt) account gets no mirror: the real PayPal-side row pairs later
     const pp = await store.get('transaction', 'pp1');
     expect(pp?.linkedAccountId).toBe('pp');
     expect(pp?.catId).toBe('transferOut');
     expect(pp?.transferPeerId).toBeUndefined();
-    // the savings pot is manual: the link mints its leg and the category
-    // refiles by the counter's kind (transfer → set aside)
     const vak = await store.get('transaction', 'vak1');
     expect(vak?.linkedAccountId).toBe('vak');
     expect(vak?.catId).toBe('savingDeposit');
@@ -218,7 +202,6 @@ describe('the cash wallet + the bare-row migration', () => {
     const matched = await store.get('transaction', 'split1');
     expect(matched?.splits?.[0]).toMatchObject({ id: 'p1', catId: 'transferOut', linkedAccountId: 'pp' });
     expect(matched?.needsReview).toBe(0);
-    // no clue: the part stands down and the human decides again
     const clueless = await store.get('transaction', 'split2');
     expect(clueless?.splits?.[0]).toMatchObject({ id: 'q1', catId: 'uncategorized' });
     expect(clueless?.splits?.[0]?.linkedAccountId).toBeUndefined();
@@ -293,9 +276,7 @@ describe('the cash wallet + the bare-row migration', () => {
     expect(part?.transferPeerId).toBeTruthy();
     const partMirror = await store.get('transaction', part!.transferPeerId!);
     expect(partMirror).toMatchObject({ accountId: 'dev', amountCents: 2500 });
-    // the untouched part stays untouched
     expect(row?.splits?.find((s) => s.id === 'p1')?.linkedAccountId).toBeUndefined();
-    // no clue: the bare part waits for the person, nothing written
     expect((await store.get('transaction', 'split2'))?.splits?.find((s) => s.id === 'q2')?.linkedAccountId).toBeUndefined();
   });
 
@@ -354,7 +335,6 @@ describe('#574: a cash counter means the ATM pair', () => {
     const parts = (await store.get('transaction', 'split1'))?.splits ?? [];
     expect(parts.map((p) => p.catId)).toEqual(['groceries', 'cashWithdraw']);
     expect(parts[1].linkedAccountId).toBe('wallet');
-    // the money and the links stay where they were
     expect((await store.get('transaction', 'out1'))?.linkedAccountId).toBe('wallet');
     expect(await refileCashTransfers(store, repo)).toBe(0);
   });

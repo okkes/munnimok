@@ -6,7 +6,6 @@ import type { HealthInfo, LabMe } from '../../types';
 
 type MeState = LabMe | null | 'unreachable' | 'loading';
 
-/** the lab subject line: the pseudonym, or why there is none */
 function subjectLine(me: MeState): string {
   if (me === 'loading') return '…';
   if (me === null) return 'none — this environment runs no connectors';
@@ -16,7 +15,6 @@ function subjectLine(me: MeState): string {
 
 const operatorLine = (me: MeState): string => (me !== 'loading' && me !== null && me !== 'unreachable' ? (me.name ?? me.email ?? '—') : '—');
 
-/** who the lab is here: the operator, the lab subject the control plane knows them as, the environment it talks to */
 export function SettingsScreen({ call, config, testAuth }: Readonly<{ config: LabConfig; testAuth: boolean } & ScreenProps>) {
   const [me, setMe] = useState<MeState>('loading');
   const [health, setHealth] = useState<HealthInfo | null>(null);

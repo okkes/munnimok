@@ -17,18 +17,12 @@ export const periodLabel = (period: Period, lang: keyof typeof LOCALES): string 
 
 const PERIOD_KEY = { week: 'plan.rhythm.week', biweekly: 'plan.rhythm.biweekly', month: 'plan.rhythm.month' } as const;
 
-/** do the periods ahead still mirror the current plan's shape? — against what a copy would give them: a subject
- *  over by then is left behind, so its absence is no difference and applying the plan could never settle it */
+// a copy leaves behind a subject that is over by then, so its absence in a period ahead is no difference
 export const aheadDiffers = (model: PlanningModel, plan: PlanRow): boolean => {
   const subjects = model.subjectsOf(plan);
   return model.ahead.some((a) => !sameSubjects(model.subjectsOf(a.plan), subjects.filter((s) => stillRelevant(s, a.period, model.relevance))));
 };
 
-/**
- * The periods ahead (#128): money set aside for the periods to come,
- * filled in the plan's order from what is left — fund the next one, take
- * one back, and push the current plan's shape into all of them.
- */
 export function AheadSheet({
   open,
   onOpenChange,

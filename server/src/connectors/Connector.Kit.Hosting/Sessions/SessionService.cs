@@ -11,15 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Sessions;
 
-/// <summary>
-/// Sessions and the bundles that represent them.
-///
-/// Three rules are enforced here rather than at the call sites, because a
-/// call site that forgets one of them is a security bug rather than a
-/// missing feature: a web-issued bundle is capped short whatever the
-/// manifest claims, every open is bound to the subject that asked, and every
-/// open is bound to the manifest version the material was written under.
-/// </summary>
+/// enforced here, not at call sites (a forgotten one is a security bug): web bundles are capped short whatever the
+/// manifest claims; every open is bound to the asking subject and to the manifest version the material was written under
 public sealed class SessionService(
     ConnectorDbContext db,
     IProviderRegistry registry,
@@ -68,11 +61,7 @@ public sealed class SessionService(
         return row;
     }
 
-    /// <summary>
-    /// Loads a session for a subject. Returning "unknown provider or session"
-    /// for a mismatch as well as a miss is deliberate: a caller probing ids
-    /// learns nothing from the difference.
-    /// </summary>
+    /// a mismatch answers "unknown session" like a miss, so a probing caller learns nothing
     public async Task<SessionRow> RequireAsync(string providerId, string sessionId, string? subject, CancellationToken ct)
     {
         var row = await db.Sessions.FirstOrDefaultAsync(
@@ -88,32 +77,9 @@ public sealed class SessionService(
         return row;
     }
 
-    /// <summary>
-    /// Marks a freshly queued session as running, and LEAVES ONE THAT HAS
-    /// ALREADY MOVED ON ALONE.
-    /// </summary>
-    /// <remarks>
-    /// <b>A plain transition here loses a race that has been observed.</b> The
-    /// login endpoint enqueued the job and then set the session running, so a
-    /// job that started immediately - an inline provider, or a pump that got
-    /// there first - could raise its challenge and move the session to
-    /// <see cref="SessionState.AwaitingInput"/> BEFORE that write landed. And
-    /// awaiting_input to running is a legal edge, so the endpoint's write went
-    /// through and put the session back.
-    /// <para>
-    /// What that leaves is a session reporting <c>running</c> while holding an
-    /// unanswered challenge, with its own progress step reading
-    /// <c>awaiting_human</c>: a consumer polling for state never learns it has
-    /// to ask anybody anything, and the login sits there until it expires. It
-    /// was caught by an intermittent test failure under load, which is the only
-    /// way a race like this ever surfaces.
-    /// </para>
-    /// <para>
-    /// The endpoint now marks the session running BEFORE the job exists, so the
-    /// race cannot happen at all; this guard is what keeps it from coming back
-    /// the next time somebody reorders those two lines.
-    /// </para>
-    /// </remarks>
+    /// leaves a session that already moved on alone: a plain transition lost a race (a fast job raised its challenge, then
+    /// the endpoint's write moved awaiting_input back to running, a legal edge, and the login hung); the endpoint now marks
+    /// running BEFORE the job exists and this guard keeps it so
     public async Task<SessionRow> StartAsync(SessionRow session, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -123,11 +89,7 @@ public sealed class SessionService(
             : session;
     }
 
-    /// <summary>
-    /// Moves a session through <see cref="SessionStateMachine"/>. A no-op when
-    /// the session is already there, and a hard failure on an illegal edge -
-    /// an illegal transition is a bug in the caller, not an input error.
-    /// </summary>
+    /// no-op when already there; an illegal edge throws: it is a bug in the caller, not an input error
     public async Task<SessionRow> TransitionAsync(SessionRow session, SessionState next, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -141,12 +103,8 @@ public sealed class SessionService(
         return session;
     }
 
-    /// <summary>
-    /// Same as <see cref="TransitionAsync"/> but tolerates an edge the machine
-    /// forbids by landing on the nearest terminal state instead of throwing.
-    /// Used on the failure path, where refusing to record a failure because
-    /// the state machine disagrees would leave a session stuck forever.
-    /// </summary>
+    /// the failure path lands on the nearest terminal state instead of throwing:
+    /// refusing to record a failure would leave the session stuck
     public async Task<SessionRow> TransitionOrTerminateAsync(SessionRow session, SessionState next, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -162,14 +120,8 @@ public sealed class SessionService(
         return await TransitionAsync(session, next, ct);
     }
 
-    /// <summary>
-    /// Seals material into a bundle for this session's owner.
-    ///
-    /// The TTL is the minimum of what the provider promises, what the adapter
-    /// observed, and - for a web client - one hour. A bundle that escapes a
-    /// browser tab then has a small window, which is the entire reason web is
-    /// supportable at all.
-    /// </summary>
+    /// TTL is the minimum of the provider's promise, the adapter's observation and, for web, one hour:
+    /// a bundle escaping a browser tab gets a small window
     public SealedSession Seal(SessionRow session, SessionMaterial material, IReadOnlyList<ReachableAccount> accounts, DateTimeOffset? adapterExpiry)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -179,9 +131,7 @@ public sealed class SessionService(
         var now = time.GetUtcNow();
         var expiresAt = now.AddSeconds(TtlSecondsFor(manifest, session.DeviceClass));
 
-        // An adapter that observed a shorter real session wins: a manifest
-        // claiming 30 days for a 24-hour session makes the consumer promise a
-        // month of silent syncing and then fail.
+        // an adapter that observed a shorter real session wins: a longer manifest TTL promises silent syncing that then fails
         if (adapterExpiry is { } observed && observed < expiresAt) expiresAt = observed;
 
         var config = ConnectorJson.DeserializeOr(session.ConfigJson, EmptyConfig);
@@ -200,20 +150,8 @@ public sealed class SessionService(
         return new SealedSession(bundle, expiresAt);
     }
 
-    /// <summary>
-    /// Seals what the human typed, so their own device can offer it back next
-    /// time instead of asking them again.
-    ///
-    /// Null unless the provider declares a credential store and the login
-    /// actually collected something - a run that reused a stored bundle, or a
-    /// streamed login that asked for nothing, has nothing new to seal.
-    ///
-    /// Its life is <see cref="ConnectorTimeouts.CredentialBundleDays"/> and not
-    /// the session's: a session bundle expires when the provider's session
-    /// does, and a password has no such natural end. It is the credential that
-    /// does not rotate and cannot be revoked from here, so the only bound
-    /// available is one we choose.
-    /// </summary>
+    /// null unless the provider declares a credential store and the login collected something
+    /// lives CredentialBundleDays, not the session's life: a password never expires, rotates or can be revoked from here
     public string? SealCredentials(SessionRow session, IReadOnlyDictionary<string, string> inputs)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -236,14 +174,7 @@ public sealed class SessionService(
             Binding(session.ProviderId, session.Subject, session.ManifestVersion));
     }
 
-    /// <summary>
-    /// Reads back a credential bundle this connector sealed, for one subject.
-    ///
-    /// The subject is the authorisation. It is part of the AAD, so a blob
-    /// cannot be redeemed by naming somebody else's session id - which matters
-    /// here more than anywhere, because what comes out is a password rather
-    /// than a scoped token.
-    /// </summary>
+    /// the subject is in the AAD, so a blob cannot be redeemed by naming another session id; what comes out is a password
     public IReadOnlyDictionary<string, string> OpenCredentials(string providerId, string subject, string bundle)
     {
         var manifest = registry.RequireManifest(providerId);
@@ -257,15 +188,8 @@ public sealed class SessionService(
         return payload.Inputs;
     }
 
-    /// <summary>
-    /// Opens a bundle for a subject and returns the session it names.
-    ///
-    /// Every rejection - wrong subject, wrong provider, stale manifest
-    /// version, expired, unknown session, disabled session - surfaces as the
-    /// same <see cref="ErrorCode.SessionExpired"/>, so a probing caller
-    /// learns nothing from the distinction and a real user gets one honest
-    /// instruction: sign in again.
-    /// </summary>
+    /// every rejection surfaces as the same SessionExpired: a probing caller learns nothing,
+    /// a real user is told to sign in again
     public async Task<OpenedSession> OpenAsync(string providerId, string subject, string bundle, CancellationToken ct)
     {
         var manifest = registry.RequireManifest(providerId);
@@ -303,12 +227,8 @@ public sealed class SessionService(
         return new OpenedSession(session, payload);
     }
 
-    /// <summary>
-    /// Disconnect. Tickets die first so that no request can slip through
-    /// behind the purge, then the staged rows go, then the session is
-    /// terminal. Upstream logout is attempted by the caller and its failure
-    /// is never fatal: a user disconnecting must always succeed locally.
-    /// </summary>
+    /// tickets die first so no request slips in behind the purge;
+    /// upstream logout is the caller's and its failure never blocks a local disconnect
     public async Task PurgeAsync(SessionRow session, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -320,24 +240,14 @@ public sealed class SessionService(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.InputsJson, (string?)null)
                 .SetProperty(j => j.MaterialJson, (string?)null), ct);
-        // The question a failed run left for this person goes with the
-        // connection; what they already chose to share stays (#441 L1).
+        // a failed run's pending question goes with the connection; what they already chose to share stays (#441 L1)
         await db.JobArtifacts
             .Where(a => a.SessionId == session.Id && a.Status == ArtifactStatus.Pending)
             .ExecuteDeleteAsync(ct);
-        // The profile row is deliberately left alone. It is not a claim on a
-        // session - it names a browser directory on a machine somebody owns,
-        // and the trust a bank put in that browser outlives this connection.
-        // Disconnect already ends the provider session properly: a declared
-        // logout arrives at the agent as its own job and really does sign out
-        // upstream. Deleting the row on top of that would cost the account
-        // holder the browser registration and buy nothing, because nothing
-        // here can reach into their machine and empty the directory anyway.
+        // the profile row stays: it names a browser directory on the holder's machine and the bank's trust in it outlives
+        // the connection; a declared logout already signs out upstream, and nothing here can empty that directory
 
-        // Anything still waiting to be handed over. Disconnect means forget,
-        // and a bundle nobody collected is exactly what "forget" has to cover -
-        // otherwise the one action a user takes to be rid of a connection is
-        // the one that leaves their sealed credentials behind.
+        // disconnect means forget: an uncollected bundle would leave their sealed credentials behind
         session.PendingBundle = null;
         session.PendingCredentialBundle = null;
 
@@ -377,19 +287,12 @@ public sealed record NewSession
 
     public string? ConsentTermsVersion { get; init; }
 
-    /// <summary>
-    /// Required for a <c>device_persistent</c> provider: the BYO agent that
-    /// holds the profile. An agent id and never the reserved
-    /// <see cref="Connector.Kit.RunOn.Fleet"/> - the login turns that into
-    /// <see cref="FleetOnly"/> before it gets here, because this one is
-    /// written to a column named <c>AgentId</c> and a word that is not an
-    /// agent id has no business in it.
-    /// </summary>
+    /// required for a device_persistent provider: the BYO agent holding the profile; never RunOn.Fleet, which the login
+    /// turns into FleetOnly, as this is written to a column named AgentId
     public string? PreferAgent { get; init; }
 
     public string? ProfileId { get; init; }
 
-    /// <summary>The caller asked for the operator's fleet by name. See <see cref="SessionRow.FleetOnly"/>.</summary>
     public bool FleetOnly { get; init; }
 }
 

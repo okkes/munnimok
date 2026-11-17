@@ -1,6 +1,3 @@
-// Credential validators: each mirrors the server's real auth flow, so
-// these specs pin the request shapes (endpoints, JWT headers/claims) and
-// the verdict mapping — with fetch faked and real freshly-minted keys.
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -147,7 +144,6 @@ test('ascstore: ES256 App Store Connect jwt against /v1/apps; the team\'s iOS de
   assert.match(badTeam.detail, /10 letters/);
   const badKey = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: 'AAAA' }, { fetchImpl });
   assert.match(badKey.detail, /does not parse/);
-  // a raw BEGIN/END paste (no base64) is accepted too
   const rawPaste = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: ecPem() }, { fetchImpl });
   assert.equal(rawPaste.ok, true);
 });
@@ -301,7 +297,7 @@ test('google + apple: every callback the page names is judged too — a refused 
   assert.equal(a.warn, true);
   assert.match(a.detail, /munni-dev-logto\S* \(invalid_client: Invalid client\.\)/, 'Apple’s own message rides along');
   assert.match(a.detail, /Services ID/);
-  // the live 2026-09-09 mix-up: the App ID pasted as client id — named before Apple is even asked
+  // the App ID pasted as client id (seen live 2026-09-09) is named before Apple is even asked
   const mixup = await validate('apple', { ...appleValues, LOGTO_APPLE_CLIENT_ID: 'app.munni.local.prod' }, { fetchImpl: apple, iosAppIds: ['app.munni', 'app.munni.local.prod'] });
   assert.equal(mixup.ok, false);
   assert.match(mixup.detail, /app\.munni\.local\.prod is the App ID .* needs the SERVICES ID identifier/);

@@ -7,27 +7,13 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// A browser that is only launched if an adapter actually asks for one.
-///
-/// The laziness is not an optimisation. A T1 adapter runs on an agent that has
-/// browser binaries installed, and starting Chromium for a run that makes six
-/// HTTP calls would burn seconds and hundreds of megabytes per job for
-/// nothing. <see cref="Started"/> is also what the job runner keys artifact
-/// capture off, so a pure-HTTP failure never tries to photograph a page that
-/// does not exist.
-/// </summary>
+// lazy on purpose: a pure-HTTP T1 run must not start Chromium (seconds, hundreds of MB)
+// Started gates failure-artifact capture
 public sealed class BrowserLease : IChallengeSurface
 {
-    /// <summary>A valid, empty Playwright storage state.</summary>
     private const string EmptyStorageState = "{\"cookies\":[],\"origins\":[]}";
 
-    /// <summary>
-    /// How long measuring an element may take. Short on purpose: the element
-    /// is one the caller has already found, so this is a re-measure and not a
-    /// search, and a challenge that is not on screen now will not be in ten
-    /// seconds either.
-    /// </summary>
+    // short on purpose: a re-measure of an element already found; an absent challenge will not appear in ten seconds
     private const float MeasureTimeoutMs = 5_000;
 
     private readonly BrowserLeaseOptions _options;
@@ -57,7 +43,6 @@ public sealed class BrowserLease : IChallengeSurface
 
     public bool Started => Volatile.Read(ref _page) is not null;
 
-    /// <summary>True when this lease is driving a persistent profile (T4).</summary>
     public bool IsPersistent => _options.ProfileDirectory is not null;
 
     public async Task<IPage> PageAsync(CancellationToken ct)
@@ -80,8 +65,6 @@ public sealed class BrowserLease : IChallengeSurface
 
             if (!_options.HasAuthenticator) await RefuseWebAuthnAsync(_context).ConfigureAwait(false);
 
-            // A persistent context opens with a page already; an ephemeral one
-            // does not.
             var page = _context.Pages.Count > 0
                 ? _context.Pages[0]
                 : await _context.NewPageAsync().ConfigureAwait(false);
@@ -107,24 +90,9 @@ public sealed class BrowserLease : IChallengeSurface
         }
     }
 
-    /// <summary>
-    /// The cookies and local storage to seal into the bundle - the cheap 80%
-    /// win of session reuse.
-    ///
-    /// Returns an empty state when the provider's custody is the AGENT'S,
-    /// deliberately. For a T4 provider the bundle is only
-    /// <c>{agent_id, profile_id}</c> and carries no secret at all; exporting
-    /// the profile's cookies here would put the credential this design keeps in
-    /// the user's house on the wire.
-    /// <para>
-    /// KEYED ON CUSTODY RATHER THAN ON PERSISTENCE, and those were the same
-    /// thing right up until a BYO agent started running ordinary providers in a
-    /// persistent browser. Inferring it from the profile would seal an empty
-    /// bundle for every client-custody provider: fine while the machine is on,
-    /// and then the fleet picks up a session with no cookies in it and asks for
-    /// a sign-in nobody can explain.
-    /// </para>
-    /// </summary>
+    // empty for agent custody on purpose: the bundle is only {agent_id, profile_id}; cookies must not go on the wire
+    // keyed on custody, not persistence: a BYO agent runs ordinary providers in a persistent browser,
+    // and an empty bundle would make the fleet ask for a sign-in
     public async Task<string> StorageStateAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -142,10 +110,6 @@ public sealed class BrowserLease : IChallengeSurface
         return await _context.StorageStateAsync().ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// A redacted screenshot, or an empty array when the page cannot be
-    /// verified safe. See <see cref="ScreenshotRedactor"/>.
-    /// </summary>
     public async Task<byte[]> ScreenshotAsync(CropRegion? crop, CancellationToken ct)
     {
         var page = Volatile.Read(ref _page);
@@ -154,17 +118,8 @@ public sealed class BrowserLease : IChallengeSurface
         return await _redactor.CaptureAsync(page, crop, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Photographs exactly this box and hands back the box with the picture.
-    ///
-    /// The same redactor governs, unchanged: it refuses to photograph a page
-    /// that still holds a secret, and a captcha is not an exception to that. It
-    /// is why the Albert Heijn password is cleared out of the DOM before any
-    /// capture - the fix for a refusal is to stop holding the secret, never to
-    /// soften the refusal. A refusal arrives here as no bytes and becomes
-    /// <see cref="RegionCapture.Refused"/>: no image, and therefore nothing a
-    /// tap could later be measured against.
-    /// </summary>
+    // the redactor governs unchanged: a captcha is no exception; fix a refusal by not holding the secret, never by softening
+    // a refusal is RegionCapture.Refused: no image, so nothing a tap could be measured against
     public async Task<RegionCapture> CaptureRegionAsync(CropRegion region, CancellationToken ct)
     {
         var page = Volatile.Read(ref _page);
@@ -173,10 +128,6 @@ public sealed class BrowserLease : IChallengeSurface
         return await ClipAsync(page, region, "the requested box", ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Photographs exactly this element - found, scrolled into view, measured,
-    /// and clipped to what it occupies.
-    /// </summary>
     public async Task<RegionCapture> CaptureElementAsync(string selector, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(selector);
@@ -206,15 +157,7 @@ public sealed class BrowserLease : IChallengeSurface
         return await ClipAsync(page, box, $"'{selector}'", ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Photographs exactly this frame, through the <c>&lt;iframe&gt;</c>
-    /// element that hosts it.
-    ///
-    /// The case the whole feature exists for. A cross-origin captcha frame can
-    /// be found by its URL among <c>page.Frames</c> when no selector of ours
-    /// names the element around it, and its contents cannot be reached at all -
-    /// so the frame is photographed from the outside, as a box on the page.
-    /// </summary>
+    // photographed from outside, via its iframe element: a cross-origin captcha frame is found by URL, its contents unreachable
     public async Task<RegionCapture> CaptureFrameAsync(IFrame frame, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(frame);
@@ -234,9 +177,7 @@ public sealed class BrowserLease : IChallengeSurface
         }
         catch (Exception ex) when (IsMeasureMiss(ex))
         {
-            // A frame that detached while we were measuring it is the normal
-            // way a captcha ends - including the way it ends when the human
-            // has already passed it.
+            // a frame detaching mid-measure is the normal end of a captcha, including after the human passed it
             _logger.LogWarning(ex, "no capture: the frame {Url} could not be measured", Describe(frame));
             return RegionCapture.Refused;
         }
@@ -244,14 +185,6 @@ public sealed class BrowserLease : IChallengeSurface
         return await ClipAsync(page, box, $"the frame {Describe(frame)}", ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Clicks where the human tapped, in their order, and reports how many
-    /// clicks were dispatched.
-    ///
-    /// Zero means nothing was clicked, which is what every refusal returns -
-    /// including a lease with no browser at all. See
-    /// <see cref="TapReplay.ReplayAsync"/> for the rest of the rules.
-    /// </summary>
     public async Task<int> ReplayTapsAsync(IReadOnlyList<Tap> taps, RegionCapture capture, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(taps);
@@ -259,9 +192,7 @@ public sealed class BrowserLease : IChallengeSurface
         var page = Volatile.Read(ref _page);
         if (page is null) return 0;
 
-        // Null when the context runs at the window's own size - a headed agent,
-        // typically. There is then no viewport to check the box against, and
-        // inventing one would refuse taps that are perfectly reachable.
+        // null at the window's own size (a headed agent): no viewport to check, and inventing one would refuse reachable taps
         var viewport = page.ViewportSize is { } size ? (size.Width, size.Height) : ((int, int)?)null;
 
         return await TapReplay.ReplayAsync(
@@ -274,7 +205,6 @@ public sealed class BrowserLease : IChallengeSurface
             ct).ConfigureAwait(false);
     }
 
-    /// <summary>The page's shape as a hash, for a failure artifact.</summary>
     public async Task<string?> DomDigestAsync(CancellationToken ct)
     {
         var page = Volatile.Read(ref _page);
@@ -283,13 +213,7 @@ public sealed class BrowserLease : IChallengeSurface
         return await _redactor.DomDigestAsync(page, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The one place a region capture happens, so the box that is clipped is
-    /// necessarily the box that comes back - which is the entire basis of the
-    /// coordinate mapping, and not a property worth re-deriving per overload.
-    /// Anything the redactor declines becomes <see cref="RegionCapture.Refused"/>
-    /// rather than an empty picture.
-    /// </summary>
+    // the one capture path: the clipped box is necessarily the box returned, which the tap mapping rests on
     private async Task<RegionCapture> ClipAsync(IPage page, CropRegion? box, string what, CancellationToken ct)
     {
         if (box is not { } region)
@@ -304,14 +228,8 @@ public sealed class BrowserLease : IChallengeSurface
         return RegionCapture.Of(png, region);
     }
 
-    /// <summary>
-    /// "That element is not there", whatever Playwright chose to call it.
-    ///
-    /// Playwright for .NET raises <see cref="TimeoutException"/> - NOT a
-    /// <see cref="PlaywrightException"/> - when a wait expires, so catching
-    /// only the latter lets a challenge that simply moved take the whole login
-    /// down instead of returning no image.
-    /// </summary>
+    // Playwright for .NET raises TimeoutException, not PlaywrightException, when a wait expires:
+    // a moved challenge must not fail the login
     private static bool IsMeasureMiss(Exception ex) => ex is PlaywrightException or TimeoutException;
 
     private static string Describe(IFrame frame) => string.IsNullOrEmpty(frame.Url) ? "<about:blank>" : frame.Url;
@@ -322,8 +240,7 @@ public sealed class BrowserLease : IChallengeSurface
 
         if (_options.StorageState is not null)
         {
-            // The profile IS the state. Layering a bundle's storage state on
-            // top would resurrect a session the profile has since replaced.
+            // the profile is the state: layering a bundle's storage state would resurrect a session the profile has replaced
             _logger.LogDebug("ignoring the bundle's storage state: this lease drives a persistent profile");
         }
 
@@ -336,8 +253,7 @@ public sealed class BrowserLease : IChallengeSurface
             Locale = _options.Locale,
             TimezoneId = _options.TimezoneId,
 
-            // The machine's own browser, when it has been named one. Null here
-            // is Playwright's bundled Chromium, which is what a container has.
+            // the machine's own browser when named; null is Playwright's bundled Chromium, which a container has
             Channel = _options.Channel,
         };
 
@@ -360,22 +276,8 @@ public sealed class BrowserLease : IChallengeSurface
         return context;
     }
 
-    /// <summary>
-    /// Puts back the session cookies the last browser on this profile closed
-    /// holding, before anything navigates.
-    /// </summary>
-    /// <remarks>
-    /// HERE RATHER THAN IN <see cref="PageAsync"/>, because a persistent
-    /// context opens holding a blank page and the adapter's first
-    /// <c>GotoAsync</c> is the request that decides whether this job is signed
-    /// in. A cookie added after it is a cookie the only request that mattered
-    /// went without.
-    /// <para>
-    /// See <see cref="KeptSessionStore"/> for why a persistent profile does not
-    /// carry its own session, why only an agent on somebody's own machine does
-    /// this, and why putting a cookie back is an offer rather than a claim.
-    /// </para>
-    /// </remarks>
+    // restored here, not in PageAsync: a persistent context opens on a blank page,
+    // and the adapter's first GotoAsync decides whether the job is signed in
     private async Task OfferTheKeptSessionAsync(IBrowserContext context, string profileDirectory)
     {
         if (!_options.KeepsSessionAcrossBrowsers) return;
@@ -393,34 +295,13 @@ public sealed class BrowserLease : IChallengeSurface
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // A restore that does not take is a sign-in, never a failed job.
-            // Chromium refuses a whole batch over one cookie it dislikes - a
-            // SameSite=None that is not Secure, a domain it will not accept -
-            // and the adapter is about to ask the provider whether this browser
-            // is signed in regardless. That question is the one that decides.
-            //
-            // THE PREDICATE RATHER THAN THE TYPE, because Playwright for .NET
-            // raises a TimeoutException and not a PlaywrightException when a
-            // call of its own expires - so catching the Playwright type alone
-            // would let exactly the likeliest failure through, and a job whose
-            // browser could not be handed its old cookies would die as
-            // `internal` instead of starting signed out. SelectorMissRuleTests
-            // sweeps the whole repository for that mistake; this is the shape
-            // it asks for.
+            // a restore that does not take is a sign-in, never a failed job (Chromium refuses a whole batch over one bad cookie)
+            // the predicate, not the type: Playwright for .NET raises TimeoutException on its own expiry (SelectorMissRuleTests)
             _logger.LogWarning(ex, "the kept session could not be put back; this job starts signed out");
         }
     }
 
-    /// <summary>
-    /// Hands this profile's session cookies to the store before the browser
-    /// that holds them closes.
-    /// </summary>
-    /// <remarks>
-    /// BEFORE <see cref="IBrowserContext.CloseAsync"/> and not after, for the
-    /// obvious reason: a closed context has no cookies left to ask it for. It
-    /// is also the last moment they exist anywhere - Chromium's own profile
-    /// database keeps them but will not load them again.
-    /// </remarks>
+    // before CloseAsync: a closed context has no cookies left, and Chromium's profile database will not load them again
     private async Task KeepTheSessionAsync()
     {
         if (!_options.KeepsSessionAcrossBrowsers) return;
@@ -431,29 +312,8 @@ public sealed class BrowserLease : IChallengeSurface
         new KeptSessionStore(profile, _logger, _options.DropsKeptSessionFor).Keep(cookies, _time.GetUtcNow());
     }
 
-    /// <summary>
-    /// Tells a page that this browser has no authenticator, because it does
-    /// not.
-    ///
-    /// A pooled agent is a container. It has no security key, no fingerprint
-    /// reader, no phone and nobody sitting at it. Leaving the WebAuthn API in
-    /// place does not make a passkey possible there; it makes the page WAIT for
-    /// one - and Amazon's sign-in asks with <c>mediation: "required"</c> and a
-    /// fifteen-minute timeout, which in a headed container is a browser dialog
-    /// nothing can ever answer. Every live Amazon login died exactly there: the
-    /// password accepted, the page frozen, the same DOM digest three runs
-    /// running, and a four-minute budget spent on a browser waiting for
-    /// hardware that does not exist.
-    ///
-    /// This is the opposite of the fingerprint games the rest of this class
-    /// refuses. It does not pretend to be a browser it is not - it stops
-    /// pretending to be one it is not. A site that offers a password because
-    /// the client cannot do passkeys has been told the truth, and the user
-    /// asked for the password path when they typed one in.
-    ///
-    /// Not applied to a BYO agent: that browser runs on somebody's own machine,
-    /// where the authenticator is real and using it is their business.
-    /// </summary>
+    // no authenticator in a pooled agent (a container): leaving WebAuthn makes the page wait for a passkey
+    // Amazon's sign-in (mediation required, 15 min) hung every live login; not for a BYO agent, whose authenticator is real
     private static Task<IAsyncDisposable> RefuseWebAuthnAsync(IBrowserContext context) =>
         context.AddInitScriptAsync(@"
 () => {
@@ -495,15 +355,8 @@ public sealed class BrowserLease : IChallengeSurface
         return await _browser.NewContextAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// An honest device descriptor, or null for plain desktop Chromium.
-    ///
-    /// These are real strings from real browsers on real hardware, chosen when
-    /// a provider serves a different site to a phone - not a disguise. Nothing
-    /// else about the fingerprint is touched: no <c>navigator.webdriver</c>
-    /// patching, no canvas noise, no stealth plugin. Crossing that line costs
-    /// the whole quarantine argument in front of anyone who asks.
-    /// </summary>
+    // real device strings for providers that serve phones another site; nothing else is touched
+    // (no webdriver patch, canvas noise or stealth plugin)
     private BrowserNewContextOptions? Device(IPlaywright playwright)
     {
         if (_options.DeviceName is not { } name) return null;
@@ -518,11 +371,7 @@ public sealed class BrowserLease : IChallengeSurface
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
-        // Teardown never throws over a job's real outcome: a browser that
-        // failed to close cleanly must not turn a successful fetch into a
-        // failure, nor mask the exception that is already on its way up. The
-        // same applies to the session: a profile that could not keep one is a
-        // sign-in next run, not a failed job now.
+        // teardown never throws over a job's outcome: a failed close, or a session that could not be kept, is a sign-in next run
         await Quietly(KeepTheSessionAsync, "keeping this profile's session").ConfigureAwait(false);
 
         await Quietly(async () =>
@@ -561,134 +410,48 @@ public sealed class BrowserLease : IChallengeSurface
     }
 }
 
-/// <summary>
-/// Everything the job runner knows about how this job's browser should be
-/// shaped. Built per job, never shared.
-/// </summary>
 public sealed record BrowserLeaseOptions
 {
     public bool Headless { get; init; } = true;
 
-    /// <summary>
-    /// Whether this browser can actually reach an authenticator.
-    ///
-    /// False for a pooled agent, which is the honest answer: a container has no
-    /// security key, no fingerprint reader and no phone. True only where the
-    /// browser runs on somebody's own machine - see
-    /// <see cref="BrowserLease.RefuseWebAuthnAsync"/> for what leaving it false
-    /// prevents, and why it is the opposite of a disguise.
-    /// </summary>
+    // true only for a browser on somebody's own machine; false makes RefuseWebAuthnAsync hide the WebAuthn API
     public bool HasAuthenticator { get; init; }
 
-    /// <summary>
-    /// Which agents may claim one. Only a BYO agent: its browser runs on
-    /// somebody's own machine, where the authenticator is real and using it is
-    /// their business. Every other class is a machine in a datacenter.
-    /// </summary>
+    // only a BYO agent: its browser runs on somebody's own machine; every other class is a datacenter machine
     public static bool CanReachAuthenticator(AgentClass agent) => agent == AgentClass.Byo;
 
     /// <summary>A storage state from the session material. Null on a first login.</summary>
     public string? StorageState { get; init; }
 
-    /// <summary>The profile directory this job must drive, when it has one.</summary>
     public string? ProfileDirectory { get; init; }
 
-    /// <summary>
-    /// A browser the machine already has, by Playwright's channel name -
-    /// <c>chrome</c>, <c>msedge</c>. Null for the Chromium Playwright ships.
-    /// </summary>
-    /// <remarks>
-    /// FOR AN AGENT ON SOMEBODY'S OWN MACHINE, which is a different kind of
-    /// place from a container. A pooled agent gets the bundled Chromium
-    /// because that is all there is and because every pooled run should look
-    /// alike. A BYO agent is a person's computer: the browser they have is the
-    /// browser their bank has seen before, and driving a different one - a
-    /// build no consumer ships, with no history - is the version of that
-    /// machine most likely to be asked for a second factor.
-    /// <para>
-    /// It also removes a download. The bundled Chromium is about 150 MB that a
-    /// user installing an agent has no use for when Chrome is already there.
-    /// </para>
-    /// </remarks>
+    // BYO agent only: the person's own Chrome/Edge is the browser their bank has seen; a bundled build is likelier asked
+    // for a second factor; also skips a ~150 MB download
     public string? Channel { get; init; }
 
-    /// <summary>
-    /// Whether this browser's cookies must never leave the machine.
-    /// </summary>
-    /// <remarks>
-    /// TRUE FOR AGENT CUSTODY AND NOTHING ELSE, and the distinction was worth
-    /// the field. This used to be inferred from "is the profile persistent",
-    /// which was the same thing while only T4 providers had profiles - and
-    /// stopped being the same thing the moment a BYO agent started running
-    /// ordinary providers in a persistent browser.
-    /// <para>
-    /// Inferring it there would have sealed an EMPTY bundle for every provider
-    /// whose custody is the client's: the connection would look fine until the
-    /// machine went offline, and the fleet would then pick up a session with no
-    /// cookies in it and ask the user to sign in again for no reason anybody
-    /// could see.
-    /// </para>
-    /// </remarks>
+    // agent custody only, not "profile is persistent": a BYO agent runs ordinary providers in a persistent browser,
+    // and inferring it would seal an empty bundle, so the fleet asks for a sign-in for no visible reason
     public bool KeepsCookiesHere { get; init; }
 
-    /// <summary>
-    /// Whether the session cookies this browser makes outlive it.
-    /// </summary>
-    /// <remarks>
-    /// TRUE ONLY ON SOMEBODY'S OWN MACHINE, and the job runner sets it from the
-    /// same question it answers everything else about a BYO agent with. A
-    /// pooled agent must never do this: its profiles are wiped between jobs by
-    /// design, and a datacenter container that resurrected a bank session after
-    /// the browser closed would be the opposite of what the pooled tier
-    /// promises.
-    /// <para>
-    /// A different question from <see cref="KeepsCookiesHere"/>, although both
-    /// are about cookies and a refusal. That one is CUSTODY - whether these
-    /// cookies may be sealed into a bundle and sent to the connector. This one
-    /// is about a file on the disk they were made on, which crosses nothing.
-    /// See <see cref="KeptSessionStore"/>.
-    /// </para>
-    /// </remarks>
+    // own machine only: a pooled agent's profiles are wiped between jobs and must not resurrect a bank session
+    // a file on the disk it was made on, unlike KeepsCookiesHere (custody: what may be sealed and sent)
     public bool KeepsSessionAcrossBrowsers { get; init; }
 
-    /// <summary>
-    /// How long a kept session is worth offering back. See
-    /// <see cref="ConnectorAgentOptions.KeptSessionLifetime"/> for the
-    /// judgment; zero or less turns the carry off entirely.
-    /// </summary>
+    // zero or less turns the carry off; see ConnectorAgentOptions.KeptSessionLifetime
     public TimeSpan KeptSessionLifetime { get; init; }
 
-    /// <summary>
-    /// Hosts this provider says are not worth keeping a session for, straight
-    /// off <see cref="Manifests.AuthSpec.DropsKeptSessionFor"/>.
-    /// </summary>
-    /// <remarks>
-    /// EMPTY IS EVERY PROVIDER THAT SAYS NOTHING, and keeps the whole session.
-    /// The lease does not interpret these - it carries them to
-    /// <see cref="KeptSessionStore"/>, which is where the matching rule and the
-    /// measurement behind it live. Nothing in this assembly could interpret
-    /// them: <c>login.digid.nl</c> is an identity provider to a manifest and a
-    /// hostname to a browser.
-    /// </remarks>
+    // from the manifest; empty keeps the whole session. The lease only carries them: the matching rule is in KeptSessionStore
     public IReadOnlyList<string> DropsKeptSessionFor { get; init; } = [];
 
-    /// <summary>An honest Playwright device descriptor name, e.g. <c>Pixel 5</c>.</summary>
     public string? DeviceName { get; init; }
 
-    /// <summary>
-    /// The per-job work directory. Downloads land here so a statement a
-    /// provider hands us is deleted with the job rather than left on disk.
-    /// </summary>
+    // downloads land in the per-job directory so a provider's statement is deleted with the job
     public string? DownloadsPath { get; init; }
 
     public string? Locale { get; init; }
 
     public string? TimezoneId { get; init; }
 
-    /// <summary>
-    /// The gap between two replayed taps. See <see cref="TapReplay.DefaultGap"/>
-    /// for why there is one at all.
-    /// </summary>
     public TimeSpan TapGap { get; init; } = TapReplay.DefaultGap;
 
     public float NavigationTimeoutMs { get; init; } = 45_000;
@@ -697,11 +460,7 @@ public sealed record BrowserLeaseOptions
 
     public IReadOnlyList<string> Args { get; init; } = [];
 
-    /// <summary>
-    /// Called once, with the page the lease created, before anything has
-    /// navigated it (#441 L3): the recorder's door. A hook that throws is
-    /// logged and the page is handed out anyway - a recording is never the
-    /// reason a login fails.
-    /// </summary>
+    // called once with the new page before it navigates (#441 L3): the recorder's door.
+    // a throwing hook is logged and the page is handed out anyway
     public Func<IPage, Task>? OnPage { get; init; }
 }

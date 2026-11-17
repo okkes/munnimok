@@ -17,9 +17,7 @@ import { Sheet } from '@/ui/Sheet';
 
 type Format = 'csv' | 'json';
 
-/** Blob download without leaving the page — nothing is uploaded anywhere.
- * Native shell (§5): the OS share sheet instead, so the export can go
- * straight to Files/mail; the download stays the web/PWA path. */
+/** the native shell shares via the OS sheet (Files/mail); the download is the web/PWA path */
 async function deliver(name: string, content: string, mime: string): Promise<'saved' | 'dismissed' | 'failed'> {
   const native = await shareNativeFile(name, content);
   if (native === 'shared') return 'saved';
@@ -33,7 +31,6 @@ async function deliver(name: string, content: string, mime: string): Promise<'sa
   return 'saved';
 }
 
-/** Global settings → Export data (csv-export design): fully client-side. */
 export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -44,7 +41,6 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   const [format, setFormat] = useState<Format>('csv');
   const [empty, setEmpty] = useState(false);
   const [failed, setFailed] = useState(false);
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const dateBad = range === 'custom' && (!from || !to);
   const close = (next: boolean) => {
@@ -131,8 +127,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   return (
     <Sheet open={open} onOpenChange={close} title={t('settings.exportData')} size="tall">
       <div className="flex flex-col gap-3 pt-1" data-testid="export-sheet">
-        {/* #283: the nothing-is-uploaded note folds behind a hint on the
-            first caption row — the paragraph shouted over the form */}
+        {/* #283: the nothing-is-uploaded note folds behind a hint: the paragraph shouted over the form */}
         <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
           {t('export.scope')}
           <InfoHint text={t('export.note')} testId="export-hint" />
@@ -181,7 +176,6 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
                 className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !to)}`}
               />
             </div>
-            {/* #195 r2 (user): the blocker sits AT the field */}
             <FormBlockerNote show={attempted && dateBad} text={t('form.needDate')} testId="export-run-blocker" />
           </>
         )}

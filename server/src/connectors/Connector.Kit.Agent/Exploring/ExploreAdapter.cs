@@ -10,19 +10,8 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Exploring;
 
-/// <summary>
-/// The explore run on the agent (#441 L3): open the browser at the address
-/// the operator gave, hand them the live view with navigation allowed, and
-/// wait until they say they are done. The recording happens around this
-/// adapter, not in it - a job that carries the record flag is recorded
-/// from the first byte by the job context - so all this does is drive.
-///
-/// The live view is raised in windows of <see cref="ExploreProvider.WindowMinutes"/>:
-/// an answer of <c>more</c> opens the next one, anything else ends the run.
-/// A window nobody answered ends it too, as a success rather than a
-/// timeout: the operator walked away, and what they recorded until then is
-/// the deliverable.
-/// </summary>
+// explore run (#441 L3): the recording happens around this adapter (job context, record flag); this only drives
+// the live view is raised in windows of WindowMinutes: "more" opens the next; an unanswered window ends the run as a success
 public sealed class ExploreAdapter(TimeProvider? time = null) : IProviderAdapter
 {
     public const string More = "more";
@@ -51,8 +40,7 @@ public sealed class ExploreAdapter(TimeProvider? time = null) : IProviderAdapter
         }
         catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
         {
-            // Not fatal: the operator has a URL bar and can try another
-            // address, and what did not load is itself worth seeing.
+            // not fatal: the operator has a URL bar, and what did not load is worth seeing
             ctx.Note($"the start address did not load: {ex.Message}");
         }
 
@@ -70,8 +58,7 @@ public sealed class ExploreAdapter(TimeProvider? time = null) : IProviderAdapter
             }
             catch (ConnectorException ex) when (ex.Code is ErrorCode.MfaTimeout or ErrorCode.ChallengeExpired)
             {
-                // Nobody said done and the window lapsed - or could not even
-                // open. The operator walked away; what they recorded stands.
+                // nobody said done, or the window could not even open: the operator walked away and what they recorded stands
                 ctx.Note("the window closed with nobody at the view; the run ends here");
                 break;
             }

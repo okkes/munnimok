@@ -1,17 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!--
-    The agent's execution rules, offline.
-
-    Nothing here opens a socket, starts a browser or touches a provider: the
-    control plane is a stubbed HttpMessageHandler and the adapters are written
-    in the test. The one thing these tests do use is the wall clock, in
-    hundreds of milliseconds - the behaviour under test IS a clock, and a
-    budget that suspends can only be proved by letting time pass.
-  -->
+  <!-- offline; uses the wall clock (hundreds of ms) because a suspending budget can only be proved by letting time pass -->
   <PropertyGroup>
     <RootNamespace>Connector.Kit.Agent.Tests</RootNamespace>
-    <!-- Must match the InternalsVisibleTo in Connector.Kit.Agent.csproj. -->
+    <!-- must match InternalsVisibleTo in Connector.Kit.Agent.csproj -->
     <AssemblyName>Connector.Kit.Agent.Tests</AssemblyName>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -28,15 +20,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\connectors\Connector.Kit.Agent\Connector.Kit.Agent.csproj" />
 
-    <!--
-      All three adapter fleets, for the deployment tests and for nothing else.
-      A rule like "every provider the local stack ships has an agent that can
-      serve it" is only worth anything against the manifests actually shipped:
-      asserted against adapters written in the test, it would be a rule that
-      agrees with itself while duo, bkr and ah quietly ask for something no
-      agent in the file claims. Same reason Connector.Kit.Tests references two
-      of them for ManifestValidator.
-    -->
+    <!-- all three fleets, for the deployment tests only: "every shipped provider has an agent that can serve it" must be
+         asserted against the manifests actually shipped, not adapters written in the test -->
     <ProjectReference Include="..\..\..\src\connectors\BankConnector.Adapters\BankConnector.Adapters.csproj" />
     <ProjectReference Include="..\..\..\src\connectors\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />
     <ProjectReference Include="..\..\..\src\connectors\RegistryConnector.Adapters\RegistryConnector.Adapters.csproj" />

@@ -4,14 +4,11 @@
 
 namespace Munni.Api.Migrations
 {
-    /// <inheritdoc />
     public partial class SpaceNotifications : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // #549: the device switch was the only choice so far — a person with a registered device had every
-            // space's notifications, which stays so …
+            // #549: a person with a registered device had every space's notifications: that stays (default on)
             migrationBuilder.AddColumn<bool>(
                 name: "Notify",
                 table: "SpaceMembers",
@@ -19,15 +16,14 @@ namespace Munni.Api.Migrations
                 nullable: false,
                 defaultValue: true);
 
-            // … and a person without one had them off everywhere: that choice carries over to each of their
-            // spaces, so switching one space on later turns on that space alone
+            // a person without one had them off everywhere: that carries over to each space,
+            // so switching one on later turns on that space alone
             migrationBuilder.Sql("""
                 UPDATE "SpaceMembers" SET "Notify" = FALSE
                 WHERE NOT EXISTS (SELECT 1 FROM "PushSubscriptions" p WHERE p."UserId" = "SpaceMembers"."UserId");
                 """);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(

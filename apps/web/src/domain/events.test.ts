@@ -39,7 +39,7 @@ describe('events math', () => {
   it('spent sums expenses (refunds reduce) and ignores other events and money received', () => {
     const txs = [
       tx({ eventId: 'e1', amountCents: -4000 }),
-      tx({ eventId: 'e1', amountCents: 500 }), // refund
+      tx({ eventId: 'e1', amountCents: 500 }),
       tx({ eventId: 'e2', amountCents: -9999 }),
       tx({ eventId: 'e1', amountCents: 2000, txType: 'income' }),
     ];
@@ -49,14 +49,13 @@ describe('events math', () => {
   it('#448 (user): money received counts — the net is what the event cost, negative while it is in surplus', () => {
     const txs = [
       tx({ eventId: 'e1', catId: 'restaurants', amountCents: -4000 }),
-      tx({ eventId: 'e1', catId: 'restaurants', amountCents: 500 }), // refund
-      tx({ eventId: 'e1', amountCents: 20_000, txType: 'income' }), // a contribution
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: 500 }),
+      tx({ eventId: 'e1', amountCents: 20_000, txType: 'income' }),
       tx({ eventId: 'e1', amountCents: -1500, txType: 'transfer' }), // own money moving: never the event's
       tx({ eventId: 'e1', amountCents: -1000, txType: 'funding' }), // a credit kind paid OUT is money gone
     ];
     expect(eventTotals(txs, 'e1')).toEqual({ spentCents: 4500, receivedCents: 20_000, netCents: -15_500 });
     expect(eventSpentCents(txs, 'e1')).toBe(4500);
-    // the category breakdown stays about spending
     expect(eventCategoryBreakdown(txs, 'e1', catalog)).toEqual([{ catId: 'food', totalCents: 3500 }]);
     expect(eventTotals(txs, 'e2')).toEqual({ spentCents: 0, receivedCents: 0, netCents: 0 });
   });
@@ -158,6 +157,3 @@ describe('goals math', () => {
     expect(goalProgress(goal({ allocatedCents: 25_000 }))).toBeCloseTo(0.25);
   });
 });
-
-// debts math moved to its own file (src/domain/debts.test.ts) when the
-// arc-3 loan work outgrew this guest spot

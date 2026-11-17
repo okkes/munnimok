@@ -5,19 +5,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// The digest an agent is judged by covers the parties an agent can be
-/// leased, and nothing a control plane decides on its own.
-///
-/// The first pooled agent on a NAS (2026-10-01) ran the image its control
-/// plane ran, enrolled, heartbeated, and was leased nothing: the control
-/// plane held the operator's GoCardless keys, so its catalogue carried an
-/// inline party the agent never runs, and it withheld raw from its catalogue
-/// as production does while the agent's registry strips nothing. Both moved
-/// the catalogue's digest - correctly, it is a consumer's ETag - and the
-/// agent was "stale" against a number it could never produce. What the two
-/// sides compare now is the agent-served set in one canonical shape.
-/// </summary>
+// the digest compares the agent-served set in one canonical shape: a control plane's inline parties and withheld raw
+// moved its catalogue digest, leaving a pooled agent "stale" against a number it could never produce
 public sealed class AgentCatalogDigestTests
 {
     private static readonly string[] AgentServedIds = ["bank", "shop"];
@@ -30,7 +19,6 @@ public sealed class AgentCatalogDigestTests
         Resources = [Resource(includeValues)],
     };
 
-    /// <summary>What a control plane runs in-process: the aggregators, when the operator's keys are present.</summary>
     private static ProviderManifest Inline(string id) => Make.Manifest() with { Id = id };
 
     private static ResourceSpec Resource(string[] includeValues) => new()

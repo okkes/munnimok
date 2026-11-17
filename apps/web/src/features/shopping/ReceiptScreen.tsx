@@ -27,17 +27,14 @@ import { ReceiptBody, receiptTitle } from './ReceiptBody';
 import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 
-/**
- * A photo's standing (#567): `born` on a transaction — the link IS the receipt; `own` — kept by the person
- * without a transaction, among their own receipts; `linked` — an own photo attached or proposed in this space.
- */
+// born: on a transaction, the link IS the receipt; own: kept without a transaction;
+// linked: an own photo attached or proposed in this space (#567)
 const photoKind = (entry: ReceiptEntry | null | undefined): 'born' | 'own' | 'linked' | null => {
   if (entry?.data.source !== 'photo') return null;
   if (entry.kind === 'global') return 'own';
   return entry.data.id === entry.linkId ? 'born' : 'linked';
 };
 
-/** what a reader found goes where the photo lives: onto its link in the space, or onto the person's own receipt */
 async function keepRead(ops: ReceiptOps, fileByReceipt: (txId: string) => Promise<boolean>, entry: ReceiptEntry, outcome: ReceiptReadOutcome): Promise<void> {
   if (!entry.linkId) {
     const { totalCents, ...found } = outcome;
@@ -59,7 +56,6 @@ const globalRow = async (store: StorageBackend, receiptId: string): Promise<Rece
   return (await store.bySpace('receipt', feedId)).find((r) => r.deleted === 0 && r.id === receiptId);
 };
 
-/** the receipt as the scope sees it: a space's link first, else the owner's global row; null when gone */
 async function findEntry(store: StorageBackend, scope: ReceiptScope, spaceId: string, receiptId: string): Promise<ReceiptEntry | null> {
   if (scope === 'space') {
     const link = (await spaceReceipts(store, spaceId)).find((l) => (l.receiptId ?? l.id) === receiptId);
@@ -69,13 +65,8 @@ async function findEntry(store: StorageBackend, scope: ReceiptScope, spaceId: st
   return row ? globalAsEntry(row) : null;
 }
 
-/**
- * One receipt, full screen (user request 2026-10-02: the sheet was
- * cramped). From a space it carries the matching: the transaction it
- * proves, or the ladder to link it; from the connections hub it is the
- * party's document as fetched — no matched/unmatched, no linking, which
- * are a space's business.
- */
+// from a space it carries the matching; from the connections hub it is the party's document as fetched,
+// with no linking (a space's business)
 export function ReceiptScreen({
   scope,
   receiptId,
@@ -115,14 +106,12 @@ export function ReceiptScreen({
 
   const currency = receipt?.currency ?? space?.currency ?? 'EUR';
   const back = () => window.history.back();
-  /** after a delete there is nothing to come back to: the place the receipt was opened from, by name */
   const leave = () => {
     if (contextTxId) void navigate({ to: '/transactions/$txId', params: { txId: contextTxId } });
     else void navigate({ to: scope === 'global' ? '/connections/receipts' : '/receipts' });
   };
 
-  // every transaction the receipt proves (user 2026-10-08: several payments, one receipt); the one the screen was
-  // opened FROM stays out of the list — pointing back at it is noise
+  // every transaction the receipt proves; the one the screen was opened FROM stays out — pointing back is noise
   const linkedIds = scope === 'space' ? (entry?.txIds ?? []) : [];
   const linkedTxId = linkedIds[0];
   const linkedTxs = linkedIds
@@ -161,7 +150,6 @@ export function ReceiptScreen({
     }
   };
 
-  /** the delete button's word: one transaction's hold, a store receipt's unlink, or a delete */
   const deleteLabel = (): string => {
     if (detachOne) return t('receipt.detachOne');
     // a store receipt's link "deletes" by unlinking — the wording must say so
@@ -175,9 +163,7 @@ export function ReceiptScreen({
       setConfirmDelete(true);
       return;
     }
-    // each kind deletes in its own store: drop the photo, unlink the
-    // store snapshot, or drop the global receipt — from ONE transaction
-    // when others hold the receipt too (user 2026-10-08)
+    // each kind deletes in its own store; from ONE transaction only when others hold the receipt too
     if (entry.kind === 'global') await receiptOps.removeGlobalReceipt(entry.data.id);
     else if (entry.linkId) {
       const txId = detachOne ? contextTxId : undefined;
@@ -207,14 +193,11 @@ export function ReceiptScreen({
         )}
         {entry && receipt && (
           <div className="flex flex-col gap-3 pt-1">
-            {/* the head, the picture, the items and the invoices — shared with the picker's peek (user 2026-10-09);
-                keyed so another receipt under the same screen starts with its invoice sheet closed */}
+            {/* shared with the picker's peek; keyed so another receipt starts with its invoice sheet closed */}
             <ReceiptBody key={receipt.id} receipt={receipt} currency={currency} connectionName={connection?.displayName} />
 
             {scope === 'space' ? (
               <>
-                {/* the transactions this receipt proves — the one the screen was opened
-                    from left out (self-reference); each row opens its transaction */}
                 {linkedTxs.length > 0 && (
                   <div>
                     <div className="m-cap mb-1 px-1">{t(linkedTxs.length > 1 ? 'receipt.linkedTitleN' : 'receipt.linkedTitle')}</div>
@@ -227,8 +210,7 @@ export function ReceiptScreen({
                     </div>
                   </div>
                 )}
-                {/* #567: a receipt kept without a transaction — its facts are typed here or read below, and it waits
-                    for the payment it fits */}
+                {/* #567: a receipt kept without a transaction: facts typed here or read below, it waits for the payment it fits */}
                 {photo === 'own' && (
                   <>
                     <ReceiptFacts

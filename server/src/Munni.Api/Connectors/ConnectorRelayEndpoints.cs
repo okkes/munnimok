@@ -10,14 +10,7 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>Start a session with a party (docs/connectors/relay.md, "Routes").</summary>
-/// <param name="ConnectionId">The client's stable id for this connection — the same on a re-login, so what the connection pulled stays keyed by it.</param>
-/// <param name="Inputs">What the user typed into the manifest's form; sealed by the connector, never stored here.</param>
-/// <param name="CredentialBundle">A credential bundle the connector sealed earlier, offered instead of asking again.</param>
-/// <param name="Config">Non-secret settings the provider needs on every call.</param>
-/// <param name="Label">The user's own name for the connection.</param>
-/// <param name="PreferAgent">An agent id, <c>fleet</c>, or nothing — where the run should happen.</param>
-/// <param name="IdempotencyKey">The same key repeats the same login rather than starting a second one.</param>
+// ConnectionId is the client's stable id, the same on a re-login; Inputs are sealed by the connector, never stored here
 public sealed record ConnectorLoginRequest(
     string ConnectionId,
     Dictionary<string, string>? Inputs = null,
@@ -37,11 +30,7 @@ public sealed record ConnectorDisconnectRequest(string? Bundle = null);
 
 public sealed record ConnectorEnrollmentRequest(string Name);
 
-/// <summary>
-/// One of the caller's connector sessions as the relay records it — ids and
-/// state, nothing a bundle rides in. <c>Scheduled</c> says the relay keeps a
-/// household-agent bundle for it and syncs it by itself (§5.5).
-/// </summary>
+// ids and state, nothing a bundle rides in; Scheduled: the relay keeps a household-agent bundle and syncs it itself (§5.5)
 public sealed record ConnectorSessionDto(
     string SessionId,
     string Provider,
@@ -53,23 +42,17 @@ public sealed record ConnectorSessionDto(
     bool Scheduled,
     DateTimeOffset? LastScheduledSyncAt,
     string? LastScheduleError,
-    /// <summary>The party asked for a pause: the scheduler holds off until then (the hub says so instead of a bare "try again later").</summary>
+    // the party asked for a pause: the scheduler holds off until then
     DateTimeOffset? ScheduleNotBefore = null,
-    /// <summary>A scheduled run failed and left a picture that waits on the person's answer (#441 L1): the hub asks, the share/decline routes close it.</summary>
+    // a scheduled run failed and left a picture waiting on the person's answer (#441 L1)
     string? ArtifactsJobId = null);
 
-/// <summary>What an enrollment hands the user: the code, and the line that starts their agent.</summary>
 public sealed record ConnectorEnrollmentDto(string Code, DateTimeOffset ExpiresAt, string? ControlPlaneUrl, string? ComposeCommand);
 
-/// <summary>
-/// One account a connection of the caller's reaches (#524): which feed row
-/// it fetches. Per person — an IBAN feed two people connected carries one
-/// row, whose own connection stamp names whoever fetched it last.
-/// </summary>
+// #524: per person; an IBAN feed two people connected carries one row, whose connection stamp names whoever fetched it last
 public sealed record ConnectorAccountLinkDto(string ConnectionId, string Provider, string FeedSpaceId, string AccountId);
 
-// The bodies the relay sends on: the wire encoding renames these to
-// snake_case, dictionary keys stay what the user typed.
+// the wire encoding renames these to snake_case; dictionary keys stay as the user typed them
 internal sealed record WireLogin(
     string Subject,
     Dictionary<string, string> Inputs,
@@ -85,21 +68,15 @@ internal sealed record WireDisconnect(string? Bundle);
 
 internal sealed record WireEnrollment(string Subject, string Name);
 
-/// <summary>A request for a hosted private agent (#420 A2): the subject is the relay's, never the client's.</summary>
+// #420 A2: the subject is the relay's, never the client's
 internal sealed record WirePrivateAgentRequest(string Subject);
 
-/// <summary>
-/// The relay (#367): the app's door to the connector control plane. Every
-/// route acts as the signed-in user — the subject is minted here, never
-/// sent by the client — and a session route answers only its owner.
-/// Bundles pass through memory only: no handler here stores a request or
-/// response body, and the binding table holds ids and state alone.
-/// </summary>
+// #367: the subject is minted here, never sent by the client, and a session route answers only its owner.
+// bundles pass through memory only, the binding table holds ids and state alone
 public static partial class ConnectorRelayEndpoints
 {
     public const string Prefix = "/connectors";
 
-    /// <summary>The fields of a connector view the relay reads by name.</summary>
     internal const string SessionIdField = "session_id";
     internal const string StateField = "state";
     internal const string LabelField = "label";
@@ -142,9 +119,6 @@ public static partial class ConnectorRelayEndpoints
         MapAgents(group);
     }
 
-    // ── the environment and its catalogue ────────────────────────────────
-
-    /// <summary>What this environment runs: the kinds its control plane hosts, and whether household agents can dial in.</summary>
     private static async Task<IResult> Overview(ConnectorRelay relay, ConnectorCatalogue catalogue, ConnectorOptions options, CancellationToken ct)
     {
         var (_, document) = await catalogue.GetAsync(relay.Client, ct);
@@ -157,7 +131,7 @@ public static partial class ConnectorRelayEndpoints
         });
     }
 
-    /// <summary>The catalogue, in this API's casing, revalidated with the connector's own ETag; the stand-in parties only where this environment offers them.</summary>
+    // revalidated with the connector's own ETag; stand-in parties only where this environment offers them
     private static async Task<IResult> Catalogue(HttpContext http, ConnectorRelay relay, ConnectorCatalogue catalogue, ConnectorOptions options, CancellationToken ct)
     {
         var (upstream, document) = await catalogue.GetAsync(relay.Client, ct);
@@ -178,7 +152,7 @@ public static partial class ConnectorRelayEndpoints
         return Results.Json(view);
     }
 
-    /// <summary>The connector's ETag names its own document; what is served here also depends on whether the stand-in parties are left out.</summary>
+    // the connector's ETag names its own document; what is served also depends on whether stand-ins are left out
     internal static string? CatalogueTag(string? upstream, bool offerFixtures) =>
         upstream is null || offerFixtures ? upstream : upstream.TrimEnd('"') + ";people\"";
 
@@ -186,13 +160,7 @@ public static partial class ConnectorRelayEndpoints
     internal static bool IsFixture(JsonNode? manifest) =>
         manifest is JsonObject node && node["fixture"] is JsonValue flag && flag.TryGetValue<bool>(out var fixture) && fixture;
 
-    /// <summary>
-    /// The accounts each of the caller's connections reaches (#524) — the
-    /// references the ingest keeps per person, so the app files an account
-    /// under the connection that fetches it rather than under every
-    /// connection of the same party, and tells an account no connection of
-    /// theirs fetches any more.
-    /// </summary>
+    // #524: the references the ingest keeps per person, so the app files an account under the connection that fetches it
     private static async Task<IResult> MyAccounts(HttpContext http, ConnectorRelay relay)
     {
         var userId = http.GetUserId();
@@ -216,8 +184,6 @@ public static partial class ConnectorRelayEndpoints
             .ToListAsync();
         return Results.Ok(rows);
     }
-
-    // ── the login and its session ────────────────────────────────────────
 
     private static async Task<IResult> Login(
         string provider, ConnectorLoginRequest request, HttpContext http, ConnectorRelay relay, ConnectorOptions options, CancellationToken ct)
@@ -244,9 +210,8 @@ public static partial class ConnectorRelayEndpoints
         }, ct);
         if (!reply.IsSuccess)
         {
-            // the connector says agent_unavailable whether the party wanted the person's own machine or
-            // munni's fleet; the app must not tell someone to start a household agent when it is the
-            // fleet that is missing (Albert Heijn on a platform without a pooled agent, 2026-10-01)
+            // agent_unavailable comes whether the party wanted the person's machine or munni's fleet; the app must not say
+            // "start a household agent" when the fleet is missing (Albert Heijn without a pooled agent)
             var manifest = await relay.Catalogue.ProviderAsync(relay.Client, provider, ct);
             return Relay(http, reply.Error is { } err ? reply with { Error = ForParty(err, manifest) } : reply);
         }
@@ -323,7 +288,7 @@ public static partial class ConnectorRelayEndpoints
         return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
     }
 
-    /// <summary>What a party lists for a lookup field at connect time (§15): the query passes through, the party answers from its own list.</summary>
+    // the query passes through; the party answers from its own list (§15)
     private static async Task<IResult> Options(string provider, string field, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync(
@@ -332,7 +297,7 @@ public static partial class ConnectorRelayEndpoints
         return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
     }
 
-    /// <summary>An option's logo, vendored by the control plane; the browser keeps it for a month. The token is the value, base64url; anonymous, as an image tag fetches it.</summary>
+    // the token is the value, base64url; anonymous because an image tag fetches it; the browser keeps it a month
     private static async Task<IResult> OptionLogo(
         string provider, string field, string token, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -343,7 +308,6 @@ public static partial class ConnectorRelayEndpoints
         return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
     }
 
-    /// <summary>The live view: the newest frame past <c>after</c>, long-polled by the connector, or nothing yet.</summary>
     private static async Task<IResult> LiveFrame(
         string provider, string sessionId, string challengeId, [FromQuery] long after, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -364,7 +328,6 @@ public static partial class ConnectorRelayEndpoints
         return Results.File(reply.Bytes, reply.ContentType ?? "image/jpeg");
     }
 
-    /// <summary>The human's taps and keys, handed on as the connector spells them.</summary>
     private static async Task<IResult> LiveInput(
         string provider, string sessionId, string challengeId, [FromBody] JsonObject batch, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -377,12 +340,7 @@ public static partial class ConnectorRelayEndpoints
         return reply.IsSuccess ? Results.Accepted() : Relay(http, reply);
     }
 
-    /// <summary>
-    /// Disconnect always reaches the connector, binding row or not: a caller
-    /// that lost its row must still be able to remove the connection, and the
-    /// connector answers only for the subject anyway. The bundle, when the
-    /// caller hands it over, is what makes an upstream sign-out possible.
-    /// </summary>
+    // reaches the connector with or without a binding row: a caller that lost its row must still be able to disconnect
     private static async Task<IResult> Disconnect(
         string provider,
         string sessionId,
@@ -413,8 +371,6 @@ public static partial class ConnectorRelayEndpoints
         return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
     }
 
-    // ── the household agents ─────────────────────────────────────────────
-
     private static void MapAgents(RouteGroupBuilder group)
     {
         group.MapGet("/agents", ListAgents);
@@ -422,9 +378,7 @@ public static partial class ConnectorRelayEndpoints
         group.MapDelete("/agents/{agentId}", RevokeAgent);
         group.MapGet("/agents/{agentId}/profiles", AgentProfiles);
 
-        // hosted private agents (#420 A2): the caller's standing, a request,
-        // withdrawing it, giving the slot back — the operator decides in the
-        // the lab (ConnectorLabEndpoints)
+        // #420 A2: the operator decides in the lab (ConnectorLabEndpoints)
         group.MapGet("/private-agents/mine", PrivateAgentMine);
         group.MapPost("/private-agents/requests", PrivateAgentRequest);
         group.MapDelete("/private-agents/requests/{requestId}", PrivateAgentWithdraw);
@@ -466,12 +420,7 @@ public static partial class ConnectorRelayEndpoints
         return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
     }
 
-    /// <summary>
-    /// Mints a one-time enrollment code for the caller and renders the line
-    /// that starts their agent against this environment. Without a public
-    /// agent address the code is still minted — there is simply nowhere for
-    /// an agent to dial, and the app says so instead of showing a command.
-    /// </summary>
+    // without a public agent address the code is still minted; the app says so instead of showing a command
     private static async Task<IResult> Enroll(
         ConnectorEnrollmentRequest request, HttpContext http, ConnectorRelay relay, ConnectorOptions options, CancellationToken ct)
     {
@@ -489,7 +438,7 @@ public static partial class ConnectorRelayEndpoints
         return Results.Ok(new ConnectorEnrollmentDto(code, expiresAt, url, url is null ? null : ComposeCommand(url, code, request.Name)));
     }
 
-    /// <summary>The one line beside <c>deploy/connectors/household-agent.yml</c>; the name is quoted for the shell.</summary>
+    // beside deploy/connectors/household-agent.yml; the name is quoted for the shell
     internal static string ComposeCommand(string url, string code, string name) =>
         $"CONNECTOR_URL={url} ENROLLMENT_CODE={code} AGENT_NAME='{name.Replace("'", "'\\''", StringComparison.Ordinal)}' docker compose -f household-agent.yml up -d";
 
@@ -504,8 +453,6 @@ public static partial class ConnectorRelayEndpoints
         var reply = await relay.Client.GetAsync($"v1/agents/{agentId}/profiles", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
         return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Json)) : Relay(http, reply);
     }
-
-    // ── the binding table ────────────────────────────────────────────────
 
     private static Task<ConnectorSession?> OwnedAsync(AppDbContext db, Guid userId, string provider, string sessionId) =>
         db.ConnectorSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId && s.Provider == provider);
@@ -549,14 +496,8 @@ public static partial class ConnectorRelayEndpoints
         return row;
     }
 
-    /// <summary>
-    /// A household-agent bundle names an agent and a profile and holds no
-    /// secret (§5.5); a server-custody bundle (an open-banking consent,
-    /// §15) holds a consent id and the accounts it reaches, the operator's
-    /// key staying in the platform's configuration. The relay keeps both,
-    /// so the scheduler can sync without a device. A client-custody bundle
-    /// carries the person's own secret and passes through memory only.
-    /// </summary>
+    // household-agent and server-custody bundles hold no secret (§5.5, §15), so the relay keeps them for the scheduler.
+    // a client-custody bundle carries the person's own secret and passes through memory only
     internal static bool KeepsBundle(JsonObject? manifest) =>
         manifest?.Text("secret_custody") is "agent" or "server";
 
@@ -604,8 +545,6 @@ public static partial class ConnectorRelayEndpoints
         bridge.WatchSession(userId, subject, provider, sessionId);
     }
 
-    // ── how the app hears about it ───────────────────────────────────────
-
     /// <summary><c>X-Device-Class</c> when the client says; else the platform it already declares on every request.</summary>
     internal static string DeviceClassOf(HttpContext http)
     {
@@ -615,12 +554,8 @@ public static partial class ConnectorRelayEndpoints
         return platform == "web" ? "web" : "native";
     }
 
-    /// <summary>The connector's error envelope, in this API's casing, under the connector's own status.</summary>
-    /// <summary>
-    /// A pooled-class party's <c>agent_unavailable</c> carries the fleet's key: the pooled agents
-    /// are offline or busy, nothing the person can start. A party that needs the person's own
-    /// machine keeps the connector's key ("start your agent").
-    /// </summary>
+    // a pooled-class party's agent_unavailable carries the fleet's key (nothing the person can start); a party that needs
+    // the person's own machine keeps the connector's key ("start your agent")
     internal static ConnectorError ForParty(ConnectorError error, JsonObject? manifest)
     {
         if (!string.Equals(error.Code, "agent_unavailable", StringComparison.Ordinal)) return error;
@@ -666,11 +601,7 @@ public static partial class ConnectorRelayEndpoints
         new ConnectorError("rate_limited", true, "wait", "connect.error.rate_limited", null, retryAfter));
 }
 
-/// <summary>
-/// Turns a control plane that could not be reached, or answered outside a
-/// handler's own handling, into the same envelope the app reads everywhere
-/// else on this group — never a bare 500 with the reason in a log.
-/// </summary>
+// an unreachable control plane becomes the envelope the app reads everywhere on this group, never a bare 500
 internal sealed class ConnectorReplyFilter : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

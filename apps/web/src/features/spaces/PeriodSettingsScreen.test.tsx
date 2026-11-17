@@ -4,8 +4,6 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 
-/** the budget period as its own settings screen (extracted from space
- *  settings) — reached from the Settings tab, applying immediately */
 describe('PeriodSettingsScreen (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -23,14 +21,11 @@ describe('PeriodSettingsScreen (demo identity)', () => {
     await openFromSettings();
     // the form renders only once the space row loaded (fast-tap guard)
     fireEvent.click(await screen.findByTestId('space-period-biweekly', {}, { timeout: 5000 }));
-    // #283: the explainer folds behind an InfoHint — collapsed until asked
     expect(screen.queryByTestId('period-explain')).toBeNull();
     fireEvent.click(screen.getByTestId('period-explain-toggle'));
     expect(screen.getByTestId('period-explain')).toBeTruthy();
     fireEvent.click(screen.getByTestId('period-explain-toggle'));
     expect(screen.queryByTestId('period-explain')).toBeNull();
-    // weekly/bi-weekly periods pick a START WEEKDAY instead (legacy
-    // parity) — rendered once the live query reflects the persisted type
     expect(await screen.findByTestId('space-weekday-3', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.queryByTestId('space-period-day')).toBeNull();
     fireEvent.click(screen.getByTestId('space-weekday-3'));
@@ -41,7 +36,7 @@ describe('PeriodSettingsScreen (demo identity)', () => {
       async () => {
         const space = (await db.spaces.toArray()).find((s) => s.deleted === 0);
         expect(space?.periodType).toBe('biweekly');
-        expect(space?.periodDay).toBe(3); // Wednesday
+        expect(space?.periodDay).toBe(3);
       },
       { timeout: 5000 },
     );
@@ -54,7 +49,6 @@ describe('PeriodSettingsScreen (demo identity)', () => {
     fireEvent.change(day, { target: { value: '40' } });
     expect((day as HTMLInputElement).value).toBe('40'); // free while typing (deletable '1')
     fireEvent.blur(day);
-    // there is no save button: blur clamps and persists in one step
     await waitFor(() => expect((day as HTMLInputElement).value).toBe('28'));
 
     const { MunniDB } = await import('@/db/schema');

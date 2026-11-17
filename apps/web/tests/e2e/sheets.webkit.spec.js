@@ -1,14 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, base } from '../helpers/base.js';
 
-/**
- * The one WebKit check (every iOS surface — Safari, the PWA, both native
- * webviews — renders with WebKit): a tall sheet opens to its full height.
- * WebKit sizes flex items stricter than Blink and once collapsed every sheet
- * to its header on iOS while Android and desktop looked perfect (user ss
- * 2026-07-26); only a real WebKit layout shows it. Runs in CI and through
- * deploy/webkit-e2e.ps1 (dockerized, no browsers on the host).
- */
+// the one WebKit check (every iOS surface renders with WebKit): it sizes flex items stricter than Blink and once
+// collapsed every sheet to its header on iOS only; runs in CI and via deploy/webkit-e2e.ps1 (dockerized)
 const V = VARIANTS[0];
 
 test(`webkit-a1 a tall sheet opens to its full height [${V.id}]`, async ({ browser }) => {

@@ -12,7 +12,6 @@ const ITEMS: ReceiptItem[] = [
 ];
 const known = (catId: string) => catId !== 'gone';
 
-/** #567: a transaction categorised by the lines of its receipt */
 describe('receipt lines as categories', () => {
   it('a line that costs money is a line; a discount comes off the others by their size, to the cent', () => {
     const lines = receiptLines(ITEMS);
@@ -38,7 +37,6 @@ describe('receipt lines as categories', () => {
       { name: 'Bonus', totalCents: -40, kind: 'discount' },
     ]);
     expect(both.map((line) => line.paidCents)).toEqual([180, 180]);
-    // a line discounted to nothing claims nothing — and never less
     expect(receiptLines([{ name: 'Gratis', totalCents: 100, discountCents: -150 }])[0].paidCents).toBe(0);
   });
 
@@ -58,7 +56,6 @@ describe('receipt lines as categories', () => {
     expect(itemKey('  EGGS   free  range ')).toBe('eggs free range');
     expect(memory.get('eggs')).toBe('breakfast');
     expect(suggestedCat({ name: 'eggs', catId: 'snacks' }, memory, known)).toBe('breakfast');
-    // nothing remembered: the reader's guess; a category that is gone suggests nothing
     expect(suggestedCat({ name: 'Bread', catId: 'groceries' }, memory, known)).toBe('groceries');
     expect(suggestedCat({ name: 'Soap', catId: 'household' }, memory, known)).toBe('household');
     expect(suggestedCat({ name: 'Soap' }, memory, known)).toBeUndefined();
@@ -86,7 +83,6 @@ describe('receipt lines as categories', () => {
       { catId: 'snacks', amountCents: 6364 },
       { catId: 'household', amountCents: 909 },
     ]);
-    // the rest joins its own category when a line was filed there too; nothing left adds nothing
     expect(picksSpread(picks, 10_000, 'groceries')).toEqual([
       { catId: 'groceries', amountCents: 3636 },
       { catId: 'snacks', amountCents: 6364 },
@@ -115,7 +111,6 @@ describe('receipt lines as categories', () => {
     expect(shared.netCents).toBe(2500);
     expect(shared.settledCents).toBe(7500);
     expect(shared.held).toEqual(new Map([['groceries', 1500], ['sweets', 1000]]));
-    // no category yet, or one that is a movement's: the rest has no ordinary home
     expect(txMoneyOf({ amountCents: -500 }).restCatId).toBe('uncategorized');
     expect(txMoneyOf({ amountCents: -500, catId: 'reimbursed' }).restCatId).toBe('uncategorized');
   });
@@ -125,7 +120,6 @@ describe('receipt lines as categories', () => {
     const items = ITEMS.map((item, index) => (index === 2 ? { ...item, catId: 'sweets' } : item));
     const payment = { amountCents: -10_000, txType: 'expense' as const, catId: 'groceries' };
     const receipt = { totalCents: 10_000, items };
-    // the remembered line, the reader's guess, and the lines nobody named under the payment's own category
     expect(receiptFiling(payment, receipt, memory, known)).toEqual({
       cats: [
         { catId: 'breakfast', amountCents: 2727 },
@@ -138,24 +132,19 @@ describe('receipt lines as categories', () => {
       ],
     });
 
-    // a different amount: the usual prediction decides (user)
     expect(receiptFiling(payment, { totalCents: 9990, items }, memory, known)).toBeNull();
     expect(receiptFiling(payment, null, memory, known)).toBeNull();
-    // money in, a movement, a payment with parts, a spread, a counterparty: not the receipt's to file
     expect(receiptFiling({ ...payment, amountCents: 10_000 }, receipt, memory, known)).toBeNull();
     expect(receiptFiling({ ...payment, txType: 'transfer' }, receipt, memory, known)).toBeNull();
     expect(receiptFiling({ ...payment, splits: [{ catId: 'groceries', amountCents: 10_000 }] }, receipt, memory, known)).toBeNull();
     expect(receiptFiling({ ...payment, cats: [{ catId: 'reimbursed', amountCents: 7500 }] }, receipt, memory, known)).toBeNull();
     expect(receiptFiling({ ...payment, linkedAccountId: 'savings' }, receipt, memory, known)).toBeNull();
-    // nothing to suggest; lines nobody named with no category to leave them under; lines that say more than was paid
     expect(receiptFiling(payment, { totalCents: 10_000, items: ITEMS }, new Map(), known)).toBeNull();
     expect(receiptFiling({ ...payment, catId: undefined }, receipt, memory, known)).toBeNull();
     const over = [{ name: 'Eggs', totalCents: 12_000 }];
     expect(receiptFiling(payment, { totalCents: 10_000, items: over }, new Map([['eggs', 'breakfast']]), known)).toBeNull();
-    // every line named: it files without a category of its own to fall back on
     const all = [{ name: 'Eggs', totalCents: 10_000 }];
     expect(receiptFiling({ ...payment, catId: undefined }, { totalCents: 10_000, items: all }, memory, known)?.cats).toEqual([{ catId: 'breakfast', amountCents: 10_000 }]);
-    // … and when that is the category it already has, there is nothing to file
     expect(receiptFiling({ ...payment, catId: 'breakfast' }, { totalCents: 10_000, items: all }, memory, known)).toBeNull();
   });
 
@@ -167,7 +156,6 @@ describe('receipt lines as categories', () => {
     expect(picksStand(picks, ITEMS, new Map([['groceries', 5909], ['snacks', 4091]]))).toBe(true);
     expect(picksStand(picks, ITEMS, new Map([['groceries', 10_000]]))).toBe(false);
     expect(picksStand(picks, ITEMS, new Map([['groceries', 2000], ['snacks', 8000]]))).toBe(false);
-    // a pick on a line the receipt no longer has (read again), or none at all
     expect(picksStand([{ line: 4, catId: 'groceries', amountCents: 1 }], ITEMS, new Map([['groceries', 10_000]]))).toBe(false);
     expect(picksStand([], ITEMS, new Map())).toBe(false);
     expect(picksStand(undefined, ITEMS, new Map())).toBe(false);

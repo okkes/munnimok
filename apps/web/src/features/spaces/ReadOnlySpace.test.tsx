@@ -8,16 +8,10 @@ import { MunniDB } from '@/db/schema';
 import { HlcClock } from '@/sync/hlc';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
-/**
- * #505 (user): a member who may only read a space sees it whole and changes
- * nothing — no confirm on the review, no new event, no setting — and what
- * such a device had already changed there is undone with one notice.
- */
 const SPACE = 's-shared';
 
 const spaceAs = (role: 'reader' | 'owner') => [{ id: SPACE, name: 'Eukesh', kind: 'shared' as const, role }];
 
-/** the device as it stands before the app opens: the space, its rows, the role the server last named */
 async function seed(role: 'reader' | 'owner', rows?: (repo: Repo) => Promise<void>) {
   const db = new MunniDB(USER_TEST_DB);
   await db.meta.put({ key: 'activeSpaceId', value: SPACE });

@@ -11,14 +11,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// Test host for the admin area. One in-memory database PER FIXTURE
-/// INSTANCE: EF's internal service-provider cache is process-wide and
-/// keyed by the options, so two fixtures naming the same database share
-/// one store — AccountDeletionTests seeded rows into this class's
-/// assertions whenever xUnit ran the classes in parallel (the ~50 % flake
-/// on dev).
-/// </summary>
+/// one in-memory database PER FIXTURE INSTANCE: EF's service-provider cache is process-wide and keyed by options,
+/// so same-named databases share a store (the ~50 % flake on dev when classes ran in parallel)
 public class AdminApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"admin-tests-{Guid.NewGuid():N}";
@@ -44,11 +38,7 @@ public class AdminApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>
-/// The admin area is gated by the token's `admin` scope (AdminScope): the
-/// subject is anyone, the scope decides — exactly what Logto issues when
-/// the user holds the admin role on the API resource.
-/// </summary>
+/// gated by the token's `admin` scope: the subject is anyone, the scope decides, as Logto issues for the admin role
 public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
 {
     private readonly AdminApiFactory _factory;
@@ -67,7 +57,6 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
     [Fact]
     public async Task The_scope_grants_admin_not_the_subject()
     {
-        // the same subject: no scope → 403, the scope among others → 200
         Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin").GetAsync("/admin/ping")).StatusCode);
         var response = await ClientFor("the-admin", "openid profile admin").GetAsync("/admin/ping");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -77,7 +66,6 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         // whole-word scope: look-alikes do not count
         Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin", "administrator").GetAsync("/admin/ping")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin", "admin:read").GetAsync("/admin/ping")).StatusCode);
-        // no session at all → 401, not 403
         Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.CreateClient().GetAsync("/admin/ping")).StatusCode);
     }
 
@@ -97,7 +85,7 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
     {
         var admin = ClientFor("the-admin", "admin");
         var user = ClientFor("diag-user");
-        await user.GetAsync("/me"); // materialize
+        await user.GetAsync("/me");
 
         using (var scope = _factory.Services.CreateScope())
         {
@@ -111,7 +99,6 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
                 Id = Guid.NewGuid(), SpaceId = "space-diag", FeedSpaceId = "feed-diag", AccountId = "acct-1", AttachedBy = userId,
                 HistoryFrom = "2026-01-01", Type = "checking",
             });
-            // the materialized rows the operator's labels are read from (user 2026-10-09): the space's name, the account's name and IBAN
             db.EntityRows.Add(new EntityRow { SpaceId = "space-diag", Entity = "space", EntityId = "space-diag", DataJson = """{"name":"Diag space","kind":"personal"}""", FieldVersionsJson = "{}" });
             db.EntityRows.Add(new EntityRow { SpaceId = "feed-diag", Entity = "account", EntityId = "acct-1", DataJson = """{"name":"ING Betaal","iban":"NL01TEST0000001234"}""", FieldVersionsJson = "{}" });
             await db.SaveChangesAsync();
@@ -124,10 +111,9 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Contains("space-diag", body.GetProperty("memberSpaces").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal("feed-diag", body.GetProperty("ownedFeeds")[0].GetProperty("feedSpaceId").GetString());
         Assert.Equal("feed-diag", body.GetProperty("attachments")[0].GetProperty("feedSpaceId").GetString());
-        // a bank's consent is a connector session like any other party's (§15): the list is there, empty here
         Assert.Equal(JsonValueKind.Array, body.GetProperty("connectorSessions").ValueKind);
 
-        // user 2026-10-09: the same chain, labelled — the space by name and role, the account by name and IBAN tail, never the IBAN
+        // labelled chain: the space by name and role, the account by name and IBAN tail, never the IBAN
         var space = body.GetProperty("spaces").EnumerateArray().Single(s => s.GetProperty("id").GetString() == "space-diag");
         Assert.Equal("Diag space", space.GetProperty("name").GetString());
         Assert.Equal(Social.SpaceRoles.Owner, space.GetProperty("role").GetString());
@@ -156,7 +142,7 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
     [Fact]
     public async Task The_old_open_banking_routes_are_gone()
     {
-        // §15.8: the api's own requisition management and quota snapshots retired with the parties' move to the platform
+        // the api's own requisition management and quota snapshots retired with the parties' move to the platform (§15.8)
         var admin = ClientFor("the-admin", "admin");
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/gocardless/requisitions")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/quota")).StatusCode);

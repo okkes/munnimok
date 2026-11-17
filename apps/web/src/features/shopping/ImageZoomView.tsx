@@ -2,18 +2,11 @@ import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { ZoomFrame } from './ZoomFrame';
 
-/** a phone pinches and taps; a desktop double-clicks and scrolls with ctrl/⌘ (a trackpad pinch is the same) */
 const touchFirst = (): boolean => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches;
 
-/**
- * A picture at the frame's width with the zoom on top (#568: "once
- * uploading the picture of the receipt, I can't zoom in any more" — the
- * single items must be readable): the receipt's photo and an invoice that
- * came as an image, in the invoice viewer's frame.
- */
+/** #568: a receipt photo or image invoice must zoom, so single items are readable */
 export function ImageZoomView({ src, alt, testId }: Readonly<{ src: string; alt: string; testId: string }>) {
   const { t } = useLang();
-  // height over width, once the picture has loaded — the layout then follows the zoom at once
   const [ratio, setRatio] = useState<number | null>(null);
   return (
     <ZoomFrame testId={testId} status={t(touchFirst() ? 'receipt.zoomHintTouch' : 'receipt.zoomHintPointer')}>

@@ -2,13 +2,7 @@ import { en } from '@/i18n/en';
 import type { TranslationKey } from '@/i18n';
 import type { ChallengeType, ErrorEnvelope, FieldSpec, ProviderManifest } from './types';
 
-/**
- * A manifest becomes a form (docs/connectors/client.md, "The connect flow"):
- * pure functions from the catalogue's declarations to steps, fields,
- * validation, the split into `inputs` and `config`, and the copy keys
- * munni renders them with. Nothing here knows a provider by name — the
- * mock store and Amazon go through the same functions.
- */
+// docs/connectors/client.md: nothing here knows a provider by name
 
 export type DeviceClass = 'native' | 'web';
 
@@ -33,7 +27,6 @@ export interface FormStep {
 
 export type FieldProblem = 'required' | 'pattern';
 
-/** a key the connector emits, or the fallback when munni has no copy for it */
 export function copyKey(key: string | undefined, fallback: TranslationKey): TranslationKey {
   return key && key in en ? (key as TranslationKey) : fallback;
 }
@@ -49,13 +42,8 @@ const FIELD_FALLBACK: Record<FieldSpec['type'], TranslationKey> = {
   lookup: 'connect.field.lookup',
 };
 
-/**
- * Config the app answers itself (§15): a party that sends the person to a
- * page and wants to know where to bring them back declares `return_url`,
- * and the app's own return page is the only right answer — never a field
- * the person types. The keys here are hidden from the form and merged
- * into the login's `config`.
- */
+// config the app answers itself (§15): a party that wants to know where to bring the person back declares `return_url`,
+// and the app's own return page is the only right answer; these keys are hidden from the form, merged into `config`
 export type ProvidedConfig = Readonly<Record<string, string>>;
 
 /** the return page every own-origin redirect lands on (kept at the path the banks were registered with) */
@@ -89,12 +77,8 @@ function toField(spec: FieldSpec): FormField {
   };
 }
 
-/**
- * The steps a login asks: the manifest's own, each with its fields, and
- * the non-secret `config` fields (country, language …) as one leading
- * step of their own when there are any. A remote-browser login has no
- * steps at all — the human signs in on the party's page.
- */
+// non-secret `config` fields form one leading step; a remote-browser login has no steps
+// (the human signs in on the party's page)
 export function formSteps(manifest: ProviderManifest, provided: ProvidedConfig = {}): FormStep[] {
   const steps: FormStep[] = [];
   const asked = manifest.auth.config.filter((spec) => !(spec.key in provided));
@@ -107,10 +91,8 @@ export function formSteps(manifest: ProviderManifest, provided: ProvidedConfig =
   return steps;
 }
 
-/** every field of every step, in order */
 export const allFields = (manifest: ProviderManifest): FormField[] => formSteps(manifest).flatMap((s) => s.fields);
 
-/** what stops the values from being sent, per field key */
 export function validateValues(fields: readonly FormField[], values: Readonly<Record<string, string>>): Record<string, FieldProblem> {
   const problems: Record<string, FieldProblem> = {};
   for (const field of fields) {
@@ -149,11 +131,7 @@ export function splitValues(
 export const needsOwnComputer = (manifest: ProviderManifest): boolean =>
   manifest.agent.required && manifest.agent.class === 'byo';
 
-/**
- * Whether a connect can start from this device at all: a retired party
- * is gone, a party without web support wants the app, a paused one is
- * shown but not offered.
- */
+// a retired or paused party cannot start; a party without web support wants the app
 export function connectableHere(manifest: ProviderManifest, deviceClass: DeviceClass): boolean {
   if (manifest.status.state === 'retired' || manifest.status.state === 'paused') return false;
   if (deviceClass === 'web' && manifest.webSupport === 'none') return false;
@@ -186,8 +164,6 @@ export function callbackSchemeOf(returnPattern: string | undefined): string | nu
   return m ? m[1].toLowerCase() : null;
 }
 
-/** the party's sync interval in ms, as the catalogue states it */
-/** the session states a login can end in without an active session */
 export const TERMINAL_STATES: ReadonlySet<string> = new Set(['failed', 'expired', 'disabled', 'blocked', 'needs_reauth']);
 
 /** a terminal view without an envelope still gets one, in the connector's own words */

@@ -9,8 +9,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
-// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
-// here we care about the flow around it (#446)
+// happy-dom has no canvas: the downscaler is covered by lib/image.test.ts (#446)
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
 vi.mock('@/lib/image', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/image')>()),
@@ -44,16 +43,12 @@ describe('Events (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('events-add'));
     fireEvent.change(await screen.findByTestId('eventform-name'), { target: { value: 'Ski trip' } });
 
-    // Escape = a dismissal gesture: the guard asks instead of dropping
     fireEvent.keyDown(window, { key: 'Escape' });
     await screen.findByTestId('sheet-discard');
     fireEvent.click(screen.getByTestId('sheet-keep-editing'));
-    // the form survived the gesture (test-mode sheets stay mounted, so
-    // the retained value is the observable, not the confirm's absence)
+    // test-mode sheets stay mounted: the retained value is the observable, not the confirm's absence
     expect((screen.getByTestId('eventform-name') as HTMLInputElement).value).toBe('Ski trip');
 
-    // choosing Discard really closes the form: the host clears `initial`,
-    // dirty drops, and the guard subtree unmounts with it
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('sheet-discard'));
     await waitFor(() => expect(screen.queryByTestId('sheet-discard')).toBeNull());
@@ -67,12 +62,10 @@ describe('Events (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('eventform-name'), { target: { value: 'Ski trip' } });
     fireEvent.keyDown(window, { key: 'Escape' });
     await screen.findByTestId('sheet-discard');
-    // the draft goes back to its baseline while the ask is up
     fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: '' } });
     expect(screen.getByTestId('sheet-discard')).toBeTruthy();
     fireEvent.click(screen.getByTestId('sheet-discard'));
     await waitFor(() => expect(screen.queryByTestId('sheet-discard')).toBeNull());
-    // the form is closed for real — the add door opens a fresh one
     fireEvent.click(await screen.findByTestId('events-add'));
     expect((await screen.findByTestId('eventform-name') as HTMLInputElement).value).toBe('');
   }, 15_000);
@@ -84,7 +77,6 @@ describe('Events (demo identity)', () => {
 
     const card = await createEvent('Rome trip', isoDaysAgo(180), isoDaysAgo(160), '500');
     expect(card.textContent).toContain('Rome trip');
-    // nothing attached yet
     expect(card.textContent).toMatch(/€0[.,]00/);
   }, 15_000);
 
@@ -94,7 +86,6 @@ describe('Events (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('events-add'));
     await screen.findByTestId('eventform-name');
     fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: 'Framed' } });
-    // a bundled picture has no frame — it was composed for the centre
     expect(screen.queryByTestId('eventform-focus')).toBeNull();
     const file = new File(['x'], 'photo.png', { type: 'image/png' });
     fireEvent.change(screen.getByTestId('eventform-upload-input'), { target: { files: [file] } });
@@ -117,13 +108,10 @@ describe('Events (demo identity)', () => {
       expect(found).toBeTruthy();
       return found as HTMLElement;
     });
-    // the card crops at the chosen focus…
     expect((card.querySelector('img') as HTMLElement).style.objectPosition).toBe('100% 50%');
-    // …and so does the hero
     fireEvent.click(card);
     const hero = await screen.findByTestId('eventdetail-hero');
     expect((hero.querySelector('img') as HTMLElement).style.objectPosition).toBe('100% 50%');
-    // stored on the row as two percentages
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const rows = await db.events.toArray();
@@ -139,15 +127,12 @@ describe('Events (demo identity)', () => {
 
     fireEvent.click(await screen.findByTestId('events-add'));
     await screen.findByTestId('eventform-name');
-    // the save stays tappable — the invalid tap names what's missing
     expect((screen.getByTestId('eventform-save') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('eventform-save'));
     expect(await screen.findByTestId('eventform-save-blocker')).toBeTruthy();
     expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('true');
-    // nothing saved
     expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
 
-    // fixing the input clears the blocker live — no second tap needed
     fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: 'Ski trip' } });
     await waitFor(() => expect(screen.queryByTestId('eventform-save-blocker')).toBeNull());
     expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('false');
@@ -160,31 +145,22 @@ describe('Events (demo identity)', () => {
 
     fireEvent.click(card);
     await screen.findByTestId('eventdetail-hero');
-    // the one-boot type-core chain (typed-splits v2: migrations, mirror
-    // mints, the enriched pair matcher) keeps writing behind this test
-    // longer than before, and a warm worker slows every emission — the
-    // waits get real headroom instead of racing the burst
+    // the boot chain (typed-splits migrations, mirror mints, pair matcher) keeps writing and slows emissions: waits get headroom
     const banner = await screen.findByTestId('eventdetail-suggest', {}, { timeout: 15_000 });
     expect(banner.textContent).toMatch(/[1-9]/);
 
-    // the picker opens pre-checked; unticking one keeps it out — a REAL
-    // row, by id: the old prefix query grabbed the eventpick-list
-    // CONTAINER (first in document order), so the exclusion never
-    // toggled and the flow silently attached everything
+    // pick by a real row id: a prefix query grabbed the eventpick-list container, so the exclusion never toggled
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
     fireEvent.click(await screen.findByTestId('eventpick-dm2')); // exclude the rent
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
-    // #379: with payments attached the loud card yields to the quiet
-    // "find more" — the excluded transaction keeps it alive with exactly one
     await waitFor(() => expect(screen.getByTestId('eventdetail-find-more').textContent).toMatch(/1/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
     // the boot's background passes may still re-type a row for a moment: the blocks are waited for, not read once
     await screen.findByTestId('eventdetail-cats', {}, { timeout: 8000 });
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
-    // the quiet door opens the same picker
     fireEvent.click(screen.getByTestId('eventdetail-find-more'));
     await screen.findByTestId('eventpick-list');
   }, 45_000);
@@ -211,10 +187,8 @@ describe('Events (demo identity)', () => {
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
 
-    // the parts pick individually; the container has no checkbox of its own
     await screen.findByTestId('eventpick-evsplit-part-0');
     expect(screen.queryByTestId('eventpick-evsplit')).toBeNull();
-    // leave the groceries part out of the event
     fireEvent.click(screen.getByTestId('eventpick-evsplit-part-1'));
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
@@ -222,9 +196,8 @@ describe('Events (demo identity)', () => {
       const rowNow = await db.transactions.get('evsplit');
       expect(rowNow?.splits?.[0]?.eventId).toBeTruthy();
       expect(rowNow?.splits?.[1]?.eventId).toBeUndefined();
-      expect(rowNow?.eventId ?? undefined).toBeUndefined(); // container stays bare
+      expect(rowNow?.eventId ?? undefined).toBeUndefined();
     }, { timeout: 15_000 });
-    // the attached payments list shows the member part as its own row
     await screen.findByTestId('tx-part-solo-evsplit-0', {}, { timeout: 8000 });
     db.close();
   }, 45_000);
@@ -240,10 +213,8 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('eventpick-dm1');
     // the savings transfer (dm12) is the person’s own money moving — never event money
     expect(screen.queryByTestId('eventpick-dm12')).toBeNull();
-    // the button sums the picks the way the event will show them: the
-    // salary alone is a surplus, so it wears a plus
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
-    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-all'));
     fireEvent.click(screen.getByTestId('eventpick-dm1'));
     await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toMatch(/[+]€2[.,]200/));
   }, 20_000);
@@ -256,20 +227,16 @@ describe('Events (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
-    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-all'));
     fireEvent.click(screen.getByTestId('eventpick-dm1')); // the salary: +€2,200
     fireEvent.click(screen.getByTestId('eventpick-dm9')); // a coffee: −€4.50
     fireEvent.click(screen.getByTestId('eventpick-attach'));
-    // the hero: in surplus, so a plus — and the flows line says what went
-    // out and what came in
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/[+]€2[.,]195/), { timeout: 15_000 });
     const flows = screen.getByTestId('eventdetail-flows').textContent ?? '';
     expect(flows).toMatch(/4[.,]50/);
     expect(flows).toMatch(/2[.,]200/);
-    // the breakdown stays about spending: the coffee, never the salary
     await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).toMatch(/4[.,]50/), { timeout: 8000 });
     expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/2[.,]200/);
-    // the credit’s own detail offers the event row (it was gated to expenses)
     fireEvent.click(await screen.findByTestId('tx-row-dm1'));
     const row = await screen.findByTestId('tx-detail-event-row');
     expect(row.textContent).toContain('Graduation gift');
@@ -284,7 +251,6 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
 
-    // #378: one row toggles — a full pick clears, an empty pick selects all
     expect(screen.getByTestId('eventpick-all').dataset.state).toBe('all');
     fireEvent.click(screen.getByTestId('eventpick-all'));
     expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
@@ -301,11 +267,9 @@ describe('Events (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
-    fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
-    // attach-all writes one tx at a time — the suggestion banner goes before
-    // the last row lands, so the count is sampled only once it has held
-    // still for a beat (a slow CI runner saw 9, then 10)
+    // attach-all writes one tx at a time and the banner goes before the last row lands: count only once it holds still
     await waitFor(() => expect(screen.queryByTestId('eventdetail-suggest')).toBeNull(), { timeout: 8000 });
     const rows = () => document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
     let allCount = -1;
@@ -320,14 +284,11 @@ describe('Events (demo identity)', () => {
     );
     const mainRow = document.querySelector('[data-testid^="eventdetail-cat-"]')!;
     fireEvent.click(mainRow);
-    // subs unfold under the tapped main…
     await waitFor(() => expect(document.querySelector('[data-testid^="eventdetail-subcat-"]')).toBeTruthy());
-    // …and the payments list narrows to that main (never grows)
     const filtered = document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
     expect(filtered).toBeGreaterThan(0);
     expect(filtered).toBeLessThanOrEqual(allCount);
 
-    // the sub narrows further; the clear chip restores everything
     fireEvent.click(document.querySelector('[data-testid^="eventdetail-subcat-"]')!);
     fireEvent.click(await screen.findByTestId('eventdetail-filter-clear'));
     await waitFor(() =>
@@ -343,10 +304,9 @@ describe('Events (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
-    fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
     const txList = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
 
-    // into the transaction: the event row names the event, None clears it
     fireEvent.click(txList.querySelector('button')!);
     const row = await screen.findByTestId('tx-detail-event-row');
     expect(row.textContent).toContain('Rome trip');
@@ -362,14 +322,11 @@ describe('Events (demo identity)', () => {
     const card = await createEvent('Wedding gifts');
     fireEvent.click(card);
     await screen.findByTestId('eventdetail-hero');
-    // no dates: no date-range review, the Add door stands anyway
     expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
     fireEvent.click(screen.getByTestId('eventdetail-add'));
     await screen.findByTestId('eventpick-list');
-    // nothing starts selected in the add list
     expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
 
-    // a tap on a row looks at it; the peek picks it
     fireEvent.change(screen.getByTestId('eventpick-search'), { target: { value: 'Netflix' } });
     await waitFor(() => expect(screen.queryByTestId('eventpick-dm2')).toBeNull());
     fireEvent.click(await screen.findByTestId('tx-row-dm5'));
@@ -377,7 +334,6 @@ describe('Events (demo identity)', () => {
     fireEvent.click(screen.getByTestId('eventpick-peek-toggle'));
     await waitFor(() => expect(screen.getByTestId('eventpick-dm5').getAttribute('aria-pressed')).toBe('true'));
 
-    // another search: the first pick stays picked while it is out of sight
     fireEvent.change(screen.getByTestId('eventpick-search'), { target: { value: 'Spotify' } });
     fireEvent.click(await screen.findByTestId('eventpick-dm4'));
     await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toContain('2'));
@@ -401,16 +357,13 @@ describe('Events (demo identity)', () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-event-row'));
     const list = await screen.findByTestId('tx-event-list');
-    // the archived one says so, and sits after the active one
     await screen.findByTestId('tx-event-ev-old-archived');
     expect(screen.queryByTestId('tx-event-ev-live-archived')).toBeNull();
     const rows = [...list.querySelectorAll('[data-testid$="-row"]')].map((el) => el.getAttribute('data-testid'));
     expect(rows.indexOf('tx-event-ev-live-row')).toBeLessThan(rows.indexOf('tx-event-ev-old-row'));
-    // a peek unfolds the event without choosing it
     fireEvent.click(screen.getByTestId('tx-event-ev-old-peek'));
     expect((await screen.findByTestId('tx-event-ev-old-preview')).textContent).toContain('Mini honeymoon part 2');
     expect(screen.getByTestId('tx-detail-event-row').textContent).not.toContain('Les Sorbiers');
-    // choosing it files the transaction under it
     fireEvent.click(screen.getByTestId('tx-event-ev-old'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-event-row').textContent).toContain('Les Sorbiers'));
   }, 20_000);
@@ -437,18 +390,15 @@ describe('Events (demo identity)', () => {
     cleanup();
     renderApp('/events/ev493');
     const txs = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
-    // the credit nets out what it paid back — struck through like the expense it settled
     const credit = await waitFor(() => {
       const el = txs.querySelector('[data-testid="tx-row-back493"]');
       expect(el?.querySelector('.line-through')?.textContent).toMatch(/101[.,]00/);
       return el!;
     }, { timeout: 8000 });
     expect(credit.textContent).toMatch(/€0[.,]00/);
-    // the event cost only the fuel: no Reimbursement line, nothing received
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/9[.,]76/));
     await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-flows')).toBeNull();
-    // the settled expense no longer reads "expected"
     expect(txs.querySelector('[data-testid="tx-row-hotel493"]')?.textContent).toContain('Reimbursed');
   }, 20_000);
 

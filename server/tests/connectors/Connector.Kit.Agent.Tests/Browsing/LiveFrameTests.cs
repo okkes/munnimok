@@ -6,26 +6,11 @@ using Xunit.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The live camera - Chromium's own screencast (#429) - against a real
-/// browser, because every claim it makes is a claim about what Chromium and
-/// Playwright actually do and a fake would simply agree with whatever we
-/// assumed.
-///
-/// Two of these are the fork in the redaction rule made visible: the same
-/// page, still holding a password, is refused by the relay's capture and
-/// streamed by the live one. Delete either half and one of them fails.
-///
-/// Every wait here ends on the event it waits for, under a generous deadline;
-/// the one stretch of nothing is a caret's blink period, after which a blink
-/// would have had to show.
-/// </summary>
+/// real Chromium on purpose: every claim is about what Chromium and Playwright do, a fake agrees with our assumptions (#429)
+/// the same password page is refused by the relay's capture and streamed by the live one: the fork in the redaction rule
 public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
 {
-    /// <summary>
-    /// The agent's browser is phone-sized so providers serve their mobile
-    /// layout, and at scale factor 1 so one image pixel is one CSS pixel.
-    /// </summary>
+    /// phone-sized so providers serve their mobile layout; scale factor 1 so one image pixel is one CSS pixel
     private const int Width = 390;
 
     private const int Height = 844;
@@ -46,14 +31,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    /// <summary>
-    /// The size a frame advertises is the size its pixels are.
-    ///
-    /// This is the whole coordinate contract in one assertion. The consumer
-    /// multiplies its fractions by the size in the header; if the encoder
-    /// produced anything else every event the human makes lands at the
-    /// difference, and nothing in the system notices.
-    /// </summary>
+    /// the size in the frame header is the coordinate space the consumer multiplies fractions by;
+    /// a mismatch misplaces every event silently
     [Fact]
     public async Task A_live_frame_is_a_jpeg_at_the_size_it_says_it_is()
     {
@@ -69,19 +48,7 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         output.WriteLine($"live frame at q{new LiveViewOptions().SettledQuality}, {Width}x{Height}: {frame.Jpeg.Length} B");
     }
 
-    /// <summary>
-    /// A retina agent produces a frame at CSS size, not at device size.
-    ///
-    /// The screencast encodes device pixels unless it is bounded, so without
-    /// the bound this page comes back 780x1688 for a 390x844 viewport: twice
-    /// the bytes for the same picture, and a size that no longer reads as the
-    /// coordinate space every fraction the human sends is multiplied by.
-    ///
-    /// The agent runs at scale factor 1 today, which is exactly why this test
-    /// is here: the bug is invisible until somebody runs a headed agent on a
-    /// laptop, and then it is invisible again because it looks like a UI
-    /// alignment problem.
-    /// </summary>
+    /// the screencast encodes device pixels unless bounded: a 390x844 viewport at scale 2 would come back 780x1688
     [Fact]
     public async Task A_retina_agent_still_produces_a_frame_at_css_size()
     {
@@ -94,10 +61,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Equal((Width, Height), Jpeg.SizeOf(frame.Jpeg));
     }
 
-    /// <summary>
-    /// The relay's refusal, unchanged. A page whose password box holds content
-    /// produces no still - and every existing caller depends on that.
-    /// </summary>
     [Fact]
     public async Task The_relay_still_refuses_a_page_that_holds_a_secret()
     {
@@ -108,17 +71,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Empty(await redactor.CaptureAsync(page, null, CancellationToken.None));
     }
 
-    /// <summary>
-    /// And the live path photographs that same page anyway.
-    ///
-    /// This is the inversion, and it is deliberately asserted right beside the
-    /// test above so the pair reads as one decision. Refusing here would stream
-    /// a black rectangle at the exact moment the feature exists for - the human
-    /// is typing that password, on purpose, into the provider's own page - and
-    /// what makes it acceptable is the custody change around it, not a softer
-    /// rule: a streamed provider declares no credential fields, so nothing of
-    /// ours was typed in, and the frame is never stored anywhere.
-    /// </summary>
+    /// the live path photographs a password page the human is typing into on purpose; a streamed provider declares no
+    /// credential fields and the frame is never stored
     [Fact]
     public async Task The_live_path_photographs_a_page_the_human_is_typing_into()
     {
@@ -130,18 +84,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Equal((Width, Height), Jpeg.SizeOf(frame.Jpeg));
     }
 
-    /// <summary>
-    /// The live path leaves the page as it found it, as the page can see it.
-    ///
-    /// The relay hides secret-bearing elements for the length of a capture and
-    /// puts them back; the live path never touches the DOM at all. The one
-    /// thing it adds - the rule that steadies the caret - is an inspector
-    /// stylesheet, which no script on the page can enumerate. Worth pinning,
-    /// because the human is mid-login on this page and a field left invisible,
-    /// or a stylesheet the page did not load, in the DOM of a page whose whole
-    /// purpose is detecting automation, would be discovered by them and not by
-    /// us.
-    /// </summary>
+    /// the live path only adds an inspector stylesheet, invisible to page scripts:
+    /// a page that detects automation must see no DOM change
     [Fact]
     public async Task The_live_path_does_not_touch_the_page_it_photographs()
     {
@@ -159,16 +103,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
             "() => document.querySelector('#password').value"));
     }
 
-    /// <summary>
-    /// A focused field does not blink pictures into the stream, and the human
-    /// still sees where they type.
-    ///
-    /// A blinking caret is a new compositor frame about every half second for
-    /// as long as a field has focus - twice a second of frames that say
-    /// nothing. Steadied, a focused field sends nothing until something on the
-    /// page changes; and the first picture after a stretch longer than a blink
-    /// is then the change, not a blink.
-    /// </summary>
+    /// a blinking caret is a compositor frame about every half second;
+    /// steadied, a focused field sends nothing until the page changes
     [Fact]
     public async Task A_focused_field_sends_nothing_until_the_page_changes()
     {
@@ -181,9 +117,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Equal("manual", await page.EvaluateAsync<string>(
             "() => getComputedStyle(document.querySelector('#password')).caretAnimation"));
 
-        // A start draws once or twice within a few milliseconds; a quiet spell
-        // shorter than a blink ends that, and cannot outlast a caret that still
-        // blinks - which the stretch after it, longer than one, then catches.
+        // a start draws once or twice within milliseconds; a quiet spell shorter than a blink ends that, and the
+        // stretch after it, longer than a blink, catches a caret that still blinks
         await camera.DrainAsync(TimeSpan.FromMilliseconds(250));
         await Task.Delay(BlinkPeriod);
         Assert.True(camera.IsQuiet(), "a focused field drew a frame with nothing on the page changing");
@@ -192,10 +127,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         await camera.NextAsync("the frame that shows the change");
     }
 
-    /// <summary>
-    /// A page that DID change sends a new picture, with different bytes, so a
-    /// stream that sends nothing cannot be passing merely because it is stuck.
-    /// </summary>
     [Fact]
     public async Task A_page_that_changed_sends_a_new_picture()
     {
@@ -210,17 +141,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
             frame => Task.FromResult(!frame.Jpeg.AsSpan().SequenceEqual(before.Jpeg)), "the frame that shows the change");
     }
 
-    /// <summary>
-    /// The newest picture always arrives, however fast the page draws and
-    /// however slowly the stream takes them.
-    ///
-    /// Chromium keeps at most three frames unacknowledged and drops whatever it
-    /// composites past that - for good: the last state of an animation drawn
-    /// while three were in flight never arrives. So every frame is acknowledged
-    /// as it lands, and what waits is only ever the newest. Here nothing is
-    /// taken while the page draws sixty frames and ends on red; the one picture
-    /// taken afterwards has to be the red one.
-    /// </summary>
+    /// Chromium keeps at most three frames unacknowledged and drops the rest for good:
+    /// every frame is acknowledged on landing, so the newest always arrives
     [Fact]
     public async Task The_last_state_of_a_busy_page_arrives_however_slowly_it_is_taken()
     {
@@ -243,11 +165,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         await camera.UntilAsync(frame => _decoder!.IsRedAsync(frame.Jpeg), "the red frame the animation ended on");
     }
 
-    /// <summary>
-    /// A context with no viewport - a headed window sized by whoever sits at
-    /// it - is streamed at the size the browser says the picture covers, so
-    /// the frame still carries the size its fractions are measured against.
-    /// </summary>
     [Fact]
     public async Task A_context_with_no_viewport_is_streamed_at_the_size_the_browser_reports()
     {
@@ -266,23 +183,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Equal((frame.Width, frame.Height), Jpeg.SizeOf(frame.Jpeg));
     }
 
-    /// <summary>
-    /// What the encoder choice actually costs, measured against PNG on both
-    /// kinds of page and at both tiers, because the belief it was chosen on is
-    /// only half true.
-    ///
-    /// "PNG of a phone-sized page is a quarter of a megabyte" is a statement
-    /// about CONTENT and not about size. A login form is flat white with a few
-    /// boxes on it, which is the case deflate was built for - PNG can come back
-    /// smaller than JPEG there. The moment there is a photograph on the page,
-    /// which every real provider login has, that reverses by an order of
-    /// magnitude, and it reverses harder still on the captcha grid this
-    /// pipeline also has to carry.
-    ///
-    /// So the assertions are on the case the decisions rest on - JPEG beats PNG
-    /// on real content, the moving tier is the cheaper one - and every number
-    /// goes to the log.
-    /// </summary>
+    /// PNG vs JPEG depends on content: a flat login form can favour PNG, a photograph reverses it by an order of magnitude;
+    /// the assertions cover real content and the cheaper moving tier, every number goes to the log
     [Fact]
     public async Task The_encoder_is_measured_rather_than_assumed()
     {
@@ -309,15 +211,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.True(busySoft < busySharp, $"the moving tier ({busySoft} B) must be the cheaper one ({busySharp} B)");
     }
 
-    /// <summary>
-    /// A page that leaves for an origin the stream may not show is never in a
-    /// frame: not the first picture of it, not a half-drawn one.
-    ///
-    /// Checked on the pixels, not on a label: the other origin's page is solid
-    /// red, and every frame that surfaced is read back through the browser's
-    /// own decoder. The run is not vacuous - the camera says it withheld the
-    /// frames that arrived meanwhile.
-    /// </summary>
+    /// checked on pixels: the other origin's page is solid red, and the camera reports the frames it withheld,
+    /// so the run is not vacuous
     [Fact]
     public async Task A_page_that_leaves_for_another_origin_is_never_in_a_frame()
     {
@@ -341,10 +236,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// A navigation that stays on the allowed origin streams on: the next
-    /// document's first picture arrives once its commit has been checked.
-    /// </summary>
     [Fact]
     public async Task A_page_that_navigates_within_its_origin_keeps_its_pictures()
     {
@@ -362,7 +253,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         Assert.Null(camera.LeftFor);
     }
 
-    /// <summary>The same page at both encodings, by the browser's own switch: the settled frame first, then the moving one.</summary>
     private static async Task<(int Sharp, int Soft)> BothTiersAsync(IPage page)
     {
         await using var camera = await CameraAsync(page);
@@ -389,7 +279,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         return camera;
     }
 
-    /// <summary>A page on real origins, each request answered with the body the route gives it.</summary>
     private async Task<IPage> NewRoutedPageAsync(Func<string, string> body)
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
@@ -408,11 +297,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         return page;
     }
 
-    /// <summary>
-    /// The camera, driven the way the session drives it: woken when a picture
-    /// is waiting, every wait ending on the frame it waits for under a
-    /// generous deadline.
-    /// </summary>
     private sealed class TestCamera : IAsyncDisposable
     {
         private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(15);
@@ -439,7 +323,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         /// <summary>No picture waiting, and none replaced unseen since the counts were last read.</summary>
         public bool IsQuiet() => !Camera.HasFrame && Camera.TakeCounts().Superseded == 0;
 
-        /// <summary>Takes whatever arrives until nothing has for <paramref name="quietFor"/>, and resets the counts.</summary>
         public async Task DrainAsync(TimeSpan quietFor)
         {
             var deadline = DateTimeOffset.UtcNow + Deadline;
@@ -456,7 +339,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
             Camera.TakeCounts();
         }
 
-        /// <summary>Frames that arrived while the camera held them back, read until there is at least one.</summary>
         public async Task<int> WithheldAsync()
         {
             var deadline = DateTimeOffset.UtcNow + Deadline;
@@ -500,11 +382,6 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         public ValueTask DisposeAsync() => Camera.DisposeAsync();
     }
 
-    /// <summary>
-    /// Reads a frame's pixels back through the browser's own JPEG decoder -
-    /// a page beside the one under test, so a claim about what a picture SHOWS
-    /// is checked on the picture.
-    /// </summary>
     private sealed class JpegProbe(IPage page)
     {
         public async Task<bool> IsRedAsync(byte[] jpeg)
@@ -541,12 +418,7 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         return page;
     }
 
-    /// <summary>
-    /// The shape of every provider login: a username in plain text, a password
-    /// in dots, a place for an error message, and a submit button. Named
-    /// <c>password</c> because that is the key the shared manifest declares
-    /// secret, so the redactor has something to refuse.
-    /// </summary>
+    /// named password because that is the key the shared manifest declares secret, so the redactor has something to refuse
     internal static string LoginForm(string password = "") =>
         "<!doctype html><html><body style='margin:0;background:#ffffff;font:16px sans-serif'>"
         + "<h1 style='margin:24px 16px'>Inloggen</h1>"
@@ -559,12 +431,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         + "<button id='submit' style='margin:16px;width:calc(100% - 32px);height:48px'>Inloggen</button>"
         + "</body></html>";
 
-    /// <summary>
-    /// A verification-code page the way providers build them: one box per
-    /// digit, each taking one character and handing the focus on as soon as
-    /// it has it. Text that arrives as one insertion lands whole in the first
-    /// box; text typed a character at a time fills them one by one.
-    /// </summary>
+    /// one box per digit, focus moves on at once: text inserted whole lands in the first box,
+    /// text typed per character fills them
     internal static string CodeForm() =>
         "<!doctype html><html><body style='margin:0;background:#ffffff;font:16px sans-serif'>"
         + "<h1 style='margin:24px 16px'>Controlecode</h1>"
@@ -576,18 +444,8 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         + "<script>for (const box of document.querySelectorAll('input')) box.addEventListener('input', () => { if (box.value.length === 1 && box.nextElementSibling) box.nextElementSibling.focus(); });</script>"
         + "</body></html>";
 
-    /// <summary>
-    /// A page with a photograph on it, standing in for the hero image, the
-    /// gradients and the antialiased type a real provider login is mostly made
-    /// of. A SMOOTH field rather than per-pixel noise, and the difference
-    /// matters: white noise is the worst case for both encoders and measures
-    /// nothing anybody will ever ship, whereas a smooth field is the case where
-    /// deflate finds no runs and the discrete cosine transform finds almost
-    /// everything - which is what a photograph is.
-    ///
-    /// Drawn from a formula so it needs no asset and cannot change under the
-    /// test.
-    /// </summary>
+    /// a SMOOTH field, not noise: noise is the worst case for both encoders; on a smooth field deflate finds no runs
+    /// and the DCT finds almost everything, like a photograph. Drawn from a formula so it needs no asset
     internal static string PhotographicPage() =>
         "<!doctype html><html><body style='margin:0'><canvas id='c' width='" + Width + "' height='" + Height
         + "'></canvas><script>"

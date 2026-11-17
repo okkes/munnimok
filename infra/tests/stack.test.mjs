@@ -1,6 +1,3 @@
-// The platform/environment model (infra/platforms/README.md): stacks,
-// hosts, ports, ids and GitHub environments derived from the committed
-// JSON — against a throwaway platforms tree.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -32,14 +29,12 @@ test('services (#560): every host of a stack becomes a named service with the pa
 test('listStacks: per platform the shared stack first, then its environments by slot', () => {
   assert.deepEqual(listStacks(), ['munni-lcl-shared', 'munni-lcl-prod', 'munni-lcl-dev', 'munni-nas-shared', 'munni-nas-prod', 'munni-nas-staging']);
   assert.deepEqual(listPlatforms().map((p) => p.platform), ['lcl', 'nas']);
-  // slot order, not file-name order
   fx.writeEnv('nas', { env: 'beta', slot: 4 });
   fx.writeEnv('nas', { env: 'alpha', slot: 7 });
   assert.deepEqual(platformEnvs('nas').map((e) => e.env), ['prod', 'staging', 'beta', 'alpha']);
   assert.deepEqual(platformEnvStacks('nas').map((s) => s.stack), ['munni-nas-shared', 'munni-nas-prod', 'munni-nas-staging', 'munni-nas-beta', 'munni-nas-alpha'].slice(1));
   fx.removeEnv('nas', 'beta');
   fx.removeEnv('nas', 'alpha');
-  // a folder without platform.json is not a platform
   mkdirSync(join(fx.platformsDir, 'rpi'), { recursive: true });
   assert.deepEqual(listPlatforms().map((p) => p.platform), ['lcl', 'nas']);
 });
@@ -145,7 +140,6 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
   assert.equal(staging.githubEnvironment, 'nas-staging');
   assert.deepEqual(staging.features.banking, [], 'features default off');
   assert.equal(staging.features.telemetry, true);
-  // performance tracing (2026-10-09): a fifth on production, every trace on the staging test ground, nothing on the shared stack
   assert.deepEqual(prod.tracing, { sampleRate: 0.2 });
   assert.deepEqual(staging.tracing, { sampleRate: 1 });
   assert.equal(loadStack('munni-nas-shared').tracing, null);
@@ -157,7 +151,6 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
   assert.equal(shared.controlApi, 'munni-nas-prod');
   assert.equal(shared.native, null);
   assert.equal(shared.slot, null);
-  // platform.json names the control environment explicitly
   const cfg = loadPlatform('nas');
   savePlatform({ ...cfg, controlEnv: 'staging' });
   try {
@@ -216,7 +209,7 @@ test('environments as files: nextSlot fills the lowest gap, saveEnv normalizes, 
   assert.equal(nextSlot('nas'), 1, 'a freed slot is reused before a new one');
   assert.deepEqual(platformEnvs('nas').map((e) => [e.env, e.slot]), [['prod', 0], ['qa', 2]]);
   assert.throws(() => loadEnv('nas', 'staging'), /unknown environment "staging"/);
-  removeEnv('nas', 'staging'); // already gone: fine
+  removeEnv('nas', 'staging');
   saveEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
   removeEnv('nas', 'qa');
   assert.equal(saveEnv('nas', { env: 'x1', slot: 0, channel: 'weird' }).channel, 'latest', 'an unknown channel falls back to latest');
@@ -234,7 +227,6 @@ test('validation: environment names are short lowercase labels, never a reserved
   assert.throws(() => loadStack('nope'), /not a stack name/);
   assert.throws(() => loadStack('munni-rpi-prod'), /unknown platform "rpi"/);
   assert.throws(() => loadStack('munni-nas-nope'), /unknown environment "nope"/);
-  // a platform file declaring another id than its folder
   mkdirSync(join(fx.platformsDir, 'rpi'), { recursive: true });
   writeFileSync(join(fx.platformsDir, 'rpi', 'platform.json'), JSON.stringify({ platform: 'pi' }));
   try {

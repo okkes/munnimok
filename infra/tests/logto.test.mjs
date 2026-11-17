@@ -1,7 +1,3 @@
-// Logto as code for ONE environment: apps, the API resource with its
-// admin scope + role, users, social connectors, branding, the sign-up
-// policy + the api's Management API access, the console's first admin —
-// against a Logto Management API in a box (fetch fakes).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scratchPlatforms, fakeGh, DOMAIN } from './fixture.mjs';
@@ -18,7 +14,6 @@ const creds = { m2mId: 'infra1', m2mSecret: 's' };
 const ok = (body = {}) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
 const gone = () => ({ ok: true, status: 204, json: async () => null, text: async () => '' });
 
-/** a Logto Management API in a box: applications, resources + scopes, roles + their scopes/users/applications, users, the sign-in experience (an open username tenant unless told otherwise) */
 function fakeLogto({ users = [], apps = [], roles = [], resources = [], signInExp = { signInMode: 'SignInAndRegister', signUp: { identifiers: ['username'], password: true, verify: false }, signIn: { methods: [{ identifier: 'username', password: true, verificationCode: false, isPasswordPrimary: true }] }, socialSignIn: {} } } = {}) {
   const state = { apps, resources, scopes: {}, roles, roleScopes: {}, roleUsers: {}, roleApps: {}, users, tokens: [], secrets: {}, signInExp };
   let n = 0;
@@ -87,8 +82,8 @@ test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — a
   assert.deepEqual(defs.native, {
     name: 'munni-nas-prod native', type: 'Native',
     oidcClientMetadata: { redirectUris: ['munni-prod-nas://auth-callback'], postLogoutRedirectUris: ['munni-prod-nas://signed-out'] },
-    // the phone's refresh token never rotates and lives 90 days (prod Logto logs 2026-10-08: a rotated token the webview lost
-    // was presented again and the reuse detection killed the grant); the SPAs keep Logto's rotation
+    // the phone's refresh token never rotates and lives 90 days: a rotated token the webview lost was presented again
+    // and Logto's reuse detection killed the grant (prod logs 2026-10-08); the SPAs keep rotation
     customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'], rotateRefreshToken: false, refreshTokenTtlInDays: 90 },
   });
   for (const key of ['web', 'admin', 'lab', 'control']) {
@@ -135,7 +130,6 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
 
 test('applyApps: an application that already exists converges on the token policy — the PATCH carries the whole customClientMetadata, so the native app created before 2026-10-08 (rotation on, 14-day TTL) stops rotating on the next Bootstrap', async () => {
   const prod = loadStack('munni-nas-prod');
-  // the live shape before the policy: the native app with its CORS origins only, the web app the same
   const logto = fakeLogto({ apps: [
     { id: 'native-old', name: 'munni-nas-prod native', type: 'Native', oidcClientMetadata: { redirectUris: ['munni-prod-nas://auth-callback'], postLogoutRedirectUris: [] }, customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] } },
     { id: 'web-old', name: 'munni-nas-prod web', type: 'SPA', oidcClientMetadata: { redirectUris: [], postLogoutRedirectUris: [] }, customClientMetadata: { corsAllowedOrigins: [`https://munni-prod-nas.${DOMAIN}`] } },
@@ -160,7 +154,6 @@ test('ensureAdminRole: the API resource carries the `admin` scope and the role "
   const writes = logto.writes();
   assert.deepEqual(await ensureAdminRole(prod, creds, { fetchImpl: logto.fetchImpl }), r, 'idempotent');
   assert.equal(logto.writes(), writes);
-  // the role exists but somebody unlinked the scope
   logto.state.roleScopes[r.roleId] = [];
   assert.deepEqual(await ensureAdminRole(prod, creds, { fetchImpl: logto.fetchImpl }), r);
   assert.deepEqual(logto.state.roleScopes[r.roleId], [r.scopeId], 'relinked, no second role');
@@ -171,7 +164,7 @@ test('listUsers + setAdmin: every user of the environment with whether they hold
   const prod = loadStack('munni-nas-prod');
   const logto = fakeLogto({ users: [{ id: 'u1', username: 'ann', name: 'Ann', primaryEmail: 'ann@x', avatar: null, lastSignInAt: 1758240000000 }, { id: 'u2', username: 'bob' }] });
   assert.deepEqual(await listUsers(prod, creds, { fetchImpl: logto.fetchImpl }), [
-    // Logto hands epoch milliseconds; the listing speaks ISO like every other date (the page printed "NaN d ago" before)
+    // Logto hands epoch ms; the listing speaks ISO (the page printed "NaN d ago")
     { id: 'u1', username: 'ann', name: 'Ann', email: 'ann@x', avatar: null, admin: false, lastSignInAt: new Date(1758240000000).toISOString() },
     { id: 'u2', username: 'bob', name: null, email: null, avatar: null, admin: false, lastSignInAt: null },
   ], 'no role yet: nobody is an admin');
@@ -285,7 +278,6 @@ test('applySignUpPolicy: invitation-only is ONE connector-free patch — sign-in
   assert.deepEqual(logto.state.signInExp.signIn.methods, [USERNAME_METHOD]);
   assert.deepEqual(await applySignUpPolicy(invited, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: true, changed: false }, 'converged: nothing differs');
   assert.equal(patches().length, 1, 'idempotent');
-  // linking switched off by hand → switched on again; the other keys of socialSignIn ride along, the mode is sent with it
   logto.state.signInExp = { ...logto.state.signInExp, socialSignIn: { automaticAccountLinking: false, other: 'kept' } };
   assert.deepEqual(await applySignUpPolicy(invited, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: true, changed: true });
   assert.deepEqual(patches()[1].body, { signInMode: 'SignIn', socialSignIn: { automaticAccountLinking: true, other: 'kept' } });
@@ -314,11 +306,8 @@ test('logtoAnswers: a token for the infra credential means the seed landed; a re
   assert.equal(await logtoAnswers(prod, creds, async () => { throw new Error('ECONNREFUSED'); }), false);
 });
 
-/* ── social connectors + the console's first admin (fetch fakes as before) ── */
-
 const env = { urls: { logto: 'http://logto.test' } };
 
-/** a Logto management API in a box: token, connector list, the mutations */
 function fakeConnectors(connectors) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -347,7 +336,7 @@ const withEnv = async (vars, fn) => {
 
 test('social connectors live under their FIXED ids — a generated-id instance is replaced so the documented callback is the real one', async () => {
   await withEnv({ LOGTO_GOOGLE_CLIENT_ID: 'cid', LOGTO_GOOGLE_CLIENT_SECRET: 'sec', LOGTO_APPLE_CLIENT_ID: '', LOGTO_APPLE_TEAM_ID: '', LOGTO_APPLE_KEY_ID: '', LOGTO_APPLE_PRIVATE_KEY: '' }, async () => {
-    // the live 2026-09-09 shape: Google under a random id → redirect_uri_mismatch
+    // Google under a random id gave redirect_uri_mismatch (live 2026-09-09)
     const stale = fakeConnectors([{ id: 'r72tfa2jqdxd', connectorId: 'google-universal', target: 'google' }]);
     const out = await applySocialConnectors(env, creds, { fetchImpl: stale.fetchImpl });
     assert.deepEqual(out.applied, ['google']);
@@ -359,12 +348,11 @@ test('social connectors live under their FIXED ids — a generated-id instance i
     assert.equal(post.body.id, 'google-universal', 'the proposed id IS the factory id');
     assert.equal(post.body.connectorId, 'google-universal');
     assert.equal(post.body.config.clientId, 'cid');
-    // Google's own session continued the same account after "Use another account" (user 2026-10-08) — the chooser is asked for
+    // Google's own session continued the same account after "Use another account": the chooser is asked for
     assert.deepEqual(post.body.config.prompts, ['select_account']);
     const exp = stale.calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/sign-in-exp'));
     assert.deepEqual(exp.body.socialSignInConnectorTargets, ['google']);
 
-    // already under the fixed id → config refreshed in place
     const fine = fakeConnectors([{ id: 'google-universal', connectorId: 'google-universal', target: 'google' }]);
     const out2 = await applySocialConnectors(env, creds, { fetchImpl: fine.fetchImpl });
     assert.deepEqual(out2.renamed, []);
@@ -373,7 +361,6 @@ test('social connectors live under their FIXED ids — a generated-id instance i
     assert.equal(patch.body.config.clientSecret, 'sec');
     assert.deepEqual(patch.body.config.prompts, ['select_account'], 'an instance from before the prompt converges on the next Bootstrap');
 
-    // nothing configured → nothing touched
     const none = fakeConnectors([]);
     await withEnv({ LOGTO_GOOGLE_CLIENT_ID: '', LOGTO_GOOGLE_CLIENT_SECRET: '' }, async () => {
       const out3 = await applySocialConnectors(env, creds, { fetchImpl: none.fetchImpl });
@@ -383,7 +370,6 @@ test('social connectors live under their FIXED ids — a generated-id instance i
   });
 });
 
-/** a Logto admin + default tenant in a box: users, roles, sign-in experience */
 function fakeTenants({ consoleUsers = [], signInMode = 'SignInAndRegister', members = [], memberRoles = [] } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -391,8 +377,7 @@ function fakeTenants({ consoleUsers = [], signInMode = 'SignInAndRegister', memb
     const body = raw?.startsWith('{') ? JSON.parse(raw) : raw;
     calls.push({ url, method: init.method ?? 'GET', body, auth: init.headers?.authorization ?? null });
     if (url.endsWith('/oidc/token')) return ok({ access_token: url.startsWith('http://admin.') ? 'admin-token' : 'app-token' });
-    // the admin tenant's organization model: one tenant organization, its roles, the members and their roles
-    // Logto OSS carries TWO tenant organizations: the admin tenant's own and the default tenant's — the console manages the latter
+    // Logto OSS has TWO tenant organizations (the admin tenant's and the default's); the console manages the latter
     if (url.includes('/api/organizations?')) return ok([{ id: 't-admin', name: 'Tenant admin' }, { id: 't-default', name: 'Tenant default' }, { id: 'o-other', name: 'not a tenant' }]);
     if (url.includes('/api/organization-roles?')) return ok([{ id: 'or-admin', name: 'admin' }, { id: 'or-member', name: 'member' }]);
     if (/\/api\/organizations\/t-[a-z]+\/users\/[^/]+\/roles\?/.test(url)) return ok(memberRoles.map((n) => ({ id: n === 'admin' ? 'or-admin' : 'or-member', name: n })));
@@ -430,7 +415,7 @@ test('claimConsole: with the admin-tenant credential the console admin is create
   const again = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: taken.fetchImpl });
   assert.deepEqual(again, { created: null, existing: true, modeSet: false, membership: { organizations: ['t-admin', 't-default'], role: 'admin', joined: [], granted: [] } });
   assert.deepEqual(taken.calls.filter((c) => c.method && c.method !== 'GET').map((c) => c.method), ['POST'], 'only the token call writes — nothing created twice');
-  // the repair path: an admin created before the organization step (every console claimed up to 2026-09-28) is joined + promoted on the next run
+  // repair path: an admin created before the organization step is joined + promoted on the next run
   const legacy = fakeTenants({ consoleUsers: [{ id: 'someone', username: 'admin' }], signInMode: 'SignIn' });
   const repaired = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: legacy.fetchImpl });
   assert.deepEqual(repaired.membership, { organizations: ['t-admin', 't-default'], role: 'admin', joined: ['t-admin', 't-default'], granted: ['t-admin', 't-default'] });

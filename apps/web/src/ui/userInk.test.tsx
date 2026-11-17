@@ -22,7 +22,6 @@ describe('a picked colour as ink', () => {
     const lifted = inkOnDark('#08372B');
     expect(contrastOnDark(lifted)).toBeGreaterThanOrEqual(DARK_INK_CONTRAST);
     expect(Math.abs(hexToHsl(lifted)!.h - hexToHsl('#08372B')!.h)).toBeLessThan(3);
-    // black has no hue to keep: it becomes a readable grey
     expect(contrastOnDark(inkOnDark('#000000'))).toBeGreaterThanOrEqual(DARK_INK_CONTRAST);
   });
 

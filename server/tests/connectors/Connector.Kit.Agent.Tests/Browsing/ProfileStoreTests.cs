@@ -4,12 +4,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Browsing;
 
-/// <summary>
-/// The persistent-profile store: one directory per profile on the agent's
-/// own disk, a health record beside them that survives a restart, and a
-/// wipe that leaves nothing — the store is what a household agent keeps
-/// a logged-in browser in, so what it keeps and what it forgets both matter.
-/// </summary>
 public sealed class ProfileStoreTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "profile-store-tests", Guid.NewGuid().ToString("N"));

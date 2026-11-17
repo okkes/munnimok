@@ -9,14 +9,8 @@ export const sharedNet = (platform) => `munni-${platform}-shared-net`;
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
-/**
- * Render docker-compose.<stack>.yml + .env.<stack> for ONE stack of any
- * platform. The env file is a TEMPLATE of ${NAME} placeholders (the
- * manifest's names plus the VITE_* variables the modules write back);
- * `values` substitutes them right here (the lcl platform renders with
- * real values), CI substitutes them from the GitHub environment at
- * bundle time (deploy/nas/render-env.sh). Output: infra/rendered/<stack>/.
- */
+// the env file is a TEMPLATE of ${NAME} placeholders: `values` fills them (lcl), else CI does from the
+// GitHub environment (deploy/nas/render-env.sh)
 export function renderStack(stack, values) {
   const dir = join(OUT_DIR(), stack.stack);
   mkdirSync(join(dir, 'initdb'), { recursive: true });
@@ -38,15 +32,12 @@ export function renderStack(stack, values) {
 const substitute = (text, values) =>
   values ? text.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (_, name) => String(values[name] ?? '').replaceAll("'", '')) : text;
 
-/** the names a stack's env template references, in template order */
 export function templatePlaceholders(stack) {
   const text = stack.role === 'shared' ? sharedTemplate(stack) : envTemplate(stack);
   return [...new Set([...text.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map((m) => m[1]))];
 }
 
 const header = (s) => `# ${s.stack} — RENDERED by infra/bootstrap.mjs from infra/platforms/${s.platform}, do not edit by hand.`;
-
-/* ── the shared stack: one per platform ──────────────────────────────── */
 
 function sharedCompose(s) {
   const p = s.ports;
@@ -175,15 +166,8 @@ volumes:
 `;
 }
 
-/**
- * The environment's pooled browser agents (#420, A1): every provider pack,
- * headed under Xvfb, one container per replica beside the environment's own
- * control plane on its default network — nothing dials in. Each replica
- * enrolls with the ENVIRONMENT's fleet code (a per-environment secret) and
- * takes `concurrency` jobs at once; the egress is the platform's claim (a
- * home line is residential) and the control plane believes it. Zero
- * replicas is a choice (a platform that only runs household agents).
- */
+// pooled agents: each replica enrolls with the ENVIRONMENT's fleet code; the egress is the platform's claim
+// (a home line is residential) and the control plane believes it; zero replicas is a choice
 function pooledAgents(s) {
   const n = s.agents?.pooled ?? 0;
   if (!n) return '';
@@ -223,18 +207,10 @@ function pooledAgents(s) {
 `).join('');
 }
 
-/** the volumes the environment's pooled agents keep (their enrollment and their browser profiles) */
 const agentVolumes = (s) => Array.from({ length: s.agents?.pooled ?? 0 }, (_, i) => `\n  agentstate${i + 1}:\n  agentprofiles${i + 1}:`).join('');
 
-/**
- * The environment's hosted private slots (#420 A2): one container per
- * slot in the household agent's shape — Class byo, one job at a time,
- * browser profiles kept — on munni's hardware, enrolled with the
- * ENVIRONMENT's private-slot code under a subject that is nobody's until
- * the operator binds the slot to the person who asked for it (the admin
- * portal). Giving it back wipes its profiles before the next person.
- * Zero is the default: a platform offers these on purpose.
- */
+// hosted private slots: enrolled with the ENVIRONMENT's private-slot code under a subject that is nobody's
+// until the operator binds it; giving a slot back wipes its profiles; zero is the default
 function privateAgents(s) {
   const n = s.agents?.privateSlots ?? 0;
   if (!n) return '';
@@ -274,7 +250,6 @@ function privateAgents(s) {
 `).join('');
 }
 
-/** the volumes the environment's private slots keep */
 const privateVolumes = (s) => Array.from({ length: s.agents?.privateSlots ?? 0 }, (_, i) => `\n  privatestate${i + 1}:\n  privateprofiles${i + 1}:`).join('');
 
 function sharedTemplate(s) {
@@ -304,7 +279,6 @@ CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
 `;
 }
 
-/** the family Caddy (lcl): local-CA https for the vault always, and for every service as a real sslip.io hostname in LAN mode */
 function familyCaddyfile(shared) {
   const site = (address, proxy) => `${address} {\n\treverse_proxy ${proxy}\n}\n`;
   let sites = site(`https://localhost:${shared.ports.vault}`, 'vaultwarden:80');
@@ -330,7 +304,6 @@ function familyCaddyfile(shared) {
   return `{\n\tlocal_certs\n}\n${sites}`;
 }
 
-/** pgAdmin's preregistered servers: one per environment (postgres-<env> on the shared net) + glitchtip-db */
 function pgadminServers(shared) {
   const server = (name, host, db = 'munni') => ({ Name: name, Group: `munni ${shared.platform}`, Host: host, Port: 5432, MaintenanceDB: db, Username: 'munni', SSLMode: 'prefer' });
   const servers = {};
@@ -340,9 +313,6 @@ function pgadminServers(shared) {
   return JSON.stringify({ Servers: servers }, null, 2);
 }
 
-/* ── an environment stack ─────────────────────────────────────────────── */
-
-/** browser origins the api accepts: its own web/admin/lab, the localhost twins in LAN mode, the control cockpit when this env powers it */
 function corsOrigins(s) {
   const origins = [s.urls.web, s.urls.admin, s.urls.lab];
   if (s.delivery === 'docker' && s.lan) origins.push(`http://localhost:${s.ports.web}`, `http://localhost:${s.ports.admin}`, `http://localhost:${s.ports.lab}`);
@@ -540,14 +510,7 @@ volumes:
 `;
 }
 
-/**
- * The environment's connector control plane (#367): every provider pack under
- * one catalogue, in Production mode against its own database on the
- * environment's Postgres, the machine token of the environment's Logto as
- * its only consumer credential. The api reaches it in-network; household
- * agents dial its published host from outside (token-protected: nothing
- * answers without a machine token or an agent's own token).
- */
+// the api reaches it in-network; household agents dial its published host from outside, token-protected
 function connectorService(s) {
   const e = s.env;
   const local = s.delivery === 'docker';

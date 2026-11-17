@@ -7,16 +7,13 @@ using System.Text.Json.Serialization;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>What one call to the control plane carries beside its path and body.</summary>
 public sealed record ConnectorCall
 {
     /// <summary>The minted subject; every session, job, ticket and agent route needs it, the catalogue does not.</summary>
     public string? Subject { get; init; }
 
-    /// <summary>Serialised in the connector's own JSON (snake_case) when present.</summary>
     public object? Body { get; init; }
 
-    /// <summary>A ticket from <c>sessions/resume</c>, for the fetch and ack routes.</summary>
     public string? Ticket { get; init; }
 
     /// <summary><c>user</c> (default) or <c>schedule</c>.</summary>
@@ -27,11 +24,9 @@ public sealed record ConnectorCall
 
     public string? IdempotencyKey { get; init; }
 
-    /// <summary>Catalogue revalidation.</summary>
     public string? IfNoneMatch { get; init; }
 }
 
-/// <summary>The connector's error envelope, as it came (docs/connectors/contract.md).</summary>
 public sealed record ConnectorError(
     string Code,
     bool Retriable,
@@ -40,11 +35,6 @@ public sealed record ConnectorError(
     string? DetailId,
     int? RetryAfterSeconds);
 
-/// <summary>
-/// One answer from the control plane. JSON bodies arrive as a node the
-/// caller reads what it needs from; pictures and documents as bytes. An
-/// error status carries the parsed envelope so a handler can relay it.
-/// </summary>
 public sealed record ConnectorReply(
     HttpStatusCode Status,
     JsonNode? Json,
@@ -70,11 +60,7 @@ public sealed record ConnectorReply(
     public string? Text(string property) => Object[property]?.GetValue<string>();
 }
 
-/// <summary>
-/// The typed client the relay speaks to the control plane with. Authenticates
-/// every call (<see cref="ConnectorAuthSource"/>), stamps the subject and the
-/// per-call headers, and never logs a body: bodies carry bundles.
-/// </summary>
+// never logs a body: bodies carry bundles
 public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
 {
     public const string SubjectHeader = "X-Connector-Subject";
@@ -103,10 +89,6 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
         return await ReadAsync(response, ct);
     }
 
-    /// <summary>
-    /// Opens a server-sent event stream. The caller owns the response and
-    /// disposes it when it stops reading — the stream is the body.
-    /// </summary>
     public async Task<HttpResponseMessage> OpenStreamAsync(string path, ConnectorCall call, CancellationToken ct)
     {
         using var request = await BuildAsync(HttpMethod.Get, path, call, ct);
@@ -114,7 +96,6 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
         return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
-    /// <summary>A stream the control plane refused, read as any other answer: its status and envelope.</summary>
     public static Task<ConnectorReply> RefusalOfAsync(HttpResponseMessage response, CancellationToken ct) => ReadAsync(response, ct);
 
     private async Task<HttpRequestMessage> BuildAsync(HttpMethod method, string path, ConnectorCall call, CancellationToken ct)
@@ -167,8 +148,7 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
             }
             catch (JsonException)
             {
-                // a reverse proxy's HTML error page, or an empty 5xx — the
-                // status is the answer and the body is nobody's contract
+                // a proxy's HTML error page or an empty 5xx: the status is the answer, the body nobody's contract
             }
         }
 
@@ -184,11 +164,8 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
             // a recording's digest (#441 L3): text the relay hands on as it is, never parsed
             || contentType.Equals("text/markdown", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// The envelope when the control plane sent one; a synthetic
-    /// <c>internal</c> when it did not (a proxy answered, or it crashed
-    /// before it could say), so every failure reaches the app in one shape.
-    /// </summary>
+    // a synthetic `internal` envelope when the control plane sent none (a proxy answered, or it crashed),
+    // so every failure reaches the app in one shape
     private static ConnectorError ParseError(JsonNode? json, HttpStatusCode status)
     {
         if (json?["error"] is JsonObject error && error["code"]?.GetValue<string>() is { Length: > 0 } code)
@@ -226,12 +203,6 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
     }
 }
 
-/// <summary>
-/// How the relay authenticates to the control plane: the development key
-/// as a header, or a Logto machine token (client credentials for the
-/// connector's audience) minted once and reused until shortly before it
-/// expires. One instance per process; the token is the only state.
-/// </summary>
 public sealed class ConnectorAuthSource(ConnectorOptions options, IHttpClientFactory httpFactory, IConfiguration config, TimeProvider time)
 {
     public const string DevelopmentHeader = "X-Connector-Key";
@@ -276,7 +247,6 @@ public sealed class ConnectorAuthSource(ConnectorOptions options, IHttpClientFac
         }
     }
 
-    /// <summary>Logto: <c>client_credentials</c> for the API resource and the operator scope, basic-authenticated with the app's id and secret.</summary>
     private async Task<(string Token, TimeSpan Lifetime)> MintAsync(CancellationToken ct)
     {
         var authority = config["Auth:Authority"]?.TrimEnd('/')

@@ -25,7 +25,6 @@ function captureDownloads(): { blobs: Blob[]; names: string[] } {
   return { blobs, names };
 }
 
-/** a second space beside the demo one, its period starting on the 10th, and one payment the demo space is sure to hold */
 async function seedSecondSpace(): Promise<void> {
   const db = new MunniDB('munni_demo');
   const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
@@ -71,8 +70,8 @@ describe('ExportSheet (demo identity)', () => {
     expect(lines[0].endsWith('tx_id,account_id,category_id,space_id')).toBe(true);
     expect(lines[1].endsWith(',demo_space')).toBe(true);
     expect(text).toContain('Albert Heijn');
-    expect(text).toContain('Grocery'); // localized category name
-    expect(lines.length).toBeGreaterThan(50); // the demo history came along
+    expect(text).toContain('Grocery');
+    expect(lines.length).toBeGreaterThan(50);
   }, 15_000);
 
   it('exports JSON; the format is not called a backup', async () => {

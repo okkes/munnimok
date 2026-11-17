@@ -10,17 +10,8 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { accountLinkId, txMetaId } from '@/domain/feedIds';
 
-/**
- * 2026-10-09 (user: "when I press Confirm it sometimes takes 3–4 seconds
- * before it continues, or not at all"): the review on a production-sized
- * feed. Its own file because the helper differs from the deck specs — a
- * seeded bank feed of 1 500 rows attached to the demo space, every live
- * query counted — and the numbers are the point: before the fix one bulk
- * confirm re-ran the space join 83 times (every write re-ran every one of
- * the deck's five subscriptions), 7.5 s of query work on fake-indexeddb.
- * The bounds below keep that from coming back; the console lines are the
- * measurement for whoever profiles it next.
- */
+// Confirm on a 1 500-row feed with every live query counted: one bulk confirm used to re-run the space join 83 times
+// (7.5 s of query work); the bounds keep that from returning
 
 const FEED = 'feed_perf';
 const ACCOUNT = 'acct_perf';
@@ -45,9 +36,6 @@ const alpha = (n: number): string => {
   return s;
 };
 
-/** a production-shaped dataset: one bank feed attached to the demo space, every row wearing the space's overlay;
- *  a fifth of the rows wait in the review — each its own merchant, or (bulk) one shared merchant so the card's
- *  "also apply to similar" fills up */
 async function seedLargeFeed(bulkSiblings: boolean): Promise<void> {
   const db = new MunniDB('munni_demo');
   const store = new DexieBackend(db);
@@ -84,8 +72,6 @@ interface QueryStat {
   ms: number;
 }
 
-/** every live query the screen subscribes, counted and timed per executed run (a run the backend's burst
- *  coalescer supersedes never reaches the query and is not counted); plus the local writes */
 function instrument() {
   const stats = new Map<string, QueryStat>();
   const marks = { lastQueryEnd: 0, lastWrite: 0, writes: 0 };
@@ -123,7 +109,6 @@ function instrument() {
     Repo.prototype.upsert = originalUpsert;
   };
   const snapshot = (): Map<string, QueryStat> => new Map([...stats].map(([k, v]) => [k, { ...v }]));
-  /** runs and milliseconds per query since `before`, heaviest first */
   const since = (before: Map<string, QueryStat>): { lines: string[]; runsOf: (needle: string) => number; runs: number; ms: number } => {
     const rows: { label: string; runs: number; ms: number }[] = [];
     for (const [label, stat] of stats) {
@@ -139,7 +124,6 @@ function instrument() {
       ms: rows.reduce((n, r) => n + r.ms, 0),
     };
   };
-  /** resolves once neither a write nor a query run has happened for `quietMs` */
   const settled = async (quietMs: number, maxMs: number): Promise<number> => {
     const start = performance.now();
     for (;;) {
@@ -163,7 +147,6 @@ describe('ReviewScreen confirm on a large feed (2026-10-09)', () => {
     probe = null;
   });
 
-  /** one confirm, measured from the tap: when the next card is up, when the last write and query landed */
   const measureConfirm = async (bulk: boolean) => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
@@ -177,15 +160,13 @@ describe('ReviewScreen confirm on a large feed (2026-10-09)', () => {
     await screen.findByTestId('review-card', {}, { timeout: 30_000 });
     await screen.findByText(/1 \/ 3[0-9][0-9]/, {}, { timeout: 30_000 });
     const mountMs = performance.now() - tMount;
-    // the mount's own queries settle before the confirm is measured
     await probe.settled(400, 20_000);
     const before = probe.snapshot();
     probe.marks.writes = 0;
 
     const t0 = performance.now();
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
-    // a bulk over every feed review row lands as ONE update (the burst is coalesced) and the deck moves on to the
-    // demo seed's own cards; a single row shows the next card
+    // a bulk over every feed review row lands as ONE update (burst coalesced); the deck moves on to the demo seed's cards
     if (bulk) await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toContain('Shop Together'), { timeout: 120_000 });
     else await waitFor(() => expect(screen.getByText(/2 \/ 3[0-9][0-9]/)).toBeTruthy(), { timeout: 60_000 });
     const nextCardMs = performance.now() - t0;
@@ -206,7 +187,6 @@ describe('ReviewScreen confirm on a large feed (2026-10-09)', () => {
     const { work, writes } = await measureConfirm(false);
     // the card's own write and the activity line
     expect(writes).toBeLessThanOrEqual(3);
-    // 2026-10-09: five subscribers share one live query and a burst of commits runs it once — before: 5 runs
     expect(work.runsOf(JOIN)).toBeLessThanOrEqual(2);
     expect(work.runsOf('buildSpaceMerchantMemory')).toBeLessThanOrEqual(2);
     // the second confirm still advances: the coalescer must not break the live queries' change tracking
@@ -216,9 +196,8 @@ describe('ReviewScreen confirm on a large feed (2026-10-09)', () => {
 
   it('a bulk confirm over hundreds of siblings is one burst: a handful of query runs, never one per write', async () => {
     const { work, writes } = await measureConfirm(true);
-    // every review row rode along as a similar sibling
     expect(writes).toBeGreaterThan(100);
-    // before: 83 joins for the first 16 writes alone
+    // before the fix: 83 joins for the first 16 writes alone
     expect(work.runsOf(JOIN)).toBeLessThanOrEqual(4);
     expect(work.runsOf('buildSpaceMerchantMemory')).toBeLessThanOrEqual(4);
   }, 180_000);

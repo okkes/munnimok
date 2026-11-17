@@ -18,35 +18,24 @@ import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow, ConnectorConnRow, ReceiptRow, StoreConnLinkRow, StoreConnRow } from '@/db/types';
 
-/**
- * Connections (#367, the hub): a connection is a synced, secret-free
- * `storeConn` row in the owner's store feed (name, icon, provider — every
- * device renders it), a per-space `storeConnLink` for each space its
- * receipts flow into, and a DEVICE-ONLY `connectorConn` row holding the
- * bundle the party handed this device. The relay keys every receipt by
- * the connection id, so the id outlives re-logins and the receipts stay
- * one row each.
- */
+// storeConn (synced, secret-free) + per-space storeConnLink + a DEVICE-ONLY connectorConn row holding the bundle;
+// the relay keys receipts by connection id, so the id outlives re-logins (#367)
 
 /** connections are a signed-in-user feature: demo/offline make zero network calls */
 export const connectorsAvailable = (): boolean => readSessionIdentity()?.kind === 'user';
 
-/** what the hub renders per connection */
 export interface ConnectionView {
   meta: StoreConnRow;
   /** this device's row — absent when the connection was made elsewhere */
   device?: ConnectorConnRow;
-  /** this device can sync it right now */
   hasBundle: boolean;
 }
 
-/** device-local rows (bundle custody, last relay state) */
 export function useConnectorConns(): ConnectorConnRow[] | undefined {
   const { store } = useData();
   return useQuery(store, async () => store.connectorConnAll(), []);
 }
 
-/** synced connection METADATA — every device of the owner renders these */
 export function useStoreConnMetas(): StoreConnRow[] | undefined {
   const { store } = useData();
   return useQuery(store, async () => (await store.allRows('storeConn')).filter((c) => c.deleted === 0), []);
@@ -62,16 +51,8 @@ export function useLiveConnectionIds(): ReadonlySet<string> | undefined {
   );
 }
 
-/**
- * The feeds whose accounts are the viewer's own — the ownership source of
- * truth the coverage reading (#445) and the shared badge (#305) rest on:
- * /me/feeds for a signed-in user (undefined while the answer is out of
- * reach — offline — so nothing is told rather than something wrong), and on
- * a device that syncs nothing (a demo or offline identity holds nobody
- * else's rows) every space an account sits in. User ss 2026-10-09: a
- * friend's account attached before links carried a name must never read as
- * the viewer's own.
- */
+// ownership source for coverage (#445) and the shared badge (#305): /me/feeds when signed in
+// (undefined offline: tell nothing rather than wrong); a demo/offline device holds nobody else's rows
 export function useMyFeedIds(): ReadonlySet<string> | undefined {
   const { store } = useData();
   const syncing = connectorsAvailable();
@@ -85,7 +66,6 @@ export function useMyFeedIds(): ReadonlySet<string> | undefined {
   );
 }
 
-/** connections included in the ACTIVE space (members see these) */
 export function useSpaceStoreConnLinks(): StoreConnLinkRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -95,7 +75,6 @@ export function useSpaceStoreConnLinks(): StoreConnLinkRow[] | undefined {
   );
 }
 
-/** the hub's list: metadata joined with this device's state, by name */
 export function useConnections(): ConnectionView[] | undefined {
   const { store } = useData();
   return useQuery(
@@ -113,18 +92,12 @@ export function useConnections(): ConnectionView[] | undefined {
   );
 }
 
-/** a bank account the connector platform fetched, with the spaces it is attached to */
 export interface ConnectorAccountView {
   account: AccountRow;
-  /** the spaces it is attached to, each with who attached it (whose connection feeds it, 2026-10-08) */
+  /** attachedBy: whose connection feeds it */
   attachedTo: { spaceId: string; name: string; attachedBy?: string }[];
 }
 
-/**
- * Every account a party fetched for this user (M4): the feed rows with
- * `source: 'connector'`, joined with their attachments — the hub lists
- * them under the party's card and offers the attach step for each.
- */
 export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
   const { store } = useData();
   return useQuery(
@@ -147,12 +120,10 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
   );
 }
 
-/** the connections a space includes (storeConnLink) */
 const includedConnections = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
   new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
 
-/** the owner's global receipts the space may attach: every receipt of its included connections and — #567 — the
- *  photos the person kept without a transaction, which belong to all their spaces; newest first */
+/** #567: photos kept without a transaction belong to all the person's spaces; newest first */
 async function attachableRows(store: StorageBackend, spaceId: string, feedId: string): Promise<ReceiptRow[]> {
   const included = await includedConnections(store, spaceId);
   const rows = (await store.bySpace('receipt', feedId)).filter(
@@ -162,8 +133,6 @@ async function attachableRows(store: StorageBackend, spaceId: string, feedId: st
   return rows;
 }
 
-/** what the space's links say about its receipts: where each is attached, which transactions it was taken off or
- *  turned down for (#496), and every transaction that holds a receipt at all — a photo's included */
 async function linkFacts(
   store: StorageBackend,
   spaceId: string,
@@ -182,13 +151,8 @@ async function linkFacts(
   return { attachedTo, rejectedFor, heldTxIds };
 }
 
-/** per global receipt, the transactions its link in the space is attached to (an attached link only) */
 const attachedTxIds = async (store: StorageBackend, spaceId: string): Promise<Map<string, string[]>> => (await linkFacts(store, spaceId)).attachedTo;
 
-/**
- * Owner view: global receipts of connections included in the active
- * space that are not yet linked into it — the manual-attach inventory.
- */
 export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -203,24 +167,17 @@ export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
   );
 }
 
-/** the picker's inventory (user 2026-10-08: a receipt attached elsewhere is still on offer, and says where it is) */
+/** a receipt attached elsewhere is still on offer and says where it is */
 export interface AttachableReceipts {
-  /** every receipt of the included connections, attached or not, newest first */
   rows: ReceiptRow[];
   /** the transactions each receipt is attached to in this space, by receipt id — absent = not attached */
   attachedTo: Map<string, string[]>;
   /** #496: the transactions each receipt was taken off or turned down for — never suggested there again */
   rejectedFor: Map<string, string[]>;
-  /** every transaction in the space that holds a receipt, a photo's included */
   heldTxIds: Set<string>;
 }
 
-/**
- * Owner view: every global receipt the active space may attach — the
- * unmatched ones and the ones already proving a transaction alike
- * (user 2026-10-08: several payments can end up with one receipt, so the
- * picker lists it under each of them and says where it already sits).
- */
+// several payments can share one receipt: the picker lists it under each and says where it already sits
 export function useAttachableReceipts(): AttachableReceipts | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -241,7 +198,6 @@ export async function attachableReceiptsOf(store: StorageBackend, spaceId: strin
   return { rows: feedId ? await attachableRows(store, spaceId, feedId) : [], ...facts };
 }
 
-/** every receipt the shops handed over, newest first — the hub's own list, no space in between */
 export function useGlobalReceipts(): ReceiptRow[] | undefined {
   const { store } = useData();
   return useQuery(
@@ -257,7 +213,6 @@ export function useGlobalReceipts(): ReceiptRow[] | undefined {
   );
 }
 
-/** the dates a connection's fetches cover, with how many rows they brought */
 export interface FetchedRange {
   count: number;
   /** yyyy-mm-dd, the oldest row */
@@ -278,14 +233,7 @@ const widen = (ranges: Record<string, FetchedRange>, connectionId: string, date:
   if (day > current.to) current.to = day;
 };
 
-/**
- * What every connection fetched so far — a shop's receipts by the
- * connection that pulled them, a bank's transactions through the accounts
- * it handed over — so a card can say "from … to …" (user request
- * 2026-10-02). Derived from the rows themselves: always true, never a
- * claim.
- */
-/** a shop's receipts, by the connection that pulled them */
+// derived from the rows themselves, so a card's "from … to …" is never a claim
 async function receiptRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
   const feedId = myStoreFeedId();
   if (!feedId) return;
@@ -294,15 +242,9 @@ async function receiptRanges(store: StorageBackend, ranges: Record<string, Fetch
   }
 }
 
-/** where a fetched account's own range sits in the ranges map, beside the connections' */
 export const accountRangeKey = (accountId: string): string => `account:${accountId}`;
 
-/**
- * A party's transactions by the account they sit on — a card then adds up
- * the accounts its own connection fetches (#524: crediting every connection
- * of the party with every account it fed put the ING and ASN history under
- * the PayPal connection).
- */
+// per account: crediting every connection of a party with all its accounts put ING and ASN history under PayPal (#524)
 async function bankRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
   const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector');
   for (const feed of new Set(accounts.map((a) => a.spaceId))) {
@@ -313,7 +255,6 @@ async function bankRanges(store: StorageBackend, ranges: Record<string, FetchedR
   }
 }
 
-/** the range of several accounts together: a bank connection's, from the accounts it fetches */
 export function mergedRange(ranges: Readonly<Record<string, FetchedRange>> | undefined, accountIds: readonly string[]): FetchedRange | undefined {
   let merged: FetchedRange | undefined;
   for (const id of accountIds) {
@@ -345,7 +286,6 @@ export interface AdoptArgs {
   /** the settled session view — its bundle is kept, its account tells duplicates */
   view: SessionView;
   connectionId: string;
-  /** the login refreshed an existing connection */
   reconnect: boolean;
   label?: string;
 }
@@ -357,18 +297,16 @@ export interface AdoptResult {
 }
 
 export interface ConnectionOps {
-  /** a settled login becomes a connection: rows, custody, the first sync — no space inclusion, that is picked afterwards */
+  /** no space inclusion: that is picked afterwards */
   adopt: (args: AdoptArgs) => Promise<AdoptResult>;
   rename: (connectionId: string, displayName: string) => Promise<void>;
   setIcon: (connectionId: string, icon: string | null) => Promise<void>;
   /** ruling 2: unmatched receipts die with the connection; links survive */
   remove: (connectionId: string) => Promise<void>;
   syncNow: (connectionId: string, options?: Pick<SyncOptions, 'onChallenge' | 'onProgress'>) => Promise<SyncReport>;
-  /** per-space inclusion (accountLink analogue); added spaces re-match */
   setIncludedSpaces: (connectionId: string, spaceIds: string[]) => Promise<void>;
-  /** #441 L1: the person's answer to "report this failure?" — yes keeps the picture for the people who run munni, no deletes it; either way the question closes */
+  /** #441 L1: yes keeps the failure picture for the people who run munni, no deletes it */
   answerReport: (connectionId: string, jobId: string, share: boolean) => Promise<void>;
-  /** #441 L1: always report this connection's failures without asking */
   setReportFailures: (connectionId: string, always: boolean) => Promise<void>;
 }
 
@@ -378,7 +316,6 @@ const hashIdentity = async (provider: string, identity: string): Promise<string>
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
 
-/** default display name: the party's name, numbered when it exists already */
 const defaultName = (metas: readonly StoreConnRow[], base: string): string => {
   const taken = new Set(metas.filter((m) => m.deleted === 0).map((m) => m.displayName));
   if (!taken.has(base)) return base;
@@ -390,11 +327,8 @@ const defaultName = (metas: readonly StoreConnRow[], base: string): string => {
 const metaOf = async (storage: StorageBackend, connectionId: string): Promise<StoreConnRow | undefined> =>
   (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
 
-/**
- * One adoption per connection at a time. The relay hands a sign-in's bundle to exactly one reader, and two
- * reads can cross as it lands (a poll and the sheet's own read, the sheet and the hub's follower): their
- * answers must not write the device row over each other.
- */
+// one adoption per connection at a time: the relay hands a bundle to one reader and crossing reads must not
+// overwrite each other's device row
 const adopting = new Map<string, Promise<unknown>>();
 
 function inTurn<T>(connectionId: string, work: () => Promise<T>): Promise<T> {
@@ -407,11 +341,9 @@ function inTurn<T>(connectionId: string, work: () => Promise<T>): Promise<T> {
   return mine;
 }
 
-/** the device row after a login: custody first, the bundle right behind it */
 async function keepDeviceRow(storage: StorageBackend, connectionId: string, provider: string, view: SessionView): Promise<void> {
   const existing = await storage.connectorConnGet(connectionId);
-  // the same sign-in answered again (#430): the row is this session's already. Rewriting it took the bundle the
-  // first answer brought out of a phone's row — only what this answer carries itself is news
+  // #430: the same sign-in answered again leaves the row alone; rewriting it dropped the bundle the first answer brought
   if (existing?.sessionId === view.sessionId && existing.state === view.state) {
     if (view.credentialBundle && view.credentialBundle !== existing.credentialBundle) {
       await storage.connectorConnPut({ ...existing, credentialBundle: view.credentialBundle });
@@ -429,9 +361,7 @@ async function keepDeviceRow(storage: StorageBackend, connectionId: string, prov
     lastSyncAt: existing?.lastSyncAt,
     // the days still to fetch are the connection's, not the session's
     backfill: existing?.backfill,
-    // the person's standing answer outlives the session (user 2026-10-07: a
-    // re-login wiped it and the question came back); the old error and the
-    // old session's job do not — this sign-in settled them
+    // the standing answer outlives the session (a re-login wiped it and the question came back); the old error and job do not
     reportFailures: existing?.reportFailures,
   });
   if (view.bundle) await keepBundle(storage, connectionId, view.bundle);
@@ -475,10 +405,8 @@ export function useConnectionOps(): ConnectionOps {
       connectedAt: new Date().toISOString().slice(0, 10),
       status: 'ok',
     });
-    // a connection is the person's, not a space's (user ruling 2026-10-02):
-    // nothing joins a space by itself — a shop's spaces are picked on the
-    // step after naming or from its card, a bank's accounts are attached
-    // one by one on the space's accounts screen, like every other feed account
+    // a connection is the person's, not a space's: nothing joins a space by itself; a shop's spaces are picked after naming,
+    // a bank's accounts are attached one by one on the space's accounts screen
     void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
     firstSync(connectionId);
     return { connectionId, duplicateOf };
@@ -490,8 +418,7 @@ export function useConnectionOps(): ConnectionOps {
       const meta = await metaOf(storage, connectionId);
       if (!meta || !displayName.trim()) return;
       await repo.upsert('storeConn', meta.spaceId, connectionId, { displayName: displayName.trim() });
-      // members render the snapshot on the link rows — keep them current
-      // (#505: the connection is the person's; a space they only read keeps its snapshot)
+      // members render the snapshot on the link rows; #505: a space the person only reads keeps its snapshot
       for (const link of await allLinksOf(connectionId)) {
         await repo.upkeep().upsert('storeConnLink', link.spaceId, link.id, { displayName: displayName.trim() });
       }
@@ -507,8 +434,6 @@ export function useConnectionOps(): ConnectionOps {
       void logActivity(storage, repo, spaceId, 'storeEdit', meta.displayName);
     },
     remove: async (connectionId) => {
-      // the party is told first, with the bundle when this device holds
-      // it; the relay removes its binding either way
       const device = await storage.connectorConnGet(connectionId);
       if (device?.sessionId) {
         const bundle = await readBundle(storage, connectionId);
@@ -516,15 +441,12 @@ export function useConnectionOps(): ConnectionOps {
           if (!(err instanceof ConnectorError)) throw err;
         });
       } else if (connectorsAvailable()) {
-        // a connection made on another device (user 2026-10-09: sessions nobody could remove lingered at the
-        // relay): the relay's binding is this person's too — found by the connection id, ended without a
-        // bundle, as the other device's custody is not this one's to hand over; a relay that is away or
-        // knows nothing of it leaves the rows here to be removed all the same
+        // made on another device: end the relay's binding by connection id without a bundle (that custody is not ours to hand over);
+        // a relay that is away or knows nothing of it leaves the rows here to be removed anyway
         const binding = (await connectorApi.sessions().catch(() => [] as BindingView[])).find((row) => row.connectionId === connectionId);
         if (binding) await connectorApi.disconnect(binding.provider, binding.sessionId).catch(() => undefined);
       }
-      // ruling 2: the connection's global receipts die with it — space
-      // snapshots (linked receipts) live on untouched
+      // ruling 2: global receipts die with the connection; space snapshots (linked receipts) stay
       const meta = await metaOf(storage, connectionId);
       if (meta) {
         for (const receipt of await storage.bySpace('receipt', meta.spaceId)) {
@@ -566,9 +488,7 @@ export function useConnectionOps(): ConnectionOps {
           displayName: meta.displayName,
           icon: meta.icon,
         });
-        // R5: a space gaining a connection re-evaluates its transactions
         await reevaluateSpace(storage, repo, id, connectionId);
-        // the history line lands in the space that GAINED the connection
         void logActivity(storage, repo, id, 'storeAttach', meta.displayName);
       }
       for (const link of current.filter((l) => !spaceIds.includes(l.spaceId))) {
@@ -587,35 +507,27 @@ const AUTO_SYNC_MS = 15 * 60 * 1000;
 async function syncDue(storage: StorageBackend, repo: Repo, dueMs: number, options: SyncOptions): Promise<void> {
   for (const row of await storage.connectorConnAll()) {
     if (row.state !== 'active') continue;
-    // a job accepted earlier and never collected is due now, whatever the clock says (prod 2026-10-06)
+    // a job accepted earlier and never collected is due now, whatever the clock says
     if (row.lastSyncAt && !row.pendingJob && Date.now() - Date.parse(row.lastSyncAt) < dueMs) continue;
     if (!(await readBundle(storage, row.id))) continue;
     await syncConnection(storage, repo, row.id, options).catch(() => undefined);
   }
 }
 
-/**
- * Headless (R4): receipts follow the bank. Once per app open the
- * keep-alive adopts fresher bundles from siblings and pulls; afterwards
- * every successful sync cycle (fresh bank transactions just landed)
- * re-pulls due connections so new receipts arrive next to their
- * transactions. A question a party asks meanwhile waits for the hub.
- */
+// R4: receipts follow the bank: once per app open, then after each clean sync cycle, due connections re-pull;
+// a question a party asks meanwhile waits for the hub
 export function useConnectionKeepAlive(): void {
   const { store: storage, repo, engine } = useData();
   const ran = useRef(false);
   const lastAuto = useRef(0);
-  // user 2026-10-09: receipts meet the transactions when the rows land — a
-  // sync cycle that brought new ones asks the matcher for a pass, so the
-  // proposals stand before the review opens (the same headless mount)
+  // a sync cycle that brought new rows asks the matcher for a pass, so proposals stand before the review opens
   useReceiptMatchTriggers();
 
   useEffect(() => {
     if (ran.current || !connectorsAvailable() || !navigator.onLine) return;
     ran.current = true;
     void (async () => {
-      // E2EE sync (opt-in): adopt fresher bundles from siblings first,
-      // publish whatever this device rotated afterwards
+      // E2EE sync (opt-in): adopt fresher sibling bundles first, publish what this device rotated afterwards
       await pullConnections(storage).catch(() => undefined);
       await syncDue(storage, repo, KEEP_ALIVE_MS, { engine });
       await pushAllConnections(storage).catch(() => undefined);

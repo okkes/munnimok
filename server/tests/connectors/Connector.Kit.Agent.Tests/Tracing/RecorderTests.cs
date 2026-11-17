@@ -6,12 +6,8 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Tests.Tracing;
 
-/// <summary>
-/// The recorder on a real browser (#441 L3): a run that asked to be recorded
-/// posts what the page did - navigations, calls with their answers, the
-/// console, the jar - with the secrets taken out; a run that did not ask
-/// posts nothing; a run that failed posts its trace all the same.
-/// </summary>
+// #441 L3: a run that asked to be recorded posts its trace with secrets removed; one that did not posts nothing.
+// a failed run posts anyway
 public sealed class RecorderTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(90);

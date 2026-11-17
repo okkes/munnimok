@@ -5,14 +5,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Three small contracts that the state machines lean on: what a caller
-/// asked for, whether a challenge is still worth waiting on, and whether a
-/// provider is accepting work at all.
-/// </summary>
 public sealed class RequestAndStatusTests
 {
-    /// <summary>What the caller selected, read back by name.</summary>
     private static readonly string[] SelectedAccounts = ["savings", "credit_card"];
 
     private static readonly string[] ItemsOnly = ["items"];
@@ -22,9 +16,7 @@ public sealed class RequestAndStatusTests
     {
         var request = new ResourceRequest { ResourceId = "transactions" };
 
-        // An adapter that has to null-check every selection eventually
-        // forgets one, and the forgotten one is a fetch that returns
-        // everything instead of what was asked for.
+        // an adapter null-checking every selection forgets one, and that fetch returns everything instead of what was asked
         Assert.Empty(request.Include);
         Assert.Empty(request.Accounts);
         Assert.False(request.WantsItems);
@@ -63,8 +55,7 @@ public sealed class RequestAndStatusTests
             },
         };
 
-        // The manifest declares the legal values in lower case; accepting a
-        // near-miss here would make the manifest's enum advisory.
+        // the manifest declares lower-case values; accepting a near-miss would make its enum advisory
         Assert.False(request.WantsItems);
     }
 
@@ -73,8 +64,7 @@ public sealed class RequestAndStatusTests
     {
         var challenge = new Challenge { Type = ChallengeType.Image, ExpiresAt = TestTime.Anchor };
 
-        // A challenge holds a live browser hostage, so a stale one must fail
-        // the job cleanly rather than pinning an agent for the full timeout.
+        // a challenge holds a live browser: a stale one must fail the job cleanly, not pin an agent for the full timeout
         Assert.False(challenge.IsExpired(TestTime.Anchor.AddTicks(-1)));
         Assert.True(challenge.IsExpired(TestTime.Anchor));
         Assert.True(challenge.IsExpired(TestTime.Anchor.AddMinutes(1)));
@@ -98,8 +88,7 @@ public sealed class RequestAndStatusTests
     [Fact]
     public void A_challenge_never_serialises_its_image_or_crop()
     {
-        // The bytes are ephemeral and operator-controlled; they travel as a
-        // separate authenticated fetch, never inside a status payload.
+        // image bytes are ephemeral and travel by a separate authenticated fetch, never in a status payload
         var image = typeof(Challenge).GetProperty(nameof(Challenge.Image))!;
         var crop = typeof(Challenge).GetProperty(nameof(Challenge.Crop))!;
 
@@ -117,8 +106,7 @@ public sealed class RequestAndStatusTests
     {
         var status = new ProviderStatus { ProviderId = "jumbo", State = state, Since = TestTime.Anchor };
 
-        // Degraded means "something is wrong and an operator knows"; work
-        // still flows. Paused is the switch that actually stops it.
+        // Degraded: something is wrong and an operator knows, work still flows; Paused is the switch that stops it
         Assert.Equal(acceptsWork, status.AcceptsWork);
     }
 
@@ -150,8 +138,7 @@ public sealed class RequestAndStatusTests
             Runtimes = [ProviderRuntime.Http],
         };
 
-        // Empty means "any" on both axes, which is what lets a pooled agent
-        // opt into everything without listing it.
+        // empty means "any" on both axes, so a pooled agent can opt into everything without listing it
         Assert.True(anything.CanServe(manifest));
         Assert.False(wrongProvider.CanServe(manifest));
         Assert.False(wrongRuntime.CanServe(manifest));

@@ -40,8 +40,6 @@ describe('recurring auto-reconcile adopts the recurring facts (#360)', () => {
       needsReview: 1,
       catId: 'uncategorized',
     });
-    // reimbursement-filed rows keep their attribution (same rule as the
-    // manual link)
     await repo.upsert('transaction', SPACE, 'expecting', {
       ...base,
       date: '2026-07-03',

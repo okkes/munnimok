@@ -5,23 +5,9 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Sync;
 
-/// <summary>
-/// The 2026-10-09 repair: the connector ingest's prediction overlay used to
-/// mark a row REVIEWED (needsReview 0) whenever the keyword rules knew the
-/// merchant, so a sure prediction never reached the review deck — the user
-/// moved a history start a month back, ~105 rows surfaced and 49 came up
-/// for review. The rule now (user 2026-10-09): every fetched row waits in
-/// the review with its prediction prefilled; only the person takes it out.
-/// This puts the earlier marks back to review, once: a space's txMeta row
-/// whose needsReview is 0 by the SERVER's hand alone — the field's version
-/// carries the server's stamp (the floor, or the live clock of before) and
-/// no device op ever carried the field — gets needsReview 1 as an ordinary
-/// op every device pulls. A device that spoke keeps its 0: a review, a
-/// category edit, an auto-link riding a recurring or transfer the person
-/// set up (a feed row's transform materialises the flag it saw), and the
-/// values the 2026-10-05 repair restored (the server's stamp, a device op
-/// in the history).
-/// </summary>
+/// 2026-10-09 repair: the prediction overlay marked a row reviewed (needsReview 0) when keyword rules knew the merchant
+/// rule now: every fetched row waits in the review with its prediction prefilled; only the person takes it out
+/// puts back, once, rows whose 0 carries only the server's stamp, with no device op ever carrying the field
 public static class NeedsReviewRepair
 {
     public const string SettingKey = "repair:needs-review:2026-10-09";
@@ -31,7 +17,6 @@ public static class NeedsReviewRepair
     private const string FieldMark = "\"needsReview\"";
     private static readonly string ServerSuffix = $"-{ServerHlc.DeviceId}";
 
-    /// <summary>Runs the repair once per database (an app setting remembers it); returns how many rows went back to review.</summary>
     public static async Task<int> RunOnceAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
         if (await db.AppSettings.FindAsync([SettingKey], ct) is not null) return 0;
@@ -45,7 +30,6 @@ public static class NeedsReviewRepair
         return repaired;
     }
 
-    /// <summary>The repair itself, idempotent by op id: every row the prediction alone marked reviewed goes back to review.</summary>
     public static async Task<int> RepairAsync(AppDbContext db, CancellationToken ct)
     {
         var spaceIds = await db.EntityRows
@@ -58,7 +42,6 @@ public static class NeedsReviewRepair
         return repaired;
     }
 
-    /// <summary>One space's repair; returns the ops accepted — none on a second pass, the op ids are deterministic.</summary>
     public static async Task<int> RepairSpaceAsync(AppDbContext db, string spaceId, CancellationToken ct)
     {
         var space = await db.Spaces.FindAsync([spaceId], ct);
@@ -70,13 +53,12 @@ public static class NeedsReviewRepair
         return accepted;
     }
 
-    /// <summary>One space's repair ops: every reviewed-by-prediction row no device ever spoke about.</summary>
     private static async Task<List<SyncOpDto>> RepairsForAsync(AppDbContext db, string spaceId, CancellationToken ct)
     {
         var rows = await db.EntityRows
             .Where(r => r.SpaceId == spaceId && r.Entity == Entity && !r.Deleted && r.DataJson.Contains(ReviewedMark))
             .ToListAsync(ct);
-        // the rows a device ever carried the flag for — its opinion, whatever it was, stands
+        // a device that ever carried the flag has spoken: its opinion, whatever it was, stands
         var carried = await db.SyncOps
             .Where(o => o.SpaceId == spaceId && o.Entity == Entity && o.PayloadJson.Contains(FieldMark))
             .Select(o => new { o.EntityId, o.Hlc })
@@ -100,7 +82,6 @@ public static class NeedsReviewRepair
         return repairs;
     }
 
-    /// <summary>The flag reads 0 and the server's stamp is on it: the prediction overlay's mark, floor or live clock.</summary>
     private static bool ReviewedByPrediction(EntityRow row)
     {
         var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row.DataJson) ?? new();

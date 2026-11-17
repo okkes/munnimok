@@ -1,12 +1,7 @@
 import { apiFetch } from '@/lib/api';
 
-/**
- * Split events (#538) live on the server and nowhere else: roles, a link's
- * uses, the queue and "settled" are rules one place keeps, so the app only
- * asks and shows — it needs a connection and an account, and keeps no copy.
- * Every call answers null when it could not be asked or was refused; the
- * screens say "no connection" or re-read, never guess.
- */
+// split events live on the server only (#538): roles, link uses, the queue and "settled" are one place's rules
+// every call answers null when it could not be asked or was refused
 
 export type SplitStatus = 'open' | 'settled' | 'archived';
 export type SplitRole = 'owner' | 'contributor';
@@ -175,7 +170,6 @@ export interface SplitTransfer {
   amountCents: number;
 }
 
-/** what a call came to when it was answered at all */
 export interface SplitAnswer<T> {
   ok: boolean;
   status: number;
@@ -189,13 +183,11 @@ async function ask<T>(path: string, method = 'GET', body?: unknown): Promise<Spl
   return { ok: res.ok, status: res.status, body: parsed };
 }
 
-/** the answer's body when the call went well, else null */
 const got = async <T>(call: Promise<SplitAnswer<T> | null>): Promise<T | null> => {
   const answer = await call;
   return answer?.ok ? answer.body : null;
 };
 
-/** whether the call went well */
 const done = async (call: Promise<SplitAnswer<unknown> | null>): Promise<boolean> => (await call)?.ok === true;
 
 export interface SplitsApi {
@@ -224,7 +216,6 @@ export interface SplitsApi {
   changeEntry(splitId: string, entry: SplitEntryDraft): Promise<boolean>;
   deleteEntry(splitId: string, entryId: string): Promise<boolean>;
   receipt(splitId: string, entryId: string): Promise<string | null>;
-  /** who would pay whom if the event were settled as it stands */
   preview(splitId: string): Promise<SplitTransfer[] | null>;
   settle(splitId: string): Promise<boolean>;
   reopen(splitId: string): Promise<boolean>;

@@ -4,11 +4,8 @@ using System.Text.Json.Serialization;
 
 namespace Munni.Api.Accounts;
 
-/// <summary>
-/// Server-side twin of apps/web/src/domain/predictCategory.ts, fed by the
-/// same generated keyword data (keyword-rules.json embedded resource) so
-/// GoCardless ingestion categorizes identically to client-side CAMT import.
-/// </summary>
+/// twin of apps/web/src/domain/predictCategory.ts on the same generated keyword data,
+/// so GoCardless ingest categorizes like client CAMT import
 public static class KeywordPredictor
 {
     public sealed record Rule(
@@ -32,11 +29,7 @@ public static class KeywordPredictor
             .ToList();
     });
 
-    /// <summary>
-    /// Predicts a category id + transaction type from a transaction's text
-    /// by longest-keyword match, or null when nothing matches.
-    /// </summary>
-    /// <param name="direction">"credit" (money in) or "debit"</param>
+    /// longest-keyword match; direction is "credit" (money in) or "debit"
     public static Prediction? Predict(string text, string direction)
     {
         var haystack = text.ToLowerInvariant();

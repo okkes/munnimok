@@ -11,24 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Auth;
 
-/// <summary>
-/// Who may talk to the control plane at all.
-///
-/// Nobody but the consuming server, and the design says why: clients never
-/// hold a connector hostname, never a connector credential, never a CORS
-/// grant. In production the control plane publishes no port - it is reachable
-/// only on the networks the platform renders it into - and every call on top
-/// of that carries an audience-checked machine token from the environment's
-/// identity provider, minted for the consuming API by client credentials. The
-/// network is what keeps strangers out; the token is what tells the consumer
-/// apart from anything else that shares a network with it, and its scopes are
-/// what separate a consumer from an operator.
-///
-/// Development mode collapses that to one shared header so a local run needs
-/// no identity provider. It is unreachable in a deployed configuration: the
-/// platform refuses to start in production without an authority and an
-/// audience.
-/// </summary>
+/// only the consuming server may call: production has no published port plus an audience-checked machine token
+/// dev uses one shared header; unreachable when deployed, as production refuses to start without authority and audience
 public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<ConnectorAuth> logger)
 {
     public const string DevelopmentHeader = "X-Connector-Key";
@@ -38,11 +22,7 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
 
     private readonly ConnectorOptions _options = options.Value;
 
-    /// <summary>
-    /// Every rejection is the same <see cref="ErrorCode.InvalidRequest"/> with
-    /// no detail on the wire: an unauthenticated caller learns whether the
-    /// service exists and nothing else.
-    /// </summary>
+    /// every rejection is the same InvalidRequest with no detail: a caller learns whether the service exists, nothing else
     public async ValueTask<bool> AuthenticateAsync(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -52,12 +32,7 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
             : Development(http);
     }
 
-    /// <summary>
-    /// Whether an authenticated caller may use the operator routes: in
-    /// production its token must carry <see cref="ConnectorAuthOptions.AdminScope"/>;
-    /// in development there are no tokens and the shared secret already
-    /// admitted it.
-    /// </summary>
+    /// dev has no tokens, so the shared secret already admitted the caller as operator
     public bool IsOperator(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);
@@ -65,11 +40,7 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
         return !_options.IsProduction || HasScope(http.User, _options.Auth.AdminScope);
     }
 
-    /// <summary>
-    /// Whether a principal was granted a scope. Scopes arrive as one
-    /// space-separated <c>scope</c> claim, or as several claims of that name
-    /// when a token handler split them; both are read.
-    /// </summary>
+    /// scopes arrive as one space-separated claim, or as several claims when a handler split them; both are read
     public static bool HasScope(ClaimsPrincipal? principal, string scope)
     {
         if (principal is null || string.IsNullOrWhiteSpace(scope)) return false;
@@ -136,12 +107,7 @@ public sealed class ConnectorAuthFilter(ConnectorAuth auth) : IEndpointFilter
     }
 }
 
-/// <summary>
-/// Applied to the <c>/v1/admin</c> group, inside the filter above: a caller
-/// that authenticated but was not granted the admin scope is answered 403.
-/// The status differs from the 401 on purpose - this caller is known, and
-/// what it lacks is a grant, which is the operator's to give.
-/// </summary>
+/// 403 not 401: the caller is known and lacks a grant, which is the operator's to give
 public sealed class AdminScopeFilter(ConnectorAuth auth) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

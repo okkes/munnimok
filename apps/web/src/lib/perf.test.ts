@@ -38,7 +38,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** a transaction event the way the SDK hands it to beforeSendTransaction */
 const transaction = (over: Partial<TransactionEvent> = {}): TransactionEvent => ({
   type: 'transaction',
   transaction: 'sync.round',
@@ -74,8 +73,8 @@ describe('measure', () => {
     slow.mockRestore();
 
     sink.mockClear();
-    measure('planning.build', () => undefined); // well under budget
-    measure('no.budget', () => undefined); // nothing to overrun
+    measure('planning.build', () => undefined);
+    measure('no.budget', () => undefined);
     expect(sink).not.toHaveBeenCalled();
   });
 });
@@ -84,8 +83,8 @@ describe('slowLog and mark', () => {
   it('slowLog answers whether the budget was overrun', () => {
     expect(slowLog('review.confirm', 299)).toBe(false);
     expect(slowLog('review.confirm', 301)).toBe(true);
-    expect(slowLog('custom', 10_000)).toBe(false); // no budget, no finding
-    expect(slowLog('custom', 10, 5)).toBe(true); // an explicit budget
+    expect(slowLog('custom', 10_000)).toBe(false);
+    expect(slowLog('custom', 10, 5)).toBe(true);
     expect(sink).toHaveBeenCalledTimes(2);
     expect(sink.mock.calls[0][1]).toEqual({ name: 'review.confirm', ms: 301, budget: 300 });
   });

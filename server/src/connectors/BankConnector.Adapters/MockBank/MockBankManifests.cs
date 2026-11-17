@@ -2,14 +2,6 @@ using Connector.Kit.Manifests;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// The manifest pieces every mock provider shares.
-///
-/// The fleet differs only in runtime tier, custody and challenge shape -
-/// which is the point of it - so everything else lives here and a new mock
-/// is a handful of lines rather than another eighty-line manifest to keep
-/// in sync.
-/// </summary>
 internal static class MockBankManifests
 {
     public const string LogoRef = "mock-bank";
@@ -41,12 +33,7 @@ internal static class MockBankManifests
         Fields = [Username, Password],
     };
 
-    /// <summary>
-    /// A pooled agent on a residential Dutch line. Bank fraud systems weigh
-    /// IP reputation heavily and a datacenter range is a fraud signal before
-    /// credentials are even considered - so even the mocks declare it, or
-    /// routing is never exercised the way production will use it.
-    /// </summary>
+    // residential Dutch line: a datacenter range is a fraud signal for banks, so even the mocks declare it to exercise routing
     public static readonly AgentRequirement ResidentialPooled = new()
     {
         Required = true,
@@ -62,13 +49,8 @@ internal static class MockBankManifests
             typicalDurationSeconds: typicalDurationSeconds),
     ];
 
-    /// <summary>
-    /// Every mock account set includes a credit card, so every mock manifest
-    /// declares the settlement lag. Fourteen days is the safe default for
-    /// Dutch card payments: a purchase can surface two weeks late still
-    /// dated to the day it was made, and a <c>since</c> that is not widened
-    /// loses it permanently and invisibly.
-    /// </summary>
+    // every mock set has a credit card, so every manifest declares the settlement lag: a purchase can surface 14 days late
+    // dated to its day, and a since that is not widened loses it
     public static ProviderLimits Limits() => BankLimits.ForBank(
         minIntervalSeconds: BankLimits.MockMinIntervalSeconds,
         maxHistoryDays: MockBankLedger.HistoryDays,

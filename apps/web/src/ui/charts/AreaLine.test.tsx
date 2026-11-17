@@ -45,7 +45,6 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(screen.getByTestId('al-area').getAttribute('d')).toMatch(/Z$/);
     expect(screen.getByTestId('al-line').getAttribute('stroke-dasharray')).toBeNull();
     expect(screen.getByTestId('al-projection').getAttribute('stroke-dasharray')).toBe('4 3');
-    // the Today marker stands where the record ends: day 4 of 9 → 4/9 of the width
     const today = screen.getByTestId('al-today');
     expect(Number(today.getAttribute('x1'))).toBeCloseTo((4 / 9) * 320, 3);
     expect(screen.getByTestId('al').textContent).toContain('Today');
@@ -54,7 +53,7 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(screen.queryByTestId('al-tip')).toBeNull();
   });
 
-  it('two paydays close together keep both dots but only the first word (gallery 2026-10-08: the words printed on top of each other)', () => {
+  it('two paydays close together keep both dots but only the first word (the words printed on top of each other)', () => {
     // ten days on 320 units: a day is ~36 units, under the 48 a word needs
     const dense = Array.from({ length: 10 }, (_, i) => ({ date: `2026-06-${String(i + 1).padStart(2, '0')}`, cents: 100_000 + i * 1_000 }));
     render(
@@ -72,11 +71,9 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
         formatDate={(date) => date}
       />,
     );
-    // a day apart the second word would land on the first: its dot stays, its word goes
     expect(screen.getByTestId('al2-marker-0').textContent).toBe('Demo Corp');
     expect(screen.getByTestId('al2-marker-1').querySelector('circle')).toBeTruthy();
     expect(screen.getByTestId('al2-marker-1').textContent).toBe('');
-    // three days further there is room again
     expect(screen.getByTestId('al2-marker-2').textContent).toBe('Side job');
   });
 
@@ -87,7 +84,6 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(screen.getByTestId('al-tip').textContent).toContain('€1000');
     expect(onScrub).toHaveBeenLastCalledWith({ date: '2026-06-01', cents: 100_000, projected: false });
 
-    // the far right lands on the last expected day, marked as such
     fireEvent.pointerMove(svg, { pointerId: 1, clientX: 320 });
     expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-10 · expected');
     expect(onScrub).toHaveBeenLastCalledWith({ date: '2026-06-10', cents: 250_000, projected: true });
@@ -128,10 +124,8 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(stops).toHaveLength(2);
     expect(stops[0].getAttribute('offset')).toBe(stops[1].getAttribute('offset'));
     expect((stops[1] as SVGElement).style.stopColor).toBe('var(--m-negative)');
-    // the zero line is drawn, and the wash closes on it, not on the chart's floor
     const zeroY = screen.getByTestId('neg-zero').getAttribute('y1')!;
     expect(screen.getByTestId('neg-area').getAttribute('d')).toContain(`,${Number(zeroY).toFixed(1)} Z`);
-    // today stands above zero: its dot keeps the series colour
     expect(screen.getByTestId('neg-now').getAttribute('fill')).toBe('var(--m-accent)');
   });
 

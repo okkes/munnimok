@@ -10,13 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Turns rows into the shapes a consumer sees.
-///
-/// It is one type rather than a helper per endpoint because the same session
-/// is rendered by the login response, the login poll and the SSE stream, and
-/// three renderings that drift are three different APIs.
-/// </summary>
+/// One type because the login response, poll and SSE stream render the same session: three renderings drift into three APIs.
 public sealed class ViewBuilder(
     ConnectorDbContext db,
     ChallengeService challenges,
@@ -24,24 +18,14 @@ public sealed class ViewBuilder(
     JobArtifactService artifacts,
     TimeProvider time)
 {
-    /// <summary>
-    /// The login job for a session - the newest one, because a re-auth
-    /// creates a second.
-    /// </summary>
+    /// Newest job, because a re-auth creates a second.
     public Task<JobRow?> LatestJobAsync(string sessionId, CancellationToken ct) =>
         db.Jobs.Where(j => j.SessionId == sessionId)
             .OrderByDescending(j => j.CreatedAt)
             .ThenByDescending(j => j.Id)
             .FirstOrDefaultAsync(ct);
 
-    /// <summary>
-    /// Renders a session.
-    ///
-    /// <paramref name="deliverBundle"/> hands over the sealed bundle and
-    /// clears it in the same breath: the connector forgets what it has
-    /// delivered, and a bundle that stayed here would be a credential at rest
-    /// with no reason to exist.
-    /// </summary>
+    /// <paramref name="deliverBundle"/> hands over the sealed bundle and clears it: one left here would be a credential at rest.
     public async Task<SessionResponse> SessionAsync(SessionRow session, bool deliverBundle, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -54,9 +38,7 @@ public sealed class ViewBuilder(
 
         if (deliverBundle && (session.PendingBundle ?? session.PendingCredentialBundle) is not null)
         {
-            // Both, in one breath, and both cleared. The credential bundle is
-            // delivered under exactly the rule the session bundle already has:
-            // handed over once, then forgotten here.
+            // the credential bundle follows the session bundle's rule: handed over once, then forgotten
             bundle = session.PendingBundle;
             credentials = session.PendingCredentialBundle;
 
@@ -80,9 +62,6 @@ public sealed class ViewBuilder(
             Label = session.Label,
             Config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(session.ConfigJson, Empty),
 
-            // From the same job the progress trail comes from. A sign-in writes
-            // more notes than anything else an adapter does and, until this
-            // line, delivered none of them.
             Notes = job is null
                 ? []
                 : ConnectorJson.DeserializeOr<IReadOnlyList<string>>(job.NotesJson, []),
@@ -131,7 +110,6 @@ public sealed class ViewBuilder(
         };
     }
 
-    /// <summary>The 202 handle: where to poll, where to subscribe, and what it is waiting for.</summary>
     public async Task<JobAcceptedResponse> AcceptedAsync(JobRow job, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -148,11 +126,7 @@ public sealed class ViewBuilder(
         };
     }
 
-    /// <summary>
-    /// The job's typed progress, with its place in the line while it waits:
-    /// the queued jobs older than it, whatever their party (the fleet takes
-    /// the oldest first). One count, only for a job that is still queued.
-    /// </summary>
+    /// Place in line while queued: the queued jobs older than it, whatever their party (the fleet takes the oldest first).
     private async Task<ProgressView> ProgressAsync(JobRow job, CancellationToken ct)
     {
         var view = ProgressView.From(job);
@@ -162,12 +136,8 @@ public sealed class ViewBuilder(
         return view with { Ahead = ahead };
     }
 
-    /// <summary>
-    /// The job whose last picture waits on this person's answer: only a run
-    /// that ended badly, and only while the question is open, so the consumer
-    /// asks beside the error it is showing and never about a run that went
-    /// fine since (#441 L1).
-    /// </summary>
+    /// Only for a run that ended badly and only while the question is open, so the consumer never asks about a run that
+    /// went fine since (#441 L1).
     private async Task<string?> PendingArtifactsAsync(JobRow? job, CancellationToken ct) =>
         job is { State: JobState.Failed or JobState.Expired } && await artifacts.IsPendingAsync(job.Id, ct)
             ? job.Id

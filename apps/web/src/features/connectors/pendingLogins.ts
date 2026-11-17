@@ -6,31 +6,21 @@ import { subscribeConnectorFrames } from './events';
 import { TERMINAL_STATES, failedWith } from './manifestForm';
 import type { ErrorEnvelope, SessionView } from './types';
 
-/**
- * Sign-ins in flight (user question 2026-10-01: "what happens if I click
- * away?"). The session runs on the platform whether or not the sheet is
- * open, so closing it DETACHES rather than cancels: the login is noted
- * here, the hub lists it with where it stands and a way back in, and a
- * follower adopts it the moment it settles — even with the sheet closed.
- * A module store, because the sheet unmounts with the hub's state and the
- * follower lives on the hub itself.
- */
+// the session runs on the platform whether or not the sheet is open, so closing DETACHES rather than cancels:
+// the hub lists the login and a follower adopts it the moment it settles
+// a module store: the sheet unmounts with the hub's state
 export interface PendingLogin {
   connectionId: string;
   provider: string;
   sessionId: string;
-  /** an existing connection signing in again */
   reconnect: boolean;
   startedAt: string;
-  /** what the relay said last */
   state: ConnectorSessionState;
   /** the party wants the person: a streamed page, a code, a redirect */
   asking: boolean;
   /** the run ended without a session — shown until dismissed */
   error?: ErrorEnvelope;
-  /** a sheet is following this one right now: the hub's follower stands
-   *  back (prod 2026-10-05: two pollers on one session raced for the
-   *  bundle, which the relay hands over exactly once) */
+  /** a sheet follows this one: the hub's follower stands back (prod 2026-10-05: two pollers raced for the bundle) */
   attached?: boolean;
 }
 
@@ -54,14 +44,12 @@ export const usePendingLogins = create<PendingState>((set) => ({
     }),
 }));
 
-/** where a session view says the sign-in stands */
 export const pendingStateOf = (view: SessionView): Pick<PendingLogin, 'state' | 'asking' | 'error'> => ({
   state: view.state,
   asking: view.state === 'awaiting_input',
   error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined,
 });
 
-/** the pending entry a session view implies */
 export const pendingFromView = (login: Pick<PendingLogin, 'connectionId' | 'provider' | 'reconnect' | 'startedAt'>, view: SessionView): PendingLogin => ({
   ...login,
   sessionId: view.sessionId,
@@ -70,12 +58,8 @@ export const pendingFromView = (login: Pick<PendingLogin, 'connectionId' | 'prov
 
 const FOLLOW_MS = 2_500;
 
-/**
- * Keeps every pending login current while the hub is open and hands a
- * settled one over: `onActive` adopts it (the bundle is read exactly once,
- * by the view the follower fetched). A login whose sheet is open is left
- * to the sheet (`exclude`), so one session is never read by two pollers.
- */
+// onActive adopts a settled login (the bundle is read exactly once, by the follower's view); a login whose sheet is
+// open is left to the sheet, so one session is never read by two pollers
 export function usePendingLoginFollower({
   exclude,
   onActive,
@@ -91,7 +75,6 @@ export function usePendingLoginFollower({
   const handler = useRef(onActive);
   handler.current = onActive;
 
-  // one poller per pending login not shown in a sheet, alive while it is pending
   const ids = Object.values(logins)
     .filter((l) => l.connectionId !== exclude && !l.error && !l.attached)
     .map((l) => `${l.connectionId}|${l.provider}|${l.sessionId}`)

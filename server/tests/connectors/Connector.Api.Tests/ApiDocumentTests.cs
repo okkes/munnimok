@@ -3,34 +3,16 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// What the reference says each route answers with.
-///
-/// Every one of the 36 operations used to document a bodyless 200. Request
-/// bodies, path parameters and query parameters were all inferred perfectly;
-/// responses alone were empty, because minimal APIs read the handler's DECLARED
-/// return type and every helper in this service returned <c>IResult</c>. A
-/// reference that names what to send and stays silent about what comes back is
-/// the half a caller cannot guess from a curl.
-///
-/// The assertions are exact <c>$ref</c> strings rather than substring checks.
-/// The two that existed before this file - "the document mentions /v1/health"
-/// and "/v1/providers" - passed happily while every response in it was empty,
-/// which is the failure mode a document test exists to catch.
-/// </summary>
+/// responses were once all bodyless 200s: minimal APIs read the handler's declared return type,
+/// and every helper returned IResult; assertions are exact $ref strings because
+/// substring checks passed while every response was empty
 [Collection(ShopApiCollection.Name)]
 public sealed class ApiDocumentTests(ShopApiFactory factory)
 {
-    /// <summary>
-    /// Routes whose success carries no body at all, and why. Anything outside
-    /// this list that documents an empty success is a route nobody annotated -
-    /// which is exactly the state the whole service was in.
-    /// </summary>
+    /// routes whose success carries no body; any other empty success is a route nobody annotated
     private static readonly HashSet<string> BodylessOnPurpose = new(StringComparer.Ordinal)
     {
-        // A frame the agent posted. 200 either way, and deliberately empty: a
-        // stale frame is the network's fault, and an error would make an agent
-        // retry a photograph that is already out of date.
+        // 200 either way, deliberately empty: a stale frame is the network's fault, and an error would make an agent retry it
         "post /agent/v1/jobs/{jobId}/live/frame 200",
     };
 
@@ -46,23 +28,18 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         document.GetProperty("paths").GetProperty(path).GetProperty(method).GetProperty("responses")
             .GetProperty(status);
 
-    // ---- the bodies --------------------------------------------------------
-
     [Theory]
-    // The catalogue, health and the kill switch.
     [InlineData("/v1/health", "get", "200", "HealthResponse")]
     [InlineData("/v1/providers", "get", "200", "CatalogResponse")]
     [InlineData("/v1/status", "get", "200", "StatusResponse")]
     [InlineData("/v1/admin/providers/{id}/status", "post", "200", "ProviderStatus")]
-    // Connecting. The 202 is the same body under a different promise: poll or
-    // subscribe rather than "the bundle is in your hands".
+    // the 202 is the same body under a different promise: poll or subscribe
     [InlineData("/v1/{provider}/login", "post", "200", "SessionResponse")]
     [InlineData("/v1/{provider}/login", "post", "202", "SessionResponse")]
     [InlineData("/v1/{provider}/login/{sessionId}", "get", "200", "SessionResponse")]
     [InlineData("/v1/{provider}/login/{sessionId}/answer", "post", "200", "SessionResponse")]
     [InlineData("/v1/{provider}/login/{sessionId}/cancel", "post", "200", "SessionResponse")]
     [InlineData("/v1/{provider}/sessions/resume", "post", "200", "ResumeResponse")]
-    // Fetching: the data, or a handle to the job still producing it.
     [InlineData("/v1/{provider}/{resource}", "get", "200", "DataResponse")]
     [InlineData("/v1/{provider}/{resource}", "get", "202", "JobAcceptedResponse")]
     [InlineData("/v1/{provider}/{resource}:fetch", "post", "200", "DataResponse")]
@@ -70,17 +47,13 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     [InlineData("/v1/{provider}/{resource}/ack", "post", "200", "AckResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}", "get", "200", "JobResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}/answer", "post", "200", "JobResponse")]
-    // What a failed run left behind is the person's to give (#441 L1).
     [InlineData("/v1/{provider}/jobs/{jobId}/artifacts/share", "post", "200", "ArtifactShareResponse")]
-    // The operator's history and health (#441 L1).
     [InlineData("/v1/admin/jobs", "get", "200", "JobListResponse")]
     [InlineData("/v1/admin/jobs/{jobId}", "get", "200", "OperatorJobView")]
     [InlineData("/v1/admin/health", "get", "200", "HealthReportResponse")]
     [InlineData("/v1/admin/canaries/{id}/run", "post", "200", "CanaryView")]
-    // Bring-your-own agents, from the consumer's side.
     [InlineData("/v1/agents", "get", "200", "AgentListResponse")]
     [InlineData("/v1/agents/enrollment", "post", "200", "AgentEnrollmentResponse")]
-    // The agent protocol.
     [InlineData("/agent/v1/enroll", "post", "200", "EnrollResponse")]
     [InlineData("/agent/v1/heartbeat", "post", "200", "HeartbeatResponse")]
     [InlineData("/agent/v1/jobs/lease", "post", "200", "LeasedJob")]
@@ -102,11 +75,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     }
 
     [Theory]
-    // A stream of the very view the poll returns, one per event. Without the
-    // frame type a consumer is told a subscription returns nothing.
+    // a stream of the view the poll returns, one per event; without the frame type a consumer is told it returns nothing
     [InlineData("/v1/{provider}/login/{sessionId}/events", "get", "text/event-stream", "SessionResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}/events", "get", "text/event-stream", "JobResponse")]
-    // The live view pushed (#429): one frame per event.
     [InlineData("/v1/{provider}/login/{sessionId}/challenges/{challengeId}/live/stream", "get", "text/event-stream", "LiveStreamFrame")]
     public async Task A_stream_names_its_media_type_and_the_view_it_carries(
         string path, string method, string mediaType, string schema)
@@ -115,8 +86,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         var content = Response(document, path, method, "200").GetProperty("content");
 
-        // The media type is the assertion: documenting a 10-minute event
-        // stream as application/json would send a consumer to read it wrong.
+        // the media type is the assertion: an event stream documented as application/json would be read wrongly
         Assert.Equal(mediaType, Assert.Single(content.EnumerateObject()).Name);
         Assert.Equal(
             $"#/components/schemas/{schema}",
@@ -124,7 +94,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     }
 
     [Theory]
-    // A relayed captcha, and a live login's frames. Bytes, not JSON.
     [InlineData("/v1/{provider}/login/{sessionId}/challenges/{challengeId}/image", "image/png")]
     [InlineData("/v1/{provider}/login/{sessionId}/challenges/{challengeId}/live/frame", "image/jpeg")]
     public async Task A_picture_is_documented_as_binary_under_its_own_media_type(string path, string mediaType)
@@ -133,8 +102,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         var content = Response(document, path, "get", "200").GetProperty("content");
 
-        // Under its own media type and no other: a picture offered as
-        // application/json is a consumer trying to parse a PNG.
         Assert.Equal(mediaType, Assert.Single(content.EnumerateObject()).Name);
 
         var schema = content.GetProperty(mediaType).GetProperty("schema");
@@ -142,11 +109,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Equal("byte", schema.GetProperty("format").GetString());
     }
 
-    /// <summary>
-    /// The manifest is serialised through a node so the document's shape stays
-    /// the spec's, so there is no C# type to point at - and the list endpoint
-    /// has always declared its providers the same free-form way.
-    /// </summary>
+    /// the manifest is serialised through a node, so there is no C# type to point at;
+    /// the list endpoint declares providers the same way
     [Fact]
     public async Task A_manifest_is_documented_as_the_free_form_object_it_is()
     {
@@ -157,9 +121,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         Assert.Equal("#/components/schemas/JsonObject", schema.GetProperty("$ref").GetString());
 
-        // And that schema really is open: an object with no declared
-        // properties, which is the honest description of a document whose
-        // shape is the manifest spec's rather than ours.
         var jsonObject = document.GetProperty("components").GetProperty("schemas").GetProperty("JsonObject");
         Assert.Equal("object", jsonObject.GetProperty("type").GetString());
         Assert.False(jsonObject.TryGetProperty("properties", out _));
@@ -179,21 +140,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
             schema.GetProperty("items").GetProperty("$ref").GetString());
     }
 
-    // ---- the records -------------------------------------------------------
-
-    /// <summary>
-    /// The question the reference could not answer.
-    ///
-    /// Every route named its envelope and then described <c>data</c> as an
-    /// array of anything, because the handler hands back a JsonArray and the
-    /// generator reads the declared return type. So "what comes back when I
-    /// fetch receipts" had no answer here, and the only way to find out was to
-    /// connect a real account to a real shop and look at what arrived.
-    ///
-    /// The shape was never unknown - a manifest states it per resource as
-    /// <c>returns</c> - it just resolved to nothing. Now it resolves to a
-    /// model.
-    /// </summary>
+    /// handlers return a JsonArray, so `data` resolved to an array of anything;
+    /// it now resolves to the manifest's `returns` model
     [Theory]
     [InlineData("/v1/{provider}/{resource}", "get", "200", "DataResponse")]
     [InlineData("/v1/{provider}/{resource}:fetch", "post", "200", "DataResponse")]
@@ -203,9 +151,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     {
         var document = await DocumentAsync();
 
-        // Through the route, not straight to the component: what is being
-        // asserted is that somebody reading THIS operation in the reference
-        // arrives at the model.
+        // through the route, not the component: a reader of THIS operation must arrive at the model
         var body = Response(document, path, method, status)
             .GetProperty("content").GetProperty("application/json").GetProperty("schema");
 
@@ -214,27 +160,18 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         var rows = document.GetProperty("components").GetProperty("schemas")
             .GetProperty(envelope).GetProperty("properties").GetProperty("data");
 
-        // One control plane hosts every pack, so the rows are one of the
-        // records its providers return — and a receipt is among them.
+        // one control plane hosts every pack, so the rows are one of its providers' records
         var options = rows.GetProperty("items").GetProperty("oneOf").EnumerateArray()
             .Select(option => option.GetProperty("$ref").GetString())
             .ToList();
         Assert.Contains("#/components/schemas/Receipt", options);
 
-        // And the description carries the manifest's own word for it, so a
-        // reader who saw `returns: "receipt"` in the catalogue can join the two
-        // without being told the naming convention.
+        // the description carries the manifest's own `returns` word, so catalogue and reference can be joined
         Assert.Contains("`receipt`", rows.GetProperty("description").GetString()!, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The reference offers exactly the shapes the registered manifests
-    /// return — no more (a shape no provider hands back would describe an API
-    /// this control plane does not serve) and no less (a provider's rows must
-    /// be readable from the document alone). The set comes off the catalogue,
-    /// not off a list written here, so a provider pack that starts returning
-    /// a new record is held to this on the day it lands.
-    /// </summary>
+    /// exactly the shapes the registered manifests return, taken off the catalogue
+    /// so a new provider record is held to it on arrival
     [Fact]
     public async Task A_service_offers_exactly_the_shapes_its_own_providers_return()
     {
@@ -266,11 +203,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         foreach (var word in returned) Assert.Contains($"`{word}`", description, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A job that has not finished has no rows yet, and the document said so
-    /// before the records were pointed at. Describing what is IN the array must
-    /// not quietly change whether there is one.
-    /// </summary>
+    /// a job not finished has no rows: describing the array's contents must not change whether there is one
     [Fact]
     public async Task A_jobs_rows_may_still_be_absent()
     {
@@ -283,8 +216,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Contains("array", types);
         Assert.Contains("null", types);
 
-        // The fetch envelope is the other half: `data` is required there, and a
-        // 200 that carried none would be a lie of its own.
         var required = document.GetProperty("components").GetProperty("schemas")
             .GetProperty("DataResponse").GetProperty("required")
             .EnumerateArray().Select(r => r.GetString()).ToList();
@@ -292,12 +223,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Contains("data", required);
     }
 
-    /// <summary>
-    /// The model itself, in the names that go on the wire - and with the two
-    /// fields a consumer most needs and would never guess: whether the lines
-    /// reconcile, and whether the total is one the shop stated or one this
-    /// connector summed.
-    /// </summary>
     [Fact]
     public async Task The_published_record_is_described_as_it_is_serialised()
     {
@@ -312,29 +237,18 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Contains("total_is_derived", properties);
         Assert.Contains("reconciled", properties);
 
-        // The camelCase a default generator would have produced, and which the
-        // service never sends.
+        // the camelCase a default generator would produce is never sent
         Assert.DoesNotContain("externalId", properties);
         Assert.DoesNotContain("totalIsDerived", properties);
 
-        // Nested records resolve too, so a reader can walk from a receipt to
-        // what a line on it looks like rather than finding a bare object.
         Assert.Equal(
             "#/components/schemas/ReceiptItem",
             receipt.GetProperty("properties").GetProperty("items")
                 .GetProperty("items").GetProperty("$ref").GetString());
     }
 
-    /// <summary>
-    /// Every <c>$ref</c> in the document names a component that is in it.
-    ///
-    /// The reason it can fail: a schema pointed at from a route is not
-    /// necessarily one the generator emitted. It walks handler signatures, and
-    /// the records are put in by a transformer - so a service that never maps
-    /// the agent routes, which are the only other place a Receipt is mentioned,
-    /// would carry a fetch route pointing at nothing. A reference with a
-    /// dangling pointer is worse than one with a gap: the gap is visible.
-    /// </summary>
+    /// the generator walks handler signatures while records are added by a transformer, so a route can point at a schema never
+    /// emitted; a dangling pointer is worse than a gap, which is visible
     [Fact]
     public async Task Every_reference_in_the_document_resolves()
     {
@@ -380,18 +294,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.True(seen > 50, $"only {seen} references in the whole document?");
     }
 
-    // ---- the statuses ------------------------------------------------------
-
     [Theory]
-    // Each of these returns 204 and nothing else. The default inference claims
-    // a 200 for any handler it cannot read, so until they were annotated the
-    // document promised a body on routes that never send one.
-    //
-    // The disconnect USED to be one of them and has left the list on purpose:
-    // answering 204 in every case is exactly what left a consumer with nothing
-    // to report but the manifest's claim, and it told people their bank had
-    // been signed out of over disconnects that dispatched nothing at all. It
-    // now answers 200 with `logged_out`.
+    // 204 only: default inference claims a 200 for handlers it cannot read. The disconnect left this list: it answers 200
+    // with `logged_out`, since a 204 left consumers nothing to report but the manifest's claim
     [InlineData("/v1/agents/{agentId}", "delete")]
     [InlineData("/agent/v1/jobs/{jobId}/progress", "post")]
     public async Task A_route_that_only_ever_returns_204_does_not_advertise_a_200(string path, string method)
@@ -407,11 +312,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.DoesNotContain("200", codes);
     }
 
-    /// <summary>
-    /// The guard against route thirty-seven. A new endpoint that never says
-    /// what it returns lands here rather than in the reference, silently
-    /// documented as answering nothing.
-    /// </summary>
+    /// guard against route thirty-seven: a new endpoint that never says what it returns lands here, not documented as empty
     [Fact]
     public async Task No_route_documents_a_success_with_no_body_unless_it_has_none()
     {
@@ -441,15 +342,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         Assert.Equal(BodylessOnPurpose, empty.ToHashSet(StringComparer.Ordinal));
 
-        // The count is asserted so a route that vanishes from the document is
-        // as loud as one that arrives undocumented. 41 since the operator's
-        // two fleet routes: list every agent, revoke any. 45 since the lookup
-        // field's options and logo and the operator's remote inventory (#414).
-        // 53 since the hosted private agents (#420 A2): four routes for the
-        // person, four for the operator. 60 since the operator's history and
-        // health (#441 L1): the person's share and decline, the job list and
-        // one job, the picture, the health report, the canary run now. 65
-        // since the live view's pushed stream (#429).
+        // the count makes a vanished route as loud as an undocumented one
         Assert.Equal(65, operations);
     }
 
@@ -465,10 +358,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         foreach (var path in document.GetProperty("paths").EnumerateObject())
         {
-            // The /v1 group is where the exception filter lives, so it is the
-            // group whose failure shape is a promise. Liveness is mapped on the
-            // root instead - it carries no auth and no data on purpose, so it
-            // sits outside both filters and has no envelope to promise.
+            // the /v1 group holds the exception filter, so its failure shape is a promise.
+            // liveness is mapped on the root, outside both filters
             if (!path.Name.StartsWith("/v1/", StringComparison.Ordinal)) continue;
             if (path.Name == "/v1/health") continue;
 
@@ -487,12 +378,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Empty(missing);
     }
 
-    /// <summary>
-    /// The other half of the rule above, asserted rather than assumed: liveness
-    /// answers one way and one way only. A probe that needs a credential is a
-    /// probe that fails for the wrong reason, so it is mapped outside the group
-    /// that owns the envelope - and the document should say so.
-    /// </summary>
+    /// liveness answers one way: a probe needing a credential fails for the wrong reason,
+    /// so it sits outside the envelope's group
     [Fact]
     public async Task Liveness_promises_nothing_but_the_one_answer_it_gives()
     {
@@ -504,16 +391,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Equal("200", Assert.Single(codes));
     }
 
-    // ---- the encoding ------------------------------------------------------
-
-    /// <summary>
-    /// The schema generator reads the JSON options registered in DI, never the
-    /// ones handed to <c>Results.Json</c>. So this passes only because
-    /// <c>AddConnectorPlatform</c> copies the wire policy into
-    /// <c>ConfigureHttpJsonOptions</c> - and without it the document would
-    /// confidently describe every field under a name the service never sends,
-    /// which is worse than describing no body at all.
-    /// </summary>
+    /// the schema generator reads the DI JSON options, not those given to Results.Json: AddConnectorPlatform copies the wire
+    /// policy into ConfigureHttpJsonOptions, or fields would be documented under names never sent
     [Fact]
     public async Task The_documented_field_names_are_the_ones_that_go_on_the_wire()
     {
@@ -527,7 +406,6 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Contains("expires_at", properties);
         Assert.Contains("provider_account", properties);
 
-        // The camelCase a default generator would have produced.
         Assert.DoesNotContain("sessionId", properties);
         Assert.DoesNotContain("expiresAt", properties);
         Assert.DoesNotContain("providerAccount", properties);
@@ -542,9 +420,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
             .GetProperty("JobStep").GetProperty("enum")
             .EnumerateArray().Select(m => m.GetString()).ToList();
 
-        // snake_case, from the converter the wire policy carries. A document
-        // naming these "OpeningProvider" describes an API this service does
-        // not serve.
+        // snake_case, from the converter the wire policy carries
         Assert.Contains("opening_provider", members);
         Assert.Contains("awaiting_human", members);
         Assert.DoesNotContain("OpeningProvider", members);

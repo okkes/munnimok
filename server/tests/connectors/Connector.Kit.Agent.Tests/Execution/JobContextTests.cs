@@ -4,11 +4,6 @@ using Connector.Kit.Security;
 
 namespace Connector.Kit.Agent.Tests.Execution;
 
-/// <summary>
-/// The job context as the adapter sees it: the leased job's inputs and
-/// material, the credential flag, and what asking a human looks like when
-/// the answer is taps, is text, is for somebody else, or never comes.
-/// </summary>
 public sealed class JobContextTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);

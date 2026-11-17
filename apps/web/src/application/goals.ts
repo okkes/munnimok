@@ -6,12 +6,8 @@ import { localToday } from './recurring';
 import { logRowActivity } from './activity';
 import type { GoalRow, TxView } from '@/db/types';
 
-/**
- * Goals with their allocation DERIVED from the contribution rows —
- * concurrent funding on two devices then converges by addition instead
- * of losing one bump to LWW. The stored allocatedCents is written as a
- * display snapshot but never trusted.
- */
+// allocation is DERIVED from the contribution rows so concurrent funding on two devices converges by addition, not LWW;
+// the stored allocatedCents is a display snapshot, never trusted
 export function useGoals(): GoalRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -48,16 +44,9 @@ export interface GoalOps {
   remove: (id: string) => Promise<void>;
   /** + funds, − withdraws back to unallocated */
   contribute: (goalId: string, amountCents: number, note?: string) => Promise<void>;
-  /**
-   * #455: the goal was spent — the rows that paid for it leave the
-   * saving of their period and the goal is archived; archived goals hold
-   * no allocation, so whatever it held beyond them is back in the pool.
-   * `purchaseTxIds` names what the money bought.
-   */
+  /** #455: the paying rows leave their period's saving; archived goals hold no allocation, so the rest is back in the pool */
   cashOut: (goal: GoalRow, txIds: readonly string[], purchaseTxIds?: readonly string[]) => Promise<void>;
-  /** a cashed-out goal names (or renames) what its money bought; the money that paid for it stays as picked */
   namePurchases: (goal: GoalRow, purchaseTxIds: readonly string[]) => Promise<void>;
-  /** the goal comes back as it was; its rows count as saving again */
   undoCashOut: (goal: GoalRow) => Promise<void>;
 }
 

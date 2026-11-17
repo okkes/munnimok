@@ -15,14 +15,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Hosted private slots (#420 A2): munni's own container that serves one
-/// person at a time. The properties worth pinning are the ones the custody
-/// story rests on - a free slot is NOBODY's (leased nothing, listed for no
-/// one), an approval makes it exactly one person's machine, and giving it
-/// back takes the previous person's sign-ins off it before anybody else can
-/// have it, with the agent's own word for the wipe as the last step.
-/// </summary>
+// hosted private slots (#420 A2): a free slot is nobody's, approval makes it one person's, and giving it back wipes
+// the previous sign-ins before anybody else can have it
 [Collection(ShopApiCollection.Name)]
 public sealed class PrivateAgentTests(ShopApiFactory factory)
 {
@@ -31,12 +25,7 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
 
     private static readonly string[] LoginJobsOnly = ["login"];
 
-    /// <summary>
-    /// The token of every slot this class enrolled. The suite shares one
-    /// database, so an approval may bind a slot another test enrolled - the
-    /// oldest free one - and the test must be able to beat and lease as
-    /// whichever slot it was given.
-    /// </summary>
+    // tokens of every slot this class enrolled: the suite shares one database, so an approval may bind another test's slot
     private static readonly ConcurrentDictionary<string, string> Tokens = new(StringComparer.Ordinal);
 
     [Fact]
@@ -49,7 +38,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal(ConnectorOptions.PrivateSlotSubject, row.OwnerSubject);
         Assert.Equal(AgentClass.Byo, row.Class);
 
-        // somebody's login is queued; a free slot is offered nothing
         var job = await QueueLoginAsync(Flows.NewSubject("queued"));
         using (var refused = await LeaseAsync(slot.Token, TimeSpan.FromSeconds(2)))
         {
@@ -58,7 +46,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
 
         Assert.Equal(JobState.Queued, StateOf(job));
 
-        // and it is nobody's machine: a person's own list leaves it out, the operator sees a free slot
         using var theirs = factory.CreateAuthorizedClient().ActAs(Flows.NewSubject("stranger"));
         Assert.DoesNotContain(slot.Id, await AgentIdsAsync(theirs, "/v1/agents"));
 
@@ -85,7 +72,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.True(Absent(before, "request"));
         Assert.True(Absent(before, "agent"));
 
-        // the request - and asking twice is one request
         using var asked = await mine.SendAsync(Wire.Post("/v1/private-agents/requests", new { subject = person }));
         Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
         var request = await asked.JsonAsync();
@@ -94,7 +80,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         using var again = await mine.SendAsync(Wire.Post("/v1/private-agents/requests", new { subject = person }));
         Assert.Equal(requestId, (await again.JsonAsync()).Text("id"));
 
-        // the operator sees it and approves: the oldest free slot is theirs
         var overview = await (await operatorSide.GetAsync("/v1/admin/private-agents")).JsonAsync();
         Assert.Contains(overview.GetProperty("requests").EnumerateArray(), r => r.Text("id") == requestId);
         using var approved = await operatorSide.SendAsync(Wire.Post($"/v1/admin/private-agents/requests/{requestId}/approve"));
@@ -109,7 +94,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal(person, bound.OwnerSubject);
         Assert.NotNull(bound.BoundAt);
 
-        // their own machine now: in their list as hosted and bound, in nobody else's
         var listed = (await (await mine.GetAsync("/v1/agents")).JsonAsync())
             .GetProperty("agents").EnumerateArray().Single(a => a.Text("id") == boundId);
         Assert.True(listed.GetProperty("hosted").GetBoolean());
@@ -121,13 +105,11 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal(boundId, after.GetProperty("agent").Text("id"));
         Assert.Equal("approved", after.GetProperty("request").Text("state"));
 
-        // and their work goes to it, as to a container in their house
         var job = await QueueLoginAsync(person);
         Assert.Equal(job, await LeaseUntilAsync(token, job));
 
-        // giving it back: the owner is the slot subject again, the previous
-        // sign-ins are gone from the books, and the slot is free to nobody
-        // until the agent says the directories are gone too
+        // giving it back: the owner is the slot subject again, sign-ins are gone, and the slot stays nobody's until the
+        // agent confirms the directories are gone
         Db.Write(factory, db => db.Profiles.Add(new ProfileRow
         {
             Id = "prf_" + Guid.NewGuid().ToString("N"),
@@ -196,11 +178,9 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal("denied", (await denied.JsonAsync()).Text("state"));
         Assert.Equal("denied", (await (await mine.GetAsync("/v1/private-agents/mine")).JsonAsync()).GetProperty("request").Text("state"));
 
-        // a decision is final
         using var twice = await operatorSide.SendAsync(Wire.Post($"/v1/admin/private-agents/requests/{requestId}/approve"));
         Assert.Equal(HttpStatusCode.BadRequest, twice.StatusCode);
 
-        // a fresh request can be withdrawn by its owner, and by nobody else
         var second = (await (await mine.SendAsync(Wire.Post("/v1/private-agents/requests", new { subject = person }))).JsonAsync()).Text("id");
         Assert.NotEqual(requestId, second);
         using var stranger = factory.CreateAuthorizedClient().ActAs(Flows.NewSubject("stranger"));
@@ -210,7 +190,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal(HttpStatusCode.NoContent, withdrawn.StatusCode);
         Assert.Equal(PrivateAgentRequestState.Withdrawn, StateOfRequest(second));
 
-        // nobody's hosted agent to give back
         using var nothing = await mine.DeleteAsync("/v1/private-agents/mine");
         Assert.Equal(HttpStatusCode.BadRequest, nothing.StatusCode);
     }
@@ -257,14 +236,12 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         Assert.Equal(0, Db.Read(factory, db => db.Profiles.Count(p => p.AgentId == slot.Id)));
         Assert.DoesNotContain(slot.Id, await AgentIdsAsync(mine, "/v1/agents"));
 
-        // a slot that is not a slot cannot be taken back this way
         using var notASlot = await operatorSide.SendAsync(Wire.Post("/v1/admin/private-agents/agt_00000000000000000000000000000000/release"));
         Assert.Equal(HttpStatusCode.BadRequest, notASlot.StatusCode);
     }
 
     private sealed record Enrolled(string Id, string Token);
 
-    /// <summary>Seeds a private-slot code and enrolls through the wire with it, as a rendered slot container does.</summary>
     private async Task<Enrolled> EnrollSlotAsync(string name)
     {
         var code = $"AGNT-SLOT-{Guid.NewGuid():N}"[..24];
@@ -345,7 +322,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         return job.Id;
     }
 
-    /// <summary>One long poll, given up after <paramref name="patience"/>: null is "nothing came".</summary>
     private async Task<HttpResponseMessage?> LeaseAsync(string token, TimeSpan patience)
     {
         using var client = factory.CreateClient();
@@ -370,7 +346,6 @@ public sealed class PrivateAgentTests(ShopApiFactory factory)
         }
     }
 
-    /// <summary>Leases as the slot until the job named comes, or a handful of others did.</summary>
     private async Task<string?> LeaseUntilAsync(string token, string job)
     {
         for (var seen = 0; seen < 10; seen++)

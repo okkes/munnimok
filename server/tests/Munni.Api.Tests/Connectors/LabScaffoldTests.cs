@@ -3,12 +3,6 @@ using Munni.Api.Lab;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The new-service scaffold (#441 L5), as pure text from a recording: the
-/// manifest stub, the OBSERVED options, the adapter stub, the fixtures, the
-/// test skeleton and the README, every path a repo path, nothing in it a
-/// value the recording did not already mask.
-/// </summary>
 public class LabScaffoldTests
 {
     private static JsonObject Trace() => (JsonObject)JsonNode.Parse("""
@@ -50,7 +44,6 @@ public class LabScaffoldTests
         Assert.Contains("README.md", paths);
         Assert.Contains("digest.md", paths);
 
-        // the JSON answers worth reading become fixtures; the script and the HTML do not
         var fixtures = paths.Where(p => p.StartsWith("server/src/connectors/ShopConnector.Adapters/Fixtures/example-shop/", StringComparison.Ordinal) && p.EndsWith(".json", StringComparison.Ordinal)).ToList();
         Assert.Equal(3, fixtures.Count);
         Assert.Contains(fixtures, p => p.EndsWith("01-post-v2-session.json", StringComparison.Ordinal));
@@ -125,11 +118,9 @@ public class LabScaffoldTests
         Assert.Contains("The recording held no JSON answer worth keeping.", Content(files, "Fixtures/blank/README.md"), StringComparison.Ordinal);
     }
 
-    /// <summary>The one file whose path ends so, under some folder; the root README is asked for by <see cref="Root"/>.</summary>
     private static string Content(IReadOnlyList<LabScaffold.ScaffoldFile> files, string pathEnd) =>
         Assert.Single(files, f => f.Path.EndsWith("/" + pathEnd, StringComparison.Ordinal)).Content;
 
-    /// <summary>The one file at the archive's root with this very path.</summary>
     private static string Root(IReadOnlyList<LabScaffold.ScaffoldFile> files, string path) =>
         Assert.Single(files, f => f.Path == path).Content;
 }

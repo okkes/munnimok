@@ -4,12 +4,7 @@ import { periodHistory } from './periods';
 import { cleanBankText } from '@/lib/text';
 import { givenCents, netAmountCents, netCreditCents } from './reimbursement';
 
-/**
- * CSV export (csv-export design): munni can read your banks, so it
- * must also let you leave. Pure functions — the screen only handles
- * pickers and the Blob download. Splits expand to one row per part so
- * spreadsheet pivots work naturally.
- */
+// munni reads your banks, so it must let you leave; splits expand to one row per part so spreadsheet pivots work
 
 export interface ExportContext {
   accounts: readonly AccountRow[];
@@ -69,8 +64,7 @@ type BaseRow = (
   eventOf?: string,
 ) => string[];
 
-/** #211: a row's own category spread exports one honest row per entry,
- *  the same shape a part spread gets — marked `cat` (it is not a part) */
+/** #211: a row's own category spread exports one row per entry, marked `cat` (it is not a part) */
 function pushCatRows(rows: string[][], tx: TxView, catalog: Catalog, base: BaseRow): void {
   for (const entry of tx.cats ?? []) {
     const entryCat = catalog.byId(entry.catId);
@@ -79,9 +73,7 @@ function pushCatRows(rows: string[][], tx: TxView, catalog: Catalog, base: BaseR
   }
 }
 
-/** split parts carry the expense sign of their parent, their OWN
- *  type/event (typed-splits v2), and the label rides the marker; a part
- *  spread across categories (v2.1) exports one honest row per entry */
+/** parts carry the parent's sign and their OWN type/event; a part spread across categories exports one row per entry */
 function pushPartRows(rows: string[][], tx: TxView, catalog: Catalog, base: BaseRow): void {
   for (const part of tx.splits ?? []) {
     const entries = part.cats?.length ? part.cats : [{ catId: part.catId, amountCents: part.amountCents }];
@@ -102,7 +94,6 @@ function pushPartRows(rows: string[][], tx: TxView, catalog: Catalog, base: Base
   }
 }
 
-/** one export row per transaction; split parts fan out beneath it */
 export function toCsvRows(txs: readonly TxView[], ctx: ExportContext): string[][] {
   const accountById = new Map(ctx.accounts.map((a) => [a.id, a]));
   const recurringById = new Map((ctx.recurrings ?? []).map((r) => [r.id, r.name]));

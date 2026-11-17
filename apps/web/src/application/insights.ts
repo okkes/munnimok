@@ -21,7 +21,6 @@ const noonOf = (iso: string): Date => {
   return new Date(y, m - 1, d, 12);
 };
 
-/** the space's live insight cards: dismissed findings left out, alike ones grouped (#516) */
 export function useInsights(): InsightGroup[] | undefined {
   const { store, spaceId } = useData();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
@@ -48,7 +47,6 @@ export function useInsights(): InsightGroup[] | undefined {
       txs,
       recurrings,
       budgets,
-      // loans v2: the tracked liability accounts ARE the debts
       loans: accounts.filter((a) => a.deleted === 0 && isDebtTracked(a)),
       accountsById: new Map(accounts.map((a) => [a.id, a])),
       catalog,
@@ -87,11 +85,7 @@ const isoWeek = (date: Date): string => {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 };
 
-/**
- * The weekly digest (ruling #2): once per ISO week, when insights are
- * waiting and notifications are granted, one quiet summary that deep-
- * links into the screen. Marker in device meta — never nags twice.
- */
+// weekly digest (ruling #2): once per ISO week, only while insights wait; the marker in device meta stops a second nudge
 export function useInsightDigest(insights: InsightGroup[] | undefined): void {
   const { store, spaceId } = useData();
   const { t } = useLang();
@@ -103,10 +97,8 @@ export function useInsightDigest(insights: InsightGroup[] | undefined): void {
       const markerKey = `insightDigest_${isoWeek(new Date())}`;
       if (await store.metaGet(markerKey)) return;
       await store.metaPut(markerKey, true);
-      // the inbox records the digest for every identity (arc 6); the OS
-      // notification is the optional second outlet, permission and the
-      // space's own choice allowing (#549) — titled with the space and
-      // opening its insights (#551)
+      // the inbox records the digest for every identity; the OS notification is optional (permission + the space's choice, #549)
+      // and is titled with the space, opening its insights (#551)
       await appendNotification(store, 'digest', { n: String(insights.length), spaceId }, markerKey);
       if (!(await osNotifyAllowed(store, spaceId))) return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);

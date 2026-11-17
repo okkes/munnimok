@@ -11,25 +11,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The Lidl Plus login, driven offline through the page seam.
-///
-/// Three defects here each failed every real login on their own, and this
-/// suite exists because the only other way to find that out is to spend a
-/// live attempt - which on this platform is a thing that happens once, is
-/// never retried, and locks an account when it goes wrong.
-///
-/// 1. No PKCE at all. The reference builds a code_challenge for the authorize
-///    call and replays the verifier at the exchange; we sent neither, and an
-///    authorization server that recorded a challenge refuses the exchange.
-/// 2. An empty client secret, so the Basic header named a client Lidl does
-///    not have.
-/// 3. No way to sign in with an e-mail address. The README says "username
-///    (phone number)"; the source shows the page has input-email beside
-///    input-phone, and the owner of this repo signs in with the former.
-///
-/// No browser, no network, no credentials.
-/// </summary>
+// a live login attempt happens once, is never retried and can lock the account, so the login is driven offline
+// three defects each failed every real login: no PKCE, an empty client secret, no e-mail sign-in
 public sealed class LidlPlusLoginTests
 {
     private const string Redirect = "com.lidlplus.app://callback?code=lidl-authorization-code&state=x";
@@ -38,43 +21,23 @@ public sealed class LidlPlusLoginTests
     private const string Email = "shopper@example.com";
     private const string Phone = "+31612345678";
 
-    /// <summary>The six digits the human reads off their phone or out of their inbox.</summary>
     private const string Code = "590287";
 
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
 
     private static readonly LidlPlusOptions Options = new();
 
-    /// <summary>
-    /// The reference's own four names, which is what the page really has -
-    /// WRITTEN OUT rather than read off the adapter's own list.
-    /// </summary>
-    /// <remarks>
-    /// These were <c>Options.EmailSelectors[0]</c> and its siblings, which
-    /// makes the fixture a restatement of the question: the page becomes
-    /// "whatever this adapter looks for first", so a list that is entirely
-    /// wrong still passes and replacing one moves the page underneath the test
-    /// without anything failing. That is the fixture shape that cost a live ASN
-    /// fetch.
-    /// </remarks>
+    // selectors written out from the reference, not read off the adapter's list: a restated fixture passes with a wrong list
     private const string EmailInput = "input[data-testid='input-email']";
     private const string PhoneInput = "input[data-testid='input-phone']";
     private const string PasswordInput = "input[data-testid='login-input-password']";
     private const string Submit = "[data-testid='login-or-register-submit-button']";
 
-    /// <summary>
-    /// The password screen's own button. Separate from <see cref="Submit"/>
-    /// because the live page has two, and a stub with one cannot catch an
-    /// adapter that clicks the wrong one.
-    /// </summary>
+    // the password screen's own button: the live page has two, and a stub with one cannot catch clicking the wrong one
     private const string PasswordSubmit = "[data-testid='button-primary']";
     private const string CodeInput = "input[name='VerificationCode']";
 
-    /// <summary>
-    /// The code screen's submit. Distinct from both the identifier and the
-    /// password buttons: on the live page all three used to collapse onto
-    /// one selector, which is exactly why a stub could not tell them apart.
-    /// </summary>
+    // distinct from the identifier and password buttons, which once collapsed onto one selector and hid it from the stub
     private const string CodeSubmit = "[data-testid='button-primary']";
 
     private static readonly IReadOnlyDictionary<string, string> DutchConfig =
@@ -82,15 +45,11 @@ public sealed class LidlPlusLoginTests
 
     private static LidlPlusAdapter Adapter() => new(Options, new FixedTimeProvider(Now));
 
-    // ---- defect one: PKCE --------------------------------------------------
-
     [Fact]
     public void The_challenge_is_a_correct_s256_of_the_verifier()
     {
         var pkce = PkceChallenge.Create();
 
-        // BASE64URL(SHA256(ASCII(verifier))), computed here from first
-        // principles rather than by calling the code under test.
         var expected = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(pkce.Verifier)))
             .TrimEnd('=')
             .Replace('+', '-')
@@ -121,16 +80,13 @@ public sealed class LidlPlusLoginTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // The challenge went up with the authorize request...
         var authorize = Query(Assert.Single(page.Visited));
         var challenge = authorize["code_challenge"];
 
         Assert.NotEmpty(challenge);
         Assert.Equal("S256", authorize["code_challenge_method"]);
 
-        // ...and the verifier came back down with the code, on the other side
-        // of a whole browser login. Surviving that journey is the entire
-        // point: the two halves are minted together and used minutes apart.
+        // the verifier survives a whole browser login: the two halves are minted together and used minutes apart
         var exchange = Form(Assert.Single(handler.Requests, r => r.Path == TokenPath));
 
         Assert.True(exchange.TryGetValue("code_verifier", out var verifier),
@@ -163,8 +119,6 @@ public sealed class LidlPlusLoginTests
         Assert.Contains("offline_access", query["scope"], StringComparison.Ordinal);
     }
 
-    // ---- defect two: the client secret -------------------------------------
-
     [Fact]
     public async Task The_basic_header_names_the_client_secret_the_reference_confirms()
     {
@@ -178,20 +132,14 @@ public sealed class LidlPlusLoginTests
 
         Assert.Equal($"Basic {expected}", exchange.Header("Authorization"));
 
-        // The value that used to go out: the client id, a colon, and nothing.
-        // That is a different client as far as the token endpoint cares, and
-        // it is bug two of the three.
+        // the value that used to go out ("LidlPlusNativeClient:") names a different client to the token endpoint
         var empty = Convert.ToBase64String(Encoding.UTF8.GetBytes("LidlPlusNativeClient:"));
         Assert.NotEqual($"Basic {empty}", exchange.Header("Authorization"));
     }
 
-    // ---- defect three: an e-mail is a username too --------------------------
-
     [Fact]
     public async Task An_email_goes_into_the_email_input_and_never_into_the_phone_one()
     {
-        // Both boxes are on the page, exactly as the reference's two selectors
-        // say they are.
         var page = FullyLoggedInPage();
         using var ctx = Context(new StubHttpHandler(Route), Email);
 
@@ -220,8 +168,7 @@ public sealed class LidlPlusLoginTests
     public async Task The_expected_input_missing_hands_over_rather_than_typing_into_the_other_box(
         string username, string expected)
     {
-        // The page has the other box, the password box and the button - so a
-        // filler willing to settle for "some input" would find one.
+        // the other box, password box and button are present, so a filler settling for "some input" would find one
         var other = username == Email ? PhoneInput : EmailInput;
         var page = StubLoginPage.Showing(other, PasswordInput, Submit, PasswordSubmit);
 
@@ -236,20 +183,14 @@ public sealed class LidlPlusLoginTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
-        // Still never the other box. Putting an address into the phone input
-        // spends a login attempt against a page that is scoring us, for a
-        // reason the user cannot act on.
+        // never the other box: an address in the phone input spends a login attempt against a page that scores us
         Assert.Empty(page.Filled);
 
-        // And it is no longer fatal. The box we know is missing - Lidl may
-        // have moved its markup, and that used to end the connect attempt
-        // outright. The human can still sign in on the page in front of them,
-        // so the login is handed over instead of refused.
+        // a missing known box is not fatal: Lidl may have moved its markup, so the human signs in on the page instead
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
         Assert.True(ctx.CredentialWasSubmitted);
 
-        // The exchange still happened, so a shape change costs a hand-over
-        // rather than the connection.
+        // the exchange still happened: a shape change costs a hand-over, not the connection
         Assert.NotEmpty(handler.Requests);
         _ = expected;
     }
@@ -261,8 +202,7 @@ public sealed class LidlPlusLoginTests
     [InlineData("+4915112345678", false)]
     public void The_shape_of_the_value_decides_which_box_it_belongs_in(string username, bool email)
     {
-        // The same single test the manifest's pattern is built around: only
-        // one of the two shapes it admits can hold an '@'.
+        // only one of the two shapes the manifest's pattern admits can hold an '@'
         Assert.Equal(email, LidlPlusAdapter.LooksLikeEmail(username));
         Assert.Matches(LidlPlusManifest.UsernamePattern, username);
     }
@@ -291,22 +231,14 @@ public sealed class LidlPlusLoginTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
-        // Both fields are optional now, and half a credential is the same
-        // answer as none: there is nothing this adapter can usefully type, so
-        // the person whose account it is drives the page.
-        //
-        // Refusing was the old contract, and it made a first connect
-        // impossible to offer to anyone unwilling to hand over a password up
-        // front.
+        // both fields optional, half a credential is the same as none: nothing to type, so the account's owner drives the page
+        // refusing made a first connect impossible to offer to anyone unwilling to hand over a password up front
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
-        // Nothing typed, and in particular no half-credential posted at a page
-        // that scores us.
+        // nothing typed, and no half-credential posted at a page that scores us
         Assert.Empty(page.Filled);
         Assert.True(ctx.CredentialWasSubmitted);
     }
-
-    // ---- the code, and which way it arrived --------------------------------
 
     [Theory]
     [InlineData(Email, "email")]
@@ -322,51 +254,30 @@ public sealed class LidlPlusLoginTests
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal(ChallengeType.MfaCode, challenge.Type);
 
-        // The whole point. "sms" for everybody tells an e-mail user to watch
-        // a phone that will never ring while the code sits in their inbox,
-        // and the challenge expires while they wait.
+        // "sms" for everybody sends an e-mail user to watch a phone while the code sits in their inbox and expires
         Assert.Equal(delivery, challenge.Delivery);
 
         Assert.Equal(6, challenge.Length);
         Assert.Equal(Options.CodeLength, challenge.Length);
         Assert.Equal(Now.AddSeconds(300), challenge.ExpiresAt);
 
-        // A key, never prose - and not the sms key, which would be the same
-        // lie one layer down.
+        // a key, never prose, and not the sms key either
         Assert.Equal("connect.challenge.verification_code", challenge.PromptKey);
 
-        // The code goes into the reference's own input, and role_next submits
-        // it exactly as the reference clicks it.
         Assert.Equal(Code, page.Filled[CodeInput]);
         Assert.Equal(CodeSubmit, page.Clicked[^1]);
         Assert.Contains(JobStep.AwaitingHuman, ctx.Steps);
     }
 
-    /// <summary>
-    /// THE TWO-SCREEN WIZARD, DRIVEN TO A FINISHED SESSION - which is the
-    /// layout Lidl is confirmed to serve and which no test had ever completed.
-    /// </summary>
-    /// <remarks>
-    /// Every login test here handed the adapter a page already showing the
-    /// password box, so the single-page path was the only one ever exercised.
-    /// The branch that exists because a live attempt died on it - e-mail
-    /// filled, "no element for the password field" - was reached by nothing.
-    /// <para>
-    /// What it has to get right is not just that it finds the box: it must
-    /// press the IDENTIFIER's button to advance, then the PASSWORD screen's own
-    /// button to submit. Clicking the first one twice submits the wrong form,
-    /// and the two buttons have different names for that reason.
-    /// </para>
-    /// </remarks>
+    // two-screen wizard: press the identifier's button to advance, then the password screen's own to submit
+    // the live attempt died here: e-mail filled, "no element for the password field"
     [Fact]
     public async Task The_two_screen_wizard_advances_and_finishes()
     {
-        // The identifier screen: no password box anywhere yet.
         var page = StubLoginPage.Showing(EmailInput, Submit);
 
         page.WhenClicked = (p, selector) =>
         {
-            // Pressing "Volgende" is what reveals the second screen.
             if (selector == Submit) p.Reveal(PasswordInput, PasswordSubmit, CodeInput, CodeSubmit);
         };
 
@@ -374,19 +285,14 @@ public sealed class LidlPlusLoginTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
-        // It got all the way to a session, not merely past the wizard.
         Assert.NotNull(result.Material.RefreshToken);
 
         Assert.Equal(Email, page.Filled[EmailInput]);
         Assert.Equal("hunter2", page.Filled[PasswordInput]);
 
-        // THE ORDER, and both buttons. The identifier's own button advances the
-        // wizard; the password screen's own button submits it. Pressing the
-        // first again in place of the second posts the wrong form.
         Assert.Equal([Submit, PasswordSubmit, CodeSubmit], page.Clicked);
 
-        // And the credential was declared before the wizard advanced, because
-        // advancing IS the identifier reaching Lidl.
+        // the credential is declared before the wizard advances, because advancing IS the identifier reaching Lidl
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
@@ -420,9 +326,7 @@ public sealed class LidlPlusLoginTests
         Assert.Equal("lidl-access-token-fixture", result.Material.AccessToken);
         Assert.Equal("lidl-refresh-token-fixture", result.Material.RefreshToken);
 
-        // Country and language are sealed in alongside the tokens: every
-        // ticket URL and two headers need them, and a fetch that arrives
-        // without config would otherwise be unserviceable.
+        // country and language are sealed in with the tokens: a fetch without config would be unserviceable
         Assert.Equal("NL", result.Material.Extra["country"]);
         Assert.Equal("nl", result.Material.Extra["language"]);
     }
@@ -441,22 +345,12 @@ public sealed class LidlPlusLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
-    /// <summary>
-    /// The branch the live attempt of 2026-07-28 died in.
-    ///
-    /// reCAPTCHA's verdict does not arrive as a widget you can detect - the
-    /// page bounces back to the identifier screen with a generic notice, which
-    /// from here is indistinguishable from Lidl having moved its markup. Both
-    /// used to end the connect attempt outright. Both are now answered the
-    /// same way, because both have the same remedy: give the page to the
-    /// person whose account it is.
-    /// </summary>
+    // reCAPTCHA's verdict is no detectable widget: the page bounces to the identifier screen with a generic notice
+    // indistinguishable from moved markup; both are answered by giving the page to the account's owner
     [Fact]
     public async Task A_typed_login_that_fails_hands_over_instead_of_ending_the_connect()
     {
-        // The identifier box is there and the password box is not, on either
-        // screen - so the fill succeeds, the wall check finds nothing, and
-        // SignInAsync throws provider_changed part-way in.
+        // password box absent on both screens: the fill succeeds, the wall check finds nothing, SignInAsync throws provider_changed
         var page = StubLoginPage.Showing(EmailInput, Submit);
 
         var handler = new StubHttpHandler(Route);
@@ -474,27 +368,15 @@ public sealed class LidlPlusLoginTests
 
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
-        // And it still finishes: the human signed in on the streamed page and
-        // the redirect carried the code, so a shape change costs a hand-over
-        // rather than the connection.
         Assert.Equal("lidl-access-token-fixture", result.Material.AccessToken);
         Assert.False(page.HoldsSecret);
     }
 
-    // ---- the wall, if Lidl ever puts one up --------------------------------
-
-    /// <summary>
-    /// The wall is the reason this provider is streamed at all.
-    ///
-    /// reCAPTCHA Enterprise scores the BROWSER, not the account, so an
-    /// automated Chromium fails it however good the password is - proven live
-    /// on 2026-07-28. There is no picture to relay and no token to carry back;
-    /// the only browser that passes is one a real person is driving.
-    /// </summary>
+    // reCAPTCHA Enterprise scores the BROWSER, not the account (proven live 2026-07-28):
+    // only a browser a real person drives passes
     [Fact]
     public async Task An_interactive_captcha_hands_the_page_over_rather_than_refusing()
     {
-        // No code box, because the widget is standing where it would be.
         var page = StubLoginPage.Showing(
             EmailInput, PasswordInput, Submit, PasswordSubmit, "iframe[src*='hcaptcha']");
 
@@ -513,11 +395,8 @@ public sealed class LidlPlusLoginTests
 
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
-        // The identifier went in - it is not a secret and it is the half a
-        // person would otherwise have to go and look up. The PASSWORD did not:
-        // the wall is checked before it touches the DOM, because the redactor
-        // refuses to photograph a page holding a secret and a live view of
-        // nothing helps nobody.
+        // the identifier goes in, the PASSWORD does not: the wall is checked first,
+        // since the redactor refuses a page holding a secret
         Assert.Equal(Email, page.Filled[EmailInput]);
         Assert.DoesNotContain(PasswordInput, page.Filled.Keys);
         Assert.False(page.HoldsSecret);
@@ -537,8 +416,7 @@ public sealed class LidlPlusLoginTests
             Inputs = Credentials(Email),
             Attended = true,
             Browser = new StubBrowserLease(page),
-            // Nobody ever answers: the person who passes the widget in the
-            // browser has no reason to go back to the consumer's UI.
+            // nobody answers: the person passing the widget has no reason to go back to the consumer's UI
             AnswersNothing = true,
         };
 
@@ -549,10 +427,7 @@ public sealed class LidlPlusLoginTests
 
         var challenge = Assert.Single(ctx.Asked);
 
-        // Passive: there is nothing to type back. What ends this is the
-        // browser reaching Lidl's callback, which is the same terminal signal
-        // the typed path settles on - so somebody who signs in and never
-        // returns to the consumer's UI still finishes.
+        // passive: the browser reaching Lidl's callback ends it, so someone who never returns to the consumer's UI still finishes
         Assert.Equal(ChallengeType.LiveView, challenge.Type);
         Assert.True(challenge.IsPassive);
         Assert.Null(challenge.Image);
@@ -560,16 +435,9 @@ public sealed class LidlPlusLoginTests
         Assert.Equal("lidl-access-token-fixture", result.Material.AccessToken);
     }
 
-    // ---- helpers -----------------------------------------------------------
-
-    /// <summary>
-    /// The provider, answering from its recorded payload. Only the token
-    /// endpoint is ever reached by a login.
-    /// </summary>
     private static HttpResponseMessage Route(RecordedRequest request, int _) =>
         request.Path == TokenPath ? Stub.Fixture("lidl/token.json") : Stub.Status(HttpStatusCode.NotFound);
 
-    /// <summary>Every box the reference names, all on one page.</summary>
     private static StubLoginPage FullyLoggedInPage() =>
         StubLoginPage.Showing(EmailInput, PhoneInput, PasswordInput, Submit, PasswordSubmit, CodeInput, CodeSubmit);
 
@@ -582,11 +450,6 @@ public sealed class LidlPlusLoginTests
             ["password"] = "hunter2",
         };
 
-    /// <summary>
-    /// A job whose human answers the code challenge. A test that expects no
-    /// challenge at all asserts <c>Empty(ctx.Asked)</c> rather than relying on
-    /// the answer being refused, so the assertion says what it means.
-    /// </summary>
     private static FakeJobContext Context(
         HttpMessageHandler handler, string username, Func<Challenge, string>? answer = null) =>
         new(handler)
@@ -605,12 +468,7 @@ public sealed class LidlPlusLoginTests
         return Pairs(request.Body);
     }
 
-    /// <summary>
-    /// A form body or a query string, unescaped. Hand-rolled rather than
-    /// pulled from a web stack: the assertions here are about exactly which
-    /// characters went onto the wire, so the reader wants to see the decoding
-    /// rather than trust a helper's opinion of it.
-    /// </summary>
+    // hand-rolled so the assertions show exactly which characters went onto the wire
     private static Dictionary<string, string> Pairs(string encoded)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);

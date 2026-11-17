@@ -2,22 +2,16 @@ import type { ReceiptItem, ReceiptPick, TxSplit, TxSplitCat, TxType } from '@/db
 import { REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from './categories';
 import { largestRemainder } from './txSlices';
 
-/** a receipt line the transaction's money can be filed by */
 export interface ReceiptLine {
   /** the line's place among the receipt's items: two identical lines are two lines */
   index: number;
   name: string;
-  /** what the line says */
   printedCents: number;
   /** what was paid for it: the receipt's discounts taken off in proportion */
   paidCents: number;
 }
 
-/**
- * #567 (user): the lines a transaction can be categorised by. A line that
- * costs money is one; a discount is not — it comes off the others by their
- * size, so the paid values add up to what the receipt charged.
- */
+// #567: a discount is no line, it comes off the others by size so the paid values add up to what the receipt charged
 export function receiptLines(items: readonly ReceiptItem[] | undefined): ReceiptLine[] {
   const all = items ?? [];
   // a discount the shop states on a line is that line's alone; the receipt's own discount lines are everyone's
@@ -37,7 +31,6 @@ export function receiptLines(items: readonly ReceiptItem[] | undefined): Receipt
 /** the same product under one key, however the shop spaces or capitalises its name */
 export const itemKey = (name: string): string => name.toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 
-/** the category a person filed a product under before, by product key */
 export type ItemMemory = ReadonlyMap<string, string>;
 
 /** what the space's receipts were filed as, line by line — the later receipt's say wins */
@@ -54,14 +47,13 @@ export function itemMemoryOf(links: readonly { date: string; items?: ReceiptItem
   return memory;
 }
 
-/** #567 (user): what the person chose before outranks the reader's guess; a category that is gone suggests nothing */
+/** #567: what the person chose before outranks the reader's guess; a category that is gone suggests nothing */
 export function suggestedCat(item: Pick<ReceiptItem, 'name' | 'catId'>, memory: ItemMemory, known: (catId: string) => boolean): string | undefined {
   const remembered = memory.get(itemKey(item.name));
   if (remembered && known(remembered)) return remembered;
   return item.catId && known(item.catId) ? item.catId : undefined;
 }
 
-/** every line there is a category to suggest for, at what was paid for it */
 export function suggestedPicks(
   items: readonly ReceiptItem[] | undefined,
   memory: ItemMemory,
@@ -77,11 +69,7 @@ export function suggestedPicks(
 
 export const picksTotal = (picks: readonly ReceiptPick[]): number => picks.reduce((sum, pick) => sum + pick.amountCents, 0);
 
-/**
- * The transaction's categories as the picks make them: one entry per
- * category, and what the picks leave of `netCents` stays under `restCatId`.
- * Picks beyond the transaction's money are the caller's to refuse.
- */
+// picks beyond the transaction's money are the caller's to refuse
 export function picksSpread(picks: readonly ReceiptPick[], netCents: number, restCatId: string): TxSplitCat[] {
   const byCat = new Map<string, number>();
   for (const pick of picks) byCat.set(pick.catId, (byCat.get(pick.catId) ?? 0) + pick.amountCents);
@@ -90,12 +78,10 @@ export function picksSpread(picks: readonly ReceiptPick[], netCents: number, res
   return [...byCat].filter(([, cents]) => cents > 0).map(([catId, amountCents]) => ({ catId, amountCents }));
 }
 
-/** a transaction's money as the lines may claim it */
 export interface TxMoney {
-  /** what there is to file: the amount without what was paid back (user: the friends' €75 of a €100 shop is not yours to categorise) */
+  /** the amount without what was paid back: the friends' €75 of a €100 shop is not yours to categorise */
   netCents: number;
   settledCents: number;
-  /** what each category holds now */
   held: ReadonlyMap<string, number>;
   /** where money no line claims stays: the transaction's own category, when it is an ordinary one */
   restCatId: string;
@@ -113,7 +99,6 @@ export function txMoneyOf(tx: { amountCents: number; catId?: string; cats?: read
   return { netCents, settledCents, held, restCatId: own };
 }
 
-/** a payment as the filing rule reads it — a stored transaction and the review card's draft alike */
 export interface FilingPayment {
   amountCents: number;
   txType: TxType;
@@ -123,15 +108,8 @@ export interface FilingPayment {
   linkedAccountId?: string;
 }
 
-/**
- * #567 (user): a receipt that says the payment's own amount files the
- * payment by its lines — from what the person filed such lines under
- * before, the reader's guess where they never did. A different amount
- * leaves it to the usual prediction, and a payment that already tells a
- * story of its own (parts, a spread, a counterparty, money paid back) is
- * left alone. Lines nobody can name stay under the payment's own category;
- * without one there is nowhere to leave them, so nothing is filed.
- */
+// #567: a receipt stating the payment's own amount files it by its lines; a payment with a story of its own
+// (parts, spread, counterparty, money paid back) is left alone; lines nobody can name need the payment's own category
 export function receiptFiling(
   payment: FilingPayment,
   receipt: { totalCents: number; items?: readonly ReceiptItem[] } | null | undefined,
@@ -148,16 +126,11 @@ export function receiptFiling(
   const { restCatId } = txMoneyOf(payment);
   if (rest > 0 && restCatId === UNCATEGORIZED_ID) return null;
   const cats = picksSpread(picks, netCents, restCatId);
-  // every line under the category the payment already has: nothing to file
   if (cats.length === 1 && cats[0].catId === payment.catId) return null;
   return { cats, picks };
 }
 
-/**
- * Stored picks still tell the transaction's story while its categories
- * hold at least what the picks placed in each — a category changed by
- * hand since makes them history.
- */
+// stored picks stand while the categories hold at least what each pick placed; a change by hand makes them history
 export function picksStand(
   picks: readonly ReceiptPick[] | undefined,
   items: readonly ReceiptItem[] | undefined,

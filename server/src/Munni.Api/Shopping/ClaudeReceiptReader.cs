@@ -6,12 +6,7 @@ using Anthropic.Models.Beta.Messages;
 
 namespace Munni.Api.Shopping;
 
-/// <summary>
-/// The receipt reader on Claude (#567): the photos and the person's
-/// category list go in, a schema-bound JSON answer comes out. Nothing here
-/// decides anything about money — the API checks every figure afterwards
-/// (ReceiptReadCheck).
-/// </summary>
+// nothing here decides about money: the API checks every figure afterwards (ReceiptReadCheck) (#567)
 public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
 {
     public const string Model = "claude-opus-5-5";
@@ -124,7 +119,6 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
         return Parse(json.ToString());
     }
 
-    /// <summary>The person's categories as the reader sees them: one "id — name" per line.</summary>
     internal static string CategoryList(IReadOnlyList<ReadCategory> categories)
     {
         if (categories.Count == 0) return "There is no category list: every category_id is null.";
@@ -133,7 +127,6 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
         return list.ToString();
     }
 
-    /// <summary>The model's answer as the reader's contract; null when it is no JSON of the agreed shape.</summary>
     internal static ReadReceipt? Parse(string json)
     {
         try

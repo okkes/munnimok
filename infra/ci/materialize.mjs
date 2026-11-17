@@ -1,16 +1,6 @@
 #!/usr/bin/env node
-/**
- * The platform config from GitHub into the files the modules read (#416):
- * every `MUNNI_PLATFORM_<ID>` variable the workflow hands this job as an
- * environment variable becomes `infra/platforms/<id>/platform.json` +
- * `envs/<env>.json`. Runs first in every job that reads the config.
- *
- *   node infra/ci/materialize.mjs
- *
- * Nothing published yet (a fresh repository, the wizard not connected):
- * prints a notice and exits 0 — the matrix is then empty and the jobs do
- * nothing, which is the honest outcome.
- */
+// #416: turns the MUNNI_PLATFORM_<ID> variables into platform.json + envs/<env>.json, first in every job that reads config;
+// with none published it prints a notice and exits 0 (the matrix is empty, the jobs do nothing)
 import { materializeFromEnv } from '../modules/config.mjs';
 
 const ids = materializeFromEnv();

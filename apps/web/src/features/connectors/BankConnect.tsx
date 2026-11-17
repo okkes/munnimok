@@ -4,12 +4,8 @@ import { ConnectSteps } from './ConnectSteps';
 import type { FlowRequest } from './ConnectSteps';
 import { useCatalogue } from './useCatalogue';
 
-/**
- * #527: "Connect a bank" where a person already is — a space's accounts —
- * without a detour: the bank picker, then the sign-in of the one picked,
- * then its name. The connection is the person's (All accounts lists and
- * manages it); its accounts are attached to this space like any other.
- */
+// #527: connect a bank from a space's accounts without a detour; the connection is the person's (All accounts manages it),
+// its accounts attach to this space
 export function BankConnect({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const catalogue = useCatalogue();
   const [flow, setFlow] = useState<FlowRequest | null>(null);

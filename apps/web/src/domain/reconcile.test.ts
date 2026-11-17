@@ -34,9 +34,7 @@ describe('reconcilePlan (linked is the truth, in-between dates only)', () => {
       row({ importRef: 'REF-C', date: '2026-06-20', amountCents: 90_000, merchant: 'EMPLOYER' }),
     ];
     const imported = [
-      // matches REF-B (inside coverage, same day+amount)
       row({ importRef: 'ing:x:1', date: '2026-06-10', amountCents: -1200, merchant: 'Shell Station' }),
-      // inside coverage, nothing vouches for it → mismatched
       row({ importRef: 'ing:x:2', date: '2026-06-12', amountCents: -999, merchant: 'GHOST' }),
       // 2023 history the connection never saw → kept (in-between rule)
       row({ importRef: 'ing:x:3', date: '2023-01-05', amountCents: -700, merchant: 'OLD SHOP' }),
@@ -62,7 +60,7 @@ describe('reconcilePlan (linked is the truth, in-between dates only)', () => {
       row({ importRef: 'ing:b', date: '2026-06-05', amountCents: -1500, merchant: 'UNRELATED' }),
     ]);
     expect(plan.matches).toHaveLength(1);
-    expect(plan.matches[0].imported.importRef).toBe('ing:a'); // name similarity claimed the truth row
+    expect(plan.matches[0].imported.importRef).toBe('ing:a');
     expect(plan.mismatched.map((r) => r.importRef)).toEqual(['ing:b']);
   });
 

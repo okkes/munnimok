@@ -15,7 +15,6 @@ describe('merchantKey', () => {
     expect(merchantKey("SEN MARKET >'S-GRAVEN11.09.2026 18U57 KV")).toBe('sen market');
     expect(merchantKey('Bakkerij Jansen 2026-09-11 18:57')).toBe('bakkerij jansen');
     expect(merchantKey('AH1470 Delft')).toBe('ah');
-    // a single digit that is part of the name stays
     expect(merchantKey('Radio 3FM shop')).toBe('radio 3fm shop');
   });
 
@@ -33,7 +32,6 @@ describe('merchantKey', () => {
     expect(new Set(lines.map(merchantKey))).toEqual(new Set(['albert heijn']));
     // a line that is nothing but place keeps its text rather than going blank
     expect(merchantKey('>S-GRAVENH30.10.2026')).toBe('s gravenh');
-    // a lone digit standing on its own is noise; glued to a word it is the name
     expect(merchantKey('Kruidvat 2go 3')).toBe('kruidvat 2go');
   });
 

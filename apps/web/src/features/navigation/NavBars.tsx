@@ -17,7 +17,6 @@ export function onMainNav(to: string): void {
   clearOverviewPeriods();
 }
 
-/** a nav icon, with the attention dot when the entry asks for one */
 function NavFace({ item, active, size }: Readonly<{ item: NavItem; active: boolean; size: number }>) {
   const dot = usePlanDot((s) => s.dot);
   return (
@@ -28,15 +27,10 @@ function NavFace({ item, active, size }: Readonly<{ item: NavItem; active: boole
   );
 }
 
-/** room each label keeps from its slot's edges */
 const LABEL_GUTTER = 4;
 
-/**
- * Names while every one fits its slot, icons only once one does not — a
- * measurement, not a breakpoint (#577): the labels are measured in a
- * hidden copy, so icon mode can still tell when the room comes back.
- * Unmeasurable (a hidden bar, a test DOM) keeps the last answer.
- */
+// #577: names while every one fits its slot, icons only once one does not; labels are measured in a hidden copy
+// so icon mode can tell when the room comes back; unmeasurable (hidden bar, test DOM) keeps the last answer
 function useLabelsFit(key: string): { fit: boolean; navRef: RefObject<HTMLElement | null>; measureRef: RefObject<HTMLDivElement | null> } {
   const navRef = useRef<HTMLElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
@@ -59,10 +53,7 @@ function useLabelsFit(key: string): { fit: boolean; navRef: RefObject<HTMLElemen
   return { fit, navRef, measureRef };
 }
 
-/**
- * The phone's bottom bar (#577): Home first, then the active space's picks.
- * It lives inside the data provider — the picks are the space's.
- */
+/** lives inside the data provider: the picks are the space's */
 export function MobileTabBar({ pathname, hidden }: Readonly<{ pathname: string; hidden: boolean }>) {
   const { t } = useLang();
   const tabs = useNavTabs();
@@ -117,9 +108,7 @@ function SideLink({ item, pathname }: Readonly<{ item: NavItem; pathname: string
       to={item.to}
       data-testid={`side-tab-${item.id}`}
       onClick={() => onMainNav(item.to)}
-      // #271: hover tints in the accent language — bg-surface (white on
-      // light bg-2 / gray on dark) read as stale gray blocks whenever hover
-      // state lingered
+      // #271: hover tints in the accent language: bg-surface read as stale gray blocks whenever hover state lingered
       className={`m-tap flex items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-medium ${
         active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-accent-soft/40'
       }`}
@@ -160,11 +149,7 @@ function useEdgeFade(): { ref: RefObject<HTMLDivElement | null>; style: CSSPrope
   return { ref, style: { maskImage: mask, WebkitMaskImage: mask } };
 }
 
-/**
- * The desktop and tablet side panel (#523): there is room for every
- * feature, so it lists them all — the default bar first, the rest by
- * intent — whatever a space picked for its phone bar.
- */
+/** #523: room for every feature, so it lists them all, whatever a space picked for its phone bar */
 export function SideNav({ pathname }: Readonly<{ pathname: string }>) {
   const { t } = useLang();
   const identity = useSession((s) => s.identity);
@@ -172,7 +157,7 @@ export function SideNav({ pathname }: Readonly<{ pathname: string }>) {
   const fade = useEdgeFade();
   return (
     <>
-      <div ref={fade.ref} style={fade.style} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto" data-testid="side-nav">
+      <div ref={fade.ref} style={fade.style} className="flex min-h-0 flex-col gap-0.5 overflow-y-auto" data-testid="side-nav">
         <SideLink item={HOME_NAV} pathname={pathname} />
         {SIDE_NAV_GROUPS.map((group) => {
           const ids = group.ids.filter(usable);
@@ -187,7 +172,7 @@ export function SideNav({ pathname }: Readonly<{ pathname: string }>) {
           );
         })}
       </div>
-      <div className="shrink-0 border-t border-line pt-2">
+      <div className="mt-2 shrink-0 border-t border-line pt-2">
         <SideLink item={NAV_FEATURES.settings} pathname={pathname} />
       </div>
     </>

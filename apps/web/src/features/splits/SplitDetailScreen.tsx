@@ -37,7 +37,6 @@ const netTone = (net: number): string => {
 
 const nameIn = (members: readonly SplitMember[], t: Translate) => (userId: string) => memberName(members.find((member) => member.userId === userId), t);
 
-/** the picture, the days, what it cost together and how many are in it */
 function Header({ detail }: Readonly<{ detail: SplitDetail }>) {
   const { t, lang } = useLang();
   const { split } = detail;
@@ -62,7 +61,6 @@ function Header({ detail }: Readonly<{ detail: SplitDetail }>) {
   );
 }
 
-/** what stands in the way of using the split as usual: a deletion counting down, a membership that ended, a closed state */
 function Notes({ detail, busy, onKeep }: Readonly<{ detail: SplitDetail; busy: boolean; onKeep: () => void }>) {
   const { t, lang } = useLang();
   const { split } = detail;
@@ -119,11 +117,6 @@ function Ledger({ detail }: Readonly<{ detail: SplitDetail }>) {
   );
 }
 
-/**
- * While the split runs: what settling now would ask — a look ahead, with
- * a door to record a payment someone already made. Once settled: the plan
- * itself, each payment marked paid by its payer, its receiver or an owner.
- */
 function Plan({
   detail,
   preview,
@@ -236,7 +229,6 @@ function Entries({ detail, onOpen, onRemovePayment }: Readonly<{ detail: SplitDe
   );
 }
 
-/** "Anna already paid me €20 back": a payment between two members, recorded so the balances know */
 function PaymentSheet({
   api,
   detail,
@@ -310,7 +302,6 @@ function PaymentSheet({
   );
 }
 
-/** the sentence and the button of each thing an owner (or a leaver) is asked to confirm */
 const ASKS: Record<Ask, { title: string; body: string; danger: boolean }> = {
   settle: { title: 'splits.settleNow', body: 'splits.ask.settle', danger: false },
   reopen: { title: 'splits.reopen', body: 'splits.ask.reopen', danger: false },
@@ -319,7 +310,6 @@ const ASKS: Record<Ask, { title: string; body: string; danger: boolean }> = {
   leave: { title: 'splits.leave', body: 'splits.ask.leave', danger: true },
 };
 
-/** The screen while there is no split to show: still loading, gone, or out of reach. */
 function Missing({ state }: Readonly<{ state: 'loading' | 'offline' | 'gone' | 'ready' }>) {
   const { t } = useLang();
   return (
@@ -341,7 +331,6 @@ function Missing({ state }: Readonly<{ state: 'loading' | 'offline' | 'gone' | '
   );
 }
 
-/** What a member can do with the split from its page; an owner's doors show to owners only, each while it applies. */
 function Actions({
   split,
   waiting,
@@ -396,12 +385,6 @@ async function carryOut(api: SplitsApi, asked: Ask, splitId: string): Promise<bo
   }
 }
 
-/**
- * One split (#538): what it cost, who stands where, what settling would
- * ask, and the expenses — with the doors its members have: add an expense
- * (typed, or one of their own transactions), record a payment, see the
- * people; and an owner's: invite, edit, settle, reopen, archive, delete.
- */
 export function SplitDetailScreen() {
   const { t } = useLang();
   const navigate = useNavigate();

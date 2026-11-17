@@ -1,12 +1,7 @@
 import { useState } from 'react';
 import type { ScreenProps } from '../../app/LabApp';
 
-/**
- * The kill switch of one party: pause / resume / mark healthy / retire
- * behind a typed id. The reason key is optional and reaches users as copy
- * when the app has it. `compact` hides the reason box (the table) — the
- * party's own page shows it.
- */
+/** the reason key reaches users as copy when the app has it; `compact` hides the reason box (the table) */
 export function KillSwitch({
   providerId,
   state,

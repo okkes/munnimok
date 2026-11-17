@@ -1,14 +1,8 @@
 import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
 
-/**
- * #441 L1 (user ruling 2026-10-06): a failed run's last picture of the
- * page goes to the people who run munni only with the person's word.
- * Asked once, beside the error it belongs to — yes keeps it a month, no
- * deletes it on the spot, and a question left unanswered deletes itself
- * after two days. Rendered by the connect sheet's failed arm and by the
- * hub's card.
- */
+// #441 L1: a failed run's last picture goes to the people who run munni only with the person's word: yes keeps it a month,
+// no deletes it at once, unanswered deletes itself after two days
 export function ReportAsk({
   answered,
   busy,

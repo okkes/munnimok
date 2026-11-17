@@ -6,17 +6,8 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Amazon;
 
-/// <summary>One row of the order list: what the list page itself states.</summary>
-/// <summary>
-/// One row of the order list.
-///
-/// <paramref name="Total"/> is nullable because a card may state none. Most do
-/// - it is the number the whole reconciliation rests on - but one order in a
-/// real account's history had no "Totaal" in its header at all, and the parser
-/// treating that as a shape change failed the ENTIRE fetch over a single card.
-/// A total that is stated and unreadable is still a shape change; a total that
-/// is simply absent is a fact about that order, and the invoice states one.
-/// </summary>
+// Total is null when the card states none (a fact about that order, the invoice states one).
+// a stated but unreadable total is a shape change
 internal sealed record AmazonOrderSummary(
     string Id,
     DateTimeOffset PurchasedAt,
@@ -24,37 +15,19 @@ internal sealed record AmazonOrderSummary(
     string? InvoiceUrl,
     string? DocumentsUrl = null);
 
-/// <summary>
-/// One document Amazon offers for an order: where it is, and what Amazon calls
-/// it on the page.
-/// </summary>
-/// <remarks>
-/// The href cannot be derived from anything. It is
-/// <c>/documents/download/{guid}/invoice.pdf</c> with an opaque guid that
-/// appears nowhere else - not in the order number, not on the order page - so
-/// the only way to learn it is to read the invoice list, and the only way to
-/// read that is to fetch it.
-/// </remarks>
+// the href has an opaque guid found nowhere else, so it is learned only by fetching the invoice list
 internal readonly record struct AmazonDocumentLink(string Href, string? Label);
 
-/// <summary>
-/// What the print invoice adds: the lines, the charges, and how it was paid.
-/// </summary>
 internal sealed record AmazonInvoice
 {
     public IReadOnlyList<ReceiptItem> Items { get; init; } = [];
 
     public ReceiptPayment Payment { get; init; } = ReceiptFactory.Payment();
 
-    /// <summary>
-    /// The invoice's own grand total, where it states one. Not used as the
-    /// receipt's total - that comes from the list card - precisely so the two
-    /// stay a real reconciliation pair rather than one number written twice.
-    /// </summary>
+    // not the receipt's total (that comes from the list card): keeps the two a real reconciliation pair
     public Money? StatedTotal { get; init; }
 }
 
-/// <summary>Which line of the totals block a label names.</summary>
 internal enum AmazonTotalKind
 {
     Unknown,
@@ -65,24 +38,15 @@ internal enum AmazonTotalKind
     Promotion,
     GiftCard,
 
-    /// <summary>"Totaal" - what the order came to.</summary>
     GrandTotal,
 
-    /// <summary>
-    /// "Eindtotaal" - what was actually charged, which is a different number
-    /// the moment a gift card or a balance pays part of the order. Preferred
-    /// over <see cref="GrandTotal"/> because a receipt's total is matched
-    /// against a bank transaction.
-    /// </summary>
+    // what was actually charged, differing from GrandTotal once a gift card or balance pays part.
+    // preferred as a bank transaction is matched against it
     FinalTotal,
 }
 
-/// <summary>
-/// Amazon's order history, out of rendered HTML, in Dutch.
-/// </summary>
 internal static partial class AmazonOrderParser
 {
-    /// <summary>Amazon's order number, which has looked like this for twenty years.</summary>
     [GeneratedRegex(@"\b(\d{3}-\d{7}-\d{7})\b")]
     private static partial Regex OrderNumber { get; }
 
@@ -94,28 +58,20 @@ internal static partial class AmazonOrderParser
     [GeneratedRegex(@"^\s*(\d+(?:[.,]\d+)?)\s*(?:van:|van|of:|of|x|×)\s+(.*)$", RegexOptions.IgnoreCase)]
     private static partial Regex QuantityPrefix { get; }
 
-    /// <summary>The first four digits after "eindigend op" / "ending in".</summary>
     [GeneratedRegex(@"^\D*(\d{4})")]
     private static partial Regex LeadingFour { get; }
 
-    /// <summary>The order id inside a link's query string.</summary>
     [GeneratedRegex(@"[?&]orderID=([^&#\s]+)", RegexOptions.IgnoreCase)]
     private static partial Regex OrderIdInUrl { get; }
 
-    /// <summary>
-    /// iDEAL: the word the page uses for it, and the normalised record's name
-    /// for the method. The same word in both places, so one constant.
-    /// </summary>
+    // the page's word and the normalised record's method name coincide
     private const string Ideal = "ideal";
 
     /// <summary>The card schemes an instrument's name may carry; every one of them is <c>card</c>.</summary>
     private static readonly string[] CardSchemes =
         ["mastercard", "visa", "maestro", "american express", "amex", "card"];
 
-    // ---- order list --------------------------------------------------------
-
-    /// <param name="skipped">Receives the id of every card the list could not place: no readable date (prod 2026-10-05, a digital
-    /// order among two dozen ordinary ones). Such a card is one order this walk leaves out, not a site that changed shape.</param>
+    /// <param name="skipped">ids of cards with no readable date (prod 2026-10-05): left out, not a shape change</param>
     public static IReadOnlyList<AmazonOrderSummary> ParseList(
         HtmlNode dom, AmazonOptions options, TimeZoneInfo zone, ICollection<string>? skipped = null)
     {
@@ -134,21 +90,14 @@ internal static partial class AmazonOrderParser
                            ?? HtmlQuery.TextOf(card, options.OrderDateSelectors);
             if (dateText is null)
             {
-                // One card this walk cannot place is not a shape change. Stopping
-                // here ended a fetch of two dozen good orders as provider_changed
-                // over a digital order's card (D01-…, prod 2026-10-05); the card
-                // is left out and named, and the rest of the list stands.
+                // a card this walk cannot place is not a shape change: stopping ended a fetch of two dozen good orders
+                // as provider_changed (prod 2026-10-05)
                 skipped?.Add(id);
                 continue;
             }
 
-            // Absent and unreadable are different answers.
-            //
-            // No total on the card is a fact about that order, and the invoice
-            // has one - so it is carried as null and filled in later. A total
-            // that IS there and cannot be read is a shape change and still
-            // stops everything, because that is the case where a number we
-            // would go on to use has changed meaning.
+            // absent and unreadable differ: no total on the card is null (the invoice has one).
+            // a total that is there but unreadable is a shape change
             var totalText = Labelled(card, options.OrderTotalLabels, options)
                             ?? HtmlQuery.TextOf(card, options.OrderTotalSelectors);
 
@@ -169,22 +118,14 @@ internal static partial class AmazonOrderParser
         return rows;
     }
 
-    /// <summary>
-    /// Whether the list offers another page. Used only as a stop signal: the
-    /// walk also stops on a page that repeats what it already has, because a
-    /// pagination parameter that stops advancing is the likelier first symptom
-    /// of a shape change and it presents as the same page fetched twenty times
-    /// against a defended site.
-    /// </summary>
+    // a stop signal only: the walk also stops on a page repeating itself, the likelier first symptom of a shape change
     public static bool HasNextPage(HtmlNode dom, AmazonOptions options)
     {
         ArgumentNullException.ThrowIfNull(dom);
         ArgumentNullException.ThrowIfNull(options);
 
-        // No pagination block at all is not evidence that the history ended -
-        // Amazon has more than one order-list layout. Say "maybe" and let the
-        // freshness guard decide, because the alternative is silently
-        // truncating somebody's history at ten orders.
+        // no pagination block is not evidence the history ended (more than one layout):
+        // say "maybe" and let the freshness guard decide
         var pagination = HtmlQuery.First(dom, options.PaginationSelectors);
         if (pagination is null) return true;
 
@@ -199,27 +140,13 @@ internal static partial class AmazonOrderParser
         return !parentClasses.Contains("a-disabled", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Four ways to read an order number, most durable first.
-    ///
-    /// An attribute and a query string survive the redesign that renames every
-    /// class, and the classes are the shortest-lived part of this page. The
-    /// last resort is the number's own shape, which Amazon has not changed in
-    /// twenty years - a reading rather than a guess, and the thing that keeps
-    /// this adapter alive when every selector above it has expired.
-    /// </summary>
+    // most durable first: attributes and query strings survive class renames; the order number's own shape is the last resort
     private static string? OrderId(HtmlNode card, AmazonOptions options)
     {
         foreach (var attribute in options.OrderIdAttributes)
         {
-            // The number out of the attribute, not the attribute.
-            //
-            // The sturdiest of these carries the id inside a longer token -
-            // `data-csa-c-slot-id="amzn1.yourorders.order-card.402-1122334-5566778"`
-            // - so taking the value whole gives every receipt an external id
-            // with a widget name glued to the front of it. Which would look
-            // stable, dedupe against itself perfectly, and match nothing the
-            // rest of the platform holds.
+            // the number out of the attribute: data-csa-c-slot-id holds it inside a longer token,
+            // and the whole value would glue a widget name onto every id
             if (FromAttribute(card, attribute) is { } own) return own;
 
             foreach (var descendant in card.Elements())
@@ -245,12 +172,7 @@ internal static partial class AmazonOrderParser
         return OrderNumber.Match(card.Text()) is { Success: true } fromText ? fromText.Groups[1].Value : null;
     }
 
-    /// <summary>
-    /// An order number held in one attribute, whether that attribute is the
-    /// number or merely contains it. Null when the value carries no order
-    /// number at all, so the next candidate is tried rather than a widget id
-    /// being returned as an order.
-    /// </summary>
+    // null when the value holds no order number, so the next candidate is tried
     private static string? FromAttribute(HtmlNode node, string attribute)
     {
         if (node.Attribute(attribute) is not { Length: > 0 } value) return null;
@@ -261,19 +183,8 @@ internal static partial class AmazonOrderParser
             : null;
     }
 
-    /// <summary>
-    /// The value under a small-caps label in an order card's header.
-    ///
-    /// The four facts in that header - date, total, recipient, order number -
-    /// are identical <c>li</c> elements distinguished by nothing but the label
-    /// above each one. So the label IS the selector, exactly as it is in BKR's
-    /// print block, and for the same reason: a page that reflows renames its
-    /// grid columns and keeps its words.
-    ///
-    /// The label is then cut off the front of the value, because the two share
-    /// an element and "Totaal € 25,98" would otherwise be handed to a money
-    /// parser with a word in front of it.
-    /// </summary>
+    // the label is the selector (header items differ only by label; a reflow renames columns, keeps words),
+    // then cut off so a money parser gets no word
     private static string? Labelled(HtmlNode card, IReadOnlyList<string> labels, AmazonOptions options)
     {
         foreach (var item in HtmlQuery.All(card, options.OrderHeaderItemSelectors))
@@ -292,13 +203,7 @@ internal static partial class AmazonOrderParser
         return null;
     }
 
-    /// <summary>
-    /// Built rather than harvested. A card's own links point at the
-    /// order-details page, which is the heavier and more dynamically rendered
-    /// of the two; the print invoice takes the same order id and is the most
-    /// stable page Amazon serves, which is why the research recommends it for
-    /// totals.
-    /// </summary>
+    // built, not harvested: the print invoice is more stable than the order-details page the card links to
     private static string? InvoiceUrl(string orderId, AmazonOptions options) =>
         orderId.Length == 0
             ? null
@@ -306,48 +211,20 @@ internal static partial class AmazonOrderParser
                 options.BaseUrl.TrimEnd('/') + options.InvoicePath,
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["orderID"] = orderId });
 
-    /// <summary>
-    /// Harvested rather than built - the exact opposite of
-    /// <see cref="InvoiceUrl"/>, and the difference is not a matter of taste.
-    ///
-    /// The invoice list is an AJAX fragment whose URL carries a
-    /// <c>relatedRequestId</c> minted for THIS render of the order list. It is
-    /// not derivable from the order number and it is not a constant, so the
-    /// only correct source is the anchor the page drew. Building this URL by
-    /// hand is what made an earlier attempt come back with nothing.
-    /// </summary>
+    // harvested, not built: the URL carries a relatedRequestId minted for this render, so only the page's own anchor is correct
     private static string? DocumentsUrl(HtmlNode card, AmazonOptions options)
     {
         foreach (var link in HtmlQuery.All(card, options.InvoiceListLinkSelectors))
         {
-            // Not decoded here. Amazon writes this href with &amp; between the
-            // parameters and it has to reach the fetch as a real &, but the
-            // tokenizer already decodes attribute values as it reads them - so
-            // a decode at this point is not belt and braces, it is a SECOND
-            // one, and a URL legitimately containing the text "&amp;" would
-            // come out of it corrupted.
+            // not decoded here: the tokenizer already decodes attribute values, and a second decode would corrupt a literal "&amp;"
             if (link.Attribute("href") is { Length: > 0 } href) return href;
         }
 
         return null;
     }
 
-    // ---- the invoice list --------------------------------------------------
-
-    /// <summary>
-    /// The documents Amazon actually has for an order, out of the fragment its
-    /// own page fetches.
-    ///
-    /// Selected by the SHAPE OF THE HREF and never by the label. The fragment
-    /// holds three kinds of link and two of them are decoys: a printable order
-    /// summary (an HTML page, which this adapter already reads elsewhere) and
-    /// "Factuur aanvragen" - REQUEST an invoice - which is a support form. That
-    /// last one is why a label match would be actively wrong rather than merely
-    /// fragile: it begins with the same word as the real thing, so
-    /// <c>startsWith("Factuur")</c> would hand the user a contact page as their
-    /// invoice. It is also Dutch, and a storefront in another language keeps
-    /// its paths and changes its words.
-    /// </summary>
+    // by the shape of the href, never the label: the fragment holds decoys, among them "Factuur aanvragen"
+    // (a support form that startsWith "Factuur"); paths survive a language change
     public static IReadOnlyList<AmazonDocumentLink> ParseDocuments(HtmlNode fragment, AmazonOptions options)
     {
         ArgumentNullException.ThrowIfNull(fragment);
@@ -367,8 +244,7 @@ internal static partial class AmazonOrderParser
                 continue;
             }
 
-            // The same document listed twice would become two identical
-            // attachments on one receipt, each a hundred kilobytes.
+            // a duplicate would attach the same ~100KB document twice
             if (!seen.Add(href)) continue;
 
             var label = HtmlText.Normalize(link.Text());
@@ -378,17 +254,7 @@ internal static partial class AmazonOrderParser
         return found;
     }
 
-    // ---- print invoice -----------------------------------------------------
-
-    /// <summary>
-    /// Whether this page is telling us the order was cancelled.
-    ///
-    /// Checked before the invoice is parsed, because a cancelled order's
-    /// invoice is EMPTY by design - no lines, no charge summary, nothing to
-    /// total - and that emptiness is indistinguishable from a page whose shape
-    /// we no longer recognise. One of those is worth failing a fetch for; the
-    /// other is an order behaving exactly as it should.
-    /// </summary>
+    // checked before parsing: a cancelled order's invoice is empty by design, indistinguishable from an unrecognised shape
     public static bool IsCancelled(HtmlNode dom, AmazonOptions options)
     {
         ArgumentNullException.ThrowIfNull(dom);
@@ -410,11 +276,8 @@ internal static partial class AmazonOrderParser
 
         var totals = Totals(dom, options);
 
-        // Nothing at all - no line, no charge, no total - is not an invoice
-        // with nothing on it; it is a page whose shape we no longer recognise.
-        // Naming both selector lists is the whole diagnosis for whoever fixes
-        // it, and a fetch that silently returned an empty receipt would hide
-        // the same fact behind a plausible-looking record.
+        // nothing at all is a page whose shape we no longer recognise, not an empty invoice.
+        // naming both selector lists is the diagnosis
         if (items.Count == 0 && totals.Count == 0)
         {
             throw ConnectorException.ProviderChanged(
@@ -423,13 +286,8 @@ internal static partial class AmazonOrderParser
                 $"and totals [{string.Join(", ", options.InvoiceTotalRowSelectors)}]");
         }
 
-        // Shipping is a real charge and belongs in the sum. Tax is NOT added:
-        // a Dutch consumer price is quoted including BTW, so the invoice's tax
-        // row decomposes the total rather than adding to it, and emitting it
-        // as a line would double-count the VAT on every receipt. Whether
-        // Amazon's invoice ever renders a tax-exclusive breakdown is
-        // UNCONFIRMED, which is why it is a switch and not an assumption -
-        // and why reconciliation is what decides if the switch is wrong.
+        // shipping is a real charge; tax is not added when prices include BTW (the row decomposes the total, adding double-counts).
+        // a tax-exclusive invoice is UNCONFIRMED, hence the switch
         foreach (var kind in new[] { AmazonTotalKind.Shipping, AmazonTotalKind.Tax })
         {
             if (kind == AmazonTotalKind.Tax && options.TaxIsIncludedInItemPrices) continue;
@@ -440,11 +298,8 @@ internal static partial class AmazonOrderParser
             }
         }
 
-        // A promotion is modelled as a discount rather than as a negative
-        // product, because that is the construct the normalized record has for
-        // it and the one the consumer knows how to display. Its name is the
-        // provider's own label - a connector never invents user-facing prose,
-        // not even for a synthetic line.
+        // a promotion is a discount, not a negative product (the normalised record's construct).
+        // its name is the provider's own label, a connector invents no user-facing prose
         foreach (var row in totals.Where(r =>
                      r.Kind is AmazonTotalKind.Promotion or AmazonTotalKind.GiftCard && r.Amount.Value != 0))
         {
@@ -461,10 +316,8 @@ internal static partial class AmazonOrderParser
             Items = items,
             Payment = Payment(dom, options),
 
-            // What was charged, falling back to what the order came to. The
-            // two are equal on an order paid entirely by card, which is why
-            // preferring the wrong one is invisible until somebody uses a
-            // voucher.
+            // charged, falling back to what the order came to; equal on card-only orders,
+            // so the wrong preference hides until a voucher is used
             StatedTotal = (totals.FirstOrDefault(r => r.Kind == AmazonTotalKind.FinalTotal)
                            ?? totals.FirstOrDefault(r => r.Kind == AmazonTotalKind.GrandTotal))?.Amount,
         };
@@ -487,14 +340,8 @@ internal static partial class AmazonOrderParser
             var cell = HtmlText.Normalize(nameNode?.Text());
             if (cell.Length == 0) continue;
 
-            // Stated first, then the prefix, then one.
-            //
-            // The live invoice states it in neither of the obvious places: not
-            // as "2 van: Titel" in the name cell, and not in the element
-            // literally called `quantity`, which is empty on every line. It is
-            // a badge over the thumbnail, and it is absent when the quantity is
-            // one - so "found nothing" genuinely means one here, and the
-            // fallback below is not a guess covering a parse failure.
+            // quantity: stated, then the name prefix, then one; the live badge is absent for quantity one,
+            // so "found nothing" genuinely means one
             var quantity = Quantity(row, options) ?? 1m;
             var name = cell;
 
@@ -515,9 +362,7 @@ internal static partial class AmazonOrderParser
                 Name = Truncate(name, options),
                 Quantity = quantity,
                 UnitPrice = price,
-                // A stated line total always beats a computed one; Amazon's
-                // print invoice normally states only the unit price, so the
-                // multiplication is the usual path.
+                // a stated line total beats a computed one; Amazon normally states only the unit price
                 Total = stated ?? new Money(
                     checked((long)decimal.Round(price.Value * quantity, 0, MidpointRounding.AwayFromZero)),
                     price.Currency),
@@ -525,14 +370,7 @@ internal static partial class AmazonOrderParser
         }
     }
 
-    /// <summary>
-    /// The quantity badge, where the page draws one.
-    ///
-    /// Null rather than one when nothing is found, so the caller decides what
-    /// absence means - and it means one here only because Amazon omits the
-    /// badge on single items, which is a fact about this page rather than a
-    /// convenient default.
-    /// </summary>
+    // null, not one, when nothing is found; absence means one only because Amazon omits the badge on single items
     private static decimal? Quantity(HtmlNode row, AmazonOptions options)
     {
         var text = HtmlQuery.TextOf(row, options.InvoiceItemQuantitySelectors);
@@ -552,11 +390,7 @@ internal static partial class AmazonOrderParser
 
         foreach (var node in HtmlQuery.All(dom, options.InvoiceTotalRowSelectors))
         {
-            // Split where the page splits it. Every charge row on this invoice
-            // has a label column and a value column, and reading them
-            // separately keeps "Subtotaal item(s):" - which ends in a bracketed
-            // token a money parser has to be talked out of - away from the
-            // amount entirely.
+            // split as the page splits: reading the label apart keeps "Subtotaal item(s):" and its bracketed token away from the amount
             var labelNode = HtmlQuery.TextOf(node, options.InvoiceTotalLabelSelectors);
             var valueNode = HtmlQuery.TextOf(node, options.InvoiceTotalValueSelectors);
 
@@ -565,17 +399,14 @@ internal static partial class AmazonOrderParser
 
             if (labelNode is not null && valueNode is not null)
             {
-                // Trimmed of its colon, because a charge that becomes a receipt
-                // line is shown to somebody: "Porto- en verpakkingskosten:"
-                // reads as a mistake beside a product name.
+                // trimmed of its colon: a charge that becomes a receipt line is shown to somebody
                 label = HtmlText.Normalize(labelNode).TrimEnd(':').Trim();
                 amount = AmazonMoney.Find(
                     valueNode, options.InvoiceTotalUnit, options.Currency, "invoice total", options);
             }
             else
             {
-                // A layout that puts both in one element, which is what the
-                // table-shaped invoice did.
+                // a layout with both in one element (the old table-shaped invoice)
                 (label, amount) = AmazonMoney.Row(
                     node.Text(), options.InvoiceTotalUnit, options.Currency, "invoice total", options);
             }
@@ -588,16 +419,8 @@ internal static partial class AmazonOrderParser
         return rows;
     }
 
-    /// <summary>
-    /// Which line a Dutch (or English) label names.
-    ///
-    /// The order is load-bearing and is the reason these are separate lists
-    /// rather than one. "subtotaal" CONTAINS "totaal"; "totaal vóór btw"
-    /// CONTAINS "btw". A single contains-match against one list therefore
-    /// files the subtotal as the grand total and the pre-tax figure as the
-    /// tax, and the receipt then reconciles against a number that is not its
-    /// total - plausibly, and wrongly.
-    /// </summary>
+    // order is load-bearing: "subtotaal" contains "totaal" and "totaal vóór btw" contains "btw",
+    // so a single contains-list misfiles them
     internal static AmazonTotalKind Categorize(string label, AmazonOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -611,10 +434,8 @@ internal static partial class AmazonOrderParser
         if (Any(text, options.GiftCardLabels)) return AmazonTotalKind.GiftCard;
         if (Any(text, options.TaxLabels)) return AmazonTotalKind.Tax;
 
-        // Before the general total, and the ordering is the whole point:
-        // "eindtotaal" contains "totaal", so a single list would file the
-        // amount actually charged as just another order total and leave which
-        // of the two won to document order.
+        // before the general total: "eindtotaal" contains "totaal",
+        // and the amount actually charged must not be filed as just another total
         if (Any(text, options.FinalTotalLabels)) return AmazonTotalKind.FinalTotal;
         if (Any(text, options.GrandTotalLabels)) return AmazonTotalKind.GrandTotal;
 
@@ -626,10 +447,7 @@ internal static partial class AmazonOrderParser
         var node = HtmlQuery.First(dom, options.InvoicePaymentSelectors);
         if (node is null) return ReceiptFactory.Payment();
 
-        // The tail in its own element, which is how the live widget states it.
-        // Preferred over reading it out of "MasterCard •••• 7201", because that
-        // string's separator is four bullet characters chosen by a font and a
-        // locale, and a regex over it is a regex over typography.
+        // the tail in its own element is preferred over parsing "MasterCard •••• 7201", whose bullets are typography
         if (HtmlQuery.TextOf(node, options.PaymentTailSelectors) is { } stated
             && LeadingFour.Match(HtmlText.Normalize(stated)) is { Success: true } four)
         {
@@ -658,21 +476,13 @@ internal static partial class AmazonOrderParser
             return ReceiptFactory.Payment(method: Ideal);
         }
 
-        // Stated as unknown rather than guessed. The consumer matches receipts
-        // to transactions partly on the payment tail, and it needs to know the
-        // match will be weaker rather than be handed an invention.
+        // unknown rather than guessed: receipts are matched to transactions partly on the tail,
+        // and the consumer must know the match is weaker
         return ReceiptFactory.Payment();
     }
 
-    /// <summary>
-    /// The payment method, from the instrument's own name.
-    ///
-    /// <c>card</c> covers every card scheme because that is what the normalised
-    /// record's vocabulary has, and the scheme is not what a consumer matches
-    /// on - the tail is. Anything unrecognised is null rather than guessed:
-    /// inventing a method is how a receipt starts claiming it was paid a way it
-    /// was not.
-    /// </summary>
+    // card covers every scheme (the record's vocabulary; the tail is what is matched on).
+    // unrecognised is null, never an invented method
     private static string? Method(string? name)
     {
         if (name is null) return null;
@@ -687,11 +497,7 @@ internal static partial class AmazonOrderParser
             .SelectMany(selector => HtmlQuery.All(row, selector))
             .FirstOrDefault(hit => !ReferenceEquals(hit, exclude));
 
-    /// <summary>
-    /// Cuts an item cell where the product's name stops and Amazon's
-    /// commentary begins. Falls back to the whole cell when no marker is
-    /// found: a long name is a cosmetic problem, an empty one is a data one.
-    /// </summary>
+    // falls back to the whole cell when no marker is found: a long name is cosmetic, an empty one is a data problem
     private static string Truncate(string name, AmazonOptions options)
     {
         var cut = name.Length;

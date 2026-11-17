@@ -7,12 +7,7 @@ import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountType } from '@/db/types';
 
-/**
- * Attach/detach of feed accounts to spaces (redesign 2026-07-22): the
- * space's own accounts screen drives both now — server first (access
- * control lives there), then the synced accountLink mirror so offline
- * devices render the change.
- */
+// server first (access control lives there), then the synced accountLink mirror so offline devices render the change
 
 export async function attachFeedToSpace(
   store: StorageBackend,
@@ -21,12 +16,10 @@ export async function attachFeedToSpace(
   feedSpaceId: string,
   accountId: string,
   historyFrom?: string,
-  /** #152: the SPACE-level type — each attachment decides what the
-   *  account is to its space; absent keeps the account row's value */
+  /** #152: the SPACE-level type; absent keeps the account row's value */
   type?: AccountType,
 ): Promise<void> {
-  // the override wins, then the space's history start, then the app
-  // default — never silently unlimited (user bug report)
+  // the override, then the space's history start, then the app default: never silently unlimited
   const from =
     historyFrom || (await store.get('space', spaceId))?.historyStartDate || isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
   await attachAccount(spaceId, feedSpaceId, accountId, from, type);
@@ -40,15 +33,8 @@ export async function attachFeedToSpace(
   void logActivity(store, repo, spaceId, 'attach', (await store.get('account', accountId))?.name);
 }
 
-/**
- * Server links → local accountLink mirrors, for attachments the CLIENT
- * never saw being made. The bank-connect completion runs anonymously on
- * the hosted page (native hop: that browser has no app session), so the
- * server attaches the accounts to the initiating space but no device
- * ever wrote the mirror — the connection existed server-side yet showed
- * up NOWHERE in the app (the long-standing user issue, admin Diagnose
- * confirmed dangling SpaceAccountLinks). Runs at space open, best-effort.
- */
+// server links → local mirrors for attachments this client never saw: the bank-connect completion runs anonymously on
+// the hosted page, so the server attaches but no device wrote the mirror and the account showed nowhere
 export async function reconcileSpaceLinks(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const server = await fetchSpaceLinks(spaceId);
   if (server.length === 0) return 0;
@@ -56,10 +42,8 @@ export async function reconcileSpaceLinks(store: StorageBackend, repo: Repo, spa
   let mirrored = 0;
   for (const link of server) {
     if (local.some((l) => l.feedSpaceId === link.feedSpaceId && l.accountId === link.accountId)) continue;
-    // #305: copy the SERVER link's own facts — its gate and the space's
-    // account type — never re-guess them (minting a fresh historyFrom
-    // here out-HLC'd the real attach op mid-race and ratcheted the gate
-    // forward, hiding older shared transactions)
+    // #305: copy the SERVER link's gate and type; minting a fresh historyFrom out-HLC'd the real attach op and ratcheted
+    // the gate forward, hiding older shared transactions
     await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, link.feedSpaceId), {
       feedSpaceId: link.feedSpaceId,
       accountId: link.accountId,
@@ -87,11 +71,10 @@ export async function detachFeedFromSpace(
     (l) => l.deleted === 0 && l.accountId === accountId && l.feedSpaceId === feedSpaceId,
   );
   if (local) await repo.remove('accountLink', spaceId, local.id);
-  // #547 (user 2026-11-11): "when you detach an account, you lose all your manual entries" — they were this space's alone
+  // #547: detaching takes the manual entries typed on the account: they were this space's alone
   for (const row of await store.bySpace('transaction', spaceId)) {
     if (row.deleted === 0 && row.accountId === accountId && !!row.enteredAt) await repo.remove('transaction', spaceId, row.id);
   }
-  // #544: nothing in the space keeps pointing at the account it let go
   await releaseAccountReferences(store, repo, spaceId, accountId);
   void logActivity(store, repo, spaceId, 'detach', (await store.get('account', accountId))?.name);
 }

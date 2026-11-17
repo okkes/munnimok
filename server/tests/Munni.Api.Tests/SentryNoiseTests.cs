@@ -63,19 +63,16 @@ public class SentryNoiseTests
     [Fact]
     public void KeepsEveryOtherDatabaseFailure()
     {
-        // an insert into a table whose races are NOT handled must report
         var other = LogEvent(
             "Microsoft.EntityFrameworkCore.Database.Command",
             "Failed executing DbCommand (100ms)\nINSERT INTO \"Transactions\" (\"Id\") VALUES (@p0);");
         Assert.False(SentryNoise.IsHandledRace(other));
 
-        // reads, timeouts, anything without the raced tables
         var timeout = LogEvent(
             "Microsoft.EntityFrameworkCore.Database.Command",
             "Failed executing DbCommand (30000ms)\nSELECT * FROM \"Spaces\";");
         Assert.False(SentryNoise.IsHandledRace(timeout));
 
-        // non-EF loggers never match
         var app = LogEvent("Munni.Api.Banking", "INSERT INTO \"UserDevices\" mentioned in text");
         Assert.False(SentryNoise.IsHandledRace(app));
     }
@@ -140,7 +137,6 @@ public class SentryNoiseTests
         var refused = Thrown(("Npgsql.PostgresException", "42703: column \"Nope\" does not exist"));
         Assert.Empty(SentryNoise.Quiet(refused)!.Fingerprint);
 
-        // a query that ran past its time is a slow query, not an outage
         var slow = Thrown(
             ("System.TimeoutException", "Timeout during reading attempt"),
             ("Npgsql.NpgsqlException", "Exception while reading from stream"),
@@ -154,7 +150,6 @@ public class SentryNoiseTests
         Assert.Null(SentryNoise.Quiet(race));
     }
 
-    // performance tracing (user 2026-10-09): the environment's share, read invariantly; nonsense is the default, 0 is errors only
     [Theory]
     [InlineData(null, 0.2)]
     [InlineData("", 0.2)]
@@ -195,7 +190,6 @@ public class SentryNoiseTests
         // the sync push of a traced Confirm shows end to end; an unsampled web trace stays unsampled here too
         Assert.Equal(1, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: true), 0.2));
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: false), 0.2));
-        // errors only: nothing, whatever the parent said
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: true), 0));
     }
 

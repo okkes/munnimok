@@ -6,40 +6,9 @@ using Microsoft.Playwright;
 
 namespace BankConnector.Adapters.Ing;
 
-/// <summary>What one call to ING's API answered.</summary>
-/// <param name="Status">The HTTP status. Zero when the call could not be made at all.</param>
-/// <param name="Url">The request url, whole.</param>
-/// <param name="Body">The response text, whatever it turned out to be.</param>
-/// <param name="Headers">
-/// The headers ING's own client sent on THIS call, minus the ones a page's
-/// fetch may not set.
-/// </param>
-/// <param name="Seq">
-/// When this call was latched, counting from the start of the run.
-/// </param>
-/// <remarks>
-/// Headers are carried per call rather than kept in one slot on the portal,
-/// because the next page of transactions is a continuation of a particular
-/// request and not of whichever API call happened to answer most recently. A
-/// single slot took its contents from the last 2xx to arrive, which on the live
-/// run was something minimal - the first cursor page went out with
-/// <c>accept-language</c> and <c>content-type</c> and nothing else, and ING's
-/// webserver refused it.
-/// <para>
-/// <b><see cref="Seq"/> exists because "the first one" was whatever a
-/// ConcurrentDictionary happened to yield.</b> The latch is keyed by url and
-/// enumerated to answer
-/// <see cref="IIngPortal.Seen"/>, and a dictionary promises no order at all -
-/// so on a page where ING calls the same endpoint twice, <c>seen[0]</c> was an
-/// arbitrary pick between them, and it decided which account list this adapter
-/// read and whose headers the cursor walk repeated.
-/// <para>
-/// Nothing about that is visible when it goes wrong: both entries parse, both
-/// look like answers, and the run reports success either way. Ordering by this
-/// makes "the freshest" a thing that can be asked for rather than hoped for.
-/// </para>
-/// </para>
-/// </remarks>
+// Status 0: the call could not be made. Headers are per call, not one slot: a single slot took the last 2xx's
+// and ING's webserver refused the page. Seq orders latched calls: a ConcurrentDictionary promises no order,
+// so seen[0] was an arbitrary pick
 internal readonly record struct IngCall(
     int Status,
     string Url,
@@ -47,131 +16,47 @@ internal readonly record struct IngCall(
     IReadOnlyDictionary<string, string>? Headers = null,
     long Seq = 0);
 
-/// <summary>
-/// The seam between "which pages of transactions to read" and "how to reach
-/// them".
-///
-/// Behind an interface for the same reason MediaMarkt's and DUO's are: the
-/// decisions worth testing - when to stop paging, what a refusal means, which
-/// account a page belongs to - should not need a browser and somebody's real
-/// bank account to exercise.
-/// </summary>
+/// the seam: when to stop paging, what a refusal means and which account a page belongs to are testable without a browser
 internal interface IIngPortal
 {
-    /// <summary>
-    /// Navigates, and answers with every call ING's own client made to the
-    /// endpoint named by <paramref name="pathMarker"/>.
-    /// </summary>
-    /// <remarks>
-    /// THIS IS THE WHOLE DESIGN, and the second live run widened it from the
-    /// transactions feed to every list this adapter reads.
-    /// <para>
-    /// ING's transactions endpoint is <c>/v1/agreements/{id}/transactions</c>,
-    /// and that id is encrypted per session: the same account was
-    /// <c>aYDrNOy1…</c> in one login and <c>L-zdMpP6…</c> in the next. There is
-    /// no way to construct the URL, so nothing here tries.
-    /// </para>
-    /// <para>
-    /// The account lists have addresses that DO NOT move - <c>/accounts/current</c>
-    /// is <c>/accounts/current</c> - and asking for them directly still failed:
-    /// ING answered <c>401 Authorization Required</c> from its webserver to a
-    /// request this connector composed, on a session its own javascript was
-    /// using successfully at that moment. So those are observed too. Knowing an
-    /// endpoint's address turns out to be a long way from being allowed to call
-    /// it, and the page's own client is the only thing that reliably is.
-    /// </para>
-    /// </remarks>
+    /// the whole design: the transactions id is encrypted per session so the URL cannot be built, and composed requests
+    /// to the fixed-address account lists got 401 from ING's webserver on a live session; only the page's own client
+    /// is let through, so every list is observed
     Task<IReadOnlyList<IngCall>> ObserveAsync(
         string url, string pathMarker, int timeoutMs, CancellationToken ct);
 
     /// <summary>The same wait, WITHOUT navigating.</summary>
     Task<IReadOnlyList<IngCall>> WatchAsync(string pathMarker, int timeoutMs, CancellationToken ct);
 
-    /// <summary>
-    /// What has already been latched for an endpoint, without waiting for
-    /// anything.
-    /// </summary>
-    /// <remarks>
-    /// For the calls that arrive as a SIDE EFFECT of a navigation made for
-    /// something else. Landing on the download screen fetches all three account
-    /// lists; only one of them is worth waiting for, and the other two are
-    /// either there by then or genuinely absent - a customer with no savings
-    /// account is a customer ING makes no savings call for.
-    /// </remarks>
+    /// for calls that arrive as a side effect of another navigation: a customer without savings is one ING makes
+    /// no savings call for
     IReadOnlyList<IngCall> Seen(string pathMarker);
 
-    /// <summary>
-    /// Waits until ING's app has made any API call at all, which is what puts
-    /// the headers this connector repeats within reach.
-    /// </summary>
+    /// puts the headers this connector repeats within reach
     Task<bool> AwaitApiAsync(int timeoutMs, CancellationToken ct);
 
-    /// <summary>
-    /// Which of ING's endpoints this session touched, as bare paths.
-    /// </summary>
-    /// <remarks>
-    /// For the question this adapter cannot answer from a payload it has:
-    /// ING states no balance for a credit card in the agreement list OR in
-    /// <c>/credit-cards/cards</c>, so the figure is served by some third call,
-    /// and the only way to find out which without guessing is to see what its
-    /// own client asked for.
-    /// <para>
-    /// PATHS, and only paths. No origin, no query string, and no segment that
-    /// could be an identifier - see <see cref="PageIngPortal.Endpoint"/>. Which
-    /// endpoints a bank exposes is not a secret; which account asked is.
-    /// </para>
-    /// </remarks>
+    /// finds a card's balance endpoint without guessing; PATHS only (see PageIngPortal.Endpoint): which endpoints a bank
+    /// exposes is not a secret, which account asked is
     IReadOnlyList<string> Endpoints();
 
-    /// <summary>
-    /// Asks ING's API for one more thing, from inside the signed-in page,
-    /// carrying the headers of the call it continues.
-    /// </summary>
-    /// <remarks>
-    /// Through the page's own <c>fetch</c> rather than an HTTP client, because
-    /// the session IS the browser's cookie jar and this is the only way to spend
-    /// it without copying it anywhere.
-    /// </remarks>
+    /// through the page's own fetch: the session is the browser's cookie jar and this spends it without copying it
     Task<IngCall> ReadAsync(
         string path, IReadOnlyDictionary<string, string>? headers, CancellationToken ct);
 
-    /// <summary>
-    /// Where the browser ended up and what it is showing, for a failure message
-    /// that names something.
-    /// </summary>
     Task<string> DescribeAsync(CancellationToken ct);
 }
 
-/// <summary>ING's API, read from inside the signed-in page.</summary>
 internal sealed partial class PageIngPortal : IIngPortal
 {
     private readonly IPage _page;
     private readonly IngOptions _options;
 
-    /// <summary>
-    /// Every answer ING's own client received from its API, latched as it
-    /// arrives, keyed by request url.
-    /// </summary>
-    /// <remarks>
-    /// A LATCH RATHER THAN A WAIT, because the calls this adapter cares about
-    /// can easily land before anything is waiting for them: a route mounts and
-    /// fires immediately, and a listener armed after that waits out its whole
-    /// budget for a call that will not come again.
-    /// <para>
-    /// Keyed by url and kept as a set rather than one slot per endpoint,
-    /// because an account holder with two current accounts gets two
-    /// transactions calls from one navigation and only one would survive a
-    /// single-value latch.
-    /// </para>
-    /// </remarks>
+    /// a latch, not a wait: calls can land before anything waits (a route fires on mount); kept as a set per url since
+    /// two current accounts make two transactions calls
     private readonly ConcurrentDictionary<string, IngCall> _seen = new(StringComparer.Ordinal);
 
-    /// <summary>How many calls have been latched, so "the freshest" has a meaning.</summary>
     private long _latched;
 
-    /// <summary>
-    /// True once ING's own client has called its API at all.
-    /// </summary>
     private volatile bool _apiSeen;
 
     public PageIngPortal(IPage page, IngOptions options)
@@ -187,10 +72,7 @@ internal sealed partial class PageIngPortal : IIngPortal
 
         _apiSeen = true;
 
-        // The body has to be read while the response is still alive, so this
-        // cannot wait until somebody asks. Fire-and-forget on purpose: a body
-        // that has gone is latched without one, and the status and url still
-        // say plenty.
+        // the body must be read while the response is alive; fire-and-forget, a gone body is latched without one
         _ = Task.Run(async () =>
         {
             string? body = null;
@@ -200,18 +82,13 @@ internal sealed partial class PageIngPortal : IIngPortal
             {
                 body = await response.TextAsync().ConfigureAwait(false);
 
-                // AllHeadersAsync, NOT Request.Headers. The synchronous view is
-                // documented to withhold security-related headers, and on the
-                // live run it withheld everything that mattered: the first
-                // cursor page went out carrying accept-language and
-                // content-type, and ING's webserver answered 401.
+                // AllHeadersAsync, NOT Request.Headers: the synchronous view withholds security headers, and the first cursor page
+                // went out without what ING needed (401)
                 headers = Carry(await response.Request.AllHeadersAsync().ConfigureAwait(false), _options);
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
-                // The response is gone - the page moved on, or the driver
-                // dropped it - so this call is latched without a body, as
-                // promised above: the status and url still say plenty.
+                // response gone (page moved on or driver dropped it): latched without a body
             }
 
             _seen[response.Request.Url] = new IngCall(
@@ -219,16 +96,8 @@ internal sealed partial class PageIngPortal : IIngPortal
         });
     }
 
-    /// <summary>
-    /// Does this url name the endpoint being waited for?
-    /// </summary>
-    /// <remarks>
-    /// The marker has to match the path and stop at its end, because ING hangs
-    /// other endpoints off the same stems: <c>/transactions/search</c> answers a
-    /// different question from <c>/transactions</c>, and
-    /// <c>/accounts/current</c> shares a prefix with
-    /// <c>/accounts/all/transactions/reports/history</c>.
-    /// </remarks>
+    /// match the path and stop at its end: /transactions/search is another question than /transactions, and
+    /// /accounts/current shares a prefix with /accounts/all/transactions/reports/history
     public static bool Matches(string? url, string pathMarker)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pathMarker);
@@ -266,10 +135,7 @@ internal sealed partial class PageIngPortal : IIngPortal
     {
         ct.ThrowIfCancellationRequested();
 
-        // Only this endpoint is cleared, not the whole latch. A fetch visits two
-        // pages - the overview for transactions, then the download screen for
-        // the account lists - and clearing everything on the second navigation
-        // would throw away the transactions the first one just produced.
+        // clear only this endpoint: a fetch visits two pages, and clearing all would drop the first page's transactions
         foreach (var latched in _seen.Keys.Where(key => Matches(key, pathMarker)).ToList())
         {
             _seen.TryRemove(latched, out _);
@@ -282,23 +148,14 @@ internal sealed partial class PageIngPortal : IIngPortal
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // A navigation that was superseded is not a failure by itself - the
-            // latch below is what decides whether the call happened.
+            // a superseded navigation is not a failure: the latch decides whether the call happened
         }
 
         return await WatchAsync(pathMarker, timeoutMs, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Waits for the first answer from an endpoint, then for a moment longer.
-    /// </summary>
-    /// <remarks>
-    /// The extra moment is not padding. One navigation produces one transactions
-    /// call PER CURRENT ACCOUNT, and they do not arrive together; returning on
-    /// the first would quietly read one account and report the other as having
-    /// no transactions at all - which looks exactly like an account with no
-    /// transactions.
-    /// </remarks>
+    /// the extra settle is not padding: one navigation makes a transactions call PER CURRENT ACCOUNT, arriving apart,
+    /// and returning on the first would report the other as having no transactions
     public async Task<IReadOnlyList<IngCall>> WatchAsync(
         string pathMarker, int timeoutMs, CancellationToken ct)
     {
@@ -320,65 +177,20 @@ internal sealed partial class PageIngPortal : IIngPortal
         }
     }
 
-    /// <summary>
-    /// Every latched call for an endpoint, NEWEST FIRST.
-    /// </summary>
-    /// <remarks>
-    /// Ordered, because callers take the first one and the store underneath is
-    /// a <see cref="ConcurrentDictionary{TKey, TValue}"/> that promises no order
-    /// whatsoever. On a page where ING calls the same endpoint twice - a
-    /// refresh, a widget asking for its own slice - "the first" was an
-    /// arbitrary pick, and it decided which account list was read and whose
-    /// headers the cursor walk repeated.
-    /// <para>
-    /// Newest rather than oldest: a second call to the same endpoint is a
-    /// later answer to the same question, and the later one is the one ING's
-    /// own page is showing.
-    /// </para>
-    /// </remarks>
+    /// newest first: the store promises no order and callers take the first; on a twice-called endpoint "first" was
+    /// arbitrary, and the later call is what ING's page shows
     public IReadOnlyList<IngCall> Seen(string pathMarker) =>
         Freshest(_seen.Where(entry => Matches(entry.Key, pathMarker)).Select(entry => entry.Value));
 
-    /// <summary>
-    /// The same calls, newest first.
-    /// </summary>
-    /// <remarks>
-    /// Its own method so the claim can be tested: <see cref="Seen"/> needs a
-    /// live <c>IPage</c> to reach, and the ordering is the part that decides
-    /// which answer this adapter believes.
-    /// </remarks>
+    /// its own method so the ordering, which decides which answer is believed, is testable without an IPage
     internal static IReadOnlyList<IngCall> Freshest(IEnumerable<IngCall> calls) =>
         [.. calls.OrderByDescending(call => call.Seq)];
 
     public IReadOnlyList<string> Endpoints() =>
         [.. _seen.Keys.Select(Endpoint).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 
-    /// <summary>
-    /// A url cut down to the endpoint it names, and nothing that says whose.
-    /// </summary>
-    /// <remarks>
-    /// The origin and the query string go entirely, and so does any segment
-    /// that could be an identifier: ING's transactions path carries an
-    /// agreement id encrypted per session, and a card or account number is not
-    /// something to write into a log at all.
-    /// <para>
-    /// A SEGMENT IS KEPT ONLY IF IT LOOKS LIKE A WORD, rather than dropped only
-    /// if it looks like an identifier, because the whole point of this is to
-    /// find an endpoint whose name nobody here knows yet - an allowlist would
-    /// hide the one thing it is for. ING's path words are lowercase and
-    /// hyphenated (<c>credit-cards</c>, <c>transactions</c>), and its
-    /// identifiers are not: a card number is digits, an account number is
-    /// digits, and the agreement id is a mixed-case encrypted blob. So a digit
-    /// or a capital letter anywhere in a segment is enough to lose it, with
-    /// <c>v1</c> exempted because a version marker is part of the address.
-    /// </para>
-    /// <para>
-    /// The limit worth stating: an identifier that is entirely lowercase
-    /// letters and hyphens is indistinguishable from a path word by shape and
-    /// would survive. Nothing ING sends looks like that, and no rule that keeps
-    /// unknown words can also catch it.
-    /// </para>
-    /// </remarks>
+    /// drops origin, query and any segment that could be an identifier; a segment survives only if it looks like a word
+    /// (lowercase, hyphenated, v1 exempt) so unknown endpoint names are kept. Limit: an all-lowercase identifier would pass
     public static string Endpoint(string url)
     {
         ArgumentNullException.ThrowIfNull(url);
@@ -395,19 +207,8 @@ internal sealed partial class PageIngPortal : IIngPortal
         return string.Join('/', path.Split('/').Select(Segment));
     }
 
-    /// <summary>
-    /// One piece of a url, kept only if it reads as a word.
-    /// </summary>
-    /// <remarks>
-    /// Public because a link's <c>rel</c> needs the same treatment as a path
-    /// segment and for the same reason: it is about to be written into a log,
-    /// and nothing here has established what a bank will one day put in one.
-    /// <para>
-    /// The empty segment is kept: a path starts with a slash, so splitting one
-    /// puts an empty string in front of every real segment, and eliding that
-    /// would make every endpoint read as an identifier.
-    /// </para>
-    /// </remarks>
+    /// public because a link's rel is logged too; the empty segment is kept, else every path's leading slash
+    /// would read as an identifier
     public static string Segment(string segment) =>
         segment.Length == 0 || Version().IsMatch(segment) || WordShape().IsMatch(segment) ? segment : "…";
 
@@ -456,10 +257,7 @@ internal sealed partial class PageIngPortal : IIngPortal
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // The page navigated under us, or is no longer on ING's origin so
-            // the browser refused outright. A reading with no status, not an
-            // exception - thrown, this reaches a user as "something broke on our
-            // side, HTTP 500", which is both unhelpful and untrue.
+            // the page navigated or left ING's origin: a reading with no status, not an exception, which would reach a user as HTTP 500
             return new IngCall(0, url, $"<not reached: {ex.Message}>");
         }
 
@@ -467,27 +265,12 @@ internal sealed partial class PageIngPortal : IIngPortal
             answer.Int32("status") ?? 0,
             answer.Text("url") ?? url,
 
-            // Untrimmed, unlike everything else read here: this is the response
-            // itself, and a parser downstream is entitled to the bytes the
-            // provider sent rather than a tidied copy of them.
+            // untrimmed: this is the response itself, and a parser downstream is entitled to the provider's bytes
             answer.Child("body") is { ValueKind: JsonValueKind.String } body ? body.GetString() : null);
     }
 
-    /// <summary>
-    /// The page's address and what it is showing, THROUGH THE SHADOW ROOTS.
-    /// </summary>
-    /// <remarks>
-    /// ING's whole interface is custom elements - <c>ing-form</c>,
-    /// <c>ing-auth-input</c>, <c>ing-button</c> - and a plain
-    /// <c>document.querySelectorAll('h1,h2')</c> on this site returns an empty
-    /// list. The first capture attempt reported "0 inputs" on the sign-in form
-    /// for exactly that reason, and a diagnostic that confidently says a page is
-    /// empty is worse than no diagnostic.
-    /// <para>
-    /// Field VALUES are never read - only the type and the name - because this
-    /// runs on a page a password was just typed into.
-    /// </para>
-    /// </remarks>
+    /// ING's UI is custom elements in shadow roots, so plain querySelectorAll finds nothing (the first capture reported
+    /// "0 inputs"); field VALUES are never read, a password was just typed there
     private const string DescribeScript = """
     () => {
       const roots = [document];
@@ -565,20 +348,8 @@ internal sealed partial class PageIngPortal : IIngPortal
         }
     }
 
-    /// <summary>
-    /// ING's own headers, minus the ones a page's fetch may not set.
-    /// </summary>
-    /// <remarks>
-    /// A denylist, because an allowlist can only carry what somebody thought
-    /// of - and the six names guessed from the response side were not enough to
-    /// get past ING's edge. See <see cref="IngOptions.WithheldHeaders"/>.
-    /// <para>
-    /// Taken apart from the request so the rule can be exercised without a
-    /// browser. Everything else in this class needs a real page; this is the
-    /// one piece that decides what a call carries, and leaving it unreachable
-    /// meant an inverted comparison here would have passed the whole suite.
-    /// </para>
-    /// </remarks>
+    /// a denylist (see IngOptions.WithheldHeaders); split out so the rule is testable without a browser: an inverted
+    /// comparison would otherwise pass the suite
     public static Dictionary<string, string> Carry(
         IEnumerable<KeyValuePair<string, string>> headers, IngOptions options)
     {
@@ -597,9 +368,6 @@ internal sealed partial class PageIngPortal : IIngPortal
 
     private const int PollMs = 250;
 
-    /// <summary>
-    /// How long to keep listening after the first transactions answer, for the
-    /// second account's.
-    /// </summary>
+    /// keeps listening for the second account's transactions answer
     private const int SettleMs = 2_000;
 }

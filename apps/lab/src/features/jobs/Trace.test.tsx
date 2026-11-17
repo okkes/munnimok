@@ -27,7 +27,6 @@ describe('Trace', () => {
     expect(screen.getByTestId('trace-facts').textContent).toContain('12 (2 scripts, pictures and fonts)');
     expect(screen.getByTestId('trace-facts').textContent).toContain('Secrets were taken out');
 
-    // the script's request and answer are folded away by default
     expect(screen.queryByTestId('trace-entry-5')).toBeNull();
     expect(screen.getByTestId('trace-count').textContent).toBe('10 of 12');
     fireEvent.click(screen.getByTestId('trace-filter-noise'));
@@ -88,7 +87,6 @@ describe('Trace', () => {
     });
     renderLab('#/jobs/job_lab1/trace');
     await screen.findByTestId('trace-scaffold');
-    // a recorded run of a known party pre-fills its id and name
     expect((screen.getByTestId('scaffold-provider') as HTMLInputElement).value).toBe('mock-store-simple');
     expect((screen.getByTestId('scaffold-name') as HTMLInputElement).value).toBe('MockStoreSimple');
     fireEvent.change(screen.getByTestId('scaffold-product'), { target: { value: 'bank' } });

@@ -2,11 +2,7 @@ using System.Net.Http.Headers;
 
 namespace Connector.Kit.Agent.Transport;
 
-/// <summary>
-/// Attaches the per-agent token to every control-plane call. Enrollment runs
-/// before there is one, which is why the header is conditional rather than
-/// required.
-/// </summary>
+// enrollment runs before there is a token, so the header is conditional rather than required
 internal sealed class AgentAuthHandler : DelegatingHandler
 {
     private readonly AgentIdentity _identity;

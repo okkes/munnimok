@@ -2,10 +2,6 @@ using Munni.Api;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// One log line per request value: a line break in a path or a query value
-/// never starts a second entry, and a payload never floods the log.
-/// </summary>
 public class LogSafeTests
 {
     [Fact]

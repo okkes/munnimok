@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
 
-/**
- * A hash router in forty lines: the lab's screens live behind `#/…`, so
- * a reload, a bookmark and the browser's back button all work without
- * a server rewrite (the same shape the member app uses). `segments` is
- * the path split on `/`, decoded; `[]` is the dashboard.
- */
+/** hash router: reload, bookmark and back work without a server rewrite; `[]` is the dashboard */
 export type Segments = readonly string[];
 
 export function parseHash(hash: string): Segments {
@@ -40,7 +35,6 @@ export function useRouteQuery(): URLSearchParams {
   return query;
 }
 
-/** the current segments, following every hash change */
 export function useRoute(): Segments {
   const [segments, setSegments] = useState<Segments>(() => parseHash(globalThis.location.hash));
   useEffect(() => {

@@ -17,7 +17,6 @@ const server = {
   api: { 'GET /me/spaces': () => Object.keys(ROLES) },
 };
 
-/** the space's own loan next to the loan a partner connected and attached */
 async function seed() {
   const db = new MunniDB(USER_TEST_DB);
   await db.meta.put({ key: 'activeSpaceId', value: SPACE });

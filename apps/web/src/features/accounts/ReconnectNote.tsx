@@ -6,13 +6,8 @@ import type { ReconnectDoor } from '@/features/connectors/useReconnect';
 import { Button } from '@/ui/Button';
 import { uncoveredDateText } from './coverage';
 
-/**
- * #528: an account that needs its connection again says why — no
- * connection of the person's fetches it any more, or the one that syncs it
- * by itself lost its consent — and the button leads to that connection,
- * brought into view on the screen that manages it, instead of leaving the
- * person to guess (user 2026-10-21).
- */
+/** #528: says why the account needs its connection again (nothing fetches it, or the syncing one lost consent)
+ *  and the button leads to that connection on the screen that manages it */
 export function ReconnectNote({
   account,
   need,
@@ -28,7 +23,6 @@ export function ReconnectNote({
   onLeave: () => void;
   testId: string;
   actionTestId: string;
-  /** the host's own frame (a row of the editor's list, or a card of its own) */
   className?: string;
 }>) {
   const { t, lang } = useLang();

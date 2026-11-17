@@ -1,31 +1,20 @@
 # The connector agent a household runs on its own machine (#367).
 #
-# One container, every provider pack, attached to the ONE connector control
-# plane of the munni environment the person uses. The app renders this file
-# with the two values filled in — the control plane's address and a one-time
-# enrollment code minted for the signed-in user — and shows it beside the
-# `docker compose up -d` line. Nothing here is a secret once the code has
-# been redeemed: it is single-use and expires in fifteen minutes.
+# The app renders this file with the control plane's address and a one-time enrollment code
+# (single-use, 15 min), so nothing here stays secret.
 #
-# Why a person would run this: some parties will only ever talk to a browser
-# on the account holder's own connection (DUO signs in through DigiD, whose
-# operator scores the address; ASN keeps an "edge login" alive in a browser
-# profile). The agent dials OUT to the control plane — no port, no
-# hostname, no certificate, no firewall rule on this machine.
+# Why on the person's machine: DUO (DigiD scores the address) and ASN (edge login kept in a browser
+# profile) only talk to a browser on the account holder's own connection. The agent dials OUT:
+# no port, hostname or firewall rule needed.
 #
-# What it keeps: `agent_profiles` holds logged-in browser profiles, one per
-# provider, on hardware the person controls; `agent_state` holds the
-# enrollment. An agent that loses its state comes back as a stranger and
-# needs a fresh code. Two agent processes must never share these volumes.
+# agent_profiles = logged-in browser profiles, agent_state = the enrollment; losing the state needs
+# a fresh code. Two agents must never share these volumes.
 #
-# Egress is a CLAIM and the control plane believes it: the defaults say a
-# Dutch residential line because that is what a home is. A machine in a
-# data centre must say so (AGENT_EGRESS_KIND=datacenter) or it will be
-# offered work its address fails.
+# Egress is a claim the control plane believes: a data-centre machine must set
+# AGENT_EGRESS_KIND=datacenter or it is offered work its address fails.
 #
-# stop_grace_period: the agent drains a running job for 20 s and reports an
-# abort for 8 s more; Docker's default 10 s would SIGKILL a Chromium holding
-# a signed-in profile mid-form.
+# stop_grace_period: the agent drains a job 20 s + reports an abort 8 s; Docker's 10 s default
+# would SIGKILL a Chromium holding a signed-in profile mid-form.
 
 name: munni-connector-agent
 services:

@@ -12,56 +12,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent;
 
-/// <summary>
-/// The lease loop for ONE connector: enroll once, heartbeat, long-poll for
-/// work, run it, repeat.
-///
-/// Every call in here is outbound. That single property is what lets an agent
-/// sit behind NAT on a residential line, in a home lab, or on a user's own
-/// machine with no inbound port and no redesign - and it is why bring-your-own
-/// hardware is the same protocol from day one rather than a bolt-on.
-///
-/// <para>
-/// There is one of these per connector this process serves, which is what
-/// makes a household's three connectors one container instead of three. What
-/// that costs is written down in the two places it matters: a job slot is the
-/// MACHINE's (<see cref="AgentSlots"/>), so three lease loops do not open three
-/// browsers, and a connector that is revoked or unreachable retires on its own
-/// (<see cref="AgentRoster"/>) instead of stopping the process out from under
-/// the others.
-/// </para>
-/// </summary>
+// the lease loop for ONE connector; every call is outbound, so an agent works behind NAT with no inbound port.
+// The job slot is the machine's (AgentSlots); a revoked or unreachable connector retires alone (AgentRoster)
 public sealed class AgentHost : BackgroundService
 {
     private static readonly TimeSpan MinimumBackoff = TimeSpan.FromSeconds(1);
 
-    /// <summary>
-    /// How long a FAILED heartbeat waits before the next one, instead of the
-    /// whole interval.
-    /// </summary>
-    /// <remarks>
-    /// The interval is how often a healthy agent says hello; it is not how long
-    /// to leave the control plane thinking this one has gone. A beat that fails
-    /// has already spent up to
-    /// <see cref="ConnectorAgentOptions.KeepaliveTimeout"/> failing, and a full
-    /// interval on top of that is most of the window the far end judges this
-    /// agent by (<c>AgentLiveness.OfflineAfterSeconds</c>, ninety seconds)
-    /// spent on one blip: a beat due at thirty that gives up at forty and then
-    /// sleeps another thirty lands at seventy, and two in a row land at a
-    /// hundred and ten - offline, by a rule that is meant to forgive three.
-    /// <para>
-    /// Five seconds, which makes a failed beat cost fifteen: the beat after
-    /// three consecutive failures still lands at seventy-five, inside the
-    /// window, which is what forgiving three missed beats means. It never
-    /// exceeds the interval itself - enrollment floors that at five seconds.
-    /// </para>
-    /// <para>
-    /// It is not a thundering herd. The lease loop beside it already retries a
-    /// failed poll after one second, doubling, against the same control plane,
-    /// so an agent whose link is down was never quiet to begin with - and this
-    /// one stops the moment a beat lands.
-    /// </para>
-    /// </remarks>
+    // a failed beat retries after 5s, not a full interval: it already spent up to KeepaliveTimeout, and the liveness window
+    // is 90s (AgentLiveness.OfflineAfterSeconds); three consecutive failures still land at 75s, inside it
     private static readonly TimeSpan HeartbeatRetryDelay = TimeSpan.FromSeconds(5);
 
     private readonly AgentConnection _connection;
@@ -82,17 +40,8 @@ public sealed class AgentHost : BackgroundService
 
     private string? _noted;
 
-    /// <summary>
-    /// Ends THIS connector's two loops without ending anybody else's.
-    /// </summary>
-    /// <remarks>
-    /// A revoke used to stop the application, and stopping the application is
-    /// what ended the lease loop: the host's own stopping token came from the
-    /// framework. With several connectors the process carries on, so a revoked
-    /// connection that did not cancel something of its own would go on
-    /// long-polling a control plane that has just told it to go away - for
-    /// ever, on somebody's NAS, at one poll per thirty seconds.
-    /// </remarks>
+    // ends this connector's loops only: stopping the application used to end the lease loop, and a revoked connector
+    // would otherwise long-poll a control plane that told it to go away, for ever
     private readonly CancellationTokenSource _retire = new();
 
     private readonly AgentCapabilities _capabilities;
@@ -101,18 +50,9 @@ public sealed class AgentHost : BackgroundService
     private TimeSpan _leaseTtl = TimeSpan.FromSeconds(120);
     private int _running;
 
-    /// <summary>
-    /// Every profile was wiped since the beat that asked for it, and the
-    /// control plane has not yet answered a beat carrying that. Cleared the
-    /// moment a beat comes back without the request.
-    /// </summary>
+    // every profile was wiped since the asking beat and no beat has answered that yet; cleared once a beat comes back without it
     private volatile bool _resetDone;
 
-    /// <param name="connection">
-    /// The connector this host serves: its address, its identity, its client,
-    /// its profiles and its runner. Everything after it is the machine's and is
-    /// the same object in every host of this process.
-    /// </param>
     public AgentHost(
         AgentConnection connection,
         ConnectorAgentOptions options,
@@ -147,26 +87,15 @@ public sealed class AgentHost : BackgroundService
         _logger = logger;
         _time = time;
 
-        // Once, here, and not per heartbeat - nothing it is built from changes
-        // for the life of the process, and HERE is what makes a bad claim the
-        // host refusing to start. BuildCapabilities throws for a BYO agent
-        // whose configuration leaves out a tier its adapters need; from a
-        // constructor that is an exception out of Host.RunAsync before
-        // anything is online, in the same place the registry refuses a
-        // manifest that does not validate. Deferred to ExecuteAsync it would
-        // depend on nothing yielding before the first call, and deferred to
-        // the first lease it is the healthy-looking agent that never picks up
-        // work - which is the failure this replaces.
+        // built once, here: a bad claim (a BYO agent missing a tier its adapters need) must refuse to start the host,
+        // not leave a healthy-looking agent that never picks up work
         _capabilities = options.BuildCapabilities(registry);
     }
 
-    /// <summary>The connector this host serves, as every line about it says.</summary>
     private string Name => _connection.Name;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Either the process is going or this connector is: a retired
-        // connection ends its own loops and leaves the others polling.
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _retire.Token);
         var token = stopping.Token;
 
@@ -174,25 +103,12 @@ public sealed class AgentHost : BackgroundService
 
         if (!await EnsureEnrolledAsync(token).ConfigureAwait(false))
         {
-            // A connector this agent cannot enroll with has nothing for it to
-            // do. The roster decides what that means for the process: with one
-            // connector it is still an honest exit code for a container
-            // runtime, and with three it is two that carry on.
             _roster.Retire(Name, "this agent could not enroll");
             return;
         }
 
-        // The runtimes as well as the providers, because the providers alone
-        // looked fine on an agent that could serve none of the persistent
-        // ones: they come from the adapters, the tiers come from the
-        // configuration, and only the tiers said what the queue would
-        // actually offer this machine.
-        //
-        // And the CONNECTOR first, because this line is now printed once per
-        // connector by one process: three of them without a name are the same
-        // machine appearing to say the same thing three times, and the one
-        // question a reader has - which connector came up, and did all of them
-        // - is the one it would not answer.
+        // providers AND runtimes: the tiers, not the adapters, say what the queue offers this machine; the connector name
+        // leads because one process prints this line per connector
         _logger.LogInformation(
             "{Connection}: agent {AgentId} online: providers {Providers}; runtimes {Runtimes}; " +
             "concurrency {Concurrency} for the whole machine",
@@ -207,11 +123,8 @@ public sealed class AgentHost : BackgroundService
         await heartbeat.ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Finishes or fails every in-flight job. A job that is simply dropped
-    /// leaves a session stuck until a TTL notices it, and for a login that is a
-    /// browser sitting open on a provider with a half-submitted form.
-    /// </summary>
+    // finishes or fails every in-flight job: a dropped one leaves the session stuck until a TTL, a login a browser
+    // open on a half-submitted form
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
@@ -246,11 +159,7 @@ public sealed class AgentHost : BackgroundService
         }
     }
 
-    /// <summary>
-    /// The abort source is this host's; the slots are the machine's and are
-    /// disposed with it, so a host that has finished must not take them away
-    /// from the connectors still serving.
-    /// </summary>
+    // the slots are the machine's: a finished host must not dispose them from connectors still serving
     public override void Dispose()
     {
         _abort.Dispose();
@@ -315,9 +224,7 @@ public sealed class AgentHost : BackgroundService
     {
         Interlocked.Increment(ref _running);
 
-        // Registered before the work starts, and completed by the work itself.
-        // Publishing the Task afterwards would let a fast job remove an entry
-        // that had not been added yet and leak it for the life of the process.
+        // registered before the work starts: publishing the Task afterwards lets a fast job remove an entry not yet added
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _inflight[job.JobId] = completion.Task;
 
@@ -329,8 +236,7 @@ public sealed class AgentHost : BackgroundService
             }
             catch (Exception ex)
             {
-                // The runner reports its own failures; anything reaching here
-                // would otherwise take the whole lease loop down with it.
+                // the runner reports its own failures; anything reaching here would take the lease loop down
                 _logger.LogError(ex, "{Connection}: job {JobId} ended unexpectedly", Name, job.JobId);
             }
             finally
@@ -343,18 +249,10 @@ public sealed class AgentHost : BackgroundService
         });
     }
 
-    /// <summary>
-    /// Hands the job slot back to the machine, for whichever connector asks
-    /// next - which may well not be this one.
-    /// </summary>
     private void ReleaseSlot() => _slots.Release();
 
-    /// <summary>
-    /// Says, once per value, whether the control plane runs the adapter
-    /// catalogue this agent runs. A mismatch is not fatal here - the control
-    /// plane simply leases this agent nothing - so the log line is the whole
-    /// of what an operator gets, and it has to name the cure.
-    /// </summary>
+    // a mismatch is not fatal, the control plane just leases this agent nothing: the log line is all the operator gets,
+    // so it names the cure
     private void NoteCatalogue(string? theirs)
     {
         if (theirs is null || string.Equals(theirs, _noted, StringComparison.Ordinal)) return;
@@ -378,9 +276,6 @@ public sealed class AgentHost : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            // The ordinary cadence (Absorb) unless the beat fails, in which
-            // case the next one is owed much sooner than the interval - see
-            // HeartbeatRetryDelay.
             TimeSpan next;
 
             try
@@ -412,16 +307,8 @@ public sealed class AgentHost : BackgroundService
             }
             catch (Exception ex)
             {
-                // A missed heartbeat is survivable: the control plane's lease
-                // TTL handles a genuinely dead agent, and a flapping home line
-                // must not tear down running jobs.
-                //
-                // Survivable ONE at a time, though, and only if the next one
-                // comes soon. This is also the arm a beat the client gave up
-                // on arrives in, which costs the keepalive bound before we even
-                // get here; waiting a full interval on top of that spends most
-                // of the liveness window on a single blip, and everything the
-                // control plane routes to this agent is refused meanwhile.
+                // survivable (lease TTL covers a dead agent; a flapping line must not tear down jobs) but only if the next beat comes
+                // soon: a full interval after the keepalive bound spends most of the liveness window on one blip
                 _logger.LogDebug(
                     ex, "{Connection}: heartbeat failed; beating again in {Delay}", Name, HeartbeatRetryDelay);
                 next = HeartbeatRetryDelay;
@@ -431,11 +318,8 @@ public sealed class AgentHost : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Enrollment happens exactly once per connector. The code is one-time and
-    /// HMAC-signed, so re-enrolling on every restart would leave a BYO user
-    /// unable to bring their own agent back without asking for a new one.
-    /// </summary>
+    // once per connector: the code is one-time and HMAC-signed, so re-enrolling on every restart would leave a BYO user
+    // unable to bring their agent back
     private async Task<bool> EnsureEnrolledAsync(CancellationToken ct)
     {
         var controlPlane = _connection.ControlPlane;
@@ -450,9 +334,7 @@ public sealed class AgentHost : BackgroundService
 
         if (string.IsNullOrWhiteSpace(_connection.Settings.EnrollmentCode))
         {
-            // The key names the connector, because on a machine serving three
-            // of them the instruction "set ConnectorAgent:EnrollmentCode" would
-            // be advice about the wrong setting two thirds of the time.
+            // the key names the connector: with several on one machine a generic setting name is the wrong advice
             _logger.LogError(
                 "{Connection}: no enrollment state at {Path} and no enrollment code configured; mint one and set {Key}",
                 Name,
@@ -483,8 +365,7 @@ public sealed class AgentHost : BackgroundService
                     HeartbeatSeconds = response.HeartbeatSeconds,
                 };
 
-                // Persisted BEFORE the identity is used, so a crash between the
-                // two cannot burn the one-time code.
+                // persisted BEFORE the identity is used, so a crash between the two cannot burn the one-time code
                 _state.Save(enrollment);
                 _identity.Set(enrollment);
                 _heartbeatInterval = TimeSpan.FromSeconds(Math.Max(5, response.HeartbeatSeconds));
@@ -498,8 +379,7 @@ public sealed class AgentHost : BackgroundService
             }
             catch (ControlPlaneException ex) when (!ex.IsTransient)
             {
-                // A rejected code is a verdict: it was wrong, used, or expired.
-                // Hammering it would not change that and would look like abuse.
+                // a rejected code is a verdict; retrying would not change it and looks like abuse
                 _logger.LogError(
                     ex, "{Connection}: enrollment was rejected; the code is wrong, used, or expired", Name);
                 return false;
@@ -520,10 +400,6 @@ public sealed class AgentHost : BackgroundService
         return false;
     }
 
-    /// <summary>
-    /// The configuration key that carries THIS connector's code, in the shape
-    /// the operator's file has it.
-    /// </summary>
     private string CodeSettingKey()
     {
         if (_connection.Settings.OwnsTheRoot) return $"{ConnectorAgentOptions.SectionName}:EnrollmentCode";
@@ -538,26 +414,12 @@ public sealed class AgentHost : BackgroundService
                 $"{ConnectorAgentOptions.SectionName}:Connections:{index}:EnrollmentCode");
         }
 
-        // A host built outside the composition - in a test - still gets a key
-        // that names its connector rather than one that names nothing.
+        // a host built outside the composition (a test) still gets a key naming its connector
         return $"{ConnectorAgentOptions.SectionName}:Connections:<{Name}>:EnrollmentCode";
     }
 
-    /// <summary>
-    /// A revoked connection stops and wipes ITS profiles. Those profiles hold
-    /// live provider sessions the control plane can no longer route to, and
-    /// leaving them on disk after the user has revoked the agent is exactly the
-    /// residue the custody model exists to avoid.
-    /// </summary>
-    /// <remarks>
-    /// <b>Everything here is this connector's and nobody else's</b>, and that
-    /// is the change: the profile store is rooted under this connection's own
-    /// directory, the state file entry is keyed by this control plane, and the
-    /// abort source only cancels jobs this host started. A 401 from a bank
-    /// connector restored from an old backup used to wipe the browser DUO is
-    /// signed into and stop the process; now it costs the bank connector its
-    /// enrollment and leaves the rest of the machine serving.
-    /// </remarks>
+    // a revoked connection wipes only ITS profiles (live provider sessions the control plane can no longer route to) and state.
+    // a 401 from a bank connector restored from an old backup used to wipe DUO's browser and stop the process
     private async Task RevokeAsync(string why)
     {
         _logger.LogWarning("{Connection}: giving this connector up: {Why}", Name, why);
@@ -571,21 +433,14 @@ public sealed class AgentHost : BackgroundService
         _roster.Retire(Name, why);
     }
 
-    /// <summary>
-    /// What an answered beat changes, and when the next one is due: the
-    /// lease the control plane hands out, a wipe it asked for, the catalogue
-    /// it runs.
-    /// </summary>
     private TimeSpan Absorb(HeartbeatResponse response)
     {
         if (response.LeaseTtlSeconds > 0) _leaseTtl = TimeSpan.FromSeconds(response.LeaseTtlSeconds);
 
         var next = _heartbeatInterval;
 
-        // A released hosted slot (#420 A2): wipe, then beat again soon so
-        // the slot is free to the next person in seconds, not a whole
-        // interval. A beat that no longer asks is the control plane having
-        // heard the answer.
+        // a released hosted slot (#420 A2): wipe, then beat again soon so the slot is free in seconds.
+        // a beat that stops asking is the control plane having heard
         if (response.ResetProfiles)
         {
             if (ResetProfiles()) next = HeartbeatRetryDelay;
@@ -599,14 +454,8 @@ public sealed class AgentHost : BackgroundService
         return next;
     }
 
-    /// <summary>
-    /// What a released hosted slot does: every browser profile goes, as a
-    /// revoke takes them, but the connector stays enrolled and keeps
-    /// serving - the next person gets the same container, clean. Deferred
-    /// while a job still holds a browser in one of those directories; the
-    /// control plane keeps asking, and the beat after the last job ends
-    /// does it. True when the wipe happened on this call.
-    /// </summary>
+    // a released hosted slot: every profile goes as on revoke, but the connector stays enrolled; deferred while a job
+    // holds a browser (the control plane keeps asking); true when the wipe happened on this call
     private bool ResetProfiles()
     {
         if (Volatile.Read(ref _running) > 0)

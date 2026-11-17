@@ -3,48 +3,32 @@ using System.Globalization;
 
 namespace Munni.Api.Shopping;
 
-/// <summary>A category the reader may file a line under — the person's own list, by id and name.</summary>
 public sealed record ReadCategory(string Id, string Name);
 
-/// <summary>One photo of the receipt as it was sent.</summary>
 public sealed record ReceiptPhoto(byte[] Bytes, string MediaType);
 
-/// <summary>
-/// One line as a reader gives it, before the API has checked anything:
-/// <c>Kind</c> is item, discount, deposit or fee; money is in cents.
-/// </summary>
+/// <c>Kind</c> is item, discount, deposit or fee; money is in cents
 public sealed record ReadLine(string? Name, decimal? Quantity, int? UnitCents, int? TotalCents, string? Kind, string? CategoryId);
 
-/// <summary>A receipt as a reader gives it.</summary>
 public sealed record ReadReceipt(string? Merchant, string? Date, string? Currency, int? TotalCents, IReadOnlyList<ReadLine>? Lines);
 
-/// <summary>
-/// Reads the photos of one receipt (#567). The provider behind it is the
-/// operator's choice in the setup wizard; null means it could not read
-/// them — a refusal, an answer that is no receipt, a provider that is away.
-/// </summary>
+/// null: the reader could not read the photos (a refusal, an answer that is no receipt, a provider that is away)
 public interface IReceiptReader
 {
     string Provider { get; }
 
-    /// <summary>The model a read runs on when the operator named none.</summary>
     string DefaultModel { get; }
 
     /// <param name="model">the operator's choice in the admin portal; null = the provider's default</param>
     Task<ReadReceipt?> ReadAsync(IReadOnlyList<ReceiptPhoto> photos, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct);
 }
 
-/// <summary>A line the app can show and file: checked, trimmed, in whole cents.</summary>
 public sealed record ReceiptLine(string Name, decimal Quantity, int UnitCents, int TotalCents, string Kind, string? CategoryId);
 
 /// <summary>The receipt the app gets back. <c>Reconciled</c>: the lines add up to the total.</summary>
 public sealed record ReceiptReadResult(string? Merchant, string? Date, string? Currency, int TotalCents, IReadOnlyList<ReceiptLine> Lines, bool Reconciled);
 
-/// <summary>
-/// The API's own check of what a reader said (user: "munni api validates
-/// totals, normalizes keys, match categories"): nothing a model wrote is
-/// trusted to add up, to name a real category, or to be a date.
-/// </summary>
+/// nothing a model wrote is trusted to add up, to name a real category, or to be a date
 public static class ReceiptReadCheck
 {
     public const int MaxLines = 200;
@@ -94,12 +78,8 @@ public static class ReceiptReadCheck
     }
 }
 
-/// <summary>
-/// How many receipts were read (#567): per person per day in memory — a
-/// restart forgets a day's count, which costs a few reads at most — and
-/// per month for the whole environment, which the endpoint keeps in the
-/// database so a restart cannot reopen a month the operator capped.
-/// </summary>
+/// per person per day in memory (a restart forgets a day's count: a few reads at most); per month for the environment
+/// in the database, so a restart cannot reopen a month the operator capped
 public sealed class ReceiptReadCounts(TimeProvider time)
 {
     private readonly ConcurrentDictionary<(Guid User, DateOnly Day), int> _today = new();

@@ -21,7 +21,6 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
   it('typing the right PIN on the keypad unlocks without a confirm button', async () => {
     renderWithProviders(<LockScreen />);
     await screen.findByTestId('lock-dots');
-    // without a stored passkey the keypad is the only way in
     expect(screen.queryByTestId('lock-unlock')).toBeNull();
     tap('1', '2', '3', '4');
     await waitFor(() => expect(useLock.getState().locked).toBe(false));
@@ -53,25 +52,22 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
       enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 0,
       biometricKind: 'webauthn', credentialId: 'AAAA',
     });
-    const get = vi.fn(async () => null); // user dismisses the sheet
+    const get = vi.fn(async () => null);
     vi.stubGlobal('navigator', { ...navigator, credentials: { get } });
     try {
       renderWithProviders(<LockScreen />);
       await screen.findByTestId('lock-dots');
       await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
 
-      // the OS sheet backgrounded the page → re-lock → REMOUNT: no re-prompt
       cleanup();
       renderWithProviders(<LockScreen />);
       await screen.findByTestId('lock-dots');
       await new Promise((resolve) => setTimeout(resolve, 30));
       expect(get).toHaveBeenCalledTimes(1);
 
-      // the pad's own fingerprint key stays an EXPLICIT re-prompt
       fireEvent.click(screen.getByTestId('lock-unlock'));
       await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
 
-      // the next lock cycle gets its fresh auto-prompt again
       useLock.setState({ locked: false });
       useLock.getState().lock();
       cleanup();
@@ -101,7 +97,6 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
       expect(seenSignal!.aborted).toBe(false);
       tap('1');
       expect(seenSignal!.aborted).toBe(true);
-      // …and the PIN still unlocks on its own
       tap('2', '3', '4');
       await waitFor(() => expect(useLock.getState().locked).toBe(false));
     } finally {

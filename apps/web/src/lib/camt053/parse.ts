@@ -1,9 +1,4 @@
-/**
- * CAMT.053 (ISO 20022 bank-to-customer statement) parser. Runs entirely
- * in the browser via DOMParser — bank files never leave the device and
- * import works in offline mode. Field mapping follows apollousa's
- * CAMT053Model.cs (camt.053.001.02, as exported by ING/ABN/…).
- */
+// CAMT.053 (ISO 20022) parser; runs in the browser via DOMParser: bank files never leave the device, import works offline
 
 export interface CamtEntry {
   /** signed integer cents; DBIT = negative */
@@ -13,7 +8,6 @@ export interface CamtEntry {
   date: string;
   counterpartyName?: string;
   counterpartyIban?: string;
-  /** unstructured remittance info + extra references, for categorization */
   description: string;
   /** bank-side reference for idempotent import (AcctSvcrRef / EndToEndId) */
   ref: string;
@@ -22,7 +16,6 @@ export interface CamtEntry {
 export interface CamtStatement {
   iban: string;
   currency: string;
-  /** closing booked balance (CLBD) in cents, if present */
   closingBalanceCents: number | null;
   /** date the closing balance was true (yyyy-mm-dd) — decides whether it may overwrite a newer manual balance */
   balanceAsOf?: string | null;
@@ -81,7 +74,6 @@ function parseEntry(ntry: Element, statementCurrency: string): CamtEntry | null 
         .join(' ')
     : '';
   const addtlInfo = text(ntry, 'AddtlNtryInf') ?? '';
-  // human-written remittance beats the bank's machine summary line
   const description = (remittance || addtlInfo).trim();
 
   // POS/card entries (ASN, SNS…) carry no party block — the merchant

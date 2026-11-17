@@ -39,7 +39,6 @@ describe('Tutorials (demo identity)', () => {
     cleanup();
     renderApp('/review');
     await screen.findByTestId('screen-review');
-    // never nags again
     expect(screen.queryByTestId('intro-card-review')).toBeNull();
   }, 15_000);
 
@@ -50,13 +49,11 @@ describe('Tutorials (demo identity)', () => {
     fireEvent.click(screen.getByTestId('help-btn-budgets'));
     await screen.findByTestId('help-slides');
     expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.budgets.1t']);
-    // budgets is slides-only — no interactive entry
     expect(screen.queryByTestId('help-interactive')).toBeNull();
 
     for (let i = 0; i < 3; i++) fireEvent.click(screen.getByTestId('help-next'));
     await waitFor(() => expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.budgets.4t']));
-    fireEvent.click(screen.getByTestId('help-next')); // Done
-    // seen → the intro card retires
+    fireEvent.click(screen.getByTestId('help-next'));
     await waitFor(() => expect(screen.queryByTestId('intro-card-budgets')).toBeNull());
   }, 15_000);
 
@@ -73,17 +70,16 @@ describe('Tutorials (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spotlight-next'));
     await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.home.2t']));
-    await screen.findByTestId('spotlight-target'); // anchored on the balance band
+    await screen.findByTestId('spotlight-target');
 
     fireEvent.click(screen.getByTestId('spotlight-next'));
     await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.home.3t']));
     fireEvent.click(screen.getByTestId('spotlight-next'));
     await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.home.4t']));
 
-    // the final step forwards the tap to the real customize button
     fireEvent.click(await screen.findByTestId('spotlight-target'));
     await waitFor(() => expect(screen.queryByTestId('spotlight-overlay')).toBeNull());
-    await screen.findByTestId('home-customize-list'); // the real sheet opened
+    await screen.findByTestId('home-customize-list');
   }, 15_000);
 
   it('a missing anchor shows the sample instead of skipping', async () => {
@@ -95,8 +91,7 @@ describe('Tutorials (demo identity)', () => {
     fireEvent.click(screen.getByTestId('help-interactive'));
 
     await screen.findByTestId('spotlight-overlay');
-    fireEvent.click(screen.getByTestId('spotlight-next')); // to step 2 (anchor review-card)
-    // demo has review items… skip ahead until a missing-anchor step shows the sample
+    fireEvent.click(screen.getByTestId('spotlight-next'));
     await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.review.2t']), { timeout: 4000 });
     fireEvent.click(screen.getByTestId('spotlight-end'));
     await waitFor(() => expect(screen.queryByTestId('spotlight-overlay')).toBeNull());
@@ -107,17 +102,15 @@ describe('Tutorials (demo identity)', () => {
     const hint = await screen.findByTestId('install-hint', {}, { timeout: 5000 });
     expect(hint.textContent).toContain(en['install.title']);
 
-    // "See how" opens the platform walkthrough (slides only — no spotlight)
     fireEvent.click(screen.getByTestId('install-hint-how'));
     await screen.findByTestId('help-slides');
     expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.install.1t']);
     expect(screen.queryByTestId('help-interactive')).toBeNull();
     for (let i = 0; i < 3; i++) fireEvent.click(screen.getByTestId('help-next'));
     await waitFor(() => expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.install.4t']));
-    fireEvent.click(screen.getByTestId('help-next')); // Done closes the sheet
+    fireEvent.click(screen.getByTestId('help-next'));
     await waitFor(() => expect(screen.queryByTestId('help-slides')).toBeNull());
 
-    // dismissal is forever (device meta)
     fireEvent.click(await screen.findByTestId('install-hint-dismiss'));
     await waitFor(() => expect(screen.queryByTestId('install-hint')).toBeNull());
     cleanup();
@@ -139,7 +132,6 @@ describe('Tutorials (demo identity)', () => {
     fireEvent.click(row);
     expect(await screen.findByTestId('whatsnew-list')).toBeTruthy();
 
-    // …and the help index keeps the release notes reachable
     cleanup();
     renderApp('/help');
     await screen.findByTestId('screen-help');
@@ -150,7 +142,6 @@ describe('Tutorials (demo identity)', () => {
   it('settings reaches the index; every tour is listed and opens', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // help moved behind the Global settings door
     fireEvent.click(screen.getByTestId('settings-global-row'));
     fireEvent.click(await screen.findByTestId('settings-help-row'));
     await screen.findByTestId('screen-help');

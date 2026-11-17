@@ -5,12 +5,11 @@ import { HlcClock } from './hlc';
 import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
 import type { PullResult, PushResult, SnapshotPage, SpaceHead, SyncBackend } from './backend';
-import { SyncHttpError } from './backend';
+import { SPACE_DELETED, SyncHttpError } from './backend';
 import { reportError } from '@/lib/report';
 
 vi.mock('@/lib/report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
-// the round's spans (user 2026-10-09): a pass-through measure that keeps
-// every span's attributes by name, so a test reads what a round reported
+// pass-through measure that keeps every span's attributes by name, so a test reads what a round reported
 const perfSpans = vi.hoisted(() => ({ attrs: new Map<string, Record<string, unknown>>() }));
 vi.mock('@/lib/perf', () => ({
   measure: (name: string, fn: (span: unknown) => unknown) => {
@@ -33,22 +32,25 @@ import { useEvicted } from '@/app/evicted';
 import type { AccountRow } from '@/db/types';
 import { SpaceAccess, SpaceReadOnlyError, readUnsavedUndone } from './spaceAccess';
 
-/** Minimal in-memory server with the same semantics as Munni.Api. */
 class InMemoryServer implements SyncBackend {
   private ops: (Op & { seq: number })[] = [];
   private state = new Map<string, Record<string, unknown> & SyncEnvelope>();
   private seenOpIds = new Set<string>();
   private lastSeq = 0;
   forbiddenSpaces = new Set<string>();
+  /** #615: erased by their owner's delete — every door answers 403 with the reason, and no list names them */
+  erasedSpaces = new Set<string>();
+  private denied(spaceId: string): void {
+    if (this.erasedSpaces.has(spaceId)) throw new SyncHttpError(403, undefined, SPACE_DELETED);
+    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+  }
   /** #306: reader role — push 403s while pull/list stay granted */
   readerSpaces = new Set<string>();
   rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
   /** the pull (and the heads) answer with this status instead (429: the server's pause, 500: a fault) */
   pullStatus: number | null = null;
-  /** the pause a 429 names (Retry-After), when it names one */
   retryAfterMs: number | undefined = undefined;
   headsCalls = 0;
-  /** the spaces each pull asked for, in order */
   pulledSpaces: string[] = [];
   pushCalls: number[] = [];
   /** a push of more ops than this answers 413 — the stand-in for a body-size cap */
@@ -58,7 +60,8 @@ class InMemoryServer implements SyncBackend {
 
   async push(spaceId: string, _clientId: string, ops: Op[]): Promise<PushResult> {
     this.pushAttempts.push(spaceId);
-    if (this.forbiddenSpaces.has(spaceId) || this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
+    if (this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
     if (this.rejectedSpaces.has(spaceId)) throw new SyncHttpError(400);
     if (this.maxOpsPerPush !== null && ops.length > this.maxOpsPerPush) throw new SyncHttpError(413);
     this.pushCalls.push(ops.length);
@@ -74,14 +77,13 @@ class InMemoryServer implements SyncBackend {
     return { lastSeq: this.lastSeq };
   }
 
-  /** page like Munni.Api does (Take(1000)); Infinity = everything */
   pageSize = Number.POSITIVE_INFINITY;
   /** old servers predate the nextSince cursor — the client must survive */
   omitNextSince = false;
   pullCalls = 0;
 
   async pull(spaceId: string, since: number): Promise<PullResult> {
-    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
     if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus, this.retryAfterMs);
     this.pullCalls++;
     this.pulledSpaces.push(spaceId);
@@ -98,16 +100,14 @@ class InMemoryServer implements SyncBackend {
 
   /** #606: rows to a snapshot page; null = this server hands out none, as for a feed read up to an archive point */
   snapshotPage: number | null = null;
-  /** what each snapshot request asked with, in order */
   snapshotCalls: (string | undefined)[] = [];
   /** the snapshot request with this number (from 1) fails once, like a connection that drops */
   snapshotFailsAt: number | null = null;
-  /** how many ops the pulls handed out */
   opsServed = 0;
   private readonly rowSpace = new Map<string, string>();
 
   async snapshot(spaceId: string, after?: string): Promise<SnapshotPage | null> {
-    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
     if (this.snapshotPage === null) return null;
     this.snapshotCalls.push(after);
     if (this.snapshotCalls.length === this.snapshotFailsAt) {
@@ -128,7 +128,7 @@ class InMemoryServer implements SyncBackend {
   }
 
   async listSpaces(): Promise<string[]> {
-    return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id));
+    return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id) && !this.erasedSpaces.has(id));
   }
 
   /** #569: every granted space with its head — the seq of its newest op; #505: and the caller's role */
@@ -164,9 +164,7 @@ describe('SyncEngine', () => {
     dbCounter++;
     server = new InMemoryServer();
     useEvicted.getState().clear();
-    // hermetic: syncAll's /health handshake must never reach a REAL
-    // server (a running local stack once answered with an older
-    // protocol and silently blocked every cycle here)
+    // hermetic: the /health handshake must never reach a real server (a local stack's older protocol once blocked every cycle)
     vi.stubGlobal('fetch', async () =>
       new Response(JSON.stringify({ capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 })),
     );
@@ -211,7 +209,6 @@ describe('SyncEngine', () => {
     const off = a.engine.onProgress((p) => seen.push(p.phase === 'server' ? 'server' : `${p.done}/${p.total}`));
     await a.engine.syncAll();
     off();
-    // each space once more as its page lands: the round also says how much it fetched (below)
     expect([...new Set(seen)]).toEqual(['server', '0/2', '1/2', '2/2']);
     const told = seen.length;
     await a.engine.syncAll();
@@ -226,7 +223,6 @@ describe('SyncEngine', () => {
     for (let i = 0; i < 9; i++) await writer.repo.upsert('category', 'big', `c${i}`, { name: `Category ${i}` });
     await writer.engine.syncAll();
 
-    // a new device: nothing local, ten changes to fetch, four to a page
     server.pageSize = 4;
     const fresh = device('devFresh', () => ++w, server);
     dbs.push(fresh.db);
@@ -241,7 +237,6 @@ describe('SyncEngine', () => {
     expect(await fresh.db.categories.count()).toBe(9);
   });
 
-  /** a space with more history than rows: nine categories, three of them renamed twice */
   async function writtenSpace(wall: () => number) {
     const writer = device('devWriter606', wall, server);
     dbs.push(writer.db);
@@ -272,7 +267,6 @@ describe('SyncEngine', () => {
     await fresh.engine.syncAll();
     off();
 
-    // ten rows in three pages, and not one of the seventeen changes that made them
     expect(server.snapshotCalls).toEqual([undefined, 'category:c3', 'category:c7']);
     expect(server.opsServed).toBe(0);
     expect(seen).toEqual(['0/1 0', '0/1 4', '0/1 8', '0/1 10', '1/1 10']);
@@ -282,7 +276,6 @@ describe('SyncEngine', () => {
     expect((await fresh.db.categories.get('c8'))?.deleted).toBe(1);
     expect((await fresh.db.spaces.get('big'))?.name).toBe('Big');
 
-    // from here it pulls like any device: the next change arrives as a change
     await writer.repo.upsert('category', 'big', 'c4', { name: 'After the snapshot' });
     await writer.engine.syncAll();
     await fresh.engine.syncAll();
@@ -304,7 +297,6 @@ describe('SyncEngine', () => {
     expect(await fresh.db.categories.count()).toBe(4);
     expect(await fresh.storeBackend.metaGet(cursorKey('big'))).toBeUndefined();
 
-    // a row of the page already taken changes before the device comes back
     await writer.repo.upsert('category', 'big', 'c1', { name: 'Changed in between' });
     await writer.engine.syncAll();
 
@@ -324,7 +316,6 @@ describe('SyncEngine', () => {
 
     let clock = 0;
     const now = () => clock;
-    // the deadline passes while the first page is applied: the wake ends there
     const first = await drainPull(fresh.storeBackend, fresh.repo, {
       push: (...args) => server.push(...args),
       pull: (...args) => server.pull(...args),
@@ -382,7 +373,7 @@ describe('SyncEngine', () => {
       server.pullStatus = status;
       await a.engine.syncAll();
       expect(statuses.at(-1)).toBe('offline');
-      now += DEFAULT_PAUSE_MS; // the pause is over before the next one
+      now += DEFAULT_PAUSE_MS;
     }
     expect(reportError).not.toHaveBeenCalled();
 
@@ -409,12 +400,10 @@ describe('SyncEngine', () => {
     await a.engine.syncAll();
     await b.engine.syncAll();
 
-    // nothing moved: one request for the heads, not one per space
     server.pulledSpaces = [];
     await a.engine.syncAll();
     expect(server.pulledSpaces).toEqual([]);
 
-    // another device writes into s2: only s2 is pulled — and a space this device pushed to reads its ops back
     await b.repo.upsert('account', 's2', 'acc-b', { name: 'From B' });
     await b.engine.syncAll();
     await a.repo.upsert('account', 's3', 'acc-a', { name: 'From A' });
@@ -433,24 +422,20 @@ describe('SyncEngine', () => {
       await a.repo.upsert('space', id, id, { name: id, kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
     }
     await a.engine.syncAll();
-    // a burst of writes in every space, then the limiter answers
     for (const id of ['s1', 's2', 's3']) await a.repo.upsert('account', id, `acc-${id}`, { name: id });
     server.pullStatus = 429;
     server.retryAfterMs = 30_000;
     const pushesBefore = server.pushAttempts.length;
     await a.engine.syncAll();
 
-    // the first space met the pause; none after it was asked
     expect(server.pushAttempts.length - pushesBefore).toBeLessThanOrEqual(1);
     expect(a.engine.getStatus()).toBe('offline');
 
-    // inside the pause no request leaves, whatever asks
     const heads = server.headsCalls;
     now += 29_000;
     await a.engine.syncAll();
     expect(server.headsCalls).toBe(heads);
 
-    // past it, the round runs and drains every space
     server.pullStatus = null;
     now += 2_000;
     await a.engine.syncAll();
@@ -465,11 +450,9 @@ describe('SyncEngine', () => {
     dbs.push(a.db);
     await a.repo.upsert('space', 's1', 's1', { name: 'Busy', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     const first = a.engine.syncAll();
-    // two triggers while the round is out (a write's nudge, a frame from the stream): neither starts a round now…
     await a.engine.syncAll();
     await a.engine.syncAll();
     await first;
-    // …but ONE more round follows by itself — never dropped, never stacked
     await vi.waitFor(() => expect(server.headsCalls).toBe(2));
     await vi.waitFor(() => expect(a.engine.getStatus()).toBe('idle'));
     expect(server.headsCalls).toBe(2);
@@ -482,13 +465,11 @@ describe('SyncEngine', () => {
     const b = device('devB', () => ++wb, server);
     dbs.push(a.db, b.db);
 
-    // both edit the same account while "offline"
     await a.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await a.repo.upsert('account', 's1', 'acc1', { name: 'From A', balanceCents: 100 });
     await b.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await b.repo.upsert('account', 's1', 'acc1', { name: 'From B', color: '#abc' });
 
-    // A syncs first, then B, then A again to receive B's ops
     await a.engine.syncSpace('s1');
     await b.engine.syncSpace('s1');
     await a.engine.syncSpace('s1');
@@ -500,7 +481,6 @@ describe('SyncEngine', () => {
     expect(rowA.balanceCents).toBe(100);
     expect(rowA.color).toBe('#abc');
 
-    // outboxes drained, cursors advanced
     expect(await a.db.outbox.count()).toBe(0);
     expect(await b.db.outbox.count()).toBe(0);
   });
@@ -513,7 +493,7 @@ describe('SyncEngine', () => {
     await a.repo.upsert('space', 's1', 's1', { name: 'Solo', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await a.engine.syncSpace('s1');
     const cursor1 = (await a.db.meta.get('syncCursor_s1'))?.value;
-    await a.engine.syncSpace('s1'); // nothing new
+    await a.engine.syncSpace('s1');
     const cursor2 = (await a.db.meta.get('syncCursor_s1'))?.value;
     expect(cursor1).toBe(cursor2);
     const space = await a.db.spaces.get('s1');
@@ -539,7 +519,6 @@ describe('SyncEngine', () => {
     expect(await a.db.outbox.count()).toBe(0);
   });
 
-  /** an owner's shared space s1 on the server, with an account and an event */
   async function sharedSpace() {
     let wa = 1_000_000;
     const owner = device('owner', () => ++wa, server);
@@ -552,7 +531,6 @@ describe('SyncEngine', () => {
 
   it('#306/#505: a read-only member (push 403, pull OK) is no eviction — the refused change is undone and said once', async () => {
     await sharedSpace();
-    // the reader device discovers and pulls the space fine…
     let wb = 2_000_000;
     const reader = device('reader', () => ++wb, server);
     dbs.push(reader.db);
@@ -565,12 +543,8 @@ describe('SyncEngine', () => {
     await reader.repo.upsert('event', 's1', 'ev1', { name: 'Trip', from: '2026-07-01', to: '2026-07-03' });
     await reader.engine.syncAll();
 
-    // no "removed from space" sheet, nothing purged (the old code
-    // popped the sheet and wiped the space on every cycle — user4 loop)
     expect(useEvicted.getState().evicted).toBeNull();
     expect((await reader.db.spaces.get('s1'))?.name).toBe('Shared');
-    // #505: the device shows what the other members see again — the
-    // server's value back, what only this device wrote gone
     const account = await reader.db.accounts.get('acc1');
     expect(account?.name).toBe('Theirs');
     expect(account?.color).toBeUndefined();
@@ -580,7 +554,7 @@ describe('SyncEngine', () => {
     expect(await readUnsavedUndone(reader.storeBackend)).toEqual([{ spaceId: 's1', spaceName: 'Shared', count: 2 }]);
     const attempts = server.pushAttempts.filter((s) => s === 's1').length;
     await reader.engine.syncAll();
-    expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts); // quiet now
+    expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts);
   });
 
   it('#505: the heads name the role — a reader’s device refuses its own writes and asks the server nothing', async () => {
@@ -595,7 +569,6 @@ describe('SyncEngine', () => {
     expect(reader.access.roleOf('s1')).toBe('reader');
     expect((await reader.db.meta.get('spaceRoles'))?.value).toEqual({ s1: 'reader' });
     await expect(reader.repo.upsert('account', 's1', 'acc1', { color: '#abc' })).rejects.toBeInstanceOf(SpaceReadOnlyError);
-    // the upkeep view leaves the space alone instead of failing
     await reader.repo.upkeep().upsert('account', 's1', 'acc1', { color: '#abc' });
     expect((await reader.db.accounts.get('acc1'))?.color).toBeUndefined();
     expect(await reader.db.outbox.count()).toBe(0);
@@ -609,9 +582,8 @@ describe('SyncEngine', () => {
     let wb = 2_000_000;
     const reader = device('reader', () => ++wb, server, undefined, true);
     dbs.push(reader.db);
-    await reader.engine.syncAll(); // still a contributor here
+    await reader.engine.syncAll();
     await reader.repo.upsert('account', 's1', 'acc1', { name: 'Edited offline' });
-    // demoted while the change waited in the outbox
     server.readerSpaces.add('s1');
     await reader.engine.syncAll();
 
@@ -714,7 +686,6 @@ describe('SyncEngine', () => {
     const leaver = device('leaver', () => ++wb, server);
     dbs.push(leaver.db);
     await leaver.engine.syncAll();
-    // the space moved, so the next round pulls it — and the server holds that answer back
     await owner.repo.upsert('account', 's1', 'acc2', { name: 'New' });
     await owner.engine.syncAll();
     let reached: () => void = () => undefined;
@@ -732,7 +703,6 @@ describe('SyncEngine', () => {
 
     let halted = false;
     const halting = leaver.engine.halt().then(() => (halted = true));
-    // the account leaves the server while the request hangs: the pull comes back refused
     server.forbiddenSpaces.add('s1');
     expect(halted).toBe(false);
     release();
@@ -775,7 +745,6 @@ describe('SyncEngine', () => {
     dbs.push(behind.db);
     await behind.engine.syncAll();
 
-    // a round that has the server's answer already, and is held there
     let open: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
       open = resolve;
@@ -801,7 +770,6 @@ describe('SyncEngine', () => {
     await early;
     expect((await behind.db.accounts.get('acc2'))?.name).toBe('Written meanwhile');
 
-    // a server that fails leaves the device unsure of what it misses
     server.pullStatus = 500;
     expect(await behind.engine.catchUp()).toBe(false);
     server.pullStatus = null;
@@ -820,22 +788,47 @@ describe('SyncEngine', () => {
     await a.repo.upsert('account', 's1', 'acc1', { name: 'Late edit' });
     await a.engine.syncAll();
 
-    // the one takeover sheet; the local copy is gone
     expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
     expect(await a.db.spaces.get('s1')).toBeUndefined();
     expect(await a.db.outbox.count()).toBe(0);
 
-    // the user confirms; a straggler write races in AFTER the purge
     useEvicted.getState().clear();
     await a.repo.upsert('account', 's1', 'acc2', { name: 'Straggler' });
     const attempts = server.pushAttempts.filter((s) => s === 's1').length;
     await a.engine.syncAll();
 
-    // no second sheet, not one more push request, the straggler is swept
     expect(useEvicted.getState().evicted).toBeNull();
     expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts);
     expect(await a.db.outbox.count()).toBe(0);
     expect(await a.db.accounts.get('acc2')).toBeUndefined();
+  });
+
+  it('#615: a space its owner deleted leaves every device — the others are told it was deleted, the one that deleted it is told nothing', async () => {
+    const owner = await sharedSpace();
+    let wb = 2_000_000;
+    const member = device('member', () => ++wb, server);
+    dbs.push(member.db);
+    await member.engine.syncAll();
+    expect((await member.db.spaces.get('s1'))?.name).toBe('Shared');
+    expect(await member.db.accounts.get('acc1')).toBeTruthy();
+
+    await owner.repo.remove('space', 's1', 's1');
+    expect((await owner.db.spaces.get('s1'))?.deleted).toBe(1);
+    await owner.engine.syncAll();
+    expect(await owner.db.outbox.count()).toBe(0);
+    server.erasedSpaces.add('s1');
+
+    await owner.engine.syncAll();
+    expect(await owner.db.spaces.get('s1')).toBeUndefined();
+    expect(await owner.db.accounts.get('acc1')).toBeUndefined();
+    expect(useEvicted.getState().evicted).toBeNull();
+
+    await member.repo.upsert('account', 's1', 'acc1', { name: 'Late edit' });
+    await member.engine.syncAll();
+    expect(useEvicted.getState().evicted).toMatchObject({ spaceId: 's1', spaceName: 'Shared', deleted: true });
+    expect(await member.db.spaces.get('s1')).toBeUndefined();
+    expect(await member.db.accounts.get('acc1')).toBeUndefined();
+    expect(await member.db.outbox.count()).toBe(0);
   });
 
   it('#306: a re-grant clears the tombstone — sync resumes and a LATER eviction reports again', async () => {
@@ -850,13 +843,11 @@ describe('SyncEngine', () => {
     expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
     useEvicted.getState().clear();
 
-    // re-invited: the server lists the space again, history intact
     server.forbiddenSpaces.delete('s1');
     await a.engine.syncAll();
     expect(await a.db.meta.get('evictedSpace_s1')).toBeUndefined();
     expect((await a.db.spaces.get('s1'))?.name).toBe('Shared');
 
-    // kicked AGAIN much later — the new eviction may speak again
     server.forbiddenSpaces.add('s1');
     await a.engine.syncAll();
     expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
@@ -870,20 +861,17 @@ describe('SyncEngine', () => {
     await a.engine.syncAll();
     server.rejectedSpaces.add('s1');
     await a.repo.upsert('receipt', 's1', 'r1', { merchant: 'AH', totalCents: 100 });
-    await a.engine.syncAll(); // 400 → parked
+    await a.engine.syncAll();
     expect(((await a.db.meta.get('parkedOps_s1'))?.value as unknown[]).length).toBeGreaterThan(0);
 
     server.rejectedSpaces.delete('s1');
     server.forbiddenSpaces.add('s1');
-    await a.engine.syncAll(); // eviction — nothing of the space lingers
+    await a.engine.syncAll();
     expect(await a.db.meta.get('parkedOps_s1')).toBeUndefined();
     expect(await a.db.spaces.get('s1')).toBeUndefined();
   });
 
   it('feed data of a space the server no longer grants is purged (left-space ghost accounts)', async () => {
-    // feed spaces have no local 'space' row — after leaving the space that
-    // shared them, they dropped out of the pull loop and their accounts
-    // lingered forever as ghost "shared with me" rows (user report)
     let w = 1_000_000;
     const a = device('devA', () => ++w, server);
     dbs.push(a.db);
@@ -893,25 +881,21 @@ describe('SyncEngine', () => {
     await a.db.accounts.put({ id: 'feed-acc', spaceId: 'feed-1', name: 'Their ING', deleted: 0, fieldVersions: {} } as unknown as AccountRow);
     await a.db.meta.put({ key: 'syncCursor_feed-1', value: 7 });
 
-    await a.engine.syncAll(); // server lists only s1 — access to feed-1 is gone
+    await a.engine.syncAll();
 
     expect(await a.db.accounts.get('feed-acc')).toBeUndefined();
     expect(await a.db.meta.get('syncCursor_feed-1')).toBeUndefined();
-    // the personal space itself is untouched
     expect((await a.db.spaces.get('s1'))?.name).toBe('Mine');
   });
 
   it('an import finishing mid-cycle is never swept away (data-loss regression)', async () => {
-    // user report: "imported 200 transactions, then everything
-    // disappeared" — the orphan-feed sweep at the END of a cycle used
-    // the space/outbox snapshots from the START, so a statement import
-    // completing while the cycle ran was judged an orphan and purged
-    // (rows AND their un-pushed outbox ops)
+    // the orphan-feed sweep once judged an import that completed mid-cycle an orphan (start-of-cycle snapshots)
+    // and purged its rows and un-pushed outbox ops
     let w = 1_000_000;
     const a = device('devA', () => ++w, server);
     dbs.push(a.db);
     await a.repo.upsert('space', 's1', 's1', { name: 'Mine', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-    await a.engine.syncAll(); // clean baseline
+    await a.engine.syncAll();
 
     // the import lands right after the cycle fetched the server's list
     const origHeads = server.heads.bind(server);
@@ -925,10 +909,8 @@ describe('SyncEngine', () => {
     await a.engine.syncAll();
     server.heads = origHeads;
 
-    // nothing was purged — the fresh import survived the sweep…
     expect(await a.db.accounts.get('facc')).toBeTruthy();
     expect(await a.db.transactions.get('ftx')).toBeTruthy();
-    // …and the next cycle delivers its ops to the server
     await a.engine.syncAll();
     expect(await a.db.outbox.count()).toBe(0);
     expect((await server.pull('feed-1', 0)).ops.some((op) => op.entity === 'transaction')).toBe(true);
@@ -946,15 +928,13 @@ describe('SyncEngine', () => {
     expect(server.pushCalls).toEqual([300, 300, 50]);
     expect(await a.db.outbox.count()).toBe(0);
 
-    // s-poison rejects its push (a bad op) — s2 must still sync fine
     await a.repo.upsert('space', 's-poison', 's-poison', { name: 'Bad', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await a.repo.upsert('space', 's2', 's2', { name: 'Good', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     server.rejectedSpaces.add('s-poison');
     await a.engine.syncAll();
     const s2Outbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's2');
-    expect(s2Outbox).toHaveLength(0); // the healthy space drained
-    // rejected ops leave the OUTBOX (no eternal 400 wedge — user report:
-    // "offline" until reinstall) but are QUARANTINED in meta, never lost
+    expect(s2Outbox).toHaveLength(0);
+    // rejected ops leave the OUTBOX (no eternal 400 wedge) but are QUARANTINED in meta, never lost
     const poisonOutbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's-poison');
     expect(poisonOutbox).toHaveLength(0);
     const parked = (await a.db.meta.get('parkedOps_s-poison'))?.value as unknown[];
@@ -981,11 +961,9 @@ describe('SyncEngine', () => {
     dbs.push(a.db);
     await a.repo.upsert('space', 's-heal', 's-heal', { name: 'Heals', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     server.rejectedSpaces.add('s-heal');
-    await a.engine.syncAll(); // parks the space row op
+    await a.engine.syncAll();
     expect(((await a.db.meta.get('parkedOps_s-heal'))?.value as unknown[]).length).toBeGreaterThan(0);
 
-    // the server-side fix ships (validator accepts the op now); a fresh
-    // session (new engine instance) re-offers the parked ops exactly once
     server.rejectedSpaces.delete('s-heal');
     const revived = new SyncEngine(a.storeBackend, a.repo, server, 'devA');
     await revived.syncAll();
@@ -1001,7 +979,6 @@ describe('SyncEngine', () => {
     await a.repo.upsert('account', 's1', 'acc1', { name: 'Mine', balanceCents: 42 });
     await a.engine.syncAll();
 
-    // brand-new device, empty database
     let wb = 2_000_000;
     const b = device('devB', () => ++wb, server);
     dbs.push(b.db);
@@ -1018,14 +995,12 @@ describe('SyncEngine', () => {
 
     await a.repo.upsert('space', 's1', 's1', { name: 'Solo', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
 
-    // simulate: push reached the server but the response was lost
     const outbox = await a.db.outbox.toArray();
     await server.push('s1', 'devA', outbox);
-    // engine retries the full outbox — server dedupes, then pull applies own ops as no-ops
     await a.engine.syncSpace('s1');
 
     const pull = await server.pull('s1', 0);
-    expect(pull.ops).toHaveLength(outbox.length); // no duplicates server-side
+    expect(pull.ops).toHaveLength(outbox.length);
     expect(await a.db.outbox.count()).toBe(0);
   });
 
@@ -1044,7 +1019,7 @@ describe('SyncEngine', () => {
     dbs.push(b.db);
     await b.engine.syncAll();
     expect((await b.db.categories.toArray()).filter((row) => row.deleted === 0)).toHaveLength(25);
-    expect(server.pullCalls).toBeGreaterThan(2); // it genuinely paged
+    expect(server.pullCalls).toBeGreaterThan(2);
 
     // an OLD server without nextSince: the dense-seq fallback still drains
     server.omitNextSince = true;
@@ -1085,7 +1060,6 @@ describe('the sync round span (user 2026-10-09)', () => {
     await b.engine.syncAll();
     expect(perfSpans.attrs.get('sync.round')).toEqual({ 'sync.spaces': 1, 'sync.ops_pushed': 0, 'sync.rows_pulled': 2, 'sync.ok': true });
 
-    // a round that did not reach its end says so
     server.pullStatus = 500;
     await b.engine.syncAll();
     expect(perfSpans.attrs.get('sync.round')).toMatchObject({ 'sync.ok': false });

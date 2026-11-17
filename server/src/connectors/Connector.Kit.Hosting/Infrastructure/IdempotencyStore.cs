@@ -2,20 +2,9 @@ using System.Collections.Concurrent;
 
 namespace Connector.Kit.Hosting.Infrastructure;
 
-/// <summary>
-/// Collapses a retried mutating call onto the thing it already created.
-///
-/// This matters most on <c>POST /login</c>, and for the same reason
-/// everything else in this platform is careful about logins: a caller that
-/// times out and retries would otherwise start a second run, submit the same
-/// credential a second time, and hand the provider two failed attempts where
-/// the user made one. The idempotency key is the caller's statement that the
-/// second request is the first request again.
-///
-/// In memory, with a TTL. A restart forgets, which costs a duplicate session
-/// in a window measured in seconds - the alternative is a table whose only
-/// purpose is to remember requests, which is the opposite of staying a pipe.
-/// </summary>
+// collapses a retried mutating call (above all POST /login) onto what it created:
+// a retry must not submit a credential twice
+// in memory with a TTL: a restart forgets (a duplicate session for seconds); a table would stop it being a pipe
 public interface IIdempotencyStore
 {
     bool TryGet(string scope, string key, out string value);
@@ -65,10 +54,7 @@ public sealed class InMemoryIdempotencyStore(TimeProvider time) : IIdempotencySt
         return removed;
     }
 
-    /// <summary>
-    /// ASCII unit separator, written as a numeric escape rather than a
-    /// literal so the source carries no invisible control character.
-    /// </summary>
+    // ASCII unit separator as a numeric escape, so the source carries no invisible control character
     private const char Separator = (char)0x1F;
 
     private static string Compose(string scope, string key) => scope + Separator + key;

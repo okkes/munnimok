@@ -7,7 +7,6 @@ interface HealthInfo {
   capabilities?: Record<string, unknown>;
 }
 
-/** the connector control plane's status as /control/connectors/status relays it (#367 M6; the parties' budget since #414) */
 interface ConnectorProvider {
   providerId: string;
   state: string;
@@ -36,11 +35,7 @@ const NAV: [Screen, string][] = [
   ['consents', 'Bank consents'],
 ];
 
-/**
- * This browser's stable device id: the API stamps every authenticated
- * request's device (X-Munni-Device) and refuses requests that name none,
- * so the account's Logged-in devices screen can list and disconnect it.
- */
+// the API refuses requests naming no device (X-Munni-Device); a stable id lets Logged-in devices disconnect it
 const DEVICE_KEY = 'munni_control_device';
 function deviceId(): string {
   try {
@@ -63,7 +58,6 @@ function forgetDevice(): void {
 
 const when =(iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
 
-/** the party's budget as one line: remaining of limit, when it resets — or nothing said yet */
 export function quotaLine(quota: ConnectorProvider['quota']): string {
   if (!quota || (quota.limit == null && quota.remaining == null)) return '—';
   const left = `${quota.remaining ?? '?'} / ${quota.limit ?? '?'}`;
@@ -77,29 +71,17 @@ interface ControlAppProps {
   config: ControlConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
-  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  /** absent in test-auth mode; a freshly granted admin role rides on the next token */
   signOut?: () => void;
 }
 
-/**
- * munni control (admin split LS5/LS6): the shared-services cockpit — a
- * deliberately SEPARATE app from the per-environment admin portal. It
- * talks only to the /control/* surface of the designated environment's
- * API and is read-only across the board: the connector control plane's
- * parties with their budget, and — for an aggregator such as GoCardless,
- * whose one account serves every environment — the consents on that
- * account attributed per environment (§15.6, Bank consents). Every write,
- * the kill switch and a consent's revocation included, stays in the
- * environment's own lab and admin portal.
- */
+/** read-only cockpit over /control/* of the designated environment; every write stays in its lab and admin portal */
 export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppProps>) {
-  // survives the full page reload a Logto re-auth causes (else every token
-  // hiccup dumps the operator back on Overview mid-task)
+  // survives the full page reload a Logto re-auth causes
   const [screen, setScreen] = useState<Screen>(() => {
     const saved = sessionStorage.getItem('munni_control_screen');
     return NAV.some(([id]) => id === saved) ? (saved as Screen) : 'overview';
   });
-  // the party a Connectors row opened the consents for
   const [consentsFocus, setConsentsFocus] = useState<string | null>(null);
   const openScreen = (next: Screen, focus: string | null = null) => {
     sessionStorage.setItem('munni_control_screen', next);
@@ -109,13 +91,10 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
   const [sub, setSub] = useState(() => localStorage.getItem('munni_control_sub') ?? '');
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [connectors, setConnectors] = useState<ConnectorsView>(null);
-  // 'denied' = the api really said 403; 'unreachable' = the ping never
-  // got an answer (network/CORS/5xx) — the two used to share one message
-  // and a blocked request read as "not an admin" (found live 2026-08-28)
+  // 'denied' = api said 403; 'unreachable' = no answer (network/CORS/5xx): a blocked request must not read as "not an admin"
   const [denied, setDenied] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
-  // 'disconnected' = the api said 410: this browser's device was revoked
-  // from the account (Logged-in devices) — the next load registers anew
+  // 'disconnected' = api said 410: this device was revoked from the account; the next load registers anew
   const [disconnected, setDisconnected] = useState(false);
   const blocked = denied || unreachable || disconnected;
 
@@ -235,7 +214,6 @@ function Tile({ label, value, warn = false }: Readonly<{ label: string; value: s
 
 const isLive = (status: ConnectorsView): status is ConnectorStatus => status !== null && status !== 'absent' && status !== 'unreachable';
 
-/** what a screen over the control plane says while there is no status to show */
 function ConnectorsNote({ title, status }: Readonly<{ title: string; status: ConnectorsView }>) {
   const note = {
     absent: 'The designated environment runs no connectors.',
@@ -259,7 +237,6 @@ const hostOf = (url: string): string => {
   }
 };
 
-/** the landing: what this cockpit is for, the designated environment's parties at a glance, its health probe */
 function OverviewScreen({ status, health, apiUrl, onOpen }: Readonly<{ status: ConnectorsView; health: HealthInfo | null; apiUrl: string; onOpen: (screen: Screen) => void }>) {
   const caps = Object.entries(health?.capabilities ?? {}).filter(([, v]) => typeof v === 'boolean');
   const live = isLive(status) ? status : null;
@@ -317,10 +294,7 @@ function OverviewScreen({ status, health, apiUrl, onOpen }: Readonly<{ status: C
 
 const STATE_CHIP: Record<string, string> = { healthy: 'ok-chip', degraded: 'warn-chip', paused: 'warn-chip', retired: 'danger-chip' };
 
-/** the designated environment's connector control plane, read-only: the
- * parties' states and budgets and the fleet's liveness; an aggregator's
- * row opens its consents. Pausing, resuming, revoking stay in the
- * environment's own lab, like every other write. */
+/** read-only: pausing, resuming and revoking stay in the environment's own lab */
 function ConnectorsScreen({ status, onOpenConsents }: Readonly<{ status: ConnectorsView; onOpenConsents: (providerId: string) => void }>) {
   if (!isLive(status)) return <ConnectorsNote title="Connectors" status={status} />;
   return (

@@ -12,7 +12,6 @@ using Munni.Api.Splits;
 
 namespace Munni.Api.Tests;
 
-/// <summary>Keeps what the API pushed, by receiver: the tests read who was told what.</summary>
 internal sealed class RecordingPushSender : IPushSender
 {
     public List<(Guid UserId, JsonElement Payload)> Sent { get; } = [];
@@ -55,12 +54,7 @@ public class SplitsApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>
-/// Split events (#538): membership is the ONLY authorization boundary —
-/// someone outside gets 404 (existence itself is private) — and roles,
-/// link limits, the queue, "settled" and the countdown are the server's
-/// to keep. One factory per test: every test starts with nobody in it.
-/// </summary>
+/// <summary>Split events (#538): membership is the only authorization boundary; outsiders get 404.</summary>
 public class SplitsEndpointsTests
 {
     private readonly SplitsApiFactory _factory = new();
@@ -153,7 +147,6 @@ public class SplitsEndpointsTests
         Assert.Equal(JsonValueKind.Null, split.GetProperty("startDate").ValueKind);
         Assert.Equal("contributor", split.GetProperty("role").GetString());
 
-        // once something was entered the currency stands; the list says what the event cost and where each stands
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(owner, "ev-1", "ev-e1", 3000));
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync("/splits/ev-1", facts with { currency = "EUR" })).StatusCode);
         var listed = (await JsonAsync(await guest.GetAsync("/splits")))[0];
@@ -170,7 +163,6 @@ public class SplitsEndpointsTests
         var second = await PersonAsync("ln-second");
         await CreateAsync(owner, "ln-1");
 
-        // nobody made a link yet; reading one never makes one
         Assert.Equal(JsonValueKind.Null, (await JsonAsync(await owner.GetAsync("/splits/ln-1/invites"))).GetProperty("token").ValueKind);
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/splits/ln-1/invites", new { maxUses = -1 })).StatusCode);
 
@@ -180,15 +172,12 @@ public class SplitsEndpointsTests
         Assert.False(peek.GetProperty("member").GetBoolean());
         Assert.True((await JsonAsync(await owner.GetAsync($"/splits/invites/{once}"))).GetProperty("mine").GetBoolean());
         Assert.Equal("joined", await UseLinkAsync(first, once));
-        // someone already in spends no use and stays as they are …
         Assert.Equal("member", await UseLinkAsync(first, once));
-        // … but the one use is spent: the link is gone for the next person, and only owners see or replace it
         Assert.Equal(HttpStatusCode.NotFound, (await second.GetAsync($"/splits/invites/{once}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await second.PostAsJsonAsync($"/splits/invites/{once}/accept", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await first.GetAsync("/splits/ln-1/invites")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await first.PostAsJsonAsync("/splits/ln-1/invites", new { })).StatusCode);
 
-        // a link for two days works for two days; a new link ends the one before it
         var dated = await LinkAsync(owner, "ln-1", new { validDays = 2 });
         var view = await JsonAsync(await owner.GetAsync("/splits/ln-1/invites"));
         Assert.Equal(dated, view.GetProperty("token").GetString());
@@ -214,14 +203,12 @@ public class SplitsEndpointsTests
 
         var token = await LinkAsync(owner, "q-1", new { needsApproval = true });
         Assert.Equal("waiting", await UseLinkAsync(welcome, token));
-        // asking twice is one place in the queue
         Assert.Equal("waiting", await UseLinkAsync(welcome, token));
         Assert.Equal("waiting", await UseLinkAsync(unwanted, token));
         Assert.True((await JsonAsync(await welcome.GetAsync($"/splits/invites/{token}"))).GetProperty("waiting").GetBoolean());
         Assert.Equal(HttpStatusCode.NotFound, (await welcome.GetAsync("/splits/q-1")).StatusCode);
         Assert.Contains("join-request", ToldTo(await IdOf("q-owner")));
 
-        // owners see who waits; a contributor does not, and cannot answer
         var requests = (await DetailAsync(owner, "q-1")).GetProperty("requests");
         Assert.Equal(2, requests.GetArrayLength());
         Assert.Equal(JsonValueKind.Null, (await DetailAsync(member, "q-1")).GetProperty("requests").ValueKind);
@@ -252,7 +239,6 @@ public class SplitsEndpointsTests
         Befriend(ownerId, friendId);
         Befriend(ownerId, otherId);
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = friendId })).StatusCode);
-        // asked twice is asked once
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = friendId })).StatusCode);
         Assert.Contains("invited", ToldTo(friendId));
 
@@ -262,13 +248,11 @@ public class SplitsEndpointsTests
         var asked = (await DetailAsync(owner, "fr-1")).GetProperty("friendInvites");
         Assert.Equal("pending", asked[0].GetProperty("status").GetString());
 
-        // taken back before an answer: the invitee has nothing left to answer
         var inviteId = mine[0].GetProperty("id").GetString();
         Assert.Equal(HttpStatusCode.OK, (await owner.DeleteAsync($"/splits/fr-1/friend-invites/{inviteId}")).StatusCode);
         Assert.Equal(0, (await JsonAsync(await friend.GetAsync("/splits/friend-invites"))).GetArrayLength());
         Assert.Equal(HttpStatusCode.NotFound, (await friend.PostAsync($"/splits/friend-invites/{inviteId}/accept", null)).StatusCode);
 
-        // asked again, yes: in at once, as a contributor — and nobody else can answer for them
         await owner.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = friendId });
         inviteId = (await JsonAsync(await friend.GetAsync("/splits/friend-invites")))[0].GetProperty("id").GetString();
         Assert.Equal(HttpStatusCode.NotFound, (await other.PostAsync($"/splits/friend-invites/{inviteId}/accept", null)).StatusCode);
@@ -277,13 +261,11 @@ public class SplitsEndpointsTests
         Assert.Contains("invite-accepted", ToldTo(ownerId));
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = friendId })).StatusCode);
 
-        // no: the owner sees it was declined
         await owner.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = otherId });
         inviteId = (await JsonAsync(await other.GetAsync("/splits/friend-invites")))[0].GetProperty("id").GetString();
         Assert.Equal(HttpStatusCode.OK, (await other.PostAsync($"/splits/friend-invites/{inviteId}/decline", null)).StatusCode);
         Assert.Contains((await DetailAsync(owner, "fr-1")).GetProperty("friendInvites").EnumerateArray(), i => i.GetProperty("status").GetString() == "declined");
         Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync("/splits/fr-1")).StatusCode);
-        // a contributor asks nobody
         Assert.Equal(HttpStatusCode.Forbidden, (await friend.PostAsJsonAsync("/splits/fr-1/friend-invites", new { toUserId = otherId })).StatusCode);
     }
 
@@ -299,13 +281,11 @@ public class SplitsEndpointsTests
         await UseLinkAsync(bob, token);
         var (annId, bobId, ownerId) = (await IdOf("ro-ann"), await IdOf("ro-bob"), await IdOf("ro-owner"));
 
-        // a contributor promotes and removes nobody
         Assert.Equal(HttpStatusCode.Forbidden, (await ann.PostAsync($"/splits/ro-1/members/{bobId}/promote", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await ann.DeleteAsync($"/splits/ro-1/members/{bobId}")).StatusCode);
 
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"/splits/ro-1/members/{annId}/promote", null)).StatusCode);
         Assert.Contains("made-owner", ToldTo(annId));
-        // an owner takes out a contributor and another owner alike (user), but leaves by leaving
         Assert.Equal(HttpStatusCode.BadRequest, (await ann.DeleteAsync($"/splits/ro-1/members/{annId}")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await ann.DeleteAsync($"/splits/ro-1/members/{bobId}")).StatusCode);
         Assert.Contains("removed", ToldTo(bobId));
@@ -317,22 +297,18 @@ public class SplitsEndpointsTests
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.PostAsJsonAsync($"/splits/invites/{token}/accept", new { })).StatusCode);
         Assert.Equal(2, seen.GetProperty("split").GetProperty("memberCount").GetInt32());
 
-        // the creator leaves: Ann is an owner already, so nothing is handed on; she then leaves too and is the last —
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync("/splits/ro-1/leave", null)).StatusCode);
         Assert.Equal("left", (await DetailAsync(owner, "ro-1")).GetProperty("split").GetProperty("state").GetString());
         Assert.True((await JsonAsync(await ann.PostAsync("/splits/ro-1/leave", null))).GetProperty("deleted").GetBoolean());
-        // — the event goes with its last member
         Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync("/splits/ro-1")).StatusCode);
         Assert.Equal(0, Read(db => db.SplitMembers.Count(m => m.SplitId == "ro-1")));
 
-        // the only owner leaves while contributors stay: everybody who stays owns it
         await CreateAsync(owner, "ro-2");
         token = await LinkAsync(owner, "ro-2");
         await UseLinkAsync(ann, token);
         await UseLinkAsync(bob, token);
         Assert.False((await JsonAsync(await owner.PostAsync("/splits/ro-2/leave", null))).GetProperty("deleted").GetBoolean());
         Assert.All(new[] { ann, bob }, async person => Assert.Equal("owner", (await DetailAsync(person, "ro-2")).GetProperty("split").GetProperty("role").GetString()));
-        // someone who left comes back through a link, as a contributor
         Assert.Equal("joined", await UseLinkAsync(owner, await LinkAsync(ann, "ro-2")));
         Assert.Equal("contributor", (await DetailAsync(owner, "ro-2")).GetProperty("split").GetProperty("role").GetString());
         Assert.Equal(ownerId, Read(db => db.SplitMembers.Single(m => m.SplitId == "ro-2" && m.UserId == ownerId && m.State == "active").UserId));
@@ -352,21 +328,17 @@ public class SplitsEndpointsTests
         JsonElement Entry(JsonElement detail, string id) => detail.GetProperty("entries").EnumerateArray().First(e => e.GetProperty("id").GetString() == id);
         long Share(JsonElement entry, Guid userId) => entry.GetProperty("shares").EnumerateArray().First(s => s.GetProperty("userId").GetGuid() == userId).GetProperty("cents").GetInt64();
 
-        // equal among everybody when nobody is named; among the named when some are — the payer need not share
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(owner, "en-1", "en-all", 1000));
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(owner, "en-1", "en-two", 1001, ownerId, new[] { new { userId = annId }, new { userId = bobId } }, "equal"));
-        // exact amounts add up to the amount; percentages to a hundred, the odd cent to the largest remainder
         Assert.Equal(HttpStatusCode.BadRequest, await ExpenseAsync(owner, "en-1", "en-short", 1000, null, new[] { new { userId = annId, cents = 400L } }, "exact"));
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(ann, "en-1", "en-exact", 1000, annId, new[] { new { userId = annId, cents = 400L }, new { userId = bobId, cents = 600L } }, "exact"));
         Assert.Equal(HttpStatusCode.BadRequest, await ExpenseAsync(owner, "en-1", "en-pct90", 1000, null, new[] { new { userId = annId, pct = 40m }, new { userId = bobId, pct = 50m } }, "percent"));
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(owner, "en-1", "en-pct", 1000, null, new[] { new { userId = ownerId, pct = 33.33m }, new { userId = annId, pct = 33.33m }, new { userId = bobId, pct = 33.34m } }, "percent"));
-        // a payer or a share holder from outside, a member named twice, a day that is none
         Assert.Equal(HttpStatusCode.BadRequest, await ExpenseAsync(owner, "en-1", "en-ghost", 1000, Guid.NewGuid()));
         Assert.Equal(HttpStatusCode.BadRequest, await ExpenseAsync(owner, "en-1", "en-twice", 1000, null, new[] { new { userId = annId }, new { userId = annId } }, "equal"));
         Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/splits/en-1/entries", new { id = "en-day", kind = "expense", description = "x", amountCents = 100, date = "yesterday" })).StatusCode);
 
         var detail = await DetailAsync(owner, "en-1");
-        // three ways of a thousand: the odd cent lands on one of them, and nothing is lost
         Assert.Equal([333L, 333L, 334L], new[] { ownerId, annId, bobId }.Select(id => Share(Entry(detail, "en-all"), id)).Order());
         Assert.Equal("equal", Entry(detail, "en-two").GetProperty("shareMode").GetString());
         Assert.Equal([500L, 501L], new[] { annId, bobId }.Select(id => Share(Entry(detail, "en-two"), id)).Order());
@@ -375,7 +347,6 @@ public class SplitsEndpointsTests
         Assert.Equal(334, Share(Entry(detail, "en-pct"), bobId));
         Assert.Equal(1000, Entry(detail, "en-pct").GetProperty("shares").EnumerateArray().Sum(s => s.GetProperty("cents").GetInt64()));
 
-        // another currency rides along; the receipt lives apart and is fetched on its own; the backlink is its adder's
         const string photo = "data:image/jpeg;base64,/9j/4AAQ";
         Assert.Equal(HttpStatusCode.OK, (await ann.PostAsJsonAsync("/splits/en-1/entries", new
         {
@@ -391,7 +362,6 @@ public class SplitsEndpointsTests
         Assert.Equal(JsonValueKind.Null, asBob.GetProperty("sourceSpaceId").ValueKind);
         Assert.Equal(photo, (await JsonAsync(await bob.GetAsync("/splits/en-1/entries/en-chf/receipt"))).GetProperty("image").GetString());
 
-        // its author, its payer and an owner change or take back an entry; another contributor does neither
         Assert.True(asAnn.GetProperty("canEdit").GetBoolean());
         Assert.False(asBob.GetProperty("canEdit").GetBoolean());
         var change = new { id = "en-chf", kind = "expense", description = "Fondue for three", amountCents = 6000, date = "2026-11-11", receipt = "" };
@@ -402,7 +372,6 @@ public class SplitsEndpointsTests
         Assert.Equal("Fondue for three", changed.GetProperty("description").GetString());
         Assert.Equal(2000, Share(changed, bobId));
         Assert.False(changed.GetProperty("hasReceipt").GetBoolean());
-        // the owner's change left the adder's backlink alone
         Assert.Equal("tx-ann", changed.GetProperty("sourceTxId").GetString());
         Assert.Equal(HttpStatusCode.NotFound, (await bob.GetAsync("/splits/en-1/entries/en-chf/receipt")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await ann.DeleteAsync("/splits/en-1/entries/en-chf")).StatusCode);
@@ -430,12 +399,10 @@ public class SplitsEndpointsTests
         Assert.Equal(xId, peek[0].GetProperty("fromUserId").GetGuid());
         Assert.Equal(yId, peek[0].GetProperty("toUserId").GetGuid());
         Assert.Equal(20_000, peek[0].GetProperty("amountCents").GetInt64());
-        // looking changes nothing
         Assert.Equal("open", (await DetailAsync(x, "st-1")).GetProperty("split").GetProperty("status").GetString());
 
         Assert.Equal(HttpStatusCode.Forbidden, (await x.PostAsync("/splits/st-1/settle", null)).StatusCode);
         Assert.Equal("settled", (await JsonAsync(await y.PostAsync("/splits/st-1/settle", null))).GetProperty("status").GetString());
-        // each hears their own figure, the link is gone and nothing is added any more
         var told = _factory.Push.Sent.Single(s => s.UserId == xId && s.Payload.GetProperty("kind").GetString() == "settled").Payload;
         Assert.Equal(-20_000, told.GetProperty("cents").GetInt64());
         Assert.Equal(0, _factory.Push.Sent.Single(s => s.UserId == zId && s.Payload.GetProperty("kind").GetString() == "settled").Payload.GetProperty("cents").GetInt64());
@@ -446,10 +413,8 @@ public class SplitsEndpointsTests
         var payment = (await DetailAsync(z, "st-1")).GetProperty("payments")[0];
         var paymentId = payment.GetProperty("id").GetString();
         Assert.Equal(JsonValueKind.Null, payment.GetProperty("paidAt").ValueKind);
-        // who is no party to a payment and no owner does not mark it; its payer does, and can take it back
         Assert.Equal(HttpStatusCode.Forbidden, (await z.PostAsJsonAsync($"/splits/st-1/payments/{paymentId}/paid", new { paid = true })).StatusCode);
 
-        // an owner reopens: nothing was paid, so the plan is simply dropped
         Assert.Equal("open", (await JsonAsync(await y.PostAsync("/splits/st-1/reopen", null))).GetProperty("status").GetString());
         Assert.Empty((await DetailAsync(y, "st-1")).GetProperty("payments").EnumerateArray());
         Assert.Equal(HttpStatusCode.OK, await ExpenseAsync(z, "st-1", "st-d", 3000, zId, new[] { new { userId = yId, cents = 3000L } }, "exact"));
@@ -459,7 +424,6 @@ public class SplitsEndpointsTests
         var toY = payments.EnumerateArray().First(p => p.GetProperty("toUserId").GetGuid() == yId).GetProperty("id").GetString();
         var toZ = payments.EnumerateArray().First(p => p.GetProperty("toUserId").GetGuid() == zId).GetProperty("id").GetString();
 
-        // the payer marks one paid; reopened, it stays as a payment made and settling again asks only for the rest
         Assert.Equal("settled", (await JsonAsync(await x.PostAsJsonAsync($"/splits/st-1/payments/{toY}/paid", new { paid = true }))).GetProperty("status").GetString());
         Assert.Contains("payment-paid", ToldTo(yId));
         await y.PostAsync("/splits/st-1/reopen", null);
@@ -471,12 +435,10 @@ public class SplitsEndpointsTests
         Assert.Equal(3000, rest[0].GetProperty("amountCents").GetInt64());
         Assert.NotEqual(toZ, rest[0].GetProperty("id").GetString());
 
-        // the receiver marks the last one: everything is paid, the event archives itself
         var last = rest[0].GetProperty("id").GetString();
         Assert.Equal("archived", (await JsonAsync(await z.PostAsJsonAsync($"/splits/st-1/payments/{last}/paid", new { paid = true }))).GetProperty("status").GetString());
         Assert.Equal(HttpStatusCode.BadRequest, (await y.PostAsync("/splits/st-1/reopen", null)).StatusCode);
 
-        // everybody even: settling has nothing to ask, the event is archived at once; an owner archives any time
         await CreateAsync(y, "st-2");
         Assert.Equal("archived", (await JsonAsync(await y.PostAsync("/splits/st-2/settle", null))).GetProperty("status").GetString());
         await CreateAsync(y, "st-3");
@@ -505,14 +467,12 @@ public class SplitsEndpointsTests
         Assert.Contains("delete-planned", ToldTo(annId));
         Assert.Equal(JsonValueKind.String, (await DetailAsync(ann, "dl-1")).GetProperty("split").GetProperty("deleteAt").ValueKind);
 
-        // another owner stops it; the event stays past the week
         await owner.PostAsync($"/splits/dl-1/members/{annId}/promote", null);
         Assert.Equal(HttpStatusCode.OK, (await ann.DeleteAsync("/splits/dl-1/delete")).StatusCode);
         Assert.Contains("delete-stopped", ToldTo(await IdOf("dl-owner")));
         _factory.Clock.Advance(TimeSpan.FromDays(8));
         Assert.Equal(HttpStatusCode.OK, (await ann.GetAsync("/splits/dl-1")).StatusCode);
 
-        // not stopped: when the week is over the event is gone for everybody, with everything in it
         await owner.PostAsync("/splits/dl-1/delete", null);
         _factory.Clock.Advance(TimeSpan.FromDays(6));
         Assert.Equal(1, (await JsonAsync(await ann.GetAsync("/splits"))).GetArrayLength());
@@ -532,7 +492,6 @@ public class SplitsEndpointsTests
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync("/splits/at-1/attach", new { spaceId = "space-owner", eventId = "event-owner" })).StatusCode);
         Assert.Equal("event-owner", (await DetailAsync(owner, "at-1")).GetProperty("split").GetProperty("attachedEventId").GetString());
         Assert.Equal(JsonValueKind.Null, (await DetailAsync(ann, "at-1")).GetProperty("split").GetProperty("attachedEventId").ValueKind);
-        // no event named clears the link, the space stays
         await owner.PostAsJsonAsync("/splits/at-1/attach", new { });
         var mine = (await DetailAsync(owner, "at-1")).GetProperty("split");
         Assert.Equal(JsonValueKind.Null, mine.GetProperty("attachedEventId").ValueKind);
@@ -550,7 +509,6 @@ public class SplitsEndpointsTests
         Assert.Equal(3, plan.Count);
         Assert.Contains(plan, p => p.From == Id(3) && p.To == Id(1) && p.Cents == 500);
         Assert.Equal(1200, plan.Sum(p => p.Cents));
-        // largest first, and the same balances give the same plan
         Assert.Equal(plan.Select(p => p.Cents).OrderByDescending(c => c), plan.Select(p => p.Cents));
         Assert.Equal(plan, SplitSettlement.Plan(Of(500, 700, -500, -400, -300)));
 
@@ -561,7 +519,6 @@ public class SplitsEndpointsTests
         // two pairs and a triple among seven: 7 − 3 groups = 4 payments
         Assert.Equal(4, SplitSettlement.Plan(Of(1000, -1000, 250, -250, 900, -400, -500)).Count);
 
-        // more people than the exact search takes: everyone still ends at zero, in fewer payments than people
         var many = Enumerable.Range(1, SplitSettlement.ExactLimit + 4).Select(i => i % 2 == 0 ? 100L * i : -100L * i).ToList();
         many.Add(-many.Sum());
         var balances = Of([.. many]);
@@ -587,7 +544,6 @@ public class SplitsEndpointsTests
         {
             Assert.Contains("Ski trip", Body(kind));
         }
-        // settled is worded by the receiver's own figure
         Assert.Contains("12.50 EUR", Body("settled", 1250));
         Assert.Contains("12.50 EUR", Body("settled", -1250));
         Assert.NotEqual(Body("settled", 1250), Body("settled", -1250));

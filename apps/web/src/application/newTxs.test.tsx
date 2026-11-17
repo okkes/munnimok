@@ -37,7 +37,6 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
     const id = userStateSpaceId(USER_TEST_SUB);
     expect(id).toBe(userStateSpaceId(USER_TEST_SUB));
     expect(id).not.toBe(userStateSpaceId('someone-else'));
-    // version nibble 8: never feed-shaped (v5), still a parseable uuid
     expect(id[14]).toBe('8');
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
@@ -49,7 +48,7 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
 
   it('labels only rows born after the baseline; another device’s sight suppresses newness here', async () => {
     const now = Date.now();
-    const t0 = now - 12 * HOUR; // the scheme started half a day ago
+    const t0 = now - 12 * HOUR;
     const stateId = userStateSpaceId(USER_TEST_SUB);
     const db = new MunniDB(USER_TEST_DB);
     await db.txSeen.put({
@@ -61,9 +60,7 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
       deleted: 0,
       fieldVersions: { labeledAt: hlc(t0) },
     } as never);
-    // born BEFORE the baseline: known history, no row needed
     await seedTx(db, 'old-tx', t0 - 5 * HOUR, 'Old History');
-    // born after, never seen anywhere: labeled fresh on sight
     await seedTx(db, 'fresh-tx', now - HOUR, 'Fresh Arrival');
     // born after, but ANOTHER DEVICE saw it 25h ago (synced row): expired
     await seedTx(db, 'stale-tx', now - 26 * HOUR, 'Seen Elsewhere');
@@ -85,7 +82,6 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
     expect(block.querySelector('[data-testid="tx-row-old-tx"]')).toBeNull();
     expect(block.querySelector('[data-testid="tx-row-stale-tx"]')).toBeNull();
 
-    // the sighting was recorded as a synced row with a running clock
     await waitFor(async () => {
       const row = await db.txSeen.get(txSeenRowId('s-user', 'fresh-tx'));
       expect(row?.txId).toBe('fresh-tx');
@@ -119,7 +115,6 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
     const block = await screen.findByTestId('home-newtxs', {}, { timeout: 8000 });
     expect(block.querySelector('[data-testid="tx-row-repay-src"]')).toBeTruthy();
     expect(block.querySelector(`[data-testid="tx-row-${mirrorTxId('repay-src')}"]`)).toBeNull();
-    // the leg is never even labeled
     await waitFor(async () => expect((await db.txSeen.get(txSeenRowId('s-user', 'repay-src')))?.txId).toBe('repay-src'), { timeout: 8000 });
     expect(await db.txSeen.get(txSeenRowId('s-user', mirrorTxId('repay-src')))).toBeUndefined();
     db.close();

@@ -5,7 +5,6 @@ import { glideAt, glideDuration, useGlide } from './useGlide';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
-/** frames on demand: each step hands the queued callback a clock `ms` later */
 function manualFrames() {
   let queued: FrameRequestCallback | null = null;
   let clock = 0;
@@ -36,7 +35,6 @@ describe('useGlide (#500: the dot travels to the tapped point)', () => {
     expect(glideAt(2, 6, 0)).toBe(2);
     expect(glideAt(2, 6, 1)).toBe(6);
     expect(glideAt(2, 6, 9)).toBe(6);
-    // past halfway after half the time: it leaves fast and settles
     expect(glideAt(0, 10, 0.5)).toBeGreaterThan(5);
     expect(glideDuration(1)).toBeLessThan(glideDuration(5));
     expect(glideDuration(100)).toBe(glideDuration(1000));
@@ -49,7 +47,6 @@ describe('useGlide (#500: the dot travels to the tapped point)', () => {
     const { result, rerender } = renderHook(({ target, snap }: Props) => useGlide(target, 0, snap), {
       initialProps: { target: 2 } as Props,
     });
-    // the first render stands where it is meant to
     expect(result.current).toBe(2);
     rerender({ target: 6 });
     frames.step(0);
@@ -58,13 +55,11 @@ describe('useGlide (#500: the dot travels to the tapped point)', () => {
     const midway = result.current!;
     expect(midway).toBeGreaterThan(2);
     expect(midway).toBeLessThan(6);
-    // a new target mid-flight starts from where the marker is
     rerender({ target: 0 });
     frames.step(0);
     expect(result.current).toBeCloseTo(midway, 10);
     frames.step(1_000);
     expect(result.current).toBe(0);
-    // a drag follows directly
     rerender({ target: 5, snap: true });
     expect(result.current).toBe(5);
   });

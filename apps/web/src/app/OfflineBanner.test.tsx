@@ -6,7 +6,6 @@ import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 import { MunniDB } from '@/db/schema';
 import { resolveOfflineReason, syncPillFace } from './OfflineBanner';
 
-/** one write waiting in the test user's outbox */
 async function leaveAPendingWrite(opId: string) {
   const db = new MunniDB(USER_TEST_DB);
   await db.outbox.add({ opId, spaceId: 's1', entity: 'transaction', entityId: 't1', fields: { notes: 'x' }, hlc: '000000000001-0000-test' });
@@ -47,14 +46,14 @@ describe('resolveOfflineReason', () => {
   it('a version mismatch outranks everything — the server IS reachable, sync is refused', () => {
     expect(resolveOfflineReason(true, true, 'error', 'client-outdated')).toBe('client-outdated');
     expect(resolveOfflineReason(true, false, 'error', 'server-outdated')).toBe('server-outdated');
-    expect(resolveOfflineReason(false, true, 'error', 'client-outdated')).toBeNull(); // still silent without an engine
+    expect(resolveOfflineReason(false, true, 'error', 'client-outdated')).toBeNull();
   });
 
   it('#222: a spent session outranks even that — "unreachable" sent users chasing the wrong problem', () => {
     expect(resolveOfflineReason(true, true, 'error', null, true)).toBe('session-expired');
     expect(resolveOfflineReason(true, true, 'idle', 'client-outdated', true)).toBe('session-expired');
     expect(resolveOfflineReason(true, false, 'offline', null, true)).toBe('session-expired');
-    expect(resolveOfflineReason(false, true, 'error', null, true)).toBeNull(); // still silent without an engine
+    expect(resolveOfflineReason(false, true, 'error', null, true)).toBeNull();
   });
 });
 
@@ -76,7 +75,6 @@ describe('offline banner + home indicator', () => {
 
     fireEvent.click(screen.getByTestId('offline-banner-dismiss'));
     expect(screen.queryByTestId('offline-banner')).toBeNull();
-    // the quiet indicator is the persistent signal after dismissal
     expect(screen.getByTestId('home-offline-indicator')).toBeTruthy();
     expect(sessionStorage.getItem('munni_offline_banner_dismissed')).toBe('1');
   });
@@ -95,7 +93,6 @@ describe('offline banner + home indicator', () => {
     });
     expect(waiting).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId('home-offline-indicator').textContent).toContain('Offline');
-    // the pill opens Settings, whose sync row spells it out
     fireEvent.click(screen.getByTestId('home-offline-indicator'));
     await screen.findByTestId('settings-sync-row');
     await waitFor(() => expect(screen.getByTestId('settings-sync-pending').textContent).toContain(`not synced yet: ${waiting}`));
@@ -143,7 +140,6 @@ describe('offline banner + home indicator', () => {
       expect(banner.getAttribute('data-reason')).toBe('session-expired');
       expect(banner.textContent).toContain('session has expired');
       expect(screen.getByTestId('offline-banner-signin')).toBeTruthy();
-      // user 2026-10-07: a way to another account from a half-working app
       expect(screen.getByTestId('offline-banner-another')).toBeTruthy();
     } finally {
       resetSessionExpiryForTests();

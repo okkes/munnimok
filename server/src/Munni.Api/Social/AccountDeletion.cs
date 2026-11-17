@@ -5,15 +5,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Social;
 
-/// <summary>
-/// Full account cleanup (account-deletion design, approved decisions:
-/// shared spaces = leave-and-archive, immediate, Logto via M2M).
-/// Order matters: external bank access first (most sensitive), then
-/// server data, then the Logto identity, and the user row last.
-/// Party/Logto failures are logged and never block the deletion. The
-/// connector service is optional: an environment without the platform
-/// simply has no consents to end there.
-/// </summary>
+/// Order matters: external bank access first (most sensitive), then server data, then the Logto identity, the user row last.
+/// Party/Logto failures are logged and never block the deletion; the connector service is optional.
 public sealed class AccountDeletion(
     AppDbContext db,
     ILogtoManagement logto,
@@ -23,37 +16,29 @@ public sealed class AccountDeletion(
 {
     public async Task DeleteUserAsync(User user, bool deleteIdentity = true)
     {
-        // 1 · every consent the person made ends at its party (§15) — a
-        //     scheduled fetch can never resurrect the rows mid-delete
+        // a scheduled fetch can never resurrect the rows mid-delete
         if (connectors is not null) await connectors.DisconnectAllAsync(user.Id);
 
-        // 2 · push subscriptions — no notification survives its user
         db.PushSubscriptions.RemoveRange(await db.PushSubscriptions.Where(s => s.UserId == user.Id).ToListAsync());
 
-        // 3 · spaces: sole member → hard delete; shared → leave-and-archive
-        //     (decision ①: other members keep readable history)
+        // shared spaces leave-and-archive, so other members keep readable history
         var survivingSpaceIds = await LeaveOrDeleteSpacesAsync(db, user.Id);
 
         // 4 · bank feeds: one someone else still covers lives on — a co-owner's own
         //     consent, or a surviving shared space that reads it (decision ①); the rest go
         await LeaveFeedsAsync(db, user.Id, survivingSpaceIds);
 
-        // 5 · social graph
         db.Friendships.RemoveRange(await db.Friendships.Where(f => f.UserAId == user.Id || f.UserBId == user.Id).ToListAsync());
         db.SpaceInvites.RemoveRange(await db.SpaceInvites.Where(i => i.ToUserId == user.Id || i.FromUserId == user.Id).ToListAsync());
 
-        // 5b · split events: the person leaves each one but stays in its arithmetic,
-        //      and their open requests and invitations go with them
+        // the person leaves each split but stays in its arithmetic
         await LeaveSplitsAsync(db, user.Id);
 
-        // 6 · the Logto identity (kills the login + other sessions). Optional:
-        //     without the M2M credential the server data still disappears.
-        //     Go-offline conversions KEEP the identity in every environment
-        //     (deleteIdentity=false): the login survives, the data is gone,
-        //     and a later online sign-in provisions a fresh account.
+        // optional: without the M2M credential the server data still disappears. Go-offline conversions (deleteIdentity=false)
+        // keep the identity in every environment: the login survives, a later online sign-in provisions a fresh account
         if (deleteIdentity) await DeleteLogtoUserAsync(logto, config, logger, user.Sub);
 
-        // 7 · the user row last — a retry after any partial failure can re-enter
+        // the user row last: a retry after any partial failure can re-enter
         db.Users.Remove(user);
         await db.SaveChangesAsync();
     }
@@ -69,8 +54,6 @@ public sealed class AccountDeletion(
         }
     }
 
-    /// <summary>sole-member spaces are erased; shared ones get a leave-and-
-    /// archive plus successor promotion — returns the spaces that live on</summary>
     private static async Task<List<string>> LeaveOrDeleteSpacesAsync(AppDbContext db, Guid userId)
     {
         var memberships = await db.SpaceMembers.Where(m => m.UserId == userId).ToListAsync();
@@ -140,7 +123,6 @@ public sealed class AccountDeletion(
         else member.Role = SpaceRoles.Owner;
     }
 
-    /// <summary>space/feed erasure: state, oplog, invites, links, cursor row</summary>
     private static async Task DeleteSpaceDataAsync(AppDbContext db, string spaceId)
     {
         db.EntityRows.RemoveRange(await db.EntityRows.Where(r => r.SpaceId == spaceId).ToListAsync());
@@ -152,18 +134,11 @@ public sealed class AccountDeletion(
         if (space is not null) db.Spaces.Remove(space);
     }
 
-    /// <summary>
-    /// Logto Management API through the shared session (ILogtoManagement:
-    /// one minting path with the admin portal's invitations, user
-    /// 2026-10-07): DELETE /api/users/{sub} — Logto's user id IS the OIDC
-    /// sub. Config: Logto:M2mAppId + Logto:M2mAppSecret; the endpoint
-    /// derives from Auth:Authority (…/oidc).
-    /// </summary>
+    /// Logto's user id IS the OIDC sub; one minting path (ILogtoManagement) shared with the admin portal's invitations.
+    /// Config: Logto:M2mAppId + Logto:M2mAppSecret; the endpoint derives from Auth:Authority.
     internal static async Task DeleteLogtoUserAsync(ILogtoManagement logto, IConfiguration config, ILogger logger, string sub)
     {
-        // staging shares the Logto instance with production: a staging
-        // deletion removes staging DATA only — destroying the identity
-        // would lock the person out of the production app too
+        // staging shares the Logto instance with production: deleting the identity there would lock the person out of production too
         if (!config.GetValue("Logto:DeleteIdentityOnAccountDeletion", true))
         {
             if (logger.IsEnabled(LogLevel.Information))

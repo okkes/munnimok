@@ -4,13 +4,8 @@ import { useData } from './data';
 
 const ID_SHAPE = /^[A-Za-z0-9_-]+$/;
 
-/**
- * #551: a notification opens its screen IN its space. The space rides the
- * url as `?space=` (a cold start from the notification carries it too);
- * this switches there when the person is a member of it, then drops the
- * param so a reload or a step back does not switch again. A space the
- * person left stays where they are. Headless, inside the data provider.
- */
+/** #551: the space rides the url as `?space=` (cold starts too); switch there if a member,
+ * then drop the param so reload/back does not switch again */
 export function NotificationSpaceSwitch() {
   const { store, spaceId, setActiveSpace } = useData();
   const navigate = useNavigate();

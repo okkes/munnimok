@@ -12,14 +12,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { firstFreeIcon } from './categoryIcons';
 
-/**
- * Category edit/delete with impact analysis. Edits that break existing
- * category assignments (type change, direction change, moving a sub to
- * a parent of another type, deletion) first report how many
- * transactions are affected so the UI can warn; committing detaches
- * those transactions to Uncategorized + review. All writes go through
- * the Repo so they sync like any other change.
- */
+// edits that break assignments report the affected transactions first; commit detaches them to Uncategorized + review
 
 export interface CategoryChanges {
   name?: string;
@@ -35,7 +28,7 @@ export interface PendingCommit {
   commit: () => Promise<void>;
 }
 
-/** spaces whose transactions can reference this category: its own (#387 — a custom category belongs to the space it was created in) */
+/** a custom category belongs to the space it was created in (#387): only that space's transactions can reference it */
 async function visibleSpaceIds(_store: StorageBackend, row: CategoryRow): Promise<string[]> {
   return [row.spaceId];
 }
@@ -47,7 +40,6 @@ export const iconConflict = (
 ): boolean =>
   !!candidate.parentId && rows.some((r) => r.parentId === candidate.parentId && r.id !== candidate.selfId && r.icon === candidate.icon);
 
-/** what the copy sheet offers under one main of one other space */
 export interface CopyGroup {
   space: SpaceRow;
   /** the other space's custom main this space lacks — it comes along (with its Other) when ticked */
@@ -63,19 +55,15 @@ export interface CopyGroup {
 const normName = (name?: string) => (name ?? '').trim().toLowerCase();
 const isCatalogMain = (id: string) => !!CATEGORY_BY_ID.get(id)?.isParent;
 
-/** what decides a row of another space: what the active space has already (by name), every custom main, the groups so far */
 interface CopyScan {
   /** the active space's mains: name → id */
   hereMains: ReadonlyMap<string, string>;
   /** the active space's subs, as `parentId|name` */
   hereSubs: ReadonlySet<string>;
-  /** every live custom main, by id */
   mains: ReadonlyMap<string, CategoryRow>;
-  /** per space and source main */
   groups: Map<string, CopyGroup>;
 }
 
-/** the group of one main of one space, opened on first use */
 function groupOf(scan: CopyScan, space: SpaceRow, sourceMainId: string): CopyGroup {
   const key = `${space.id}|${sourceMainId}`;
   let group = scan.groups.get(key);
@@ -114,26 +102,18 @@ function offeredOnce(groups: readonly CopyGroup[]): CopyGroup[] {
   return offered;
 }
 
-/** a sub joins the group of its main, noting the main it joins here (a catalog main, or this space's main of that name); an orphan, a locked special or a name already under that main stays out */
 function addSub(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
   if (!row.parentId) return;
   const sourceMain = scan.mains.get(row.parentId);
   const joins = sourceMain ? scan.hereMains.get(normName(sourceMain.name)) : row.parentId;
-  if (!sourceMain && !isCatalogMain(row.parentId)) return; // an orphan
+  if (!sourceMain && !isCatalogMain(row.parentId)) return;
   if (joins && (LOCKED_MAIN_IDS.has(joins) || scan.hereSubs.has(`${joins}|${normName(row.name)}`))) return;
   const group = groupOf(scan, space, row.parentId);
   if (joins) group.intoId = joins;
   group.subs.push(row);
 }
 
-/**
- * #390: the custom categories of the user's OTHER spaces that this space
- * does not have yet, grouped per space and main. A custom main this space
- * lacks comes with its subs to pick from; subs under a main this space has
- * already — a catalog main, or its own custom main of the same name — join
- * that main. "Has already" is decided by name; locked specials take no
- * subs (#385); rows of the active space never appear.
- */
+// #390: "has already" is decided by name; locked specials take no subs (#385); rows of the active space never appear
 export function copyGroups(spaceId: string, spaces: readonly SpaceRow[], rows: readonly CategoryRow[]): CopyGroup[] {
   const live = rows.filter((r) => r.deleted === 0);
   const here = live.filter((r) => r.spaceId === spaceId);
@@ -165,6 +145,28 @@ export function copyGroups(spaceId: string, spaces: readonly SpaceRow[], rows: r
   return offeredOnce(ordered);
 }
 
+// a declined offer's key: the main's name for a main this space lacks (any space), else the main here the subs join
+export const copyDeclineKey = (group: CopyGroup): string => (group.main ? `main:${normName(group.main.name)}` : `into:${group.intoId ?? ''}`);
+
+export const copyDeclineNames = (group: CopyGroup): string[] => group.subs.map((sub) => normName(sub.name)).sort((a, b) => a.localeCompare(b));
+
+// #390 r4: a declined offer returns only when its main gains a sub that was not on offer; a removed sub changes nothing
+export function withoutDeclined(groups: readonly CopyGroup[], declined: Readonly<Record<string, string[]>> | null | undefined): CopyGroup[] {
+  return groups.filter((group) => {
+    const seen = declined?.[copyDeclineKey(group)];
+    return !seen || group.subs.some((sub) => !seen.includes(normName(sub.name)));
+  });
+}
+
+export async function declineCopyGroup(store: StorageBackend, repo: Repo, spaceId: string, group: CopyGroup): Promise<void> {
+  const declined = (await store.get('space', spaceId))?.copyDeclined ?? {};
+  await repo.upsert('space', spaceId, spaceId, { copyDeclined: { ...declined, [copyDeclineKey(group)]: copyDeclineNames(group) } });
+}
+
+export async function restoreCopyOffers(repo: Repo, spaceId: string): Promise<void> {
+  await repo.upsert('space', spaceId, spaceId, { copyDeclined: {} });
+}
+
 /** how much the banner announces: a main counts once with its subs, a sub joining a main here counts on its own */
 export const copyCount = (groups: readonly CopyGroup[]): number => groups.reduce((n, g) => n + (g.main ? 1 : g.subs.length), 0);
 
@@ -174,7 +176,8 @@ function wornWhere(group: CopyGroup, wornUnder: (mainId: string) => Iterable<str
   return group.other ? [group.other.icon] : [];
 }
 
-/** #389: decided over ALL groups in their order, one worn set per main they land under — two groups joining one main must not hand out the same icon, and the sheet previews exactly what a copy writes */
+// #389: decided over ALL groups in order, one worn set per target main: two groups into one main never share an icon,
+// and the sheet previews exactly what a copy writes
 export function copyFaces(groups: readonly CopyGroup[], wornUnder: (mainId: string) => Iterable<string>): Map<string, string> {
   const wornByTarget = new Map<string, Set<string>>();
   const faces = new Map<string, string>();
@@ -191,9 +194,7 @@ export function copyFaces(groups: readonly CopyGroup[], wornUnder: (mainId: stri
   return faces;
 }
 
-/** every transaction those spaces SEE — own rows and attached feeds,
- *  gates lifted, with the view's DERIVED types (a category conflict is
- *  a view-level fact: nothing stores a type) */
+// own rows and attached feeds, with the view's DERIVED types (a category conflict is view-level; nothing stores a type)
 async function txsInSpaces(store: StorageBackend, spaceIds: string[]): Promise<SpaceTx[]> {
   const out: SpaceTx[] = [];
   for (const spaceId of spaceIds) out.push(...(await historyTransactions(store, spaceId)));
@@ -207,9 +208,7 @@ const parentTypeOf = async (store: StorageBackend, parentId: string): Promise<Tx
   return custom?.txType ?? 'expense';
 };
 
-/** #244 (user): direction left the user's hands — a sub simply follows
- *  its parent's nature. Income subs are credit, expense subs debit;
- *  anything else (legacy custom mains of other types) stays open. */
+// #244: a sub follows its parent's nature: income is credit, expense debit; legacy custom mains of other types stay open
 export const directionForType = (txType: TxType): CatDirection => {
   if (txType === 'income') return 'credit';
   return txType === 'expense' ? 'debit' : 'both';
@@ -223,7 +222,6 @@ async function detachAll(repo: Repo, affected: SpaceTx[], catIds: Set<string>): 
   }
 }
 
-/** subs of a custom parent (non-deleted, same space) */
 export async function subsOf(store: StorageBackend, parent: CategoryRow): Promise<CategoryRow[]> {
   return (await store.allRows('category')).filter((c) => c.deleted === 0 && c.parentId === parent.id);
 }
@@ -243,19 +241,16 @@ const addBroken = (impact: EditImpact, broken: SpaceTx[], catIds: Iterable<strin
   for (const id of catIds) impact.detachIds.add(id);
 };
 
-/** rule 1: type change on a parent breaks every differently-typed tx in the subtree */
 const typeChangeImpact = (impact: EditImpact, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges, subtree: Set<string>) => {
   if (row.isParent !== 1 || !changes.txType || changes.txType === row.txType) return;
   addBroken(impact, affectedByTypeChange(txs, subtree, changes.txType), subtree);
 };
 
-/** rule 2: direction change on a sub breaks wrong-side txs */
 const directionChangeImpact = (impact: EditImpact, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges) => {
   if (row.isParent === 1 || !changes.direction || changes.direction === (row.direction ?? 'both')) return;
   addBroken(impact, affectedByDirectionChange(txs, row.id, changes.direction), [row.id]);
 };
 
-/** rule 3: moving a sub under a parent of another type breaks differently-typed txs */
 const moveImpact = async (impact: EditImpact, store: StorageBackend, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges) => {
   if (row.isParent === 1 || !changes.parentId || changes.parentId === row.parentId) return;
   impact.movedType = await parentTypeOf(store, changes.parentId);
@@ -263,11 +258,6 @@ const moveImpact = async (impact: EditImpact, store: StorageBackend, txs: SpaceT
   addBroken(impact, affectedByTypeChange(txs, new Set([row.id]), impact.movedType), [row.id]);
 };
 
-/**
- * Prepare an edit. `affected` is what the warning shows; `commit`
- * detaches those transactions and saves the change (type changes on a
- * parent propagate the stored txType to its subs for consistency).
- */
 export async function prepareCategoryEdit(
   store: StorageBackend,
   repo: Repo,
@@ -288,8 +278,7 @@ export async function prepareCategoryEdit(
     commit: async () => {
       if (impact.detachIds.size > 0) await detachAll(repo, impact.affected, impact.detachIds);
       const patch: Partial<CategoryRow> = { ...changes };
-      // #244: a moved sub follows its NEW parent's nature — type and
-      // direction both re-derive (the user never states either)
+      // #244: a moved sub follows its NEW parent's nature: type and direction both re-derive
       if (impact.movedType) {
         patch.txType = impact.movedType;
         patch.direction = directionForType(impact.movedType);
@@ -305,7 +294,6 @@ export async function prepareCategoryEdit(
   };
 }
 
-/** Prepare a delete: parents cascade to their subs; users get detached. */
 export async function prepareCategoryDelete(store: StorageBackend, repo: Repo, row: CategoryRow): Promise<PendingCommit> {
   const subs = row.isParent === 1 ? await subsOf(store, row) : [];
   const subtree = new Set([row.id, ...subs.map((s) => s.id)]);
@@ -321,7 +309,6 @@ export async function prepareCategoryDelete(store: StorageBackend, repo: Repo, r
   };
 }
 
-/** Create a custom main category with its locked "Other" sub. */
 export async function createMainCategory(
   repo: Repo,
   spaceId: string,
@@ -351,8 +338,7 @@ export async function createMainCategory(
   return id;
 }
 
-/** Create a custom sub under any parent (type AND direction inherited
- *  from the parent — #244: the user never states a direction). */
+/** type and direction are inherited from the parent (#244: the user never states a direction) */
 export async function createSubCategory(
   store: StorageBackend,
   repo: Repo,
@@ -389,12 +375,7 @@ const categoryCopyFields = (r: CategoryRow, overrides: Partial<CategoryRow>): Re
   ...overrides,
 });
 
-/**
- * #390: copy one group's picks into this space — a main this space lacks
- * (when picked) with its locked Other and the picked subs, or the picked
- * subs into the main they join here. Each sub lands with the face
- * `copyFaces` decided. Transactions are not touched.
- */
+// #390: copies categories only; transactions are not touched
 export async function copyGroupToSpace(
   repo: Repo,
   targetSpaceId: string,

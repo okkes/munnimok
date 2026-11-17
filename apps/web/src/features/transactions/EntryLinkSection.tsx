@@ -16,7 +16,6 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
-/** the bank rows an entry could be linked to, and a way to reach any bank row of the space by id */
 function useBankRows(entryId: string | undefined, active: boolean) {
   const { store, spaceId } = useData();
   return useQuery(
@@ -37,13 +36,6 @@ function useBankRows(entryId: string | undefined, active: boolean) {
   );
 }
 
-/**
- * The review card's line for a row an entry was linked to (user: "show
- * during the transaction review that we have automatically linked the new
- * transaction with an existing manual transaction and that the user can
- * manage it on the spot"): what was typed, and Take apart right there —
- * picking another row lives on the transaction's page, one tap away.
- */
 export function EntryReviewRow({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -90,14 +82,6 @@ export function EntryReviewRow({ tx }: Readonly<{ tx: SpaceTx }>) {
   );
 }
 
-/**
- * #547 (user): "we should visualize … that manual and auto transactions
- * are merged, but give the user the option to unlink it (and of course
- * allow the user to link transactions they wish)". On the bank's row: what
- * was typed, with Take apart and Pick another. On an entry the bank has
- * not shown yet: that it waits, whether it counts in the balance here, and
- * a door to link it by hand.
- */
 export function EntryLinkSection({ tx, account, readOnly }: Readonly<{ tx: SpaceTx; account: SpaceAccount | undefined; readOnly: boolean }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -106,7 +90,6 @@ export function EntryLinkSection({ tx, account, readOnly }: Readonly<{ tx: Space
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const waiting = !tx.entry && !tx.feedSpaceId && isEntry(tx, account);
-  // the stored entry: the one behind this bank row, or this row itself
   const entryId = tx.entry?.id ?? (waiting ? tx.id : undefined);
   const bank = useBankRows(entryId, picking);
   // read at the moment of the act: a tap must never work on a row as it was when the page opened

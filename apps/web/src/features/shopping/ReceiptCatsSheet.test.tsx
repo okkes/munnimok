@@ -43,7 +43,6 @@ function open(props: Partial<Parameters<typeof ReceiptCatsSheet>[0]> = {}) {
   return onApply;
 }
 
-/** #567: the transaction categorised by the lines of its receipt */
 describe('categorise by receipt', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -55,7 +54,6 @@ describe('categorise by receipt', () => {
   it('ticked lines take a category and stand for what was paid after the discount; the count of what is left follows; apply hands the picks over', async () => {
     const onApply = open();
     await screen.findByTestId('receiptcats-sheet');
-    // the discount is no line of its own: it came off the four
     expect(screen.queryByTestId('receiptcats-line-4')).toBeNull();
     expect(text('receiptcats-amount-0')).toContain('27.27');
     expect(text('receiptcats-net')).toContain('100.00');
@@ -74,7 +72,6 @@ describe('categorise by receipt', () => {
     expect(text('receiptcats-placed')).toContain('50.00');
     expect(text('receiptcats-left')).toContain('50.00');
     expect(text('receiptcats-rest')).toContain('Uncategorized');
-    // the ticks are spent: the footer is the apply again
     fireEvent.click(screen.getByTestId('receiptcats-apply'));
     expect(onApply).toHaveBeenCalledWith([
       { line: 0, catId: 'groceries', amountCents: 2727 },
@@ -108,10 +105,8 @@ describe('categorise by receipt', () => {
     fireEvent.change(screen.getByTestId('receiptcats-typed-0'), { target: { value: '12,50' } });
     expect(text('receiptcats-amount-0')).toContain('12.50');
     expect(text('receiptcats-left')).toContain('12.50');
-    // half-typed text changes nothing
     fireEvent.change(screen.getByTestId('receiptcats-typed-0'), { target: { value: 'x' } });
     expect(text('receiptcats-amount-0')).toContain('12.50');
-    // the editor folds away again
     fireEvent.click(screen.getByTestId('receiptcats-amount-0'));
     expect(screen.queryByTestId('receiptcats-values-0')).toBeNull();
   });
@@ -133,7 +128,6 @@ describe('categorise by receipt', () => {
 
     fireEvent.click(screen.getByTestId('receiptcats-select-open'));
     expect(text('receiptcats-categorise')).toBe('Category · 3 selected');
-    // a tick comes off again
     fireEvent.click(screen.getByTestId('receiptcats-tick-3'));
     expect(text('receiptcats-categorise')).toBe('Category · 2 selected');
     picker.next = 'coffee';

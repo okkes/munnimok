@@ -22,15 +22,11 @@ import { REIMBURSED_ID } from '@/domain/categories';
 import { partNetCents } from '@/domain/reimbursement';
 import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
 
-// ── #143: a split's parts attach individually — never the container ──
-/** the pickable parts of one row, keeping their ORIGINAL splits index
- *  (legacy flat spreads may lack part ids — the index is the address) */
+/** a row's pickable parts keyed by their ORIGINAL splits index: legacy flat spreads may lack part ids */
 export function partEntries(tx: TransactionRow): { part: TxSplit; idx: number }[] {
   return (tx.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
 }
 export const partPickKey = (txId: string, idx: number): string => `${txId}#${idx}`;
-/** every checkbox key the picker opens with: part keys for multi-part
- *  rows (parts already attached elsewhere stay out), else the tx id */
 export function suggestionKeysOf(txs: readonly TransactionRow[] | undefined): string[] {
   return (txs ?? []).flatMap((tx) => {
     const entries = partEntries(tx);
@@ -39,11 +35,6 @@ export function suggestionKeysOf(txs: readonly TransactionRow[] | undefined): st
   });
 }
 
-/**
- * One event in full: what it cost (per day when dated), where the money
- * went, every transaction — and the fast path: review everything that
- * happened inside the date range and attach your picks in one go.
- */
 export function EventDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -55,8 +46,6 @@ export function EventDetailScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
   const canEdit = useCanEdit(); // #505
-  // category drill (user request): a tapped main filters the payments and
-  // unfolds its subcategories; a tapped sub narrows further
   const [drillMain, setDrillMain] = useState<string | null>(null);
   const [drillSub, setDrillSub] = useState<string | null>(null);
 
@@ -69,8 +58,7 @@ export function EventDetailScreen() {
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
 
-  // #493: a credit nets out what it paid back — struck through like the
-  // expense it settled (one pass over the links for the whole list)
+  // #493: a credit nets out what it paid back, struck through like the expense it settled
   const givenByCredit = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of txs ?? []) {
@@ -131,7 +119,6 @@ export function EventDetailScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <ReadOnlyNote className="mb-3" testId="eventdetail-readonly-note" />
-        {/* the picture-first hero */}
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="eventdetail-hero">
           <div className="relative h-36 w-full">
             <img src={eventPicture(event)} alt="" className="h-full w-full object-cover" style={eventPictureStyle(event)} />
@@ -146,8 +133,7 @@ export function EventDetailScreen() {
               {event.from && event.to && `${fmtDate(event.from)} – ${fmtDate(event.to)}`}
               {view.perDay !== null && ` · ${t('events.perDay', { amount: money(view.perDay) })}`}
             </span>
-            {/* #448 (user): once money came in, the headline is a net - say
-                what went out and what came in, so a plus reads as a surplus */}
+            {/* #448: once money came in the headline is a net; show out and in so a plus reads as a surplus */}
             {view.totals.receivedCents > 0 && (
               <span className="mt-0.5 block text-[12px] text-ink-3" data-testid="eventdetail-flows">
                 {t('events.spentReceived', { spent: money(view.totals.spentCents), received: money(view.totals.receivedCents) })}
@@ -171,12 +157,9 @@ export function EventDetailScreen() {
           </div>
         </div>
 
-        {/* SP5: my split wired to this event — who owes whom, one tap away */}
         <SplitEventSummary eventId={eventId} />
 
-        {/* the fast path after a trip: review the date range, attach your picks —
-            #379 (user): loud only while nothing is attached yet; afterwards a
-            quiet "find more" sits with the payments header */}
+        {/* #379: loud only while nothing is attached; afterwards a quiet "find more" sits with the payments header */}
         {canEdit && view.suggestions.length > 0 && view.list.length === 0 && (
           <div className="mt-3 flex items-center gap-3 rounded-card border border-accent bg-accent-soft/40 px-4 py-3" data-testid="eventdetail-suggest">
             <Icon name="creation" size={17} color="var(--m-accent-deep)" />
@@ -186,7 +169,6 @@ export function EventDetailScreen() {
             <Button
               size="sm"
               data-testid="eventdetail-attach-all"
-              // #144 (user): the picker is a full SCREEN now, not a sheet
               onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
             >
               {t('events.reviewSuggested')}
@@ -260,7 +242,6 @@ export function EventDetailScreen() {
               {t('events.findMore', { n: view.suggestions.length })}
             </button>
           )}
-          {/* #570 (user): add from every transaction — dated event or not */}
           {canEdit && (
             <button
               data-testid="eventdetail-add"
@@ -290,8 +271,6 @@ export function EventDetailScreen() {
         {filteredList.length > 0 ? (
           <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
             {filteredList.map((tx) => {
-              // #143: a split shows its MEMBER parts as rows of their
-              // own — each opens its part page
               const entries = partEntries(tx);
               if (entries.length > 1) {
                 const sign = tx.amountCents < 0 ? -1 : 1;
@@ -330,7 +309,6 @@ export function EventDetailScreen() {
         )}
       </div>
 
-      {/* #144: the picker moved to its own SCREEN (/events/$id/attach) */}
       <EventFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
     </div>
   );

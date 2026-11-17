@@ -2,14 +2,8 @@ using System.Security.Cryptography;
 
 namespace Connector.Kit;
 
-/// <summary>
-/// Opaque, prefixed identifiers.
-///
-/// Prefixes are not decoration: they make it impossible to pass a job id
-/// where a session id belongs and survive review, and they make a log line
-/// self-describing. The random part is 128 bits from a CSPRNG, so an id is
-/// never guessable - several endpoints take an id as their only lookup key.
-/// </summary>
+// prefixes keep a job id from being passed where a session id belongs and make a log line self-describing; 128 CSPRNG
+// bits, because several endpoints take an id as their only lookup key
 public static class Ids
 {
     public const string Session = "ses";
@@ -23,10 +17,8 @@ public static class Ids
     public const string Transaction = "txn";
     public const string Receipt = "rcp";
 
-    /// <summary>One credit as a registry states it.</summary>
     public const string CreditRegistration = "crd";
 
-    /// <summary>What a student-finance body states is owed.</summary>
     public const string StudentDebt = "sdt";
     public const string Cursor = "cur";
     public const string Error = "err";
@@ -38,11 +30,7 @@ public static class Ids
     public static bool Is(string? id, string prefix) =>
         id is not null && id.StartsWith(prefix + "_", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Deterministic id for an emitted record, so re-running a fetch
-    /// produces the same ids for the same upstream data. Together with
-    /// content hashing this is what makes retries free for the caller.
-    /// </summary>
+    // deterministic: re-running a fetch gives the same ids for the same upstream data, so with content hashing retries are free
     public static string ForRecord(string prefix, string sessionId, string externalId)
     {
         var digest = SHA256.HashData(

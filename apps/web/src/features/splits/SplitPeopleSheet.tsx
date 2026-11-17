@@ -43,7 +43,6 @@ export function QrCode({ text, size = 176, label }: Readonly<{ text: string; siz
   );
 }
 
-/** what a link allows, in a line: "3 of 6 used · an owner approves · until 20 November" */
 function linkFacts(link: SplitLink, locale: string, t: ReturnType<typeof useLang>['t']): string {
   const parts = [
     link.maxUses > 0 ? t('splits.link.usesOf', { used: link.uses, max: link.maxUses }) : t('splits.link.uses', { used: link.uses }),
@@ -53,7 +52,6 @@ function linkFacts(link: SplitLink, locale: string, t: ReturnType<typeof useLang
   return parts.filter(Boolean).join(' · ');
 }
 
-/** #538: a link's limits, set when it is made — how many people, whether they wait for an owner, for how long */
 function LinkOptions({ busy, onCreate }: Readonly<{ busy: boolean; onCreate: (options: { maxUses: number; needsApproval: boolean; validDays: number }) => void }>) {
   const { t } = useLang();
   const [maxUses, setMaxUses] = useState('');
@@ -81,7 +79,6 @@ function LinkOptions({ busy, onCreate }: Readonly<{ busy: boolean; onCreate: (op
   );
 }
 
-/** the link an owner hands out: read it, share it, replace it or stop it */
 function LinkPanel({ api, splitId, splitName }: Readonly<{ api: SplitsApi; splitId: string; splitName: string }>) {
   const { t, lang } = useLang();
   const [link, setLink] = useState<SplitLink | null | 'failed'>(null);
@@ -177,7 +174,6 @@ function LinkPanel({ api, splitId, splitName }: Readonly<{ api: SplitsApi; split
   );
 }
 
-/** the person's friends who are not in the split: ask them in, see who was asked, take an unanswered ask back */
 function FriendsPanel({
   api,
   splitId,
@@ -245,12 +241,6 @@ function FriendsPanel({
   );
 }
 
-/**
- * #538: the people of a split. Everybody sees who is in it and as what; an
- * owner makes others owners, takes people out (a contributor or another
- * owner), answers who waits behind an approval link, and opens the two
- * doors in — a link (with its code) and an invitation to a friend.
- */
 export function SplitPeopleSheet({
   api,
   detail,

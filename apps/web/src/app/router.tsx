@@ -20,12 +20,12 @@ import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
 import { UpdateGate } from '@/app/UpdateGate';
 
-// #554: the first paint carries the shell, sign-in, onboarding and Home; every
-// other screen is a chunk of its own, fetched on its first visit (the service
-// worker precaches every chunk, so an offline start opens any screen)
+// #554: the first paint carries the shell, sign-in, onboarding and Home; other screens are chunks fetched on first
+// visit (the service worker precaches them all, so an offline start opens any screen)
 const InviteScreen = lazyScreen(() => import('@/features/auth/InviteScreen'), 'InviteScreen');
 const HomeCustomizeScreen = lazyScreen(() => import('@/features/home/HomeCustomizeScreen'), 'HomeCustomizeScreen');
 const TxDetailCustomizeScreen = lazyScreen(() => import('@/features/transactions/TxDetailCustomizeScreen'), 'TxDetailCustomizeScreen');
+const SafeToSpendScreen = lazyScreen(() => import('@/features/home/SafeToSpendScreen'), 'SafeToSpendScreen');
 const TransactionsScreen = lazyScreen(() => import('@/features/transactions/TransactionsScreen'), 'TransactionsScreen');
 const TxDetailScreen = lazyScreen(() => import('@/features/transactions/TxDetailScreen'), 'TxDetailScreen');
 const TxCreateScreen = lazyScreen(() => import('@/features/transactions/TxFormSheet'), 'TxCreateScreen');
@@ -103,16 +103,13 @@ const loginRoute = createRoute({
   component: LoginScreen,
 });
 
-/** the invitation's query as the mail carried it: the search parser reads an
- *  all-digit value as a number, which is still the same text */
+/** the invitation query as mailed: the search parser reads an all-digit value as a number */
 function searchText(value: unknown): string | undefined {
   if (typeof value === 'number') return String(value);
   return typeof value === 'string' && value ? value : undefined;
 }
-// an invitation link (Logto's magic link, bounced in by main.tsx) is public —
-// the invitee has no account yet — so a sibling of /login outside the app
-// layout. No signed-in redirect on purpose: accepting is a fresh sign-in
-// whoever is signed in on this device (the SDK clears its tokens first)
+// public invite link (Logto magic link): the invitee has no account, so it sits outside the app layout; no signed-in
+// redirect, accepting is a fresh sign-in whoever is signed in
 const inviteRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/invite',
@@ -123,7 +120,6 @@ const inviteRoute = createRoute({
   }),
 });
 
-// everything behind the login gate lives under this pathless layout
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'app',
@@ -144,16 +140,13 @@ const indexRoute = createRoute({
 });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', component: HomeScreen });
-// customize flows are full screens (user request: dragging on a bottom
-// sheet felt awkward; the sheet transform also sent the drag ghost adrift)
+// customize flows are full screens: dragging on a bottom sheet felt awkward and its transform sent the drag ghost adrift
 const homeCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home/customize', component: HomeCustomizeScreen });
 const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tx-customize', component: TxDetailCustomizeScreen });
-// #334 (user): home's coming-up see-all lands on the combined recurring +
-// loan list — a plain child route, so browser back returns to Home
+// #334: Home's coming-up see-all is a plain child route, so browser back returns to Home
 const upcomingRoute = createRoute({ getParentRoute: () => appRoute, path: '/upcoming', component: UpcomingScreen });
+const safeToSpendRoute = createRoute({ getParentRoute: () => appRoute, path: '/safe-to-spend', component: SafeToSpendScreen });
 const periodsRoute = createRoute({ getParentRoute: () => appRoute, path: '/periods', component: PeriodsScreen });
-// list routes render the master-detail layout: the list stays mounted
-// while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
@@ -163,31 +156,29 @@ const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId',
   component: TxDetailScreen,
-  // #126 r4: a split's parts are addressable — ?part=<partId> shows one
-  // part as its own transaction page
+  // #126: ?part=<partId> shows one part of a split as its own transaction page
   validateSearch: (search: Record<string, unknown>): { part?: string } =>
     typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
-// #348 (user): creating a manual transaction is a screen of its own — a
-// static child, so it outranks $txId and owns the detail pane on desktop;
-// a caller may stage a payment onto a counterparty (?counter=&title=)
+// #348: manual create is a static child, outranking $txId and owning the detail pane on desktop
+// ?counter=&title= stages a payment onto a counterparty
 const txCreateRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: 'new',
   component: TxCreateScreen,
-  validateSearch: (search: Record<string, unknown>): { counter?: string; title?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { counter?: string; title?: string; link?: string } => ({
     ...(typeof search.counter === 'string' && search.counter.length > 0 ? { counter: search.counter } : {}),
     ...(typeof search.title === 'string' && search.title.length > 0 ? { title: search.title } : {}),
+    // #348: ?link=1 keeps the reimbursement picker open over the form being typed
+    ...(String(search.link) === '1' ? { link: '1' } : {}),
   }),
 });
-// full-screen counterpart picker (user redesign 2026-07-28) — a sibling
-// of the detail under /transactions, so it owns the detail pane on
-// desktop and the whole viewport on mobile
+// full-screen counterpart picker, sibling of the detail: owns the detail pane on desktop, the viewport on mobile
 const reimburseLinkRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId/link-reimb',
   component: ReimburseLinkScreen,
-  // #126 r5: a link opened from a part page targets that part
+  // #126: a link opened from a part page targets that part
   validateSearch: (search: Record<string, unknown>): { part?: string } =>
     typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
@@ -207,11 +198,8 @@ const recurringDetailRoute = createRoute({
   path: '$recId',
   component: RecurringDetailScreen,
 });
-// #168 r5 (user): a transaction opened FROM the recurring screen mounts
-// under the recurring layout — at lg the recurring list stays the master
-// pane beside it (like $recId above); on mobile, back lands on
-// /recurring. Deeper detours from the detail (parts, peers, link-reimb)
-// continue under the canonical /transactions tree by design.
+// #168: a tx opened from recurring mounts under it: at lg the list stays the master pane, on mobile back lands on
+// /recurring; deeper detours (parts, peers, link-reimb) go to the canonical /transactions tree
 const recurringTxRoute = createRoute({
   getParentRoute: () => recurringRoute,
   path: 'tx/$txId',
@@ -240,7 +228,6 @@ const spaceAccountsRoute = createRoute({
   path: '/spaces/$spaceId/accounts',
   component: SpaceAccountsScreen,
 });
-// #577: the space's phone bar — what follows Home, and in which order
 const spaceNavigationRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/spaces/$spaceId/navigation',
@@ -261,8 +248,7 @@ const reviewRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/review',
   component: ReviewScreen,
-  // #132: a new-transactions notification lands in the ANNOUNCED space —
-  // the space id rides the hash query so cold starts carry it too
+  // #132: a new-transactions notification opens the ANNOUNCED space; the id rides the hash query so cold starts carry it
   validateSearch: (search: Record<string, unknown>): { space?: string } =>
     typeof search.space === 'string' && search.space.length > 0 ? { space: search.space } : {},
 });
@@ -300,11 +286,9 @@ const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events
 const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
 // #144: attaching is a full screen, not a sheet
 const eventAttachRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/attach', component: EventAttachScreen });
-// #570: adding from every transaction, dated event or not
 const eventAddRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/add', component: EventAddScreen });
 const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
 const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
-// #455: picking what paid for a goal is a full screen, like attaching to an event
 const goalCashOutRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId/cashout', component: GoalCashOutScreen });
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
@@ -315,8 +299,7 @@ const connectionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/connections',
   component: ConnectionsScreen,
-  // #445: an accounts sheet's Reconnect door names the party; the hub opens the flow for it —
-  // and the connection to sign in again as, so the sign-in reuses it instead of making a second one (prod 2026-10-08)
+  // #445: Reconnect names the party and the connection to sign in again as, so sign-in reuses it, not a second one
   validateSearch: hubSearch,
 });
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
@@ -335,7 +318,6 @@ const receiptDetailRoute = createRoute({
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
 });
-// the hub's own receipts: global, no space in between
 const connectionReceiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts', component: ConnectionReceiptsScreen });
 function ConnectionReceipt() {
   const { receiptId } = connectionReceiptDetailRoute.useParams();
@@ -353,21 +335,17 @@ const trendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/trends
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
-  // #351 (user): a master-detail host — at lg a tapped transaction opens
-  // in the right pane while this drill stays put
+  // #351: master-detail host: at lg a tapped transaction opens in the right pane while this drill stays put
   component: masterDetail(CategoryDrillScreen),
-  // the overview hands over its selected period
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
 });
-/** #351: the transaction page under the overview tree (the recurring
- *  tx/$txId precedent) — back returns to the drill, period intact */
+/** #351: the transaction page under the overview tree: back returns to the drill, period intact */
 function OverviewTxDetail() {
   const { kind, catId } = overviewTxRoute.useParams();
   const navigate = useNavigate();
-  // user request 2026-10-06: the counterpart (and every other detour from
-  // the detail) stays under the drill instead of jumping to the Transactions tab
+  // every detour from the detail stays under the drill instead of jumping to the Transactions tab
   const openTx = useCallback(
     (txId: string, part?: string) =>
       void navigate({ to: '/overview/$kind/$catId/tx/$txId', params: { kind, catId, txId }, search: part ? { part } : {} }),
@@ -394,6 +372,7 @@ export const routeTree = rootRoute.addChildren([
     homeCustomizeRoute,
     txCustomizeRoute,
     upcomingRoute,
+    safeToSpendRoute,
     periodsRoute,
     transactionsRoute.addChildren([txCreateRoute, txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),
@@ -446,13 +425,11 @@ export const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-/** the app's router over a history — the test harness builds the same one over memory */
 export function createAppRouter(history: RouterHistory) {
   return createRouter({
     routeTree,
     history,
-    // #554: a hovered or touched link fetches its screen before the tap lands;
-    // a chunk slower than the router's pending delay shows a spinner in the shell
+    // #554: a hovered or touched link preloads its screen; a chunk slower than the pending delay shows a spinner in the shell
     defaultPreload: 'intent',
     defaultPendingComponent: ScreenPending,
   });

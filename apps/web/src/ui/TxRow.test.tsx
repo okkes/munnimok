@@ -71,7 +71,6 @@ describe('TxRow', () => {
     );
     expect((await screen.findByTestId('tx-row-t2')).textContent).toContain('Multiple categories');
     cleanup();
-    // a credit settled in full is simply Reimbursed
     renderWithData(<TxRow tx={tx({ id: 't3', amountCents: 5000, catId: 'reimbursed', cats: [{ catId: 'reimbursed', amountCents: 5000 }] })} />);
     expect((await screen.findByTestId('tx-row-t3')).textContent).toContain('Reimbursed');
   });

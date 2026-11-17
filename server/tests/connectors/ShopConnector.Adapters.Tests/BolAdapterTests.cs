@@ -16,25 +16,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// bol.com: the manifest, the login, and the difference between being blocked
-/// and being wrong.
-///
-/// The whole provider is built on one confirmed fact and one open question.
-/// The fact is that <c>login.bol.com/wsp/login</c> is a Spring Security form
-/// posting <c>j_username</c> and <c>j_password</c> - read off the public page,
-/// no account touched. The question is whether the account's order list is
-/// HTML or JSON, which cannot be settled without an account; both shapes are
-/// built and an option chooses, which is what
-/// <see cref="BolParsingTests"/> covers.
-///
-/// What this file guards is the part where a wrong answer costs a user
-/// something. bol has no refresh grant, so a login is expensive and is never
-/// retried; a bot wall reported as a bad password sends somebody to reset a
-/// password that was fine; and a captcha met by an agent nobody is sitting at
-/// has to say so immediately rather than hold an agent until its budget runs
-/// out. No browser, no network, no credentials.
-/// </summary>
+// bol has no refresh grant: a login is expensive and never retried; a bot wall must not read as a bad password.
+// a captcha with nobody at the agent fails at once instead of holding it
 public sealed class BolAdapterTests
 {
     private const string Email = "shopper@example.com";
@@ -45,31 +28,10 @@ public sealed class BolAdapterTests
 
     private static readonly BolOptions Options = new();
 
-    /// <summary>
-    /// For the tests that serve an HTML fixture. The default shape is the
-    /// captured GraphQL one, so a test about the page walk has to say that it
-    /// means the page.
-    /// </summary>
     private static readonly BolOptions Pages = Options with { OrdersShape = BolOrdersShape.Html };
 
-    // ---- what bol's page has on it ------------------------------------------
-    //
-    // WRITTEN OUT, NOT READ OFF THE ADAPTER'S OWN LIST.
-    //
-    // These used to be Options.UsernameSelectors[0] and its siblings, which
-    // makes the fixture a restatement of the question: the page is defined as
-    // "whatever this adapter looks for first", so a selector list that is
-    // entirely wrong still passes, and reordering or replacing one moves the
-    // page underneath the test without anything failing.
-    //
-    // That is the fixture that cost a live ASN fetch - built from the adapter's
-    // own vocabulary, it could not disagree with it, and the one thing that
-    // mattered (the bank renders "Alles selecteren (3)", not "Alles
-    // selecteren") was unsayable. ING's suite has always written the page out
-    // as literals for this reason.
-    //
-    // Each of these is what bol.com's own markup carries, and it is now the
-    // adapter's job to find them rather than the fixture's job to agree.
+    // written out, not read off the adapter's own lists: a fixture built from them cannot disagree with them
+    // (that is how a live ASN fetch was lost)
     private const string Username = "input[name='j_username']";
     private const string PasswordBox = "input[name='j_password']";
     private const string Submit = "button[type='submit']";
@@ -82,19 +44,15 @@ public sealed class BolAdapterTests
     // the language chooser bol raises behind the cookie wall since 2026-10-07
     private const string LanguageContinue = "[role='dialog'][data-state='open'] button:has-text('Doorgaan')";
 
-    // what bol's own page sent on 2026-10-07 (prod), as the sign-in's listener sees it: its hash, its body, its browser's user agent
     private const string PageHash = "sha256:0123456789abcdef0123456789abcdef";
     private const string PageUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
     private const string PageBody =
         """{"operationName":"OrdersOverviewClient","variables":{"after":"5","locale":"nl-NL"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:0123456789abcdef0123456789abcdef"}}}""";
 
-    /// <summary>The one code that sends a consumer back through the login.</summary>
     private static readonly string[] SessionExpiredOnly = ["session_expired"];
 
-    /// <summary>What the receipts resource lets a caller ask for beside the records.</summary>
     private static readonly string[] ReceiptIncludes = ["items", "raw", "invoice"];
 
-    /// <summary>The account page's redirect chain first, then the form's own address.</summary>
     private static readonly string[] AccountPageThenLoginForm =
     [
         "https://www.bol.com/nl/nl/account/bestellingen/overzicht/",
@@ -104,14 +62,9 @@ public sealed class BolAdapterTests
     private static BolAdapter Adapter(BolOptions? options = null) =>
         new(options ?? Options, new FixedTimeProvider(Now));
 
-    // ---- the manifest -------------------------------------------------------
-
     [Fact]
     public void The_manifest_validates_and_the_registry_accepts_it()
     {
-        // The same construction the host performs at startup, which refuses to
-        // boot on an invalid manifest. A provider that cannot be registered is
-        // not shippable however good its parser is.
         var registry = new ProviderRegistry([BolAdapters.Create()]);
 
         var manifest = registry.RequireManifest(BolAdapter.ProviderId);
@@ -128,12 +81,7 @@ public sealed class BolAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // T3, not T2. The login is a JavaScript page with a reCAPTCHA site key
-        // in its config blob, so it happens in a browser - and what comes out
-        // is an ordinary cookie jar, so every fetch after that is plain HTTP.
-        // But T2 is defined as "a refresh token serves every fetch after", and
-        // bol issues no token: the jar dies in a day and the browser has to
-        // come back, which is T3. Jumbo declares T3 for identical mechanics.
+        // T3, not T2: bol issues no refresh token, the jar dies in a day and the browser must come back (Jumbo too)
         Assert.Equal(ProviderRuntime.BrowserInteractive, manifest.Runtime);
         Assert.True(manifest.Agent.Required);
         Assert.Equal(AgentClass.Pooled, manifest.Agent.Class);
@@ -148,26 +96,18 @@ public sealed class BolAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // bol issues consumers no token of any kind - only a session cookie -
-        // so there is nothing to refresh and a human is needed when it dies.
-        // Claiming otherwise would make the consuming app promise scheduled
-        // syncing and then fail, which is worse than not supporting bol at all.
+        // only a session cookie, nothing to refresh: claiming unattended would promise scheduled syncs that fail
         Assert.False(manifest.UnattendedFetch);
         Assert.False(manifest.Auth.Session.Refreshable);
         Assert.False(manifest.Auth.Reauth.Cheap);
 
-        // The field defaults to TRUE, so this one has to be asserted or a
-        // manifest that simply never mentions it goes on telling consumers to
-        // "persist the bundle from every response" - for a provider that never
-        // re-issues one, because bol hands out no token at all.
+        // RotatesOnUse defaults to TRUE: assert it, or consumers persist a bundle bol never re-issues
         Assert.False(
             manifest.Auth.Session.RotatesOnUse,
             "no fetch returns RefreshedMaterial, so nothing is ever re-issued");
         Assert.Equal(SessionExpiredOnly, manifest.Auth.Reauth.TriggerCodes);
 
-        // A day, and honestly a guess: nobody outside bol knows the session's
-        // real life. Short beats long - being wrong short costs a sign-in,
-        // being wrong long costs the user's trust in the connection.
+        // a day is a guess; wrong-short costs a sign-in, wrong-long costs trust in the connection
         Assert.Equal(86_400, manifest.Auth.Session.TtlSeconds);
     }
 
@@ -180,9 +120,7 @@ public sealed class BolAdapterTests
         Assert.Equal(AuthFlow.Password, manifest.Auth.Flow);
         Assert.Equal(2, step.Fields.Count);
 
-        // CONFIRMED from the login page: <input type="email" name="j_username">.
-        // A consumer that renders a member number or a phone keypad spends a
-        // failed attempt against a page that may be scoring the browser.
+        // j_username is type=email (confirmed): another keypad spends an attempt on a page that may score the browser
         var username = Assert.Single(step.Fields, f => f.Key == "username");
         Assert.Equal(FieldType.Text, username.Type);
         Assert.False(username.Secret);
@@ -200,12 +138,7 @@ public sealed class BolAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // MfaCode because bol is assumed to send a code on a new device and
-        // nobody has proved otherwise; Image for a plain captcha, which a
-        // relay can carry; AppApproval for the reCAPTCHA whose site key is
-        // confirmed present, which cannot be relayed at all. A consumer with
-        // no UI for a challenge its provider raises strands the user at the
-        // worst possible moment.
+        // MfaCode assumed on a new device; Image can be relayed; AppApproval is the reCAPTCHA, which cannot be relayed
         Assert.Equal(
             new[] { ChallengeType.MfaCode, ChallengeType.Image, ChallengeType.AppApproval },
             manifest.Auth.Challenges);
@@ -220,16 +153,10 @@ public sealed class BolAdapterTests
         Assert.Equal(ResourceShape.Receipt, receipts.Returns);
         Assert.True(receipts.Param("since")!.Required);
         Assert.Equal(ParamType.Date, receipts.Param("until")!.Type);
-        // raw as well as items, now that the orders come from an API and there
-        // is a document to hand back rather than markup we picked apart - and
-        // "invoice" alongside them, which is a different thing again: raw is
-        // the payload a record was DERIVED from, an invoice is a file bol
-        // ISSUED to the user.
+        // raw is the payload a record was derived from, invoice is a file bol issued: separate includes
         Assert.Equal(ReceiptIncludes, receipts.Param("include")!.Values);
 
-        // A marketplace order surfaces when the seller ships it, so a row can
-        // appear days after the date it will carry. Fetching strictly since
-        // the last sync would lose it permanently and invisibly.
+        // a marketplace order surfaces when the seller ships it, days after its date: fetching strictly since the last sync loses it
         Assert.Equal(7, Adapter().Describe().Limits.SettlementLagDays);
     }
 
@@ -250,8 +177,6 @@ public sealed class BolAdapterTests
         }
     }
 
-    // ---- the login ----------------------------------------------------------
-
     [Fact]
     public async Task The_spring_form_field_names_are_the_ones_that_get_filled()
     {
@@ -260,17 +185,13 @@ public sealed class BolAdapterTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // j_username and j_password: Servlet/Spring Security's own names, read
-        // off the public login page. Getting these wrong is a failed attempt
-        // that is never retried.
+        // j_username/j_password are Spring Security's names; wrong ones burn a never-retried attempt
         Assert.Equal(Email, page.Filled[Username]);
         Assert.Equal(Password, page.Filled[PasswordBox]);
         Assert.Contains("j_username", Username, StringComparison.Ordinal);
         Assert.Contains("j_password", PasswordBox, StringComparison.Ordinal);
 
-        // The whole credential is the cookie jar. No token, so nothing to seal
-        // but the storage state - and an expiry stated from this login rather
-        // than from whenever the bundle is next read.
+        // the cookie jar is the whole credential; the expiry is stated from this login
         Assert.NotNull(result.Material.StorageState);
         Assert.Null(result.Material.AccessToken);
         Assert.Null(result.Material.RefreshToken);
@@ -286,10 +207,7 @@ public sealed class BolAdapterTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // After this a lost lease fails the job rather than requeuing it. bol
-        // gives out no refresh grant, so a retried login is a second real
-        // sign-in attempt against an account that may already have been sent
-        // a code.
+        // after this a lost lease fails the job instead of requeuing: a retried login is a second real attempt
         Assert.True(ctx.CredentialWasSubmitted);
         Assert.Equal(Submit, page.Clicked[^1]);
     }
@@ -321,8 +239,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task A_missing_password_box_is_a_shape_change_and_spends_no_attempt()
     {
-        // The e-mail box, the button and a code box are all there, so a filler
-        // willing to settle for "some input" would find one.
+        // username, button and a code box are present: a filler settling for any input would find one
         var page = StubLoginPage.Showing(Username, Submit, CodeBox);
         using var ctx = LoginContext(page);
 
@@ -333,8 +250,6 @@ public sealed class BolAdapterTests
         Assert.Contains("password field", error.Detail, StringComparison.Ordinal);
         Assert.Contains("j_password", error.Detail, StringComparison.Ordinal);
 
-        // Nothing was submitted and nothing was clicked: the attempt was never
-        // spent, which is what makes this recoverable by fixing a selector.
         Assert.False(ctx.CredentialWasSubmitted);
         Assert.Empty(page.Clicked);
     }
@@ -347,7 +262,6 @@ public sealed class BolAdapterTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // refusing first, before a field is filled; the accept button stays untouched
         Assert.Equal(ConsentRefuse, page.Clicked[0]);
         var calls = page.Calls.ToList();
         Assert.True(calls.IndexOf("click") < calls.IndexOf("fill"), "the wall goes before the form is filled");
@@ -363,9 +277,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task The_language_chooser_behind_the_cookie_wall_is_carried_through_before_the_form_is_touched()
     {
-        // 2026-10-07 (prod, the user's lab link): the wall went, a second
-        // full-screen dialog asked for a language, and the login's click
-        // timed out on it exactly as it had on the wall the day before
+        // prod 2026-10-07: a second full-screen dialog (language) timed out the login's click, as the wall had
         var page = StubLoginPage.Showing(ConsentRefuse, LanguageContinue, Username, PasswordBox, Submit);
         using var ctx = LoginContext(page);
 
@@ -377,7 +289,6 @@ public sealed class BolAdapterTests
         Assert.True(calls.LastIndexOf("click", calls.IndexOf("fill")) >= 0, "both walls go before the form is filled");
         Assert.Contains(ctx.Notes, n => n.Contains("the language chooser was dismissed", StringComparison.Ordinal));
 
-        // alone, without a cookie wall in front of it, it is pressed just the same
         var chooserOnly = StubLoginPage.Showing(LanguageContinue, Username, PasswordBox, Submit);
         using var ctx2 = LoginContext(chooserOnly);
         await Adapter().LoginAsync(ctx2, chooserOnly, Arrives(), CancellationToken.None);
@@ -426,18 +337,14 @@ public sealed class BolAdapterTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // bol's own 302 chain is the flow a shopper takes, so that is the way
-        // in - and it is the address that brings the browser back to the
-        // account page afterwards.
+        // bol's own 302 chain is the shopper's flow and the address that returns the browser to the account page
         Assert.Equal("https://www.bol.com/nl/nl/account/bestellingen/overzicht/", Assert.Single(page.Visited));
     }
 
     [Fact]
     public async Task A_redirect_chain_that_leads_nowhere_still_reaches_the_login_form()
     {
-        // The form's address is one of the few confirmed facts about bol, so a
-        // 302 chain that stops leading to it costs one navigation rather than
-        // the whole connection.
+        // the form address is a confirmed fact: a broken 302 chain costs one navigation, not the connection
         var page = StubLoginPage.Showing(Username, PasswordBox, Submit);
         using var ctx = LoginContext(page);
 
@@ -446,12 +353,8 @@ public sealed class BolAdapterTests
 
         Assert.Equal("https://www.bol.com/nl/nl/account/bestellingen/overzicht/", page.Visited[0]);
 
-        // The page had the box on the first try here, so the fallback stayed
-        // unused - which is the assertion that keeps it a fallback.
         Assert.Single(page.Visited);
 
-        // And when the box is not there, the second address is tried before
-        // anything is called a shape change.
         var blank = StubLoginPage.Showing(PasswordBox, Submit);
         using var second = LoginContext(blank);
 
@@ -469,10 +372,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task A_login_that_leaves_no_cookies_for_the_orders_host_is_a_shape_change()
     {
-        // bol sets JSESSIONID on login.bol.com. A browser would not carry that
-        // to www.bol.com, and neither does this - so a login that leaves only
-        // that behind has produced nothing a fetch can use, and saying so here
-        // beats discovering it on every sync afterwards.
+        // JSESSIONID is set on login.bol.com and a browser would not send it to www.bol.com: a login leaving only that is unusable
         var page = SignedInPage();
         using var ctx = LoginContext(page, storageState: LoginHostOnlyState);
 
@@ -489,22 +389,16 @@ public sealed class BolAdapterTests
         var page = StubLoginPage.Showing(Username, PasswordBox, Submit, CodeBox, CodeSubmit);
         using var ctx = LoginContext(page, answer: _ => Code);
 
-        // The code box is up on the first pass and gone on the second, which
-        // is what answering it looks like from here.
         await Adapter().LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal(ChallengeType.MfaCode, challenge.Type);
 
-        // bol's credential is an e-mail address, so the mailbox is where it
-        // can reach them. Saying "sms" would send somebody to watch a phone
-        // that never rings while the challenge expires.
+        // the credential is an e-mail address, so delivery is "email"; "sms" sends the user to a phone that never rings
         Assert.Equal("email", challenge.Delivery);
         Assert.Equal("connect.challenge.verification_code", challenge.PromptKey);
 
-        // Nothing is claimed about the length: nobody has seen the screen, and
-        // a wrong length makes the consumer reject a valid code before it is
-        // ever tried.
+        // no length claimed: a wrong one makes the consumer reject a valid code
         Assert.Null(challenge.Length);
         Assert.Equal(Now.AddSeconds(300), challenge.ExpiresAt);
 
@@ -533,16 +427,12 @@ public sealed class BolAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().LoginAsync(ctx, page, Never(), CancellationToken.None));
 
-        // Blocked, never invalid_credentials: nothing is wrong with the
-        // password. There is simply nobody at this browser, and a widget mints
-        // its token inside its own JavaScript - no screenshot and no typed
-        // answer can ever pass one.
+        // BlockedByProvider, not invalid_credentials: nobody is at this browser and a widget mints its token in its own JavaScript
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.Contains("unattended", error.Detail, StringComparison.Ordinal);
         Assert.Empty(ctx.Asked);
 
-        // The password is off the page even though nothing photographed it:
-        // the runner may capture an artifact on the way out of a failed job.
+        // the password is off the page: the runner may capture an artifact after a failed job
         Assert.False(page.HoldsSecret);
     }
 
@@ -556,8 +446,7 @@ public sealed class BolAdapterTests
             Inputs = Credentials(),
             Browser = new BolBrowserStub(page),
             Attended = true,
-            // Nobody ever answers: the person who passes the widget in the
-            // browser has no reason to go back to the consumer's UI.
+            // nobody answers: whoever passes the widget in the browser has no reason to return to the consumer's UI
             AnswersNothing = true,
         };
 
@@ -588,11 +477,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task A_notice_that_names_no_cause_is_a_block_and_not_a_bad_password()
     {
-        // The shape Lidl's login turned out to answer an automated browser
-        // with, and reading it as a wrong password was a real bug: the same
-        // credentials sign in by hand. An operator who finds bol doing this
-        // adds the selector to BlockedNoticeSelectors, and the outcome becomes
-        // the truth instead of an accusation.
+        // Lidl's login answers an automated browser with this notice; reading it as a wrong password was a bug
         var options = Options with { BlockedNoticeSelectors = ["[data-test='generic-error']"] };
         var page = StubLoginPage.Showing(Username, PasswordBox, Submit, "[data-test='generic-error']");
 
@@ -609,10 +494,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task A_login_that_says_nothing_at_all_is_a_shape_change_and_not_a_bad_password()
     {
-        // No session, no error, no captcha, no code box. Guessing "wrong
-        // password" from silence sends a user to reset a password that was
-        // fine - and because a credential error is never retried, the mistake
-        // is permanent for that session too.
+        // silence is not a wrong password: a credential error is never retried, so the mistake would be permanent
         var page = StubLoginPage.Showing(Username, PasswordBox, Submit);
         using var ctx = LoginContext(page);
 
@@ -624,15 +506,8 @@ public sealed class BolAdapterTests
         Assert.Contains("neither completed nor stated", error.Detail, StringComparison.Ordinal);
     }
 
-    // ---- what the sign-in seals beyond the jar ------------------------------
-
-    /// <summary>
-    /// 2026-10-07 (prod): the jar had been sealed BEFORE the probe opened the
-    /// overview and pressed "Toon meer", so whatever bol set on those visits
-    /// never reached a fetch. The jar read after the probe is the one sealed,
-    /// and the page's own request rides beside the hash - with its header
-    /// NAMES on the job's notes and never a value.
-    /// </summary>
+    // prod 2026-10-07: the jar is sealed after the probe, not before, or its visits' cookies never reach a fetch.
+    // only header NAMES go to the notes, never a value
     [Fact]
     public async Task The_jar_sealed_is_the_one_read_after_the_probe_and_the_page_s_request_rides_beside_the_hash()
     {
@@ -697,15 +572,11 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("could not be read", StringComparison.Ordinal));
     }
 
-    // ---- "are we in yet?" ---------------------------------------------------
-
     [Fact]
     public async Task The_session_watcher_waits_for_a_cookie_rather_than_a_redirect()
     {
-        // Albert Heijn and Lidl finish by navigating to a scheme Chromium
-        // cannot open. bol has no such moment - it simply stops being the
-        // login page - so the cookie jar is the signal, and wearing the same
-        // interface is what lets the shared CaptchaGate be reused unchanged.
+        // AH and Lidl end by navigating to a scheme Chromium cannot open; bol just stops being the login page,
+        // so the cookie jar is the signal (same interface keeps CaptchaGate reusable)
         var page = SignedInPage();
 
         using var signedIn = new FakeJobContext { Browser = new BolBrowserStub(page) };
@@ -713,8 +584,7 @@ public sealed class BolAdapterTests
 
         Assert.NotNull(await watcher.WaitAsync(TimeSpan.FromMilliseconds(1), CancellationToken.None));
 
-        // Still on login.bol.com means nothing has happened yet, whatever
-        // cookies are lying around - and knowing that costs no round trip.
+        // still on login.bol.com means nothing happened yet, and knowing costs no round trip
         using var stillOut = new FakeJobContext { Browser = new BolBrowserStub(page) };
 
         var stuck = new BolSessionWatcher(
@@ -730,30 +600,17 @@ public sealed class BolAdapterTests
 
         Assert.NotNull(header);
 
-        // Scoped to .bol.com and to www.bol.com respectively.
         Assert.Contains("XSC=", header, StringComparison.Ordinal);
         Assert.Contains("shopping_session_id=", header, StringComparison.Ordinal);
 
-        // JSESSIONID is set on login.bol.com with no leading dot. A browser
-        // would not carry it across hosts, and a fetch that only works because
-        // we over-sent is a fetch lying about which cookie authenticates it.
+        // JSESSIONID is host-only on login.bol.com: a browser would not send it, so a fetch must not over-send it
         Assert.DoesNotContain("JSESSIONID", header, StringComparison.Ordinal);
 
-        // An expired cookie and a cookie for another site entirely.
         Assert.DoesNotContain("expired_marker", header, StringComparison.Ordinal);
         Assert.DoesNotContain("affiliate", header, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// One named cookie, read out of the jar on its own so the CSRF token can
-    /// be echoed in a header.
-    ///
-    /// The name is matched case-insensitively, which RFC 6265 does not require
-    /// - it says names are case-sensitive. The leniency is deliberate and
-    /// matches how this file already treats <c>SessionCookieNames</c>: bol
-    /// shipping <c>Xsrf-Token</c> one day should cost a fetch nothing, and two
-    /// cookies differing only in case is not a thing that happens.
-    /// </summary>
+    // name matched case-insensitively although RFC 6265 says case-sensitive: bol shipping Xsrf-Token must cost nothing
     [Fact]
     public void A_single_cookie_can_be_read_by_name_whatever_its_casing()
     {
@@ -762,28 +619,12 @@ public sealed class BolAdapterTests
         Assert.Equal("fixture-xsrf-token", BolCookies.Value(jar, "www.bol.com", "XSRF-TOKEN"));
         Assert.Equal("fixture-xsrf-token", BolCookies.Value(jar, "www.bol.com", "xsrf-token"));
 
-        // Absent, and absent because it is out of scope - JSESSIONID is in the
-        // jar but belongs to login.bol.com.
         Assert.Null(BolCookies.Value(jar, "www.bol.com", "no-such-cookie"));
         Assert.Null(BolCookies.Value(jar, "www.bol.com", "JSESSIONID"));
     }
 
-    // ---- the window ---------------------------------------------------------
-
-    /// <summary>
-    /// THE WINDOW IS THE ONE THING A SYNC IS ABOUT, and no test of this adapter
-    /// asked it a question.
-    /// </summary>
-    /// <remarks>
-    /// Every fetch test here drove the walk with both <c>since</c> and
-    /// <c>until</c> null, so the filter that decides which orders come back was
-    /// never exercised: a reader that ignored the window entirely, or inverted
-    /// the comparison, would have passed all of them. The fixture holds one
-    /// order on 29 July and one on 26 July, which is enough to tell those
-    /// apart from each other and from "everything".
-    /// </remarks>
+    // the window filter was never exercised; the fixture has one order on 29 July and one on 26 July
     [Theory]
-    // Both, one, the other, neither - and the count each should return.
     [InlineData("2026-07-28", null, 1)]
     [InlineData(null, "2026-07-28", 1)]
     [InlineData("2026-07-25", "2026-07-30", 2)]
@@ -806,15 +647,7 @@ public sealed class BolAdapterTests
         Assert.Equal(expected, result.Receipts.Count);
     }
 
-    /// <summary>
-    /// And a window that excludes everything is an ANSWER, not a failure.
-    /// </summary>
-    /// <remarks>
-    /// "You bought nothing in that fortnight" is a legitimate and common
-    /// result. It must not arrive as an error, and it must not arrive as
-    /// incomplete either - the walk covered the whole window and found nothing
-    /// in it.
-    /// </remarks>
+    // a window excluding everything is an answer: neither an error nor incomplete
     [Fact]
     public async Task A_window_with_nothing_in_it_is_complete_and_empty()
     {
@@ -830,8 +663,6 @@ public sealed class BolAdapterTests
         Assert.Empty(result.Receipts);
         Assert.True(result.Complete);
     }
-
-    // ---- the fetch, and what a refusal is -----------------------------------
 
     [Fact]
     public async Task A_fetch_sends_the_cookie_jar_and_says_which_shape_answered()
@@ -850,28 +681,10 @@ public sealed class BolAdapterTests
         Assert.Contains("XSC=", request.Header("Cookie"), StringComparison.Ordinal);
         Assert.Contains("nl-NL", request.Header("Accept-Language"), StringComparison.Ordinal);
 
-        // Nothing rotates: bol issues no token, so the stored bundle stays
-        // exactly as it is until it expires.
         Assert.Null(result.RefreshedMaterial);
         Assert.True(result.Complete);
     }
 
-    /// <summary>
-    /// The default shape, and the only one written against a payload anyone has
-    /// seen. A GET would come back with bol's GraphQL playground rather than
-    /// orders, so the operation reaching the wire as a POST body is the whole
-    /// claim.
-    /// </summary>
-    /// <summary>
-    /// bol moves the hash with every front-end release and refused the
-    /// configured one on 2026-10-01 (provider_changed on every fetch). The
-    /// sign-in learns the hash from bol's own page and seals it into the
-    /// session; a fetch holding one sends it instead of the option's.
-    /// </summary>
-    /// <summary>
-    /// 2026-10-07 (prod, the user's phone): a signed-in page with its orders AND
-    /// an errors array beside them is read, and the errors are noted.
-    /// </summary>
     [Fact]
     public async Task A_page_with_errors_beside_its_orders_is_read_and_the_errors_are_noted()
     {
@@ -907,16 +720,10 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// 2026-10-05 (user ss): bol refused the configured hash on every sync
-    /// and the person read "The party changed its site". A session that
-    /// learned no hash of its own is one sign-in away from working - the
-    /// probe learns today's hash there - so the refusal asks for the sign-in.
-    /// </summary>
+    // prod 2026-10-05: a session that learned no hash is one sign-in away from working, so the refusal asks for the sign-in
     [Fact]
     public async Task A_refused_configured_hash_asks_for_a_new_sign_in()
     {
-        // a hash bol no longer knows: an errors array under a 200
         var handler = new StubHttpHandler((_, _) => Stub.Json("""{"errors":[{"message":"Error(s) redacted."}]}"""));
         using var ctx = FetchContext(handler);
 
@@ -945,15 +752,8 @@ public sealed class BolAdapterTests
         Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
     }
 
-    /// <summary>
-    /// 2026-10-07 (prod): the sign-in learned the page's hash, the fetch sent
-    /// it thirty seconds later, and bol answered "Error(s) redacted.". The
-    /// hash was bol's own, so what bol refused was the request rebuilt
-    /// around it. A session that learned the page's request replays it: the
-    /// body with only the cursor rewritten, the page's headers over the
-    /// fetch's defaults - and the jar, the referer and the CSRF echo the
-    /// fetch's own, read off the stored session.
-    /// </summary>
+    // prod 2026-10-07: bol refused the request rebuilt around its own page's hash, so a learned request is replayed
+    // with only the cursor rewritten; jar, referer and CSRF echo stay the fetch's own
     [Fact]
     public async Task The_page_s_own_request_is_replayed_with_only_the_cursor_rewritten_and_its_headers_added()
     {
@@ -969,12 +769,10 @@ public sealed class BolAdapterTests
         using var sent = JsonDocument.Parse(request.Body!);
         var root = sent.RootElement;
 
-        // the page's body: its cursor rewritten for page one, its other variable and its own hash kept
         Assert.Equal("0", root.GetProperty("variables").GetProperty("after").GetString());
         Assert.Equal("nl-NL", root.GetProperty("variables").GetProperty("locale").GetString());
         Assert.Equal(PageHash, root.GetProperty("extensions").GetProperty("persistedQuery").GetProperty("sha256Hash").GetString());
 
-        // the page's headers over the defaults rather than beside them: one User-Agent, the page's
         Assert.Equal(PageUserAgent, request.Header("User-Agent"));
         Assert.Equal("7.3.1", request.Header("bol-app-version"));
         Assert.Equal("https://www.bol.com", request.Header("Origin"));
@@ -982,24 +780,17 @@ public sealed class BolAdapterTests
         Assert.Equal("application/json", request.Header("Content-Type"));
         Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
 
-        // and the fetch's own: the stored jar, the stored CSRF echo, the account page as referer
         Assert.Contains("XSC=fixture-xsc-value", request.Header("Cookie"), StringComparison.Ordinal);
         Assert.DoesNotContain("stale", request.Header("Cookie"), StringComparison.Ordinal);
         Assert.Equal("fixture-xsrf-token", request.Header("x-xsrf-token"));
         Assert.Equal("https://www.bol.com/nl/nl/account/bestellingen/overzicht/", request.Header("Referer"));
 
-        // page two is the same body with the next cursor
         using var second = JsonDocument.Parse(handler.Requests[1].Body!);
         Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
 
         Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal) && n.Contains("replaying", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// The refusal's detail travels whole through the fetch: an operator
-    /// reads which code, which path and whether bol ran the operation, under
-    /// a learned hash and under the configured one alike.
-    /// </summary>
     [Fact]
     public async Task A_refusal_s_detail_names_the_code_the_path_and_whether_the_operation_ran()
     {
@@ -1017,7 +808,6 @@ public sealed class BolAdapterTests
         Assert.Contains("hash=sha256:0123456789ab ", change.Detail, StringComparison.Ordinal);
         Assert.Contains("body=replay", change.Detail, StringComparison.Ordinal);
 
-        // the configured hash refused: the sign-in that learns one is asked for, with the same facts inside
         using var configured = FetchContext(handler);
         var expired = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(configured, Requests.Receipts(), CancellationToken.None));
@@ -1027,10 +817,6 @@ public sealed class BolAdapterTests
         Assert.Contains("body=rebuilt", expired.Detail, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// An anonymous data.me beside the errors is the session being over -
-    /// even under a learned hash, where a refusal is otherwise a change.
-    /// </summary>
     [Fact]
     public async Task An_anonymous_answer_beside_errors_asks_for_a_login_even_under_a_learned_hash()
     {
@@ -1072,25 +858,12 @@ public sealed class BolAdapterTests
             sent.RootElement.GetProperty("extensions").GetProperty("persistedQuery")
                 .GetProperty("sha256Hash").GetString());
 
-        // The cursor advances with the walk, which is what stops page two from
-        // being page one again.
         using var second = JsonDocument.Parse(handler.Requests[1].Body!);
         Assert.Equal("0", sent.RootElement.GetProperty("variables").GetProperty("after").GetString());
         Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
     }
 
-    /// <summary>
-    /// The two headers bol's edge demands, and the reason the first live run of
-    /// this adapter failed.
-    ///
-    /// Both were established against the real endpoint, signed out, one header
-    /// at a time: the operation named ONLY in the body earns
-    /// <c>400 {"code":"InvalidRequest"}</c> before GraphQL sees the request at
-    /// all, and adding <c>bol-app-operation-name</c> alone turns that into a
-    /// 200. Fixing it uncovered the second: no <c>x-xsrf-token</c> and bol
-    /// answers <c>403 XSRF failed</c>. Neither is guessable from the payload,
-    /// which is why they are asserted rather than trusted.
-    /// </summary>
+    // bol's edge wants the operation in a header (body only: 400 InvalidRequest) and x-xsrf-token (absent: 403 XSRF failed)
     [Fact]
     public async Task The_api_call_names_its_operation_in_a_header_and_echoes_the_xsrf_token()
     {
@@ -1104,20 +877,14 @@ public sealed class BolAdapterTests
 
         var request = handler.Requests[0];
 
-        // The same operation as the body, stated twice because bol wants it twice.
         Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
 
-        // Double-submitted: the value comes off the cookie the login stored,
-        // so a hard-coded token here would pass while the real thing failed.
+        // the value comes off the stored cookie: a hard-coded token would pass while the real thing failed
         Assert.Equal("fixture-xsrf-token", request.Header("x-xsrf-token"));
         Assert.Contains("XSRF-TOKEN=fixture-xsrf-token", request.Header("Cookie"), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A page GET is not a write and a browser sends no token on one. Sending
-    /// it anyway would be this adapter inventing traffic bol never sees from
-    /// its own front end.
-    /// </summary>
+    // a page GET sends no token: sending it would be traffic bol's own front end never makes
     [Fact]
     public async Task A_page_fetch_carries_neither_header_because_it_asks_no_operation()
     {
@@ -1131,12 +898,7 @@ public sealed class BolAdapterTests
         Assert.Null(handler.Requests[0].Header("bol-app-operation-name"));
     }
 
-    /// <summary>
-    /// Without the token bol answers 403, which this adapter reads as bol
-    /// blocking us - a dead end for whoever has to act on it. A login sets the
-    /// cookie, so session_expired both names the problem and asks for the thing
-    /// that fixes it.
-    /// </summary>
+    // without the token bol answers 403, read as a block (a dead end); a login sets the cookie, so session_expired fixes it
     [Fact]
     public async Task A_session_missing_the_xsrf_cookie_asks_for_a_login_instead_of_being_refused()
     {
@@ -1156,16 +918,11 @@ public sealed class BolAdapterTests
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
         Assert.Contains("XSRF-TOKEN", error.Detail, StringComparison.Ordinal);
 
-        // And it never went to the wire: a request that cannot succeed is not
-        // worth spending against an account bol may be scoring.
+        // a request that cannot succeed is not worth spending against an account bol may be scoring
         Assert.Empty(handler.Requests);
     }
 
-    /// <summary>
-    /// The manifest offers "raw", so a caller that asks has to get one - a
-    /// declared include that always arrives empty is worse than one never
-    /// offered, because the consumer builds a screen for it.
-    /// </summary>
+    // a declared include that always arrives empty is worse than none: the consumer builds a screen for it
     [Fact]
     public async Task Raw_is_the_order_exactly_as_bol_sent_it_and_only_when_asked()
     {
@@ -1178,15 +935,13 @@ public sealed class BolAdapterTests
         var asked = await Adapter().FetchAsync(
             ctx, Requests.Receipts(raw: true), CancellationToken.None);
 
-        // Keyed by the external id its receipt carries, or a consumer cannot
-        // pair the two up.
+        // keyed by the receipt's external id so a consumer can pair them
         var document = Assert.Contains("A000TEST001", (IDictionary<string, string>)asked.Raw!);
 
         using var parsed = JsonDocument.Parse(document);
         Assert.Equal("A000TEST001", parsed.RootElement.GetProperty("reference").GetString());
 
-        // Verbatim, not our reading of it: the whole value of raw is that it
-        // still says what bol said when our parser stops agreeing with it.
+        // verbatim, not our reading: raw must still say what bol said when our parser stops agreeing
         Assert.True(parsed.RootElement.TryGetProperty("items", out _));
     }
 
@@ -1206,14 +961,7 @@ public sealed class BolAdapterTests
         Assert.Empty(result.Raw ?? new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
-    /// <summary>
-    /// A token that was good at login and is not any more.
-    ///
-    /// bol says so with a 403, and 403 is otherwise exactly how bol blocks a
-    /// client - so the two are told apart by the body, which names itself.
-    /// Getting this backwards marks the provider degraded and tells the user to
-    /// wait for something that will never clear without a sign-in.
-    /// </summary>
+    // a stale token is a 403 like bol's blocks; the body tells them apart, and mixing them up tells the user to wait for nothing
     [Fact]
     public async Task A_stale_csrf_token_asks_for_a_login_rather_than_reading_as_a_block()
     {
@@ -1226,11 +974,7 @@ public sealed class BolAdapterTests
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
     }
 
-    /// <summary>
-    /// And a 403 that says anything else is still bol refusing us. Without
-    /// this, every block would present as an expired session and send the user
-    /// through a sign-in that changes nothing.
-    /// </summary>
+    // a 403 that says anything else is a block: otherwise every block reads as an expired session
     [Fact]
     public async Task A_403_that_is_not_about_the_token_is_still_a_refusal()
     {
@@ -1243,12 +987,7 @@ public sealed class BolAdapterTests
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
     }
 
-    /// <summary>
-    /// bol states no order total, so the receipt's is our own sum and the flag
-    /// has to survive all the way out of the adapter. A receipt that arrived
-    /// reconciled here would be telling a downstream matcher that bol confirmed
-    /// a number bol never said.
-    /// </summary>
+    // bol states no total, so the flag must survive the adapter or a matcher thinks bol confirmed a number it never said
     [Fact]
     public async Task A_receipt_bol_never_totalled_leaves_the_adapter_saying_so()
     {
@@ -1264,8 +1003,6 @@ public sealed class BolAdapterTests
         Assert.All(result.Receipts, r => Assert.True(r.TotalIsDerived));
         Assert.All(result.Receipts, r => Assert.False(r.Reconciled));
 
-        // And the sum itself is still right - "not reconciled" is a statement
-        // about what was checked, not a licence to be wrong.
         var order = result.Receipts.Single(r => r.ExternalId == "A000TEST002");
         Assert.Equal(4248 + 1199, order.Total.Value);
     }
@@ -1299,8 +1036,7 @@ public sealed class BolAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
 
-        // session_expired, which asks the platform for a login job. There is
-        // no credential during a fetch, so nothing here could recover it.
+        // no credential exists during a fetch: session_expired asks the platform for a login job
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
         Assert.Empty(handler.Requests);
     }
@@ -1332,9 +1068,7 @@ public sealed class BolAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
 
-        // Telling a user their password is wrong when the truth is bot
-        // protection sends them to reset a password that was fine and leaves
-        // the real block undiagnosed.
+        // bot protection is not a wrong password: the user would reset a good one and the block stay undiagnosed
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
     }
@@ -1357,7 +1091,6 @@ public sealed class BolAdapterTests
             var error = await Assert.ThrowsAsync<ConnectorException>(
                 () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
 
-            // Retriable, because a 500 is bol failing rather than refusing.
             Assert.Equal(ErrorCode.ProviderUnavailable, error.Code);
             Assert.True(error.Retriable);
         }
@@ -1372,9 +1105,7 @@ public sealed class BolAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
 
-        // bol runs no such vendor today - confirmed from response headers -
-        // so this is defence against a change, and the change must not
-        // present itself as a bad password.
+        // bol runs no such vendor (confirmed from response headers): defence against a change that must not read as a bad password
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.Contains("cf-browser-verification", error.Detail, StringComparison.OrdinalIgnoreCase);
     }
@@ -1388,9 +1119,7 @@ public sealed class BolAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
 
-        // The cookie died. That is session_expired - a new login job - and not
-        // a parser failure that would page an operator about a session which
-        // simply ran out.
+        // a dead cookie is session_expired (a new login job), not a parser failure that pages an operator
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
         Assert.Contains("j_username", error.Detail, StringComparison.Ordinal);
     }
@@ -1398,10 +1127,7 @@ public sealed class BolAdapterTests
     [Fact]
     public async Task A_page_that_repeats_itself_stops_the_walk_instead_of_looping()
     {
-        // bol's pagination parameter is a guess. Without this guard, a `page`
-        // it ignores presents as the same page fetched twenty times against a
-        // live account, which is the request pattern most likely to earn a
-        // block.
+        // bol's pagination parameter is a guess: an ignored page would be fetched twenty times against a live account
         var handler = new StubHttpHandler((_, _) => Html(FixtureCatalog.Read("bol/orders-page.html")));
         using var ctx = FetchContext(handler);
 
@@ -1411,9 +1137,6 @@ public sealed class BolAdapterTests
         Assert.Equal(2, handler.Requests.Count);
     }
 
-    // ---- helpers ------------------------------------------------------------
-
-    /// <summary>Every box a completed bol login would have shown.</summary>
     private static StubLoginPage SignedInPage() =>
         StubLoginPage.Showing(Username, PasswordBox, Submit);
 
@@ -1444,11 +1167,7 @@ public sealed class BolAdapterTests
             Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") },
         };
 
-    /// <summary>
-    /// A session that learned the page's request at sign-in: its body, and
-    /// its headers as the browser sent them - the jar, the CSRF echo and the
-    /// referer included, which a replay must leave to the fetch.
-    /// </summary>
+    // the browser's own jar, CSRF echo and referer are in the bundle but a replay must leave them to the fetch
     private static SessionMaterial ReplayMaterial() =>
         BolPersistedQuery.WithRequest(
             BolPersistedQuery.WithHash(
@@ -1473,21 +1192,11 @@ public sealed class BolAdapterTests
             Content = new StringContent(body, System.Text.Encoding.UTF8, "text/html"),
         };
 
-    /// <summary>A jar holding only the cookie login.bol.com sets, and nothing www.bol.com would receive.</summary>
     private const string LoginHostOnlyState =
         """{"cookies":[{"name":"JSESSIONID","value":"x","domain":"login.bol.com","path":"/","expires":-1}],"origins":[]}""";
 }
 
-/// <summary>
-/// A browser lease that hands back a cookie jar, which for bol is the entire
-/// credential.
-///
-/// Its own rather than the shared <c>StubBrowserLease</c>: that one refuses
-/// <c>StorageStateAsync</c> outright, which is right for the token providers
-/// and wrong here - bol's login produces nothing else. The redactor's rule is
-/// reproduced exactly, so a test that gets picture bytes back has proved the
-/// password left the DOM first.
-/// </summary>
+// own lease: the shared StubBrowserLease refuses StorageStateAsync, but bol's login yields only a cookie jar
 internal sealed class BolBrowserStub : IBrowserLease
 {
     private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47];
@@ -1517,13 +1226,6 @@ internal sealed class BolBrowserStub : IBrowserLease
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-/// <summary>
-/// A page that is nothing but its address.
-///
-/// The cheapest half of "are we in yet?" is the URL: while it still names
-/// login.bol.com nothing has happened, and no cookie jar needs reading to
-/// know it. This is the fixture for that half.
-/// </summary>
 internal sealed class BolPageAt : ILoginPage
 {
     public BolPageAt(string url) => Url = url;

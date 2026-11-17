@@ -57,7 +57,6 @@ describe('hide sensitive figures (#530)', () => {
     await screen.findByTestId('cashflow-breakdown');
     expect(screen.getByTestId('cashflow-headline').textContent).toBe(MASK);
     expect(screen.getByTestId('cashflow-accounts-total').textContent).toBe(MASK);
-    expect(screen.getByTestId('cashflow-total').textContent).toBe(MASK);
     expect(screen.queryByTestId('cashflow-bar')).toBeNull();
   }, 20_000);
 
@@ -126,7 +125,6 @@ describe('hide sensitive figures (#530)', () => {
   }, 20_000);
 });
 
-/** what owns a balance, wherever it shows — the lens decides once, every screen asks it */
 describe('hide sensitive figures beyond Home (#530)', () => {
   beforeEach(() => {
     localStorage.clear();

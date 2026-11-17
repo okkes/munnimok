@@ -6,44 +6,11 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.LidlPlus;
 
-/// <summary>
-/// Lidl's till receipt, read out of the HTML it prints.
-///
-/// CONFIRMED live on 2026-08-04 against a real account, and it replaces a
-/// parser that was reading fields nobody had ever seen. A v3 ticket detail
-/// carries <c>"ticketType": "HTML"</c> and no line-item collection at all -
-/// not <c>itemsLine</c>, not <c>items</c>, not <c>lines</c>. What it carries
-/// is <c>htmlPrintedReceipt</c>: the paper receipt, marked up.
-///
-/// That sounds worse than it is. Lidl does not render the lines as text and
-/// leave us to align columns - every article span carries the facts as data
-/// attributes:
-/// <code>
-///   &lt;span class="article"
-///         data-art-id="0005936"
-///         data-art-description="Baguette steenoven"
-///         data-unit-price="0,79"
-///         data-art-quantity="0,084"   (weighed goods only)
-///         data-tax-type="B"&gt;
-/// </code>
-/// So the item facts are structured; only the line TOTAL has to come out of
-/// the rendered text, because it is the one number the attributes omit.
-///
-/// The line total is READ rather than recomputed, and that is deliberate.
-/// A weighed article states a quantity and a price per kilo, so the total
-/// looks derivable - 0,084 kg of ginger at 5,99 is printed as 0,50 - and for
-/// every receipt seen so far the arithmetic happens to agree. That is luck.
-/// Whatever the till printed is what the customer was actually charged, and
-/// how it got there is the till's business; a parser that multiplied would
-/// disagree with the bank statement the day the two differ, and
-/// reconciliation would fail pointing at nothing.
-/// </summary>
+/// A v3 detail has "ticketType": "HTML", no line items: htmlPrintedReceipt is the paper receipt (confirmed 2026-08-04).
+/// Article spans carry id, description, unit price, quantity as data attributes; only the line TOTAL comes from text.
+/// The total is READ, never recomputed: what the till printed is what was charged; a multiplied one would miss the bank.
 internal static partial class LidlPrintedReceipt
 {
-    /// <summary>
-    /// One rendered line, gathered from the several styled spans Lidl splits
-    /// it across. They all repeat the same id and the same data attributes.
-    /// </summary>
     private sealed record Line
     {
         public required string Id { get; init; }
@@ -62,17 +29,8 @@ internal static partial class LidlPrintedReceipt
         public string? TenderDescription { get; init; }
     }
 
-    /// <summary>
-    /// A span that carries an id, which is the only kind that is a receipt
-    /// LINE.
-    ///
-    /// The id requirement is load-bearing rather than tidy. Lidl wraps each
-    /// block in an id-less span - <c>&lt;span class="purchase_list"&gt;</c> -
-    /// and a pattern that matched those too would pair the wrapper's opening
-    /// tag with the FIRST inner closing tag, swallowing the first real line of
-    /// every block. The card tail is on exactly such a first line, which is
-    /// how this was found.
-    /// </summary>
+    /// an id is required: Lidl wraps each block in an id-less purchase_list span, which would pair with the first inner
+    /// closing tag and swallow the first real line of every block (the card tail is on one)
     [GeneratedRegex(
         @"<span\b(?<attrs>[^>]*\bid\s*=\s*""[^""]*""[^>]*)>(?<text>.*?)</span>",
         RegexOptions.Singleline)]
@@ -92,10 +50,6 @@ internal static partial class LidlPrintedReceipt
     [GeneratedRegex(@"[xX*]{4,}\s*(?<tail>\d{4})\b")]
     private static partial Regex CardTail { get; }
 
-    /// <summary>
-    /// Every purchased line, in receipt order, with discounts attached to the
-    /// article they were printed under.
-    /// </summary>
     public static IReadOnlyList<ReceiptItem> Items(string? printed, LidlPlusOptions options, string currency)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -115,10 +69,8 @@ internal static partial class LidlPrintedReceipt
                 continue;
             }
 
-            // The continuation line of a weighed article - "0,084 kg x 5,99" -
-            // repeats every attribute of the line above and states no total of
-            // its own. Recognised by its text not starting with the article's
-            // own description, which is what the first line always does.
+            // a weighed article's continuation line ("0,084 kg x 5,99") repeats the attributes and has no total,
+            // told by its text not starting with the description
             if (!StartsWithDescription(line)) continue;
 
             if (Total(line.Text) is not { } total) continue;
@@ -135,10 +87,6 @@ internal static partial class LidlPrintedReceipt
         return items;
     }
 
-    /// <summary>
-    /// How the shop was paid for, and the last four of the card where the
-    /// terminal block prints them.
-    /// </summary>
     public static ReceiptPayment Payment(string? printed, LidlPlusOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -146,7 +94,6 @@ internal static partial class LidlPrintedReceipt
         var lines = Lines(printed);
         if (lines.Count == 0) return ReceiptFactory.Payment();
 
-        // CONFIRMED: the tender line carries data-tender-description="Bankpas".
         string? method = null;
         foreach (var line in lines)
         {
@@ -171,14 +118,7 @@ internal static partial class LidlPrintedReceipt
         return ReceiptFactory.Payment(Method(method), tail);
     }
 
-    /// <summary>
-    /// A discount, or a line that is neither an article nor a discount.
-    ///
-    /// "In prijs verlaagd  -0,10" is printed under the article it reduces and
-    /// carries no attributes of its own, so it is attached to the last item
-    /// added. Without that, items would not sum to the stated total and every
-    /// receipt with a markdown on it would arrive unreconciled.
-    /// </summary>
+    /// "In prijs verlaagd  -0,10" has no attributes and attaches to the last item; else items would not sum to the total
     private static void Apply(List<ReceiptItem> items, Line line, LidlPlusOptions options, string currency)
     {
         if (items.Count == 0) return;
@@ -198,25 +138,13 @@ internal static partial class LidlPrintedReceipt
                 Label = string.IsNullOrWhiteSpace(label) ? null : label,
             },
 
-            // The line total Lidl printed is BEFORE this markdown, and the
-            // platform's rule is that items plus their discounts equal the
-            // stated total - so the total stays as printed and the discount
-            // carries the difference.
+            // the printed line total is BEFORE this markdown and items plus discounts must equal the total, so the discount carries it
             Total = last.Total,
         };
     }
 
-    /// <summary>
-    /// Lidl's word for the tender, mapped onto the four the normalized schema
-    /// names. Null stays null: a guess here weakens a consumer's
-    /// receipt-to-transaction match without telling it so.
-    /// </summary>
-    /// <remarks>
-    /// The Dutch words are the point. "Bankpas" is what a Dutch till prints
-    /// for a debit card, and the mapping every other adapter here uses does
-    /// not know it - so it would have arrived as "other", which is the value
-    /// that means "we looked and could not tell".
-    /// </remarks>
+    /// null stays null: a guess weakens the receipt-to-transaction match;
+    /// "Bankpas" (Dutch debit) would be "other" in the shared mapping
     private static string? Method(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
@@ -244,10 +172,7 @@ internal static partial class LidlPrintedReceipt
         line.Description is { Length: > 0 } description &&
         line.Text.TrimStart().StartsWith(description.AsSpan(0, Math.Min(description.Length, 8)), StringComparison.Ordinal);
 
-    /// <summary>
-    /// The last money token on the line, which is where a till prints the
-    /// amount. Anything earlier belongs to a quantity or a unit price.
-    /// </summary>
+    /// the last money token is the amount; earlier ones are a quantity or unit price
     private static decimal? Total(string text)
     {
         decimal? last = null;
@@ -268,23 +193,11 @@ internal static partial class LidlPrintedReceipt
     private static Money? Money(string? raw, LidlPlusOptions options, string currency) =>
         Decimal(raw) is { } value ? new Money(Minor(value, options), currency) : null;
 
-    /// <summary>
-    /// Through the platform's own converter, under the unit the receipt
-    /// prints. A till prints major units with a comma - "0,79" - and the
-    /// rounding rule for a half cent is the platform's to make, not this
-    /// file's.
-    /// </summary>
+    /// the till prints major units with a comma; half-cent rounding is the platform converter's
     private static long Minor(decimal major, LidlPlusOptions options) =>
         MoneyParser.ToMinor(major, options.PrintedAmountUnit);
 
-    /// <summary>
-    /// The spans, gathered back into the lines they were split out of.
-    ///
-    /// Lidl emits one span per styled run and repeats the id and every data
-    /// attribute on all of them, so a line is the concatenation of the spans
-    /// sharing an id. Grouped by ORDER of first appearance rather than by a
-    /// dictionary: receipt order is the only order these have.
-    /// </summary>
+    /// Lidl repeats the id and data attributes on every styled span: a line is the spans sharing an id, in receipt order
     private static IReadOnlyList<Line> Lines(string? printed)
     {
         if (string.IsNullOrWhiteSpace(printed)) return [];
@@ -297,9 +210,7 @@ internal static partial class LidlPrintedReceipt
             var attrs = Attributes(groups["attrs"].Value);
             if (!attrs.TryGetValue("id", out var id) || id.Length == 0) continue;
 
-            // Nested spans are matched too and would double-count the text.
-            // The inner ones carry no tags of their own after decoding, so
-            // stripping any residual markup is enough.
+            // nested spans also match and would double-count text; stripping residual tags is enough
             var text = WebUtility.HtmlDecode(Tags.Replace(groups["text"].Value, string.Empty));
 
             if (byId.TryGetValue(id, out var existing))

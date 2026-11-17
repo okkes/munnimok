@@ -12,7 +12,6 @@ import { kindIcon } from './logos';
 import { SpacePicker } from './SpacePicker';
 import type { ProviderKind } from './types';
 
-/** rename / icon / included spaces / remove for one connection */
 export function ConnectionSheet({
   view,
   kind,
@@ -25,7 +24,7 @@ export function ConnectionSheet({
   kind: ProviderKind | undefined;
   allSpaces: readonly { id: string; name: string }[];
   includedSpaceIds: readonly string[];
-  /** user 2026-10-07: a new sign-in on this same connection (a changed password); absent where the hub cannot open one */
+  /** a new sign-in on this same connection (a changed password); absent where the hub cannot open one */
   onSignInAgain?: () => void;
   onClose: () => void;
 }>) {
@@ -73,8 +72,7 @@ export function ConnectionSheet({
             className="h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
           />
         </label>
-        {/* user 2026-10-07: a changed password is a new sign-in on the SAME connection — never a
-            remove and a fresh one, which would orphan the receipts and accounts keyed by its id */}
+        {/* a changed password is a new sign-in on the SAME connection, never remove + new: that orphans receipts and accounts */}
         {onSignInAgain && (
           <button
             data-testid="conn-manage-relogin"
@@ -106,7 +104,6 @@ export function ConnectionSheet({
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
 
-        {/* which spaces this connection's receipts flow into — a bank's accounts are attached one by one instead */}
         {kind !== 'bank' && (
           <>
             <div className="m-cap px-1">{t('conn.sharedSpaces')}</div>
@@ -144,10 +141,7 @@ export function ConnectionSheet({
         </Button>
       </div>
     </Sheet>
-    {/* aligned destructive confirm (user request): sheet + cooldown.
-        2026-10-06 (user ss, phone): mounted INSIDE the sheet these two
-        came up behind it, dimmed with the covered parent - every other
-        sheet keeps its confirm and pickers as siblings, mounted after it */}
+    {/* sibling of the sheet, not inside it: mounted inside, the confirm came up behind the sheet, dimmed */}
     <DangerConfirmSheet
       open={confirmRemove}
       onOpenChange={setConfirmRemove}

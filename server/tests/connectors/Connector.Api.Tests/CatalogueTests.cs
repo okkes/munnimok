@@ -6,19 +6,12 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §1.6. The catalogue is the only contract a consumer codes against,
-/// so it has to be both complete and cacheable: complete because a provider
-/// missing from it cannot be connected at all, cacheable because it changes on
-/// a deploy at most and a consumer should not refetch it per session.
-/// </summary>
+/// api-spec §1.6: the catalogue changes on a deploy at most, so it must be cacheable as well as complete
 [Collection(ShopApiCollection.Name)]
 public sealed class CatalogueTests(ShopApiFactory factory)
 {
-    /// <summary>The captcha mock's login form, in the order the consumer renders it.</summary>
     private static readonly string[] PasswordFormFields = ["username", "password"];
 
-    /// <summary>The one challenge that provider declares.</summary>
     private static readonly string[] ImageChallengeOnly = ["image"];
 
     [Fact]
@@ -32,16 +25,13 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         var body = await response.JsonAsync();
         var service = body.GetProperty("service");
 
-        // one control plane hosts every pack — the catalogue names the kinds it serves
         var kinds = service.GetProperty("kinds").EnumerateArray().Select(k => k.GetString()).ToList();
         Assert.Equal(["bank", "registry", "store"], kinds);
         var digest = service.Text("manifest_digest");
         Assert.StartsWith("sha256:", digest, StringComparison.Ordinal);
 
-        // The ETag opens with the digest, so a consumer can still recognise it
-        // from a value it already parsed. It does not END there: provider
-        // health is part of this document and therefore part of what the ETag
-        // identifies, so a second component moves when health does.
+        // the ETag opens with the digest but does not end there:
+        // provider health is part of the document and moves a second component
         var etag = Assert.Single(response.RawHeader("ETag"));
         Assert.StartsWith($"\"{digest}:", etag, StringComparison.Ordinal);
     }
@@ -56,9 +46,7 @@ public sealed class CatalogueTests(ShopApiFactory factory)
 
         var captcha = Find(providers, MockStoreAdapters.Captcha);
 
-        // Every one of these is an enum in C# and snake case on the wire. A
-        // consumer that had to know which is which would be coding against our
-        // internals rather than against the published contract.
+        // enums in C# and snake case on the wire: a consumer codes against the published contract
         Assert.Equal("store", captcha.Text("kind"));
         Assert.Equal("http", captcha.Text("runtime"));
         Assert.Equal("client", captcha.Text("secret_custody"));
@@ -67,31 +55,19 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         Assert.Equal("receipt", captcha.GetProperty("resources")[0].Text("returns"));
         Assert.Equal("inline", captcha.GetProperty("agent").Text("class"));
 
-        // The consumer renders the login form from this and nothing else.
         var fields = captcha.GetProperty("auth").GetProperty("steps")[0].GetProperty("fields");
         Assert.Equal(PasswordFormFields, fields.EnumerateArray().Select(f => f.Text("key")).ToArray());
         Assert.True(fields[1].GetProperty("secret").GetBoolean(), "a password field must be marked secret");
 
-        // What may interrupt the happy path, so the consumer knows to build for it.
         var challenges = captcha.GetProperty("auth").GetProperty("challenges")
             .EnumerateArray().Select(c => c.GetString()!).ToArray();
         Assert.Equal(ImageChallengeOnly, challenges);
 
-        // Health is grafted on to the manifest: this is what lets a consumer say
-        // "paused, we're fixing it" instead of showing a spinner.
+        // health is grafted onto the manifest so a consumer can say "paused" instead of showing a spinner
         Assert.Equal("healthy", captcha.GetProperty("status").Text("state"));
     }
 
-    /// <summary>
-    /// The catalogue carries provider health, so a consumer holding a cached
-    /// copy has to be told when that health moves.
-    ///
-    /// Hashing only the manifests made this document permanently stale: a
-    /// provider degraded, an operator fixed it, and every conditional request
-    /// still answered 304 with the old verdict. The consumer's own card said
-    /// "a run that succeeds clears this" and no run ever could - the only
-    /// escape was a hard refresh, which a caching client has no reason to do.
-    /// </summary>
+    /// hashing only manifests left a cached catalogue permanently stale: a degraded-then-fixed provider still answered 304
     [Fact]
     public async Task Health_moving_invalidates_a_cached_catalogue()
     {
@@ -104,7 +80,6 @@ public sealed class CatalogueTests(ShopApiFactory factory)
 
         try
         {
-            // The same conditional request that was a 304 a moment ago.
             using var request = Wire.Get("/v1/providers");
             request.AddHeader("If-None-Match", stale);
 
@@ -124,11 +99,7 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         }
     }
 
-    /// <summary>
-    /// And back again: recovering has to move the tag too, or a consumer that
-    /// cached the degraded document would keep showing a warning about a
-    /// provider that is working.
-    /// </summary>
+    /// recovering must move the tag too, or a cached degraded document warns about a working provider
     [Fact]
     public async Task Recovering_also_invalidates_a_cached_catalogue()
     {
@@ -158,11 +129,7 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         Assert.Equal("healthy", provider.GetProperty("status").Text("state"));
     }
 
-    /// <summary>
-    /// The single-provider document carries the same health, and a consumer
-    /// polling one provider it cares about is exactly who would be pinned to a
-    /// stale answer longest.
-    /// </summary>
+    /// the single-provider document carries health too, and its ETag must move the same way
     [Fact]
     public async Task Health_moving_invalidates_a_cached_single_provider_document()
     {
@@ -238,7 +205,6 @@ public sealed class CatalogueTests(ShopApiFactory factory)
         var body = await response.JsonAsync();
         Assert.Equal(MockStoreAdapters.Captcha, body.Text("id"));
 
-        // Every response that touched a provider says which contract answered.
         var version = Assert.Single(response.RawHeader("X-Manifest-Version"));
         Assert.Equal(
             body.GetProperty("manifest_version").GetInt32().ToString(CultureInfo.InvariantCulture),

@@ -6,11 +6,8 @@ using Microsoft.Playwright;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// The kinds of captcha, which are different problems: one is a picture with
-/// a box beside it, one is a widget's grid that can be photographed out and
-/// tapped back, and one can only be handed to somebody sitting at the browser.
-/// </summary>
+/// the kinds are different problems: a typed picture, a grid photographed out and tapped back,
+/// a widget only someone at the browser can pass
 internal enum CaptchaKind
 {
     None,
@@ -18,67 +15,25 @@ internal enum CaptchaKind
     /// <summary>A widget nothing here can carry to a human who is elsewhere.</summary>
     Interactive,
 
-    /// <summary>A picture and a box to type the answer into.</summary>
     Image,
 
-    /// <summary>
-    /// A widget showing nothing but its "I am human" box.
-    ///
-    /// Its own kind because clicking it is a legitimate first move and
-    /// relaying it is not: there is nothing to show a human yet. It is one
-    /// real click on one real control, which is what the control is for -
-    /// and it is frequently the whole of what the widget asks.
-    /// </summary>
+    /// its own kind: clicking it is a legitimate first move, relaying it is not (nothing to show a human yet)
     Checkbox,
 
-    /// <summary>
-    /// A widget escalated to a grid of pictures.
-    ///
-    /// The one interactive wall a relay can carry, and only because the
-    /// answer is not a string: the picture goes out, the taps come back, and
-    /// the human is the one who solved it. See
-    /// <see cref="CaptchaGate.RelayGridAsync"/>.
-    /// </summary>
+    /// the one interactive wall a relay can carry: the answer is taps, not a string - picture out, taps back
     Grid,
 }
 
-/// <summary>Which wall is standing, and where on the page it is.</summary>
 internal readonly record struct CaptchaWall(CaptchaKind Kind, CropRegion? Crop);
 
-/// <summary>
-/// Where a relayed tap lands: a click on the page, at page pixels, dispatched
-/// by the browser rather than resolved through a selector.
-///
-/// A selector cannot reach one. A widget draws its grid inside a cross-origin
-/// iframe - a different document from a different origin - and nothing on our
-/// side of that boundary can address a tile in it. The mouse is not on our
-/// side of it: it is the browser's own input pipeline, and a click at a point
-/// is delivered to whatever is under the point. That is the entire reason the
-/// human's taps can be replayed at all.
-/// </summary>
+/// taps are page-pixel clicks through the browser's input pipeline, not selectors: the grid sits in a cross-origin iframe
 internal interface ITapSurface
 {
-    /// <summary>
-    /// Clicks each point in turn, in page (CSS) pixels - the units
-    /// <see cref="Tap.ToPagePixels"/> produces from the crop the relayed
-    /// picture was taken of.
-    ///
-    /// Ordered, because a grid that asks for tiles in sequence cannot be
-    /// answered out of sequence, and because replaying what the human did in
-    /// the order they did it is the only thing here that needs no
-    /// justification.
-    /// </summary>
+    /// in CSS pixels (Tap.ToPagePixels); ordered, because a grid asking tiles in sequence cannot be answered out of sequence
     Task TapAsync(IReadOnlyList<(double X, double Y)> points, CancellationToken ct);
 }
 
-/// <summary>
-/// The live browser's mouse.
-///
-/// Deliberately without pauses, jitter or curved travel between points: those
-/// exist to make a machine look like a person, and nothing here is pretending
-/// to be one. A person really did choose these points; we are only carrying
-/// them back to the page they were chosen from.
-/// </summary>
+/// no pauses, jitter or curved travel: those make a machine look human, and these points were really chosen by a person
 internal sealed class MouseTapSurface : ITapSurface
 {
     private readonly IPage _page;
@@ -102,19 +57,13 @@ internal sealed class MouseTapSurface : ITapSurface
     }
 }
 
-/// <summary>
-/// What came of meeting a wall: a finished login, a page still worth
-/// watching, or nothing this agent can do about it.
-/// </summary>
 internal readonly record struct CaptchaOutcome
 {
-    /// <summary>Nothing here can be relayed to anyone; hand the login back.</summary>
     public static CaptchaOutcome Stuck { get; } = new();
 
     /// <summary>The human has been asked; the redirect is still the proof.</summary>
     public static CaptchaOutcome Asked { get; } = new() { Handled = true };
 
-    /// <summary>The wall came down and the provider redirected while we watched.</summary>
     public static CaptchaOutcome Solved(string redirect) => new() { Handled = true, Redirect = redirect };
 
     public bool Handled { get; private init; }
@@ -122,31 +71,16 @@ internal readonly record struct CaptchaOutcome
     public string? Redirect { get; private init; }
 }
 
-/// <summary>
-/// One provider's contribution to the policy below: its own selectors, its
-/// own patience. Everything else about meeting a wall is the same wherever it
-/// stands.
-/// </summary>
 internal sealed record CaptchaSpec
 {
     public required string ProviderId { get; init; }
 
-    /// <summary>hCaptcha, reCAPTCHA and friends. See <see cref="CaptchaGate.DetectAsync"/>.</summary>
     public required IReadOnlyList<string> Interactive { get; init; }
 
-    /// <summary>
-    /// The widget's grid, when a provider is known to draw one somewhere a
-    /// screenshot can reach it.
-    ///
-    /// Empty by default, and that default is the old behaviour exactly: with
-    /// no way to tell a grid from the widget around it, every widget is
-    /// <see cref="CaptchaKind.Interactive"/> and is met the way it always was.
-    /// A provider opts in by naming the two frames, which is a claim about
-    /// that provider's markup and belongs with the rest of its selectors.
-    /// </summary>
+    /// empty by default: every widget is then Interactive; a provider opts in by naming the two frames
+    /// (a claim about its markup)
     public IReadOnlyList<string> Grid { get; init; } = [];
 
-    /// <summary>The widget's "I am human" box, on its own.</summary>
     public IReadOnlyList<string> Checkbox { get; init; } = [];
 
     public IReadOnlyList<string> Image { get; init; } = [];
@@ -157,93 +91,31 @@ internal sealed record CaptchaSpec
     /// <summary>Short probes: a settle loop runs them on every pass.</summary>
     public int ProbeMs { get; init; } = 500;
 
-    /// <summary>
-    /// How long to let a widget finish drawing before photographing it.
-    ///
-    /// Three seconds because a captcha token ages while we wait and this is
-    /// spent on every relayed round, but a puzzle image on a home line is
-    /// routinely slower than one poll. Nothing depends on it being enough:
-    /// when it runs out the picture is taken anyway.
-    /// </summary>
+    /// 3s: a captcha token ages while we wait, but a puzzle image on a home line is slower than one poll;
+    /// when it runs out the picture is taken anyway
     public TimeSpan SettleBudget { get; init; } = TimeSpan.FromSeconds(3);
 
-    /// <summary>
-    /// How many gestures the relay will carry for one wall before handing it
-    /// back.
-    ///
-    /// A widget can ask more than once - a tick, then a grid, then another
-    /// grid - and a human answering a grid in two messages costs a round as
-    /// well. Bounded because the alternative is a loop whose exit condition
-    /// belongs to somebody else's JavaScript.
-    /// </summary>
-    /// <summary>
-    /// How many times the provider may put a wall back up before the relay
-    /// gives up on it.
-    ///
-    /// Counts ESCALATIONS, not pictures. A human tapping their way through a
-    /// grid does not spend this, however many round trips it takes them -
-    /// they are answering, and the loop is doing what it was built for. What
-    /// spends it is a gesture that did not get past: a tick that did not take,
-    /// or a finished answer that left another wall standing.
-    /// </summary>
+    /// bounds ESCALATIONS, not pictures: a human tapping through a grid does not spend it; a tick that did not take,
+    /// or a finished answer that left another wall standing, does
     public int RelayRounds { get; init; } = 4;
 
-    /// <summary>How long the human has to answer a relayed image captcha.</summary>
     public int ImageSeconds { get; init; } = 300;
 
-    /// <summary>
-    /// How long the human has on an interactive widget - whether it was
-    /// relayed to them as a grid of pictures or left standing in the browser
-    /// window we opened in front of them. Longer than a typed captcha on
-    /// purpose: the wait has to cover someone noticing a prompt on a phone in
-    /// another room, or walking back to their desk.
-    /// </summary>
+    /// longer than a typed captcha on purpose: covers someone noticing a prompt on a phone in another room
     public int InteractiveSeconds { get; init; } = 600;
 
-    /// <summary>How long each pass waits on the redirect before looking again.</summary>
     public int PollSeconds { get; init; } = 5;
 }
 
-/// <summary>
-/// Meets a wall the human owns. Never solves one: that is the line between
-/// acting as a user's agent and abuse, and nothing below moves it. What moved
-/// is WHERE the human is standing when they solve it.
-///
-/// A widget used to mean one of two things: somebody is sitting at this
-/// browser, or nobody can pass this. Both are about the agent's chair, and
-/// most people connecting an account are nowhere near one - they have a phone.
-/// So a grid is now photographed out through the challenge protocol that
-/// already existed, the human taps it in their own app, and the taps are
-/// replayed onto the page they came from. We carry the picture and the
-/// gestures; the human does the seeing and the choosing, which is the part
-/// that was never ours.
-///
-/// Shared because the decision is not provider-specific and getting it wrong
-/// twice would be twice as expensive. A live Albert Heijn run died of a job
-/// budget here - the redactor refused to photograph a page whose password
-/// field was still full, the relay saw no bytes, and nobody was ever asked
-/// anything - and both halves of that fix live below.
-/// </summary>
+/// meets a wall the human owns, never solves one: that is the line between a user's agent and abuse.
+/// The grid goes out through the challenge protocol, the human taps in their own app, the taps are replayed.
+/// Shared because the decision is not provider-specific.
 internal sealed class CaptchaGate
 {
-    /// <summary>
-    /// A backstop on the relay loop, not a budget anybody should reach.
-    ///
-    /// The wall clock is deliberately not the bound here: every ask parks the
-    /// job's budget while a human thinks, and the settle deadline restarts
-    /// after they answer, because the minutes they spent are not the provider
-    /// being slow. That is the right call and it leaves nothing else to stop a
-    /// widget and a person handing rounds back and forth forever, so this
-    /// does. Well past any real escalation - hCaptcha chains a handful of
-    /// puzzles at its worst - and far short of never.
-    /// </summary>
+    /// backstop on the relay loop: the wall clock is not the bound (asks park the budget, settling restarts
+    /// after an answer); well past the longest real escalation (hCaptcha chains a handful of puzzles)
     private const int MaxRelayIterations = 24;
 
-    /// <summary>
-    /// What one relayed grid came to - or, for the one tick this gate makes
-    /// itself, whether it landed (<see cref="Done"/>) or could not be made
-    /// (<see cref="Lost"/>).
-    /// </summary>
     private enum GridRound
     {
         /// <summary>Nothing could be relayed, or nothing readable came back.</summary>
@@ -267,28 +139,14 @@ internal sealed class CaptchaGate
         _time = time;
     }
 
-    /// <summary>
-    /// Which wall is standing, and where on the page it is.
-    ///
-    /// The distinction is the whole point, and it is a distinction about the
-    /// ANSWER rather than about the picture. A plain image captcha is a
-    /// picture and a text box. A widget's grid is a picture and a set of
-    /// taps - carryable for the same reason, once the answer stopped having
-    /// to be a string. A widget with neither showing is a token minted inside
-    /// somebody else's JavaScript, and there is nothing to relay to anybody:
-    /// no screenshot and no typed answer passes one, however faithfully the
-    /// page is photographed.
-    /// </summary>
+    /// the distinction is about the ANSWER: picture + text box; grid = picture + taps; a widget with neither
+    /// is a token minted in someone else's JavaScript, and nothing relays it
     public async Task<CaptchaWall> DetectAsync(ILoginPage page, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
 
-        // Most specific first, and the order is load-bearing: the three lists
-        // overlap by construction. hCaptcha's two frames differ only in the
-        // fragment on one URL, and the container the provider embeds matches
-        // whatever is inside it - so probing for the widget in general before
-        // the grid in particular would read every escalation as the generic
-        // widget it also is, and relay nothing.
+        // most specific first, load-bearing: the lists overlap (hCaptcha's frames differ by a URL fragment, the container
+        // matches whatever is inside), so probing the general widget first reads every grid as the generic widget
         if (await page.FindAsync(_spec.Grid, _spec.ProbeMs, ct).ConfigureAwait(false) is { } grid)
         {
             return new CaptchaWall(CaptchaKind.Grid, grid.Crop);
@@ -299,8 +157,7 @@ internal sealed class CaptchaGate
             return new CaptchaWall(CaptchaKind.Checkbox, checkbox.Crop);
         }
 
-        // Then the widget in general: hCaptcha draws pictures of its own, so
-        // probing for an image before it would call a widget a photograph.
+        // hCaptcha draws pictures of its own, so the widget is probed before the image
         if (await page.FindAsync(_spec.Interactive, _spec.ProbeMs, ct).ConfigureAwait(false) is { } widget)
         {
             return new CaptchaWall(CaptchaKind.Interactive, widget.Crop);
@@ -311,32 +168,18 @@ internal sealed class CaptchaGate
             return new CaptchaWall(CaptchaKind.None, null);
         }
 
-        // A picture with a box beside it is the only captcha a photograph and
-        // a typed answer can carry. One with nowhere to type the answer is as
-        // far out of our reach as a widget is, so it is treated as one rather
-        // than relayed to a human who would have nothing to do with it.
+        // an image with nowhere to type is as out of reach as a widget: treated as one, not relayed to a human with nothing to do
         var input = await page.FindAsync(_spec.Input, _spec.ProbeMs, ct).ConfigureAwait(false);
 
         return new CaptchaWall(input is null ? CaptchaKind.Interactive : CaptchaKind.Image, picture.Crop);
     }
 
-    /// <summary>
-    /// Meets the wall <see cref="DetectAsync"/> found, with no way to replay
-    /// taps - so a widget is met the only other way there is.
-    /// </summary>
     public Task<CaptchaOutcome> FaceAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CaptchaWall wall, CancellationToken ct) =>
         FaceAsync(ctx, page, watcher, wall, taps: null, ct);
 
-    /// <summary>
-    /// Meets the wall <see cref="DetectAsync"/> found.
-    /// </summary>
-    /// <param name="taps">
-    /// Where a relayed tap lands. Null when the caller has no page to click
-    /// into, which is the same situation as a provider that named no grid:
-    /// there is no relay, and a widget falls back to the human at the
-    /// keyboard or to a refusal.
-    /// </param>
+    /// taps null: no page to click into, the same as a provider naming no grid; a widget falls back to
+    /// the human at the keyboard or a refusal
     public async Task<CaptchaOutcome> FaceAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CaptchaWall wall, ITapSurface? taps,
         CancellationToken ct)
@@ -344,15 +187,8 @@ internal sealed class CaptchaGate
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentNullException.ThrowIfNull(page);
 
-        // The credentials are already upstream, so the copy still sitting in
-        // the form is nothing but a liability - and the redactor, rightly,
-        // refuses to photograph a page holding one. That refusal is what
-        // turned a relayable captcha into a job that waited on a human nobody
-        // had asked; clearing the DOM is the fix, weakening the redactor is
-        // not. Before every branch, because the runner may photograph this
-        // page on the way out of the ones that fail, and because a widget that
-        // escalates into a grid two rounds later must not have to remember to
-        // do this first.
+        // credentials are already upstream; the copy left in the form makes the redactor refuse to photograph (a relayable
+        // captcha then waited on a human nobody asked). Clear the DOM, never weaken the redactor; before every branch.
         await page.ClearSecretsAsync(ct).ConfigureAwait(false);
 
         if (wall.Kind is CaptchaKind.Image)
@@ -360,9 +196,6 @@ internal sealed class CaptchaGate
             return await RelayImageAsync(ctx, page, wall.Crop, ct).ConfigureAwait(false);
         }
 
-        // A widget whose parts we can name, and a page to click into: the
-        // human answers this one wherever they are, which is the whole reason
-        // any of this exists.
         if (IsRelayable(wall.Kind) && taps is not null)
         {
             return await RelayWidgetAsync(ctx, page, watcher, taps, wall, ct).ConfigureAwait(false);
@@ -371,18 +204,10 @@ internal sealed class CaptchaGate
         return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
     }
 
-    /// <summary>The two walls a relay carries: a grid of pictures, or the box that precedes one.</summary>
     private static bool IsRelayable(CaptchaKind kind) => kind is CaptchaKind.Grid or CaptchaKind.Checkbox;
 
-    /// <summary>
-    /// Leaves the wall to whoever is sitting at the browser - or says at once
-    /// that nobody is.
-    ///
-    /// Nobody can reach a headless browser in a pool, so there is no one to
-    /// ask and nothing to wait for. Saying so immediately is worth far more
-    /// than a hang: it is what lets a consumer tell the user to connect
-    /// this one from a machine they are sitting at.
-    /// </summary>
+    /// nobody can reach a headless browser in a pool: say so at once rather than hang, so a consumer
+    /// can tell the user to connect from a machine they sit at
     private async Task<CaptchaOutcome> LeaveToTheKeyboardAsync(
         IJobContext ctx, IRedirectWaiter watcher, CancellationToken ct)
     {
@@ -396,17 +221,8 @@ internal sealed class CaptchaGate
         "could be relayed to the account's owner, and this agent is unattended; a widget that shows no grid can " +
         "only be passed in a browser a human can see and touch");
 
-    /// <summary>
-    /// Asks the human at the keyboard to pass the widget in the window
-    /// already open in front of them, and then waits.
-    ///
-    /// Passive on purpose: there is nothing for them to type back, because
-    /// the widget hands its token to the provider and not to us. So the
-    /// redirect is watched throughout rather than afterwards - their solving
-    /// it is what lets the provider continue, and someone who solves it may
-    /// never touch the consumer's UI at all. Whichever arrives first is the
-    /// answer.
-    /// </summary>
+    /// passive: nothing to type back, the widget hands its token to the provider; the redirect is watched
+    /// throughout, first arrival wins
     private async Task<CaptchaOutcome> AwaitSolvedAsync(
         IJobContext ctx, IRedirectWaiter watcher, CancellationToken ct)
     {
@@ -428,9 +244,8 @@ internal sealed class CaptchaGate
 
             if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
             {
-                // Nobody will ever answer the challenge now. Its expiry is
-                // observed and dropped here rather than left to surface later
-                // as an unobserved failure on a job that succeeded.
+                // nobody will answer now: the challenge's expiry is observed and dropped, not left as an unobserved
+                // failure on a successful job
                 _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
 
                 ctx.Progress(JobStep.Authenticating);
@@ -439,35 +254,19 @@ internal sealed class CaptchaGate
 
             if (asked.IsCompleted)
             {
-                // The human says they are through. Awaited rather than
-                // ignored: an expired challenge is the platform's own error
-                // and it must end the job instead of being swallowed here.
+                // awaited, not ignored: an expired challenge is the platform's own error and must end the job
                 await asked.ConfigureAwait(false);
 
                 ctx.Progress(JobStep.Authenticating);
                 return CaptchaOutcome.Asked;
             }
 
-            // The window is up and the widget was never passed. Nothing here
-            // improves with more waiting.
             if (_time.GetUtcNow() >= expiresAt) return CaptchaOutcome.Stuck;
         }
     }
 
-    /// <summary>
-    /// Carries a widget to the human who owns the account, one gesture at a
-    /// time, for as long as the widget keeps asking.
-    ///
-    /// This is the whole change of address: the wall is the same wall, and the
-    /// human solving it is the same human, but they no longer have to be
-    /// sitting at the machine the browser is running on. Nothing here decides
-    /// anything about a picture - it photographs one, and it replays what came
-    /// back.
-    ///
-    /// Attended or not, deliberately: a phone in another country is a better
-    /// place to answer this than a chair in front of the agent, and the
-    /// account's owner is the person who should be answering it either way.
-    /// </summary>
+    /// attended or not: the account's owner answers on a phone anywhere; nothing here judges a picture,
+    /// it photographs and replays
     private async Task<CaptchaOutcome> RelayWidgetAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface taps, CaptchaWall wall,
         CancellationToken ct)
@@ -484,15 +283,10 @@ internal sealed class CaptchaGate
             }
         }
 
-        // The rounds ran out with the widget still standing. Whoever is at the
-        // browser is the only one who can pass it now - and if nobody is,
-        // saying so beats waiting for a redirect that is not coming.
+        // rounds ran out with the widget standing: only someone at the browser can pass it; if nobody is, say so
         return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The relay's bookkeeping, carried from one round to the next.
-    /// </summary>
     private sealed class WidgetRelay
     {
         public WidgetRelay(CaptchaWall wall)
@@ -500,64 +294,34 @@ internal sealed class CaptchaGate
             Current = wall;
         }
 
-        /// <summary>The wall as it stood when it was last measured.</summary>
         public CaptchaWall Current { get; set; }
 
-        /// <summary>
-        /// Whether the one tick this gate makes itself has been made. Once,
-        /// ever: the box stays on the page after it is ticked, so a second
-        /// pass would find it again and undo what the first one achieved.
-        /// </summary>
+        /// once, ever: the box stays on the page after ticking, so a second pass would undo it
         public bool Ticked { get; set; }
 
-        // Two counters, because two different things need bounding and only
-        // one of them is the provider's fault.
-        //
-        // `Escalations` is another wall going up that our last gesture did
-        // not get past - the budget this always meant to be. `Iterations` is
-        // a backstop on the loop itself.
-        //
-        // A round the human answered with taps is neither, and counting it as
-        // one did real damage. Once the client could send taps WITHOUT ending
-        // the relay - which is the only way to press a verify button that
-        // lives inside the picture we relayed - every tap spent a round.
-        // Observed live: four drawn puzzles, four answers, nothing failing
-        // anywhere, and then the budget ran out and dropped the login into the
-        // paste-a-URL fallback. The human did everything right and was handed
-        // back to a browser window this design exists to spare them.
-        //
-        // Somebody working through a widget is progress. Only being made to
-        // start again is not.
+        // Escalations: another wall our last gesture did not get past. Iterations: a backstop on the loop itself.
+        // a round answered with taps is neither: counting it dropped logins into the paste-a-URL fallback after four
+        // correct puzzles
         public int Escalations { get; set; }
 
         public int Iterations { get; set; }
     }
 
-    /// <summary>
-    /// One round of the relay: what stands now, one gesture on it, and a look
-    /// for the redirect. Null while the widget keeps asking.
-    /// </summary>
     private async Task<CaptchaOutcome?> RoundAsync(
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface taps, WidgetRelay relay,
         CancellationToken ct)
     {
         if (relay.Iterations++ > 0)
         {
-            // What the last gesture left standing, measured rather than
-            // assumed: a tick becomes a grid, a grid becomes another grid,
-            // and either can simply be gone.
             relay.Current = await DetectAsync(page, ct).ConfigureAwait(false);
 
-            // The wall came down. The redirect has not arrived yet, so the
-            // caller's own watch is where this belongs - not another
-            // photograph of a page with nothing on it.
+            // the wall came down and the redirect has not arrived: the caller's own watch handles it, not another photograph
             if (relay.Current.Kind is CaptchaKind.None)
             {
                 ctx.Progress(JobStep.Authenticating);
                 return CaptchaOutcome.Asked;
             }
 
-            // It turned into something no relay carries.
             if (!IsRelayable(relay.Current.Kind))
             {
                 return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
@@ -567,16 +331,11 @@ internal sealed class CaptchaGate
         var relayed = await GestureAsync(ctx, page, taps, relay, ct).ConfigureAwait(false);
         if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
 
-        // More means the human is mid-answer and wants the next picture,
-        // which is the relay working rather than the provider resisting.
+        // More means the human is mid-answer: the relay working, not the provider resisting
         if (relayed is not GridRound.More) relay.Escalations++;
 
-        // Whether the provider gets a moment to move on before we look
-        // again. A human who is halfway through a grid has not given it
-        // anything to move on from, so that round skips the wait.
-        //
-        // Every gesture may have been the last one the provider needed,
-        // and the redirect is the only proof of that.
+        // only a finished gesture waits for the provider (a human mid-grid gave it nothing to move on from).
+        // the redirect is the only proof
         if (relayed is GridRound.Done
             && await watcher.WaitAsync(TimeSpan.FromSeconds(_spec.PollSeconds), ct).ConfigureAwait(false)
                 is { } captured)
@@ -588,16 +347,8 @@ internal sealed class CaptchaGate
         return null;
     }
 
-    /// <summary>
-    /// One gesture on the wall as it stands: a relayed grid, the one tick
-    /// this gate makes itself, or the checkbox frame relayed when that tick
-    /// did not take.
-    ///
-    /// A tick that landed is <see cref="GridRound.Done"/>: it is our gesture
-    /// and not theirs, so if the widget is still standing next time round,
-    /// this one did not get past it - and it counts against the rounds the
-    /// same way a finished grid does.
-    /// </summary>
+    /// a landed tick is Done: our gesture, not theirs, so a still-standing widget counts against the rounds
+    /// like a finished grid
     private async Task<GridRound> GestureAsync(
         IJobContext ctx, ILoginPage page, ITapSurface taps, WidgetRelay relay, CancellationToken ct)
     {
@@ -608,26 +359,13 @@ internal sealed class CaptchaGate
 
         if (relay.Ticked)
         {
-            // The tick did not take. A click on an element lands in the
-            // middle of it, and the middle of hCaptcha's checkbox frame is
-            // the words beside the box rather than the box - so this is a
-            // miss we should expect rather than a surprise.
-            //
-            // The answer is not to guess how far left the box is: an
-            // offset measured off one screenshot of one version of
-            // somebody else's widget is wrong the week they restyle it,
-            // and it is wrong invisibly. The frame is a picture like any
-            // other, so it is relayed like any other and the human taps
-            // their own box.
+            // the tick missed: a click lands mid-element, and mid hCaptcha's checkbox frame is the words beside the box.
+            // No guessed offset (wrong invisibly once they restyle): relay the frame like any picture, the human taps their own box
             return await RelayGridAsync(ctx, page, taps, _spec.Checkbox, relay.Current.Crop, ct)
                 .ConfigureAwait(false);
         }
 
-        // One real click on one real control - the gesture the widget
-        // exists to receive, and frequently the whole of what it asks.
-        // Once, ever: the box stays on the page after it is ticked, so
-        // a second pass would find it again and undo what the first
-        // one achieved.
+        // once, ever: the box stays after ticking, so a second pass would undo it
         if (!await page.ClickAsync(_spec.Checkbox, _spec.ProbeMs, ct).ConfigureAwait(false))
         {
             return GridRound.Lost;
@@ -635,58 +373,30 @@ internal sealed class CaptchaGate
 
         relay.Ticked = true;
 
-        // Our gesture, not theirs. If the widget is still standing
-        // next time round, this one did not get past it.
         return GridRound.Done;
     }
 
-    /// <summary>
-    /// One picture the widget drew: photographed out, tapped back, replayed
-    /// onto the page.
-    ///
-    /// The picture is the widget's own, and so is the answer - we neither read
-    /// it nor score it nor keep it. What happens here is bookkeeping about
-    /// pixels: which rectangle was photographed, and where in that rectangle
-    /// the human put their fingers.
-    /// </summary>
-    /// <param name="where">
-    /// The selectors the rectangle is measured again with just before the taps
-    /// are dispatched - the grid's, or the checkbox frame's when that is what
-    /// was relayed. It must be the list <paramref name="crop"/> came from, or
-    /// the answer is placed on a different rectangle from the one the human
-    /// was looking at.
-    /// </param>
+    /// the picture and the answer are the widget's own: we neither read, score nor keep them. where must be the
+    /// list crop came from, or the taps land on a different rectangle than the human saw
     private async Task<GridRound> RelayGridAsync(
         IJobContext ctx, ILoginPage page, ITapSurface taps, IReadOnlyList<string> where, CropRegion? crop,
         CancellationToken ct)
     {
-        // A grid with no measurable box cannot be photographed on its own and
-        // its answer cannot be placed back on the page. Relaying the whole
-        // viewport instead would put a question in front of a human that no
-        // answer of theirs could be acted on, which is the one thing this gate
-        // never does.
+        // no measurable box: the grid cannot be photographed alone nor its answer placed; relaying the whole viewport is never done
         if (crop is null) return GridRound.Lost;
 
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // Let the widget finish drawing before photographing it. A tap makes
-        // hCaptcha clear its panel and fetch the next puzzle, and the picture
-        // taken in that gap is of a spinner - which the account's owner is
-        // then asked to solve, on a clock. Best effort by construction: this
-        // returns either way and the shutter follows regardless, so a widget
-        // that never settles costs one budget and nothing else.
+        // let the widget finish drawing: after a tap hCaptcha clears and fetches the next puzzle, and a photo in
+        // that gap is a spinner; best effort, the shutter follows regardless
         await page.SettleAsync(where, _spec.SettleBudget, ct).ConfigureAwait(false);
 
-        // The crop is what lets the redactor drop the rest of the page rather
-        // than merely obscure it - and here it is also the frame the answer
-        // will be measured against, so the two cannot be allowed to differ.
+        // the crop lets the redactor drop the rest of the page, and is the frame the answer is measured against:
+        // they must not differ
         var png = await ctx.Browser.ScreenshotAsync(crop, ct).ConfigureAwait(false);
 
-        // No bytes means the redactor refused - it declines whatever it cannot
-        // verify, not only a page still holding a secret. There is no honest
-        // way on from here: asking somebody to tap a picture they cannot see
-        // is worse than admitting we are stuck, and clicking a grid nobody
-        // looked at is the line this design does not cross.
+        // no bytes: the redactor declines whatever it cannot verify; asking someone to tap an unseen picture,
+        // or clicking an unseen grid, is never done
         if (png.Length == 0)
         {
             throw ConnectorException.Blocked(
@@ -697,36 +407,24 @@ internal sealed class CaptchaGate
         var answer = await ctx.AskAsync(new Challenge
         {
             Type = ChallengeType.Image,
-            // The one field that makes this relayable. Everything else about
-            // the challenge is what a picture captcha has always been; what
-            // changed is that the answer is a set of points rather than a
-            // string, and a consumer has to know that to draw the right thing.
+            // the one field that makes it relayable: the answer is points, not a string, and a consumer must know
+            // to draw the right control
             AnswerKind = ChallengeAnswerKind.Taps,
-            // The same key as any other captcha, on purpose: this is not a
-            // different question, it is the same question answered with a
-            // finger. Which control to draw is answer_kind's job, and saying
-            // it twice is how the two come to disagree.
+            // same key as any captcha: answer_kind picks the control, and saying it twice lets the two disagree
             PromptKey = MessageKeys.Captcha,
             Image = png,
             Crop = crop,
             ExpiresAt = _time.GetUtcNow().AddSeconds(_spec.InteractiveSeconds),
         }, ct).ConfigureAwait(false);
 
-        // A consumer that ignored answer_kind drew a text box over the picture
-        // and sent back whatever was typed into it. Nothing is clicked on a
-        // string we cannot read: a tap inferred from prose is a click at a
-        // point no human chose.
+        // a consumer ignoring answer_kind sends typed text: never click a point inferred from prose, no human chose it
         if (!TapAnswer.TryParse(answer.Value, out var tapped)) return GridRound.Lost;
 
-        // Measured again, now. The crop above was taken before the human spent
-        // however long looking at it, and a widget that scrolled or re-laid
-        // itself out in the meantime would take every tap at the difference -
-        // which looks exactly like a coordinate bug and is not one.
+        // measured again: the human took time, and a widget that scrolled or re-laid out would offset every tap
+        // (looks like a coordinate bug)
         if ((await page.FindAsync(where, _spec.ProbeMs, ct).ConfigureAwait(false))?.Crop is not { } region)
         {
-            // The grid was there when the picture was taken and is gone - or
-            // no longer measurable - now, so the taps have nowhere to land and
-            // the page has moved on without us.
+            // the grid is gone or unmeasurable: the taps have nowhere to land
             return GridRound.Lost;
         }
 
@@ -734,34 +432,21 @@ internal sealed class CaptchaGate
 
         ctx.Progress(JobStep.Authenticating);
 
-        // The marker, and the only thing it can honestly mean here: a widget
-        // that draws its own verify button draws it inside the picture we
-        // relayed, so the human's last tap is what presses it - there is no
-        // control on our side of the iframe for us to press instead. What the
-        // marker tells us is whether they are finished, which decides whether
-        // the next round waits for the provider or goes straight back with
-        // another picture.
+        // Submit marks the human finished: a widget's verify button is inside the relayed picture, so their last tap
+        // presses it; it decides whether the next round waits for the provider
         return tapped.Submit ? GridRound.Done : GridRound.More;
     }
 
-    /// <summary>
-    /// Relays the one captcha a relay can carry: a picture, and a box to type
-    /// the answer into. Attended or not - a photograph and a typed answer
-    /// reach the account's owner wherever they are.
-    /// </summary>
+    /// attended or not: a photograph and a typed answer reach the account's owner wherever they are
     private async Task<CaptchaOutcome> RelayImageAsync(
         IJobContext ctx, ILoginPage page, CropRegion? crop, CancellationToken ct)
     {
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // The crop is what lets the redactor drop the rest of the page rather
-        // than merely obscure it.
+        // the crop lets the redactor drop the rest of the page rather than merely obscure it
         var png = await ctx.Browser.ScreenshotAsync(crop, ct).ConfigureAwait(false);
 
-        // No bytes means the redactor refused anyway - it declines whatever it
-        // cannot verify, not only a page still holding a secret. Asking a
-        // human to solve a picture they cannot see is worse than admitting we
-        // are stuck.
+        // no bytes: the redactor declined; asking someone to solve an unseen picture is worse than admitting we are stuck
         if (png.Length == 0) return CaptchaOutcome.Stuck;
 
         var answer = await ctx.AskAsync(new Challenge
@@ -773,15 +458,10 @@ internal sealed class CaptchaGate
             ExpiresAt = _time.GetUtcNow().AddSeconds(_spec.ImageSeconds),
         }, ct).ConfigureAwait(false);
 
-        // Only the captcha is answered. The credentials are deliberately not
-        // resubmitted to make the form look answered: a second submission of a
-        // password that may already have counted is how an account gets
-        // locked.
+        // only the captcha is answered: resubmitting a password that may have counted is how an account gets locked
         if (!await page.AnswerAsync(_spec.Input, answer.Value, _spec.ProbeMs, ct).ConfigureAwait(false))
         {
-            // The box was there when the wall was classified and is gone now,
-            // so the answer has nowhere to go and the page has moved on
-            // without us.
+            // the box is gone since classification: the page has moved on without us
             return CaptchaOutcome.Stuck;
         }
 

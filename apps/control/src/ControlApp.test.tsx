@@ -44,7 +44,6 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
-/** an aggregator that keeps an inventory beside a party that does not, and the consents of three origins on its account */
 const CONSENT_ROUTES = (): Record<string, Handler> => ({
   ...HAPPY_ROUTES(),
   'GET /control/connectors/status': () => ({
@@ -103,7 +102,6 @@ describe('ControlApp (test-auth mode)', () => {
     await screen.findByText(/no admin access/);
     fireEvent.click(screen.getByTestId('control-signout'));
     expect(signOut).toHaveBeenCalledTimes(1);
-    // the denied note carries its own Sign out — the fix it names is one tap away
     fireEvent.click(screen.getByTestId('control-denied-signout'));
     expect(signOut).toHaveBeenCalledTimes(2);
   });
@@ -133,7 +131,6 @@ describe('ControlApp (test-auth mode)', () => {
     renderControl();
     await screen.findByTestId('nav-connectors');
     expect(screen.getByTestId('nav-overview')).toBeTruthy();
-    // the per-environment portal's screens do not exist here, nor the retired consents and quota screens
     expect(screen.queryByTestId('nav-users')).toBeNull();
     expect(screen.queryByTestId('nav-catalog')).toBeNull();
     expect(screen.queryByTestId('nav-connections')).toBeNull();
@@ -179,7 +176,6 @@ describe('ControlApp (test-auth mode)', () => {
     expect(table.textContent).toContain('ah');
     expect(table.textContent).toContain('paused');
     expect(table.textContent).toContain('connect.paused.maintenance');
-    // the budget: two of ten calls left, nearly spent (a fifth or less)
     const quota = screen.getByTestId('control-quota-gocardless');
     expect(quota.textContent).toContain('2 / 10');
     expect(quota.className).toContain('warn');
@@ -192,7 +188,6 @@ describe('ControlApp (test-auth mode)', () => {
     expect(calls.filter((c) => c.endsWith('/remote-consents'))).toEqual(['GET /control/connectors/providers/gocardless/remote-consents']);
     expect(calls.some((c) => c.includes('/admin/'))).toBe(false);
 
-    // the active screen survives the page reload a Logto re-auth causes
     expect(sessionStorage.getItem('munni_control_screen')).toBe('consents');
     cleanup();
     renderControl();
@@ -204,7 +199,6 @@ describe('ControlApp (test-auth mode)', () => {
     renderControl({ labUrl: 'https://munni-prod-nas-lab.example.com' });
     fireEvent.click(await screen.findByTestId('nav-consents'));
     const prod = await screen.findByTestId('consents-group-https://munni-prod-nas.example.com');
-    // munni's own hosts name their environment
     expect(prod.textContent).toContain('prod · nas');
     expect(prod.textContent).toContain('ING_NL');
     expect(prod.textContent).toContain('2 consents · 2 accounts · 1 leftover');
@@ -213,7 +207,6 @@ describe('ControlApp (test-auth mode)', () => {
     expect(screen.getByTestId('consent-req-old-00004').textContent).toContain('expired');
     expect(screen.getByTestId('consent-req-old-00004').textContent).toContain('leftover');
     expect(screen.getByTestId('consents-group-http://localhost:8480').textContent).toContain('this computer');
-    // a sign-in at the bank nobody finished is a leftover; no return address goes last, said as such
     const lost = screen.getByTestId('consents-group-unattributed');
     expect(lost.textContent).toContain('never finished');
     expect(lost.textContent).toContain('No return address');
@@ -222,7 +215,6 @@ describe('ControlApp (test-auth mode)', () => {
     expect(tiles.textContent).toContain('2In force');
     expect(tiles.textContent).toContain('2Leftovers');
     expect(tiles.textContent).toContain('2Environments');
-    // read-only: the revoke is the lab's, one link away; Enable Banking is said to list nothing at its side
     expect(screen.queryAllByRole('button', { name: /revoke/i })).toHaveLength(0);
     expect(screen.getByTestId('consents-lab-gocardless').getAttribute('href')).toBe('https://munni-prod-nas-lab.example.com/#/providers/gocardless');
     expect(screen.getByTestId('consents-enablebanking').textContent).toContain('admin portal');

@@ -1,16 +1,6 @@
-/**
- * Memory-leak WATCH (#135), not a profiler: where the platform exposes a
- * JS heap size (Chromium — Android WebView, desktop/mobile Chrome PWA),
- * sample it on a slow clock and report SUSTAINED growth to GlitchTip
- * once per session, with the samples attached so the leak is
- * diagnosable later. iOS WebKit exposes no heap API — the code it runs
- * is the same shared code the Chromium platforms run, so their reports
- * cover it (the CI leak spec retired with the e2e re-evaluation,
- * 2026-11-08: a deploy gate for happy flows only).
- *
- * The bar is deliberately high (near-monotonic rise, big absolute AND
- * relative growth over a full hour) so ordinary churn never pages.
- */
+// leak WATCH (#135), not a profiler: where a JS heap size exists (Chromium), sample it slowly, report sustained growth once
+// iOS WebKit has no heap API; its code is shared with the Chromium platforms, whose reports cover it
+// the bar is high (near-monotonic, big absolute and relative rise over an hour) so ordinary churn never pages
 
 const SAMPLE_MS = 5 * 60_000;
 const WINDOW = 12; // one hour of samples
@@ -21,7 +11,6 @@ interface HeapSource {
   usedJSHeapSize: number;
 }
 
-/** near-monotonic: every step holds or rises (2% jitter allowed) */
 const sustainedRise = (samples: readonly number[]): boolean =>
   samples.every((value, i) => i === 0 || value >= samples[i - 1] * 0.98);
 

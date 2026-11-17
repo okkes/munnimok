@@ -8,23 +8,15 @@ export interface LoanCadence {
   everyN: number;
 }
 
-/** true when a stored plan needs the custom row to represent itself */
 export const isCustomCadence = (every: RecurringEvery | undefined, everyN: number | undefined): boolean =>
   every === 'week' || (everyN ?? 1) > 1;
 
-/** #190: the due-day field parsed like the recurring form — 1..31 or
- *  nothing (blank/invalid input stores no day) */
 export const parsedDueDay = (raw: string): number | undefined => {
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n >= 1 && n <= 31 ? n : undefined;
 };
 
-/**
- * The loan payment's rhythm — same mechanics as the recurring form
- * (user request 2026-08-01): Monthly / Yearly presets plus a Custom
- * row for "every N weeks/months/years". No anchor date: the payoff
- * projection only needs payments-per-year.
- */
+/** no anchor date: the payoff projection only needs payments-per-year */
 export function LoanCadenceControl({
   value,
   custom,
@@ -94,7 +86,6 @@ export function LoanCadenceControl({
           </select>
         </label>
       )}
-      {/* #377 (user): the day comes once the rhythm is known — a weekly plan carries no day of the month */}
       {value.every !== 'week' && (
         <label className="flex items-center gap-3 text-[13px] text-ink-2">
           {t('recurring.dueDay')}

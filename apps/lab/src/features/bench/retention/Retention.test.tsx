@@ -7,7 +7,6 @@ import { keptLoginVerdict, noLoginVerdict, retentionTuning, runSummary, runVerdi
 
 const CATALOGUE_WITH_PERSISTENT = { ...CATALOGUE, providers: [...CATALOGUE.providers, PERSISTENT_PROVIDER] };
 
-/** a scripted relay for one run: the report is kept here, step by step, the way the api keeps it */
 function scriptRun(run: RetentionRun): { routes: Record<string, Handler>; run: () => RetentionRun } {
   let current: RetentionRun = { ...run, steps: [...run.steps] };
   const routes: Record<string, Handler> = {
@@ -105,7 +104,6 @@ describe('Retention bench', () => {
     expect(screen.getByTestId('retention-run-state').textContent).toBe('running');
     expect(screen.getByTestId('retention-run-facts').textContent).toContain('keeps a browser on the agent');
 
-    // step 1: the embedded connect flow, pinned to the agent, recording forced
     await screen.findByTestId('retention-sign-in');
     expect(screen.getByTestId('bench-run-on-fixed').textContent).toBe(HOSTED_AGENT.name);
     expect(screen.queryByTestId('bench-run-on')).toBeNull();
@@ -115,7 +113,6 @@ describe('Retention bench', () => {
     await waitFor(() => expect(logins).toHaveLength(1));
     expect(logins[0]).toEqual({ inputs: { username: 'okkes' }, config: {}, preferAgent: 'agt_hosted', record: true });
 
-    // the rest drives itself, down to the wipe
     await waitFor(() => expect(screen.getByTestId('retention-run-state').textContent).toBe('passed'), { timeout: 8_000 });
     const states = ['sign-in', 'fetch', 'kept-login', 'fetch-again', 'release'].map((name) => screen.getByTestId(`retention-step-state-${name}`).textContent);
     expect(states).toEqual(['pass', 'pass', 'pass', 'pass', 'pass']);

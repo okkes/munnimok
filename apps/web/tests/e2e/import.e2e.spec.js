@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: a bank statement file through a real file picker and a real
-// IndexedDB — the preview matches the existing account by IBAN, the import
-// sets the balance and the categories, and a re-import is all duplicates.
-
 // date-freshened copy — the static file ages out of the attach history window
 const FIXTURE = freshCamtFixture();
 
@@ -12,7 +8,6 @@ async function goToAccounts(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
-  // space cards mount collapsed — open the demo cluster
   await page.click('[data-testid="accounts-space-head-demo_space"]');
   await page.waitForSelector('[data-testid="account-row-demo_main"]');
 }
@@ -39,7 +34,6 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="import-result"]')).toContainText('Imported 3 transactions, skipped 0');
     await shot(page, k('20-import-run') + '--s1');
     await page.click('[data-testid="import-close"]');
-    // the matched account takes the statement's closing balance; the new one is created
     await expect(page.locator('[data-testid="account-row-demo_main"]')).toContainText('3,390.55');
     await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('Bank · 4300');
     await page.click('[data-testid="tab-transactions"]');

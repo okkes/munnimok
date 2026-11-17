@@ -5,14 +5,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// The reader underneath the statement parser.
-///
-/// Columns are resolved by matching known ALIASES, never by position.
-/// Position-based mapping keeps working after a bank inserts a column and
-/// starts writing the wrong data into the right field, which is the
-/// silent-corruption failure this whole codebase is arranged to avoid.
-/// </summary>
+// columns resolve by alias, never position: a bank inserting a column would silently write wrong data into the
+// right field
 public sealed class LocaleTolerantCsvTests
 {
     private static CsvSchema Schema(CsvDateOrder order = CsvDateOrder.DayFirst) => BankStatementCsv.Schema(order);
@@ -20,8 +14,7 @@ public sealed class LocaleTolerantCsvTests
     [Fact]
     public void The_delimiter_is_chosen_by_how_many_known_columns_it_resolves()
     {
-        // A semicolon file whose description contains commas. Scoring by
-        // "how many fields do I get" would pick the comma and shred it.
+        // a semicolon file with commas in a description: scoring by field count would pick the comma and shred it
         const string Text = """
             Datum;Naam / Omschrijving;Af Bij;Bedrag (EUR)
             02-06-2026;"DE KLEINE, WONINGSTICHTING";Af;1.425,00
@@ -78,9 +71,8 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(Text, Schema());
 
-        // "rekening" must not claim "Tegenrekening", which is why exact
-        // normalised equality runs for every column before containment runs
-        // for any of them.
+        // exact normalised equality runs for every column before containment runs, so "rekening" cannot claim
+        // "Tegenrekening"
         Assert.Equal("NL18ASNB0123456789", table[0].Text(BankStatementCsv.ColumnAccount));
         Assert.Equal("NL22RABO0123409876", table[0].Text(BankStatementCsv.ColumnCounterpartyIban));
     }
@@ -139,8 +131,7 @@ public sealed class LocaleTolerantCsvTests
             02-06-2026;-1425.00;something else entirely
             """;
 
-        // Guessing which field moved is exactly the mistake alias matching
-        // exists to prevent.
+        // guessing which field moved is the mistake alias matching exists to prevent
         var error = Assert.Throws<ConnectorException>(() => LocaleTolerantCsv.Read(Text, Schema()));
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
@@ -154,8 +145,7 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(Text, Schema());
 
-        // Treating it as a row boundary would shift every subsequent field by
-        // one column.
+        // read as a row boundary it would shift every later field by one column
         Assert.Single(table);
         Assert.Equal("Huur juni\nen servicekosten", table[0].Text(BankStatementCsv.ColumnDescription));
     }
@@ -187,9 +177,7 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(text, Schema());
 
-        // Whichever separator comes last is the decimal one; the other is a
-        // thousands grouping. Both readings are unambiguous, so neither is
-        // guessed.
+        // the last separator is the decimal one and the other groups thousands: unambiguous, never guessed
         Assert.Equal(expected, table[0].MinorUnits(BankStatementCsv.ColumnAmount));
     }
 
@@ -237,8 +225,7 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(text, Schema(order));
 
-        // 03-04-2026 is a real date under both readings and they mean
-        // different months. There is no signal in the file that resolves it.
+        // 03-04-2026 is a real date in both orders and nothing in the file resolves it
         Assert.Equal(expectedMonth, table[0].Date(BankStatementCsv.ColumnDate).Month);
     }
 
@@ -265,8 +252,7 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(Text, Schema());
 
-        // Online banking exports are commonly UTF-8 with a BOM, and a BOM
-        // glued to the first header makes the date column unresolvable.
+        // online banking exports are often UTF-8 with a BOM, which glued to the first header hides the date column
         Assert.True(table.HasColumn(BankStatementCsv.ColumnDate));
         Assert.Equal(new DateOnly(2026, 6, 2), table[0].Date(BankStatementCsv.ColumnDate));
     }
@@ -278,9 +264,7 @@ public sealed class LocaleTolerantCsvTests
 
         var table = LocaleTolerantCsv.Read(text, Schema());
 
-        // The unit is the caller's declaration, not a property of the value:
-        // 142500 is 1425.00 under Minor and 14250000 under MajorString, and
-        // nothing here inspects the digits to decide.
+        // the unit is the caller's declaration, never inferred from the digits
         Assert.Equal(142_500, table[0].MinorUnits(BankStatementCsv.ColumnAmount, MoneyUnit.Minor));
         Assert.Equal(14_250_000, table[0].MinorUnits(BankStatementCsv.ColumnAmount, MoneyUnit.MajorString));
     }

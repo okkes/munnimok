@@ -29,11 +29,7 @@ import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
-/**
- * Spaces: separate bookkeeping areas, shared with other people or not.
- * The palette (#178) opens the space's settings SCREEN (/spaces/$spaceId);
- * only space creation stays a sheet (one decision).
- */
+/** the palette (#178) opens the space's settings screen; only creation stays a sheet (one decision) */
 export function SpacesScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId, setActiveSpace } = useData();
@@ -43,17 +39,11 @@ export function SpacesScreen() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
-  // #195: Create stays enabled — an invalid click says why instead
   const [attempted, setAttempted] = useState(false);
-  // the full create form (arc 4): identity + the three defaults, each
-  // editable through the SAME controls their settings screens use —
-  // everything except the name has a default, "type a name, press
-  // Create" still works (Mina's act step stays valid)
+  // everything except the name has a default, so "type a name, press Create" still works (Mina's act step)
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
-  // #285 (user): search widens the curated set to the whole icon font
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
-  // #301: an own picture from birth — the settings strip, re-used
   const [picture, setPicture] = useState('');
   const [focus, setFocus] = useState<ImageFocus | null>(null);
   const webcamDoor = useWebcamDoor();
@@ -62,19 +52,16 @@ export function SpacesScreen() {
   const [periodDay, setPeriodDay] = useState(1);
   const [currency, setCurrency] = useState('EUR');
   const [historyStart, setHistoryStart] = useState(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
-  // #147 (user): private mode is a creation-time CHOICE — checked by
-  // default, so "type a name, press Create" still births a locked space
+  // #147: private mode is a creation-time choice, on by default
   const [inviteLock, setInviteLock] = useState(true);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
-  // attention pills (arc 7): counted once when the screen mounts
   const attention = useAttentionMap(true);
 
-  // duplicate PRIVATE names are a footgun (user rule: private unique;
-  // shared may collide — they get a creator line to tell them apart)
+  // private names are unique; shared may collide (they get a creator line to tell them apart)
   const privateNameTaken = (candidate: string) =>
     (spaces ?? []).some((s) => s.kind !== 'shared' && s.name.trim().toLowerCase() === candidate.trim().toLowerCase());
 
@@ -88,7 +75,6 @@ export function SpacesScreen() {
       return;
     }
     const id = repo.newId();
-    // shared duplicates render "created by X" — capture the creator now
     const profile = (await store.metaGet('profile'))?.value as { name?: string } | undefined;
     void repo
       .upsert('space', id, id, {
@@ -100,13 +86,9 @@ export function SpacesScreen() {
         periodType,
         periodDay,
         weekStart: globalWeekStart(), // #370: the device preference, overridable per space
-        // persisted, not just displayed — attaching an account must see
-        // the same default the settings screen shows (user bug report)
+        // persisted: attaching an account must see the same default the settings screen shows
         historyStartDate: historyStart,
-        // #147 (user): the create form decides the lock — still private
-        // unless the checkbox was explicitly unticked
         inviteLock: inviteLock ? 1 : 0,
-        // #301: the picked picture is born with the space
         ...(picture ? { picture, pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null } : {}),
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
@@ -121,27 +103,24 @@ export function SpacesScreen() {
   };
 
   const openCreate = () => {
-    // Mina suggests the first names ("Private", "Family") — the user
-    // still edits and presses Create themselves
     setName(minaSuggestedSpaceName() ?? '');
     setNameError(false);
     setAttempted(false);
     setIcon(SPACE_ICONS[0]);
     setIconQuery('');
     setColor(SPACE_COLORS[0]);
-    setPicture(''); // #301: no picture carried over from the last form
+    setPicture('');
     setFocus(null);
 
     setPeriodType('month');
     setPeriodDay(1);
     setCurrency('EUR');
     setHistoryStart(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
-    setInviteLock(true); // #147: every new form starts private again
+    setInviteLock(true);
     setCreateOpen(true);
   };
 
-  // #180: arriving from a create handoff (home FAB) opens the sheet the
-  // moment the screen mounts — read-once, like the accounts handoff
+  // #180: a create handoff (home FAB) opens the sheet on mount, read-once
   const [pendingCreate] = useState(() => takeSpacesCreateIntent());
   useEffect(() => {
     if (pendingCreate) openCreate();
@@ -149,7 +128,6 @@ export function SpacesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** "Monthly · day 1" / "Weekly · Mon" — the period row's face */
   const periodSummary = () => {
     const label = t(PERIOD_KEYS[periodType]);
     if (periodType === 'month') return `${label} · ${periodDay}`;
@@ -206,13 +184,11 @@ export function SpacesScreen() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         <span className="min-w-0 truncate text-[15px] font-medium text-ink">{space.name}</span>
-                        {/* #277: shared spaces wear the people pill */}
                         {space.kind === 'shared' && <SharedSpaceBadge testId={`space-shared-badge-${space.id}`} />}
                       </span>
                       <span className="block truncate text-xs text-ink-4">
                         {t(space.kind === 'shared' ? 'space.kindShared' : 'space.kindPersonal')}
-                        {/* #277: shared rows ALWAYS name their creator
-                            (the old name-collision gate hid it) */}
+                        {/* #277: shared rows ALWAYS name their creator */}
                         {space.kind === 'shared' && space.createdByName && (
                           <> · {t('space.createdBy', { name: space.createdByName })}</>
                         )}
@@ -224,7 +200,6 @@ export function SpacesScreen() {
                         )}
                       </span>
                     </span>
-                    {/* what this space would ask of you (arc 7) */}
                     {(attention?.get(space.id)?.reviewCount ?? 0) > 0 && (
                       <span
                         data-testid={`space-attn-${space.id}`}
@@ -244,9 +219,7 @@ export function SpacesScreen() {
                     onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId: space.id } })}
                     className="m-tap flex h-11 w-11 shrink-0 items-center justify-center border-none bg-transparent text-ink-4"
                   >
-                    {/* #178 (user): the screen edits the space's LOOK
-                        (name/symbol/color/picture) — a palette says that,
-                        a cog promised machinery it doesn't have */}
+                    {/* #178: the screen edits the space's LOOK: a palette says that, a cog promised more */}
                     <Icon name="palette-outline" size={19} />
                   </button>
                 </div>
@@ -257,9 +230,6 @@ export function SpacesScreen() {
         <p className="mt-2 px-1 text-[11px] leading-snug text-ink-4">{t('space.listHint')}</p>
       </div>
 
-      {/* Create space — the full form (arc 4): identity + the three
-          defaults, each behind a row that opens the same editor its
-          settings screen uses. Only the name is required. */}
       <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="tall" dirty={name.trim() !== ''}>
         <div className="flex flex-col gap-3 pt-1">
           <input
@@ -273,15 +243,12 @@ export function SpacesScreen() {
             aria-invalid={attempted && !name.trim()}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
-          {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-create-blocker" />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="space-create-name-taken">
               {t('space.nameTaken')}
             </p>
           )}
-          {/* #301: own picture from birth — the settings strip, shared
-              (upload/clear + the desktop webcam door) */}
           <div className="m-cap px-1">{t('space.icon')}</div>
           <SpacePhotoStrip
             picture={picture}
@@ -304,10 +271,7 @@ export function SpacesScreen() {
               testId="space-create-photo-focus"
             />
           )}
-          {/* #285: the shared grid — the whole font behind the search, glyphs in
-              the picked color. #146 (user): a picture wins over symbol+color
-              everywhere, so while one is set the grid sleeps — and #444: it
-              LOOKS asleep */}
+          {/* #146: a picture wins over symbol+color everywhere, so the grid sleeps and looks asleep (#444) */}
           <SpaceIconGrid
             icon={icon}
             onIcon={setIcon}
@@ -318,7 +282,6 @@ export function SpacesScreen() {
             sleeping={picture !== ''}
             testIdPrefix="space-create-icon"
           />
-          {/* #146: say WHY the pickers sleep, not just gray them out */}
           {picture !== '' && (
             <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-create-icon-picture-note">
               {t('space.picStompsIcon')}
@@ -352,8 +315,7 @@ export function SpacesScreen() {
             </button>
           ))}
 
-          {/* #147 (user): the private lock is decided here, not decreed —
-              same control (and copy) the space's settings keep afterwards */}
+          {/* #147: the lock is decided here; same control the space's settings keep afterwards */}
           <div className="rounded-input border border-line bg-surface px-4 py-3">
             <label className="flex items-center gap-3 text-[14px] font-medium text-ink">
               <input
@@ -373,11 +335,8 @@ export function SpacesScreen() {
         </div>
       </Sheet>
 
-      {/* stacked: the three default editors, mirroring their settings twins */}
       <Sheet open={periodOpen} onOpenChange={setPeriodOpen} title={t('space.periodTitle')} size="form">
         <div className="flex flex-col gap-3 pt-1">
-          {/* #137 (user): bare controls read as a riddle — the sheet
-              explains itself with the settings screen's exact words */}
           <p className="rounded-card bg-bg-2 px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="space-create-period-explain">
             {t('period.explain')}
           </p>
@@ -418,7 +377,6 @@ export function SpacesScreen() {
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen} title={t('space.historyStart')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[12px] text-ink-3">{t('space.historyStartSub')}</p>
-          {/* start small (arc 5): review stays manageable */}
           <p className="text-[12px] text-ink-3" data-testid="space-create-history-hint">{t('space.historyStartHint')}</p>
           <input
             data-testid="space-create-history-date"
@@ -431,8 +389,6 @@ export function SpacesScreen() {
           />
         </div>
       </Sheet>
-      {/* #301: snapshot feeds the same downscale path as the file input
-          (a SIBLING sheet, like its settings twin) */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => applySpacePhoto(file, setPicture)} />
     </div>
   );

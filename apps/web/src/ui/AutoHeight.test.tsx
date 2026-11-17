@@ -47,7 +47,6 @@ describe('AutoHeight (#540: the next card never jumps)', () => {
       </AutoHeight>,
     );
     const box = screen.getByTestId('auto');
-    // the first measure sets the height outright — nothing to ease from
     expect(box.style.height).toBe('120px');
     expect(box.style.overflow).toBe('');
     expect(box.style.transition).toContain('height');
@@ -56,7 +55,6 @@ describe('AutoHeight (#540: the next card never jumps)', () => {
     expect(box.style.overflow).toBe('hidden');
     vi.advanceTimersByTime(400);
     expect(box.style.overflow).toBe('');
-    // the same height again changes nothing
     observer.resize(260);
     expect(box.style.overflow).toBe('');
   });

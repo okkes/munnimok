@@ -4,17 +4,9 @@ import { localAwareFetch } from './insecure-fetch.mjs';
 import { loadStack, platformEnvStacks, stackName } from './stack.mjs';
 import { foldFallbacks } from './secrets.mjs';
 
-/**
- * Credential validators for the setup wizard (user request: "whenever I
- * enter them, check if the value is correct — like the GitHub PAT").
- * Each mirrors how the SERVER really authenticates (GoCardlessApi,
- * EnableBankingApi, LogoEndpoints…), so a green check here means the
- * stack will work. Most providers block browser calls (CORS), so these
- * run in the local helper; values are transient — never stored, never
- * logged. Verdicts: {ok, detail} — a thrown/failed network hop becomes
- * {ok:false, unreachable:true} so the wizard can store-with-warning
- * instead of refusing.
- */
+// each validator mirrors how the SERVER really authenticates, so green here means the stack works
+// most providers block browser calls (CORS), so these run in the helper; values are transient
+// a failed network hop is {ok:false, unreachable:true} so the wizard can store-with-warning
 
 const T = (ms = 10000) => AbortSignal.timeout(ms);
 const b64url = (input) => Buffer.from(input).toString('base64url');
@@ -23,7 +15,6 @@ const need = (values, names) => {
   return missing.length ? `missing: ${missing.join(', ')}` : null;
 };
 
-/** a Google OAuth access token for a service account (jwt-bearer grant against its token_uri): {ok, access} or {ok:false, detail} */
 async function googleAccess(sa, scope, fetchImpl) {
   const now = Math.floor(Date.now() / 1000);
   let assertion;
@@ -51,8 +42,6 @@ export function jwtES256({ header, payload, pem }) {
   return `${input}.${b64url(sig)}`;
 }
 
-/* DSM's SYNO.API.Auth error codes, as the operator meets them (2026-09-10:
-   a bare {"code":402} sent the user hunting) */
 export const DSM_LOGIN_ADVICE = {
   400: 'no such account, or the password is wrong',
   401: 'the account is disabled (DSM → Control Panel → User & Group)',
@@ -71,7 +60,6 @@ export const dsmLoginAdvice = (message) => {
 };
 
 export const VALIDATORS = {
-  /** POST token/new — the exact call GoCardlessApi makes */
   async gocardless(values, fetchImpl) {
     const gap = need(values, ['GOCARDLESS_SECRET_ID', 'GOCARDLESS_SECRET_KEY']);
     if (gap) return { ok: false, detail: gap };
@@ -85,7 +73,6 @@ export const VALIDATORS = {
     return { ok: false, detail: `GoCardless rejected them (${res.status}) — re-copy Secret ID + Key from the portal` };
   },
 
-  /** RS256 JWT (iss/aud per EnableBankingApi) against GET /aspsps */
   async enablebanking(values, fetchImpl) {
     const gap = need(values, ['ENABLEBANKING_APPLICATION_ID', 'ENABLEBANKING_PRIVATE_KEY_PEM']);
     if (gap) return { ok: false, detail: gap };
@@ -109,9 +96,8 @@ export const VALIDATORS = {
     return { ok: false, detail: `Enable Banking rejected them (${res.status}): ${body}` };
   },
 
-  /** the roles Build needs on the GOOGLE PLAY service account (push has nothing of its own to type): switching the
-   *  Firebase Management API on — Service Usage Admin, idempotent, Build does it anyway — and reading the project
-   *  (Firebase Admin). A missing role is named with the IAM page to fix it on. */
+  // roles Build needs on the GOOGLE PLAY service account: Service Usage Admin (switches the Firebase API on)
+  // and Firebase Admin (reads the project)
   async fcm(values, fetchImpl) {
     if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { ok: false, detail: 'save the Google Play tile first — push uses its service account' };
     let sa;
@@ -147,9 +133,7 @@ export const VALIDATORS = {
   },
 
   /** sk_ search auth + pk_ image fetch — mirrors LogoEndpoints incl. the swap check */
-  /** the registry pull token — GitHub names the user and the scopes of a
-   *  classic PAT; the page's own check needs the pasted value, this twin
-   *  lets "Check all" verify the STORED one through the helper */
+  /** twin of the page's own check: lets "Check all" verify the STORED PAT through the helper */
   async ghcr(values, fetchImpl) {
     const gap = need(values, ['GHCR_PAT']);
     if (gap) return { ok: false, detail: gap };
@@ -274,9 +258,6 @@ export const VALIDATORS = {
     return { ok: true, detail: `Apple recognized the client${redirectUris.length ? ` and accepts all ${redirectUris.length} return URL(s)` : ''} (dummy code rejected with "${body.error ?? res.status}", as expected)` };
   },
 
-  /** parse the Play service account + mint an androidpublisher-scoped
-   * token — the exact credential the CI publish step and the wizard's
-   * store-app detection use */
   async playstore(values, fetchImpl) {
     const gap = need(values, ['PLAY_SERVICE_ACCOUNT_JSON']);
     if (gap) return { ok: false, detail: gap };
@@ -311,8 +292,6 @@ export const VALIDATORS = {
     return { ok: false, detail: `Google rejected the service account (${res.status}): ${body}` };
   },
 
-  /** ES256 App Store Connect JWT against GET /v1/apps — the key CI
-   * uploads with and the wizard checks app records with */
   async ascstore(values, fetchImpl) {
     const gap = need(values, ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8']);
     if (gap) return { ok: false, detail: gap };
@@ -352,7 +331,6 @@ export const VALIDATORS = {
     return { ok: true, devices, detail: `App Store Connect accepted the key — ${devices.enabled} enabled iOS device${devices.enabled > 1 ? 's' : ''}` };
   },
 
-  /** a real DSM login + logout via the same module the bootstrap uses */
   async synology(values, fetchImpl) {
     const gap = need(values, ['SYNOLOGY_URL', 'SYNOLOGY_USER', 'SYNOLOGY_PASS']);
     if (gap) return { ok: false, detail: gap };
@@ -363,10 +341,8 @@ export const VALIDATORS = {
     }
     try {
       const s = await dsmSession({ url: values.SYNOLOGY_URL, user: values.SYNOLOGY_USER, pass: values.SYNOLOGY_PASS }, fetchImpl, { retry: [] });
-      // does DSM treat the session as an administrator from THIS machine? its
-      // own desktop init data says — the Control Panel APIs bootstrap needs
-      // answer 105 to a session it does not (found live 2026-09-16: the same
-      // account was an administrator in a LAN browser and not from GitHub)
+      // does DSM treat the session as an administrator from THIS machine? the Control Panel APIs answer 105 to one it does not
+      // (the same account was an administrator in a LAN browser and not from GitHub)
       let admin = null;
       try { const init = await s.call('SYNO.Core.Desktop.Initdata', 1, 'get'); admin = typeof init?.Session?.is_admin === 'boolean' ? init.Session.is_admin : null; } catch { admin = null; }
       await s.logout();
@@ -378,11 +354,9 @@ export const VALIDATORS = {
     }
   },
 
-  /** the local pair's Logto management token — what bootstrap will do */
   async 'logto-m2m'(values, fetchImpl) {
     const gap = need(values, ['LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET']);
     if (gap) return { ok: false, detail: gap };
-    // the platform config names the environments (no hardcoded "prod")
     const envs = platformEnvStacks('lcl');
     if (!envs.length) return { ok: false, detail: 'no local environment exists yet — Set up & start munni first, then re-check' };
     const logto = envs[0].urls.logto;
@@ -399,7 +373,6 @@ export const VALIDATORS = {
     return { ok: false, detail: `Logto rejected it (${res.status}) — is it the M2M app with the Management API role?` };
   },
 
-  /** the local GlitchTip token against its own API */
   async 'glitchtip-token'(values, fetchImpl) {
     const gap = need(values, ['GLITCHTIP_API_TOKEN']);
     if (gap) return { ok: false, detail: gap };
@@ -413,11 +386,8 @@ export const VALIDATORS = {
   },
 };
 
-/* ── redirect registration probes (user ask 2026-09-09: automate the
-   OAuth setup — neither Google nor Apple offers an API that CREATES a
-   client / Services ID, but both authorization endpoints judge a
-   redirect WITHOUT a user, so the wizard can at least verify every
-   environment's callback the moment the credentials are pasted). ── */
+// neither Google nor Apple has an API that CREATES a client / Services ID, but both authorization endpoints
+// judge a redirect WITHOUT a user, so the callbacks can be verified once the credentials are pasted
 
 /** Google: a refused request 302s to /signin/oauth/error whose authError
  * is a base64url proto that starts with the error code

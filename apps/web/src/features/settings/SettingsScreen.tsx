@@ -38,7 +38,6 @@ const SYNC_STATUS_KEYS = {
   error: 'sync.error',
 } as const;
 
-/** live sync state + last successful sync — silent failures can't hide */
 function SyncStatusRow() {
   const { t, lang } = useLang();
   const { store, engine } = useData();
@@ -50,14 +49,10 @@ function SyncStatusRow() {
 
   if (!engine) return null;
   const healthy = status === 'idle' || status === 'syncing';
-  // exactly two lines, always — the row used to grow/shrink as the status
-  // flipped (idle → syncing → idle, reason appearing), which made the
-  // whole settings list jump
+  // exactly two lines always: a row that grew and shrank made the settings list jump
   const lastSyncLabel = lastSync
     ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : t('sync.never');
-  // user 2026-10-06: writes still waiting on this device take the second
-  // line — offline they say when they will go out
   let subLine = offlineReason ? t(OFFLINE_REASON_KEYS[offlineReason]) : `${t('sync.lastSync')}: ${lastSyncLabel}`;
   let subId = offlineReason ? 'settings-sync-reason' : 'settings-sync-last';
   if (pending > 0) {
@@ -87,9 +82,6 @@ function SyncStatusRow() {
   );
 }
 
-/** the active space as the screen's header card — tapping it opens the
- *  space's own settings (replaces the old "Settings" row + scope caption:
- *  the space the rows below belong to IS this card) */
 function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefined; onClick: () => void }>) {
   const { t } = useLang();
   return (
@@ -114,7 +106,6 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
-          {/* #277: the card says when the scope is a SHARED space */}
           {space?.kind === 'shared' && <SharedSpaceBadge testId="settings-space-shared-badge" />}
         </span>
         <span className="block truncate text-[12px] text-ink-3">
@@ -135,11 +126,9 @@ export function SettingsScreen() {
   const navigate = useNavigate();
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  // moving the history start is impactful (arc 5): the picked date stays
-  // a DRAFT with its consequences counted out loud until Apply
+  // moving the history start is impactful: the date stays a draft, consequences counted, until Apply
   const [historyDraft, setHistoryDraft] = useState<string | null>(null);
   const [historyImpact, setHistoryImpact] = useState<HistoryMoveImpact | null>(null);
-  // readers can look at the space's period/currency/history but not change them
   const myRole = useMyRole(spaceId, identity?.kind === 'user');
   const readOnly = myRole === 'reader';
 
@@ -174,8 +163,6 @@ export function SettingsScreen() {
     !!historyDraft &&
     (new Date(activeSpace?.historyStartDate ?? historyDraft).getTime() - new Date(historyDraft).getTime()) / 86_400_000 > 31;
 
-  // extracted settings show their current value on the row (like the
-  // language row in Global settings) — the list doubles as an overview
   const settingValue = (testId: string) => {
     if (!activeSpace) return undefined;
     if (testId === 'settings-period-row') {
@@ -200,21 +187,16 @@ export function SettingsScreen() {
   };
   const signOut = async () => {
     const current = identity;
-    // #549: the device's own switch is gone — signed out, this device stops receiving the person's
-    // notifications (capped: an unreachable server never holds the sign-out up)
+    // #549: signed out, this device stops receiving the person's notifications
+    // (capped: an unreachable server never holds up the sign-out)
     if (current?.kind === 'user') {
       await Promise.race([disablePush().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 2000))]);
     }
     logout();
-    // user identities keep local data (sync is the source of truth);
-    // offline profiles keep their data too (this device IS the truth) —
-    // only the demo resets to its pristine dataset on sign-out
+    // user and offline identities keep their local data; only the demo resets to pristine on sign-out
     if (current?.kind === 'user') {
-      // native: the end-session round-trip runs in the auth session that
-      // signed in (that's where Logto's session cookie lives) and lands on
-      // the app's scheme (munni-<env>-<platform>://signed-out, registered
-      // as the post sign-out redirect URI); the deep-link handler brings the
-      // app to the login screen. Web keeps its own origin.
+      // native: the end-session round-trip runs in the auth session that signed in (Logto's cookie lives there) and
+      // lands on munni-<env>-<platform>://signed-out, the registered post sign-out redirect URI
       const postLogout = isNativeApp() ? nativeSignedOutUri() : window.location.origin;
       if (!current.testAuth && (await oidcSignOut(postLogout))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
@@ -253,15 +235,12 @@ export function SettingsScreen() {
               rows: [
                 // #577: the bar can drop transactions and portfolio — Home and these rows keep their doors
                 { testId: 'settings-transactions-row', icon: 'format-list-bulleted', labelKey: 'tab.transactions', to: '/transactions' },
-                // receipts are a SPACE view (v3 ruling): what you see here
-                // depends on which connections this space includes
+                // receipts are a space view: what shows depends on which connections this space includes
                 { testId: 'settings-receipts-row', icon: 'receipt-text-outline', labelKey: 'receipts.title', to: '/receipts' },
                 // #128: the recurring manager left the tab bar — Home and this row are its doors
                 { testId: 'settings-recurring-row', icon: 'autorenew', labelKey: 'screen.recurring', to: '/recurring' },
                 { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
-                // splits live here, not in Global (user remark): the group
-                // itself is space-independent, but its attachment and the
-                // transactions you pick from belong to the current space
+                // splits live here, not in Global: attachment and the transactions picked from belong to the current space
                 { testId: 'settings-splits-row', icon: 'account-cash-outline', labelKey: 'splits.title', to: '/splits', userOnly: true },
                 { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
                 { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
@@ -278,19 +257,12 @@ export function SettingsScreen() {
             {
               capKey: 'settings.groupSetup',
               rows: [
-                // the space's accounts/members moved out of the (already
-                // big) space-settings screen — user remark; period,
-                // currency and history start were extracted next (same
-                // remark: that screen kept only the space's identity)
-                // wallet vs bank (arc 9): the space's own pocket, not the
-                // global bank overview — the icons carry the distinction
                 { testId: 'settings-space-accounts-row', icon: 'wallet-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
                 { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
                 { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
                 { testId: 'settings-currency-row', icon: 'cash-100', labelKey: 'space.ledgerCurrency', sheet: 'currency' },
                 { testId: 'settings-history-row', icon: 'history', labelKey: 'space.historyStart', sheet: 'history' },
-                // #577: what the phone's bottom bar holds for this space
                 { testId: 'settings-navigation-row', icon: 'dock-bottom', labelKey: 'nav.title', to: '/spaces/$spaceId/navigation' },
               ],
             },
@@ -350,8 +322,6 @@ export function SettingsScreen() {
             <Icon name="logout" size={20} />
             <span className="flex-1">{t('settings.signOut')}</span>
           </button>
-          {/* account deletion moved to Global settings (user remark: too
-              close to sign-out for comfort) */}
         </div>
 
         <div className="pt-6 pb-6 text-center text-[11px] text-ink-4">
@@ -360,13 +330,10 @@ export function SettingsScreen() {
         </div>
       </div>
 
-      {/* extracted space settings (user request): small single-purpose
-          sheets — picking a value applies immediately (LWW makes it safe) */}
+      {/* picking a value applies immediately (LWW makes it safe) */}
       <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form" dragHandle>
         <div className="flex flex-col gap-3 pt-1">
-          {/* "ledger" is deliberate (currency plan CD5): this anchors
-              budgets, goals and period totals for every member — how
-              amounts READ is the personal display currency on Profile */}
+          {/* "ledger" is deliberate: it anchors budgets, goals and period totals for every member; display currency is on Profile */}
           <p className="text-[12px] text-ink-3">{t('space.ledgerCurrencyInfo')}</p>
           <ReadOnlyNote testId="space-currency-readonly-note" />
           <div className="flex flex-wrap gap-2">
@@ -403,7 +370,6 @@ export function SettingsScreen() {
             }}
             className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
           />
-          {/* the consequences, counted BEFORE anything happens (arc 5) */}
           {historyDraft && historyImpact && historyImpact.direction !== 'none' && (
             <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="space-history-impact">
               {historyImpact.direction === 'newer' ? (

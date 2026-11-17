@@ -5,11 +5,7 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { hydrateProfileMeta } from './profileHydrate';
 
-/**
- * Reinstall gap (user report 2026-07-18): the Settings avatar reads the
- * local profile copy, which only the profile screen's Save wrote — a
- * fresh install showed the stock icon even though /me knew the picture.
- */
+/** a fresh install showed the stock avatar: the local profile copy was written only by the profile screen's Save */
 describe('hydrateProfileMeta', () => {
   afterEach(() => vi.unstubAllGlobals());
 

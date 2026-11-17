@@ -50,12 +50,10 @@ describe('receipt ↔ transaction matching', () => {
     ];
     const near = expensesByCost(txs);
     expect(near(2350).map((t) => t.id).sort()).toEqual(['exact', 'other-day', 'two-down', 'two-up']);
-    // the same rows the full walk admits, for any total
     for (const totalCents of [2347, 2350.5, 2355, 10]) {
       const walked = txs.filter((t) => t.deleted === 0 && t.txType === 'expense' && Math.abs(-t.amountCents - totalCents) <= 2);
       expect(near(totalCents).map((t) => t.id).sort(), String(totalCents)).toEqual(walked.map((t) => t.id).sort());
     }
-    // and the winner is the one the walk finds
     expect(bestMatch(receipt, near(receipt.totalCents), new Set())).toBe(bestMatch(receipt, txs, new Set()));
   });
 
@@ -63,33 +61,25 @@ describe('receipt ↔ transaction matching', () => {
     const clear = [tx({ id: 'only' })];
     expect(bestMatch(receipt, clear, new Set())).toBe('only');
 
-    // two equal candidates → ambiguous → manual
     const twins = [tx({ id: 'a' }), tx({ id: 'b' })];
     expect(bestMatch(receipt, twins, new Set())).toBeNull();
 
-    // merchant hit breaks the tie
     const tied = [tx({ id: 'ah-one' }), tx({ id: 'other', merchant: 'Snackbar' })];
     expect(bestMatch(receipt, tied, new Set())).toBe('ah-one');
 
-    // already-taken transactions stay out of it
     expect(bestMatch(receipt, clear, new Set(['only']))).toBeNull();
 
-    // rung-1 only (user ruling): a near-but-not-exact amount, or a
-    // merchant that doesn't fingerprint, never auto-attaches
     expect(bestMatch(receipt, [tx({ id: 'near', amountCents: -2351 })], new Set())).toBeNull();
     expect(bestMatch(receipt, [tx({ id: 'foreign', merchant: 'Snackbar' })], new Set())).toBeNull();
   });
 
   it('a photo is told by its shop’s name — and by amount and day alone while nobody named it (#567)', () => {
     const photo: MatchableReceipt = { id: 'p1', source: 'photo', date: '2026-07-05', totalCents: 2350 };
-    // unnamed: the one payment of that amount in those days is it; two of them are a question for the person
     expect(bestMatch(photo, [tx({ id: 'only', merchant: 'Snackbar' })], new Set())).toBe('only');
     expect(bestMatch(photo, [tx({ id: 'a', merchant: 'Snackbar' }), tx({ id: 'b', merchant: 'Bakker' })], new Set())).toBeNull();
-    // a name tells two payments apart and keeps a stranger out
     const named = { ...photo, merchant: 'Bakker Bart' };
     expect(bestMatch(named, [tx({ id: 'a', merchant: 'Snackbar' }), tx({ id: 'b', merchant: 'BAKKER BART UTRECHT' })], new Set())).toBe('b');
     expect(bestMatch(named, [tx({ id: 'a', merchant: 'Snackbar' })], new Set())).toBeNull();
-    // the amount stays exact, the day within two
     expect(bestMatch(photo, [tx({ id: 'near', amountCents: -2351 })], new Set())).toBeNull();
     expect(bestMatch(photo, [tx({ id: 'late', date: '2026-07-09' })], new Set())).toBeNull();
   });
@@ -99,7 +89,6 @@ describe('receipt ↔ transaction matching', () => {
     const txs = [tx({ id: 'right-card' }), tx({ id: 'other-card' })];
     const tails: Record<string, string> = { 'right-card': 'NL0012344321', 'other-card': 'NL0099998888' };
     const tailOf = (row: TxView) => tails[row.id];
-    // twins would be ambiguous — the tail disambiguates
     expect(bestMatch(paid, txs, new Set(), tailOf)).toBe('right-card');
     // no candidate matches the tail (store card ≠ IBAN): nobody is excluded
     const strangers = [tx({ id: 'only' })];
@@ -124,7 +113,6 @@ describe('receipt ↔ transaction matching', () => {
     ];
     const ladder = candidateLadder(receipt, txs);
     expect(ladder.primary.map((t) => t.id)).toEqual(['near']);
-    // rung 3 (same amount, any date) before rung 4 (latest expenses)
     expect(ladder.more.map((t) => t.id)).toEqual(['same-price-far', 'other-latest']);
   });
 });

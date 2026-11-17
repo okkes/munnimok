@@ -6,18 +6,8 @@ import { isPaypalAccount, isPaypalFunding, matchPaypalPairs } from '@/domain/pay
 import { applyTypeChange } from '@/domain/txType';
 import { cachedCatalog } from '@/sync/catalogSync';
 
-/**
- * PP1 rung 2: when the space sees both a PayPal feed and the funding
- * account, pair-matched funding debits auto-link as TRANSFERS to the
- * PayPal account — the purchase is counted once, on the PayPal side,
- * with the real merchant (approved ruling). The link no longer skips the
- * review (user 2026-10-09: every transaction passes the deck; a machine
- * never takes one out) — the debit waits there with the transfer
- * prefilled and one tap confirms it. Rows the matcher can't settle stay
- * untouched; the review card's own counterparty defaulting handles them
- * one tap at a time (rung 3). Idempotent and conservative, mirroring
- * linkAllCounterparties.
- */
+// pair-matched funding debits auto-link as TRANSFERS to the PayPal account: the purchase counts once, real merchant.
+// They still wait in the review (a machine never takes a transaction out of the deck); unmatched rows stay untouched.
 export async function linkPaypalFunding(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const accounts = await visibleAccounts(store, spaceId);
   const paypal = accounts.find((a) => isPaypalAccount(a));

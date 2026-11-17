@@ -12,29 +12,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Configuration;
 
-/// <summary>
-/// Which tiers an agent tells the queue it can serve.
-///
-/// <para>
-/// The claim is everything. <c>AgentCapabilities.CanServe</c> asks for the
-/// provider AND the runtime, and a job whose tier an agent does not advertise
-/// is never offered to it, however many adapters the image carries. The BYO
-/// agent shipped advertising the pooled fleet's three tiers and not
-/// browser_persistent - every image's appsettings said so, and the BYO compose
-/// file set the class and never touched the runtimes - so it enrolled,
-/// heartbeated, logged asn-persistent as online and never leased one of its
-/// logins. Each sat queued for half an hour and died as agent_unavailable,
-/// with the machine that existed to serve it idling beside it.
-/// </para>
-///
-/// <para>
-/// So on a BYO agent the tiers come from the adapters, always, and a
-/// configuration that leaves one out is refused before the agent is online
-/// rather than honoured into silence. A pooled agent keeps its configured
-/// list: the production NAS agents genuinely cannot run a browser tier, and
-/// saying so is the point of the setting.
-/// </para>
-/// </summary>
+/// CanServe asks for provider AND runtime: the BYO agent once advertised only the pooled tiers, never leased a
+/// browser_persistent job, and those died as agent_unavailable. On a BYO agent the tiers come from the adapters and a
+/// config leaving one out is refused at startup; a pooled agent keeps its list: the NAS agents cannot run a browser tier
 public sealed class AdvertisedRuntimesTests
 {
     // Ids that are not substrings of one another, so "named in the message"
@@ -43,7 +23,6 @@ public sealed class AdvertisedRuntimesTests
     private const string Interactive = "abn-amro";
     private const string Http = "ing-nl";
 
-    /// <summary>The three tiers the pooled fleet's appsettings used to list.</summary>
     private static readonly ProviderRuntime[] PooledList =
         [ProviderRuntime.Http, ProviderRuntime.BrowserOnce, ProviderRuntime.BrowserInteractive];
 
@@ -54,7 +33,6 @@ public sealed class AdvertisedRuntimesTests
         return options;
     }
 
-    /// <summary>A bank image's worth of adapters: one provider per tier it ships.</summary>
     private static IReadOnlyList<ProviderManifest> BankImage() =>
     [
         Manifest(Persistent, ProviderRuntime.BrowserPersistent),
@@ -91,15 +69,8 @@ public sealed class AdvertisedRuntimesTests
         Resources = [new ResourceSpec { Id = "accounts", Returns = ResourceShape.Account }],
     };
 
-    /// <summary>
-    /// YOUR OWN MACHINE SERVES EVERY TIER ITS ADAPTERS NEED.
-    /// </summary>
-    /// <remarks>
-    /// Exact, in the order the enum declares them: the persistent tier is
-    /// the one that was missing, but an agent advertising ONLY that would be
-    /// just as wrong the other way round - the same image serves ordinary
-    /// providers persistently on a BYO box, and those have tiers of their own.
-    /// </remarks>
+    /// exact, in enum order: advertising ONLY persistent would be as wrong,
+    /// the same image serves ordinary providers persistently on a BYO box
     [Fact]
     public void An_agent_on_your_own_machine_advertises_every_tier_its_adapters_need()
     {
@@ -113,18 +84,8 @@ public sealed class AdvertisedRuntimesTests
             capabilities.Runtimes);
     }
 
-    /// <summary>
-    /// AND A CONFIGURATION THAT LEAVES ONE OUT IS REFUSED, BY NAME.
-    /// </summary>
-    /// <remarks>
-    /// This is the configuration that shipped: the pooled fleet's list, in a
-    /// file the BYO compose never overrode. Honouring it produced an agent
-    /// that was healthy in every way anyone looked at and useless in the one
-    /// way that mattered. The message names the tier as the operator spells
-    /// it in a compose file and the provider that needs it, because "invalid
-    /// configuration" alone sends them back to the same file with nothing to
-    /// look for.
-    /// </remarks>
+    /// the shipped config (the pooled list, in a compose file that never overrode it) gave a healthy-looking useless agent;
+    /// the message names the tier as a compose file spells it and the provider that needs it
     [Fact]
     public void A_BYO_configuration_that_leaves_out_a_tier_is_refused_and_names_it()
     {
@@ -134,19 +95,10 @@ public sealed class AdvertisedRuntimesTests
         Assert.Contains("'browser_persistent'", ex.Message, StringComparison.Ordinal);
         Assert.Contains(Persistent, ex.Message, StringComparison.Ordinal);
 
-        // The providers whose tiers WERE listed are not blamed for the one
-        // that was not.
         Assert.DoesNotContain(Interactive, ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Http, ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Every missing tier is named, not just the first.
-    /// </summary>
-    /// <remarks>
-    /// An operator fixing one line and restarting into the next error is
-    /// the slowest way to learn what a file should say.
-    /// </remarks>
     [Fact]
     public void Every_tier_the_configuration_leaves_out_is_named_at_once()
     {
@@ -159,17 +111,8 @@ public sealed class AdvertisedRuntimesTests
         Assert.Contains(Persistent, ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A BYO list that covers every tier is not an error, and still not the
-    /// answer: the adapters decide.
-    /// </summary>
-    /// <remarks>
-    /// A list carrying browser_once for an image with no browser_once
-    /// provider is harmless - the provider list is what gates a lease - but
-    /// what is advertised is what the adapters need, so a superset does not
-    /// leak into the claim and an operator cannot be lulled by a file that
-    /// happens to be complete today.
-    /// </remarks>
+    /// a superset is harmless (the provider list gates a lease) but does not leak into the claim:
+    /// what is advertised is what the adapters need
     [Fact]
     public void A_BYO_list_that_covers_every_tier_is_accepted_and_the_adapters_still_decide()
     {
@@ -181,16 +124,8 @@ public sealed class AdvertisedRuntimesTests
             capabilities.Runtimes);
     }
 
-    /// <summary>
-    /// THE POOLED FLEET KEEPS ITS LIST.
-    /// </summary>
-    /// <remarks>
-    /// The production NAS agents carry every bank adapter and advertise
-    /// <c>http</c> alone, because their egress is a datacenter address that
-    /// browser-tier providers judge them on. That restriction is honest and
-    /// must survive: a rule that derived every agent's tiers from its adapters
-    /// would put Jumbo's login on the NAS.
-    /// </remarks>
+    /// the production NAS agents advertise http alone: their egress is a datacenter address browser-tier providers judge;
+    /// deriving every agent's tiers from its adapters would put Jumbo's login on the NAS
     [Fact]
     public void A_pooled_agent_is_held_to_the_list_it_was_configured_with()
     {
@@ -199,11 +134,7 @@ public sealed class AdvertisedRuntimesTests
         Assert.Equal([ProviderRuntime.Http], capabilities.Runtimes);
     }
 
-    /// <summary>
-    /// And with no list, a pooled agent advertises what its adapters need -
-    /// browser_persistent included, which is safe now that every persistent
-    /// job is pinned to a profile only its owning agent is offered.
-    /// </summary>
+    /// safe now that every persistent job is pinned to a profile only its owning agent is offered
     [Fact]
     public void A_pooled_agent_with_no_list_advertises_what_its_adapters_need()
     {
@@ -214,15 +145,7 @@ public sealed class AdvertisedRuntimesTests
             capabilities.Runtimes);
     }
 
-    /// <summary>
-    /// Only the providers an agent advertises decide which tiers it needs.
-    /// </summary>
-    /// <remarks>
-    /// A BYO agent narrowed to one HTTP provider has no use for
-    /// browser_persistent, and refusing it over a provider it will never be
-    /// offered would be the rule misfiring on exactly the operator who read
-    /// the settings most carefully.
-    /// </remarks>
+    /// a BYO agent narrowed to one HTTP provider has no use for browser_persistent: refusing it would misfire
     [Fact]
     public void Only_the_providers_an_agent_advertises_decide_which_tiers_it_needs()
     {
@@ -235,17 +158,8 @@ public sealed class AdvertisedRuntimesTests
         Assert.Equal([ProviderRuntime.Http], capabilities.Runtimes);
     }
 
-    /// <summary>
-    /// THE REFUSAL IS THE HOST NOT STARTING.
-    /// </summary>
-    /// <remarks>
-    /// "Fails loudly" has to mean somewhere in particular. The capabilities
-    /// are built in the host's constructor, so a bad claim is an exception
-    /// out of <c>Host.RunAsync</c> before enrollment, before the online line,
-    /// before a heartbeat - the same place the registry refuses a manifest
-    /// that does not validate. Deferred to the lease loop it would be the
-    /// healthy-looking agent this replaces, only with a log line.
-    /// </remarks>
+    /// capabilities are built in the host's constructor: a bad claim fails Host.RunAsync before enrollment, like a manifest
+    /// that does not validate; deferred to the lease loop it would be the healthy-looking agent again
     [Fact]
     public void An_agent_configured_out_of_a_tier_it_needs_does_not_construct()
     {
@@ -255,9 +169,7 @@ public sealed class AdvertisedRuntimesTests
         {
             Assert.Throws<InvalidOperationException>(() => Host(Options(AgentClass.Byo, PooledList), root));
 
-            // The control: the same host with the list dropped constructs,
-            // which is what rules out the rig itself being the thing that
-            // throws.
+            // the control: rules out the rig itself being what throws
             using var host = Host(Options(AgentClass.Byo), root);
             Assert.NotNull(host);
         }
@@ -267,7 +179,6 @@ public sealed class AdvertisedRuntimesTests
         }
     }
 
-    /// <summary>An <see cref="AgentHost"/> over fakes, carrying one persistent adapter.</summary>
     private static AgentHost Host(ConnectorAgentOptions options, string root)
     {
         options.ControlPlaneBaseUrl = new Uri("https://control-plane.test/");

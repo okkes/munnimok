@@ -1,16 +1,10 @@
-# The e2e suites in the official Playwright image (no browsers on the host), against the
-# PRODUCTION build served with nginx's index.html fallback: CI's dev server cannot show a
-# broken base path, which is how every /splits/join link stayed blank until 5.20.0.
-#
-#   ./deploy/e2e.ps1                  the gate CI runs (chromium flows + the WebKit smoke)
-#   ./deploy/e2e.ps1 shots            the gate, then the guide's local captures
-#   ./deploy/e2e.ps1 only <args...>   playwright test <args...>
+# Runs against the PRODUCTION build with an index.html fallback: CI's dev server cannot show a
+# broken base path (every /splits/join link stayed blank until 5.20.0).
 param(
     [ValidateSet('ci', 'shots', 'only')][string]$Mode = 'ci',
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$PlaywrightArgs = @()
 )
-# docker and npm write their progress to stderr: under 'Stop' Windows PowerShell 5.1 turns the
-# first such line into a terminating error once the output is redirected — exit codes decide instead
+# docker and npm write progress to stderr: under 'Stop' PowerShell 5.1 turns that into a terminating error
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 $web = Join-Path $root 'apps\web'
@@ -20,11 +14,11 @@ if ($LASTEXITCODE -ne 0) { throw 'the test stack did not start' }
 
 Push-Location $web
 try {
-    # the browser runs inside the compose network and reaches the test API by its service name
+    # the browser runs inside the compose network: the API is reached by service name
     $env:VITE_API_URL = 'http://api:8080'
     npm run build | Select-Object -Last 3
     if ($LASTEXITCODE -ne 0) { throw 'vite build failed' }
-    # the image tag follows the installed runner, so its browser builds match exactly
+    # the image tag follows the installed runner so the browser builds match
     $ver = node -p "require('@playwright/test/package.json').version"
     if ($LASTEXITCODE -ne 0 -or -not $ver) { throw 'could not resolve @playwright/test version' }
 }
@@ -50,7 +44,6 @@ switch ($Mode) {
     }
 }
 
-# PW_VARIANT (e.g. en-dark-mobile) rides along when the caller set it: the same scenes in another look
 if ($env:PW_VARIANT) { $extra += @('-e', "PW_VARIANT=$($env:PW_VARIANT)") }
 
 docker run --rm --network munni-e2e_default -v "${root}:/work" -w /work/apps/web `

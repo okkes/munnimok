@@ -10,9 +10,7 @@ describe('connection-sync crypto (SC1)', () => {
 
     const wrapped = await wrapCsk(csk, target.publicJwk);
     expect(await unwrapCsk(wrapped, target.privateJwk)).toBe(csk);
-    // a different private key cannot repeat the agreement
     await expect(unwrapCsk(wrapped, intruder.privateJwk)).rejects.toThrow();
-    // the wrap never contains the key material in the clear
     expect(wrapped).not.toContain(csk);
   });
 
@@ -31,6 +29,6 @@ describe('connection-sync crypto (SC1)', () => {
     expect(fp1).toMatch(/^\d{6}$/);
     expect(await fingerprintOf(device.publicJwk)).toBe(fp1);
     const other = await generateDeviceKeys();
-    expect(await fingerprintOf(other.publicJwk)).not.toBe(fp1); // 1e-6 collision odds
+    expect(await fingerprintOf(other.publicJwk)).not.toBe(fp1);
   });
 });

@@ -13,7 +13,6 @@ if (glitchtipDsn) {
 
 const logtoConfigured = Boolean(config.logtoEndpoint && config.logtoAppId);
 
-/** OIDC entry: sign in via Logto when configured, else test-auth sub input */
 function Root() {
   if (!logtoConfigured) return <AdminApp config={config} getToken={null} />;
   return (
@@ -27,7 +26,6 @@ function Root() {
         scopes: ['admin'],
       }}
     >
-      {/* the sign-in door, the callback, the signed-in portal with its guarded token path (auth.tsx) */}
       <LogtoGate config={config} />
     </LogtoProvider>
   );

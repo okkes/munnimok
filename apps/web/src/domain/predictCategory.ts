@@ -6,27 +6,13 @@ import type { MerchantMemory } from './merchantMemory';
 import { accountStamp, fitToMatrix } from './txType';
 import type { AccountType } from '@/db/types';
 
-/**
- * Keyword-based category prediction for imported bank transactions, ported
- * from apollousa's CategoryByKeyWordPredictor. Runs fully on-device so
- * import works offline.
- *
- * Long keywords (>3 chars) match as substrings; short ones must match a
- * whole word. Longest keyword wins. Rules are filtered by money direction
- * so e.g. income keywords never fire on a debit.
- */
-/**
- * Country of use → keyword language (onboarding asks for it so imports
- * of local merchants predict better). Only Dutch keyword sets exist
- * today; unknown countries fall back to them rather than to nothing —
- * new locales slot in here as their keyword files land.
- */
+// runs on-device so import works offline; rules are filtered by money direction
+// onboarding's country picks the keyword language; only Dutch sets exist, unknown countries fall back to them
 const COUNTRY_KEYWORD_LANG: Record<string, string> = { NL: 'nl', BE: 'nl' };
 const FALLBACK_KEYWORD_LANG = 'nl';
 
 let activeRules: readonly KeywordRule[] = ALL_KEYWORD_RULES;
 
-/** hydrate from the stored profile at app open + when onboarding saves */
 export function setPredictionCountry(country?: string): void {
   const keywordLang = COUNTRY_KEYWORD_LANG[country?.toUpperCase() ?? ''] ?? FALLBACK_KEYWORD_LANG;
   const filtered = ALL_KEYWORD_RULES.filter((r) => r.lang === keywordLang);
@@ -61,7 +47,6 @@ export function predictCategory(
 export interface TxPrediction {
   catId: string;
   source: 'history' | 'history-amount' | 'keyword';
-  /** history occurrences backing the prediction (history sources only) */
   evidence?: number;
   /** #161: the pct spread the user keeps confirming (own space only) */
   cats?: { catId: string; pct: number }[];
@@ -78,26 +63,17 @@ export interface LayeredMemory {
 export interface PredictInput {
   memory?: LayeredMemory;
   merchant: string;
-  /** the user's rename — keyword matching reads it too (user request) */
+  /** the user's rename; keyword matching reads it too */
   titleOverride?: string;
   description?: string;
   amountCents: number;
-  /** operator-published keyword rules (catalog document) — merged in
-   *  front of the bundled set, so they win ties without erasing it */
+  /** operator-published rules (catalog document), merged in front of the bundled set so they win ties */
   keywordRules?: readonly { catId: string; keywords: string[] }[];
-  /** #564: the type of the account the row sits on — the memory reads its
-   *  own ledger only, and a special category obeys the picker's matrix */
+  /** #564: the memory reads this account type's own ledger only; a special category obeys the picker's matrix */
   sourceAccountType?: AccountType;
 }
 
-/**
- * Layered prediction: the user's own history for this merchant first
- * (same-amount occurrences boosted — subscription behavior), keyword
- * rules as the cold-start fallback. The prediction is a CATEGORY (plus
- * a learned spread or event); the row's type derives from it at the
- * join, never from a prediction.
- */
-/** #161: the memory's answer, own space first (S3776: out of predictTx) */
+// the prediction is a CATEGORY (plus a learned spread or event); the row's type derives from it at the join
 function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPrediction | null {
   const ledger = accountStamp(input.sourceAccountType);
   const hit =
@@ -117,8 +93,7 @@ function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPredict
 
 export function predictTx(input: PredictInput): TxPrediction | null {
   const prediction = predictTxRaw(input);
-  // settlement bookkeeping is never a prediction: `reimbursed` only ever
-  // arrives through an actual reimbursement link (user rule 2026-10-06)
+  // settlement bookkeeping is never a prediction: `reimbursed` arrives only through an actual reimbursement link
   return prediction?.catId === REIMBURSED_ID ? null : prediction;
 }
 
@@ -138,6 +113,4 @@ function predictTxRaw(input: PredictInput): TxPrediction | null {
   return { catId, source: 'keyword' };
 }
 
-// predictionSkipsReview retired 2026-10-09 (user): no prediction skips the
-// review any more, however well taught — every transaction passes the deck
-// with its prediction prefilled, and only the person takes it out.
+// no prediction skips the review: every transaction passes the deck prefilled, and only the person takes it out

@@ -1,7 +1,3 @@
-// The platform config as data on GitHub (#416): one variable per platform
-// holding the platform and its environments, materialized into the files
-// the modules read; what a run applied, on the stack's GitHub environment;
-// the branch a stack's runs check out.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -91,7 +87,6 @@ test('publish + fetch + pull through gh: the document lands as the repository va
     const fetched = fetchPlatformVariable('nas');
     assert.deepEqual(fetched.platform, platformDocument('nas').platform);
 
-    // another computer: the files are gone, the pull writes them back
     fx.removeEnv('nas', 'staging');
     assert.deepEqual(platformEnvs('nas').map((e) => e.env), ['prod']);
     const pulled = pullPlatform('nas');
@@ -99,7 +94,6 @@ test('publish + fetch + pull through gh: the document lands as the repository va
     assert.deepEqual(platformEnvs('nas').map((e) => e.env), ['prod', 'staging']);
     assert.equal(pullPlatform('rpi'), null, 'nothing published for that platform');
 
-    // the --repo the wizard names rides along
     publishPlatform('nas', { repo: 'okkes/munnimok' });
     assert.ok(gh.calls().at(-1).includes('--repo') && gh.calls().at(-1).includes('okkes/munnimok'));
   } finally {

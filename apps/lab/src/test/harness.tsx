@@ -7,7 +7,6 @@ export const CONFIG: LabConfig = { apiUrl: 'http://api.test', logtoEndpoint: '',
 
 export type Handler = (init?: RequestInit, url?: URL) => { status?: number; body?: unknown; raw?: BodyInit; contentType?: string };
 
-/** a scripted fetch: `METHOD /path` → answer; unknown routes answer 404; every call is recorded */
 export function scriptFetch(routes: Record<string, Handler>) {
   const calls: string[] = [];
   vi.stubGlobal(
@@ -29,7 +28,6 @@ export function scriptFetch(routes: Record<string, Handler>) {
   return calls;
 }
 
-/** the lab in test-auth mode at a hash route, signed in as the operator */
 export function renderLab(hash = '#/', { sub = 'the-operator', getToken = null as (() => Promise<string | undefined>) | null, signOut }: { sub?: string; getToken?: (() => Promise<string | undefined>) | null; signOut?: () => void } = {}) {
   globalThis.location.hash = hash;
   if (sub) localStorage.setItem('munni_lab_sub', sub);
@@ -108,7 +106,6 @@ export const CATALOGUE = {
   ],
 };
 
-/** the control plane's own explore provider (#441 L3): one input, the address; the live view as its only challenge */
 export const EXPLORE_PROVIDER = {
   id: 'explore',
   name: 'Explore a site',
@@ -124,7 +121,6 @@ export const EXPLORE_PROVIDER = {
   resources: [],
 };
 
-/** a party that keeps a browser on the person's own machine (T4), for the retention bench */
 export const PERSISTENT_PROVIDER = {
   id: 'asn-persistent',
   name: 'ASN (persistent)',
@@ -139,10 +135,8 @@ export const PERSISTENT_PROVIDER = {
   resources: [{ id: 'accounts', returns: 'account', params: [] }, { id: 'transactions', returns: 'transaction', params: [{ key: 'since', type: 'date' }] }],
 };
 
-/** a hosted slot (#420 A2) as the fleet lists it, bound to Bob with one kept login */
 export const HOSTED_AGENT = { id: 'agt_hosted', name: 'munni dev private agent 2', class: 'byo', revoked: false, lastHeartbeatAt: new Date(Date.now() - 10_000).toISOString(), online: true, stale: false, hosted: true, bound: true, boundAt: '2026-09-30T05:00:00Z', resetting: false, profiles: [{ id: 'prof_h', provider: 'asn-persistent', healthy: true, lastOkAt: '2026-10-06T09:00:00Z' }], capabilities: { providers: [], runtimes: ['browser_persistent', 'browser_interactive'], egress: { country: 'NL', kind: 'residential' }, maxConcurrency: 1, class: 'byo' } };
 
-/** the retention bench's history (#441 L4): one run passed on the kitchen laptop, one failed on the queue's pick */
 export const RETENTION_RUNS = [
   {
     id: 'lrr_1',
@@ -211,7 +205,6 @@ export const ME = { subject: 'u_labsubjectabc', name: 'The Operator', email: 'op
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
 
-/** the job history as the relay renders it (#441 L1) */
 export const JOBS = {
   jobs: [
     {
@@ -290,14 +283,11 @@ export const JOBS = {
   truncated: false,
 };
 
-/** the bench's sessions (#441 L2): one kept, one that lost its bundle */
 export const BENCH_SESSIONS = [
   { sessionId: 'ses_lab1', provider: 'mock-store-simple', label: 'the bench run', state: 'active', hasBundle: true, preferAgent: 'fleet', createdAt: '2026-10-06T10:00:00Z', lastUsedAt: '2026-10-06T11:00:00Z', lastError: null },
   { sessionId: 'ses_lab2', provider: 'ah', label: null, state: 'needs_reauth', hasBundle: false, preferAgent: null, createdAt: '2026-10-05T10:00:00Z', lastUsedAt: '2026-10-05T10:30:00Z', lastError: 'session_expired' },
 ];
 
-/** the health report (#441 L1): one party broken today, one fine */
-/** a run's recording (#441 L3): a page, an API call with a JSON answer, a script nobody reads, a console error, the jar */
 export const TRACE = {
   version: 1,
   jobId: 'job_lab1',
@@ -359,7 +349,6 @@ export const HEALTH_REPORT = {
   ],
 };
 
-/** every happy route of the L0 lab */
 export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/ping': () => ({ body: { admin: true } }),
   'GET /health': () => ({ body: HEALTH }),

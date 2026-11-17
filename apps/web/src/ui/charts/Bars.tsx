@@ -1,9 +1,6 @@
 import type { KeyboardEvent } from 'react';
-/**
- * Minimal theme-aware SVG bar chart (trends design) — no library, the
- * bundle stays local-first-small. Bars are focusable for screen readers.
- */
-/** #375: a tap or Enter/Space on a bar reports its index — only when the chart takes selections */
+import { HaloText } from './HaloText';
+/** no chart library: the bundle stays local-first-small */
 function barInteraction(onSelect: ((index: number) => void) | undefined, index: number) {
   if (!onSelect) return {};
   return {
@@ -15,15 +12,12 @@ function barInteraction(onSelect: ((index: number) => void) | undefined, index: 
     },
   };
 }
-/** a hollow (forecast) bar is an outline in the series colour */
 const barPaint = (hollow: boolean, color: string) =>
   hollow ? { fill: 'transparent', stroke: color, strokeWidth: 1.5 } : { fill: color, stroke: 'none', strokeWidth: 0 };
 
 const suffixed = (testId: string | undefined, suffix: string): string | undefined => (testId ? `${testId}-${suffix}` : undefined);
 
-/** the amount above a bar (user 2026-10-08: "actual numbers on top of
- *  each bar") — text wears ink, never the series colour; the selected
- *  bar's number reads a shade stronger so the pick shows in the figures too */
+/** text wears ink, never the series colour; the selected bar's number reads stronger */
 function ValueLabel({ x, y, text, selected }: Readonly<{ x: number; y: number; text: string; selected: boolean }>) {
   return (
     <text
@@ -40,31 +34,10 @@ function ValueLabel({ x, y, text, selected }: Readonly<{ x: number; y: number; t
   );
 }
 
-/** #375 (user: "the gray dotted line … is that the average?"): the reference line names itself at its right end, haloed so a bar under it never swallows the words */
-function LineLabel({ x, y, text, testId }: Readonly<{ x: number; y: number; text: string; testId?: string }>) {
-  return (
-    <text
-      x={x}
-      y={y}
-      textAnchor="end"
-      fontSize={8.5}
-      fill="var(--m-ink-3)"
-      stroke="var(--m-surface)"
-      strokeWidth={3}
-      paintOrder="stroke"
-      className="m-num"
-      data-testid={testId}
-    >
-      {text}
-    </text>
-  );
-}
-
 interface BarProps {
   x: number;
   barW: number;
   zeroY: number;
-  /** the upward bar's height */
   h: number;
   /** the paired downward bar's height (cash-flow view), if any */
   down?: number;
@@ -78,7 +51,6 @@ interface BarProps {
   testId?: string;
 }
 
-/** one bar with its ring, its number on top and its x label */
 function Bar({ x, barW, zeroY, h, down, hollow, selected, color, negativeColor, valueLabel, label, labelY, testId }: Readonly<BarProps>) {
   return (
     <>
@@ -127,13 +99,11 @@ export function Bars({
   values: number[];
   /** short x labels, same length as values (sparse: empty strings ok) */
   labels?: string[];
-  /** per-bar accessible label */
   ariaLabels?: string[];
   color?: string;
   /** the running (incomplete) period renders outlined */
   hollowLast?: boolean;
   height?: number;
-  /** dashed reference line */
   average?: number;
   /** what the reference line is, written on it (testid `<testId>-average-label`) */
   averageLabel?: string;
@@ -141,11 +111,8 @@ export function Bars({
   negativeValues?: number[];
   negativeColor?: string;
   testId?: string;
-  /** a tap on a bar (index into values) — the bars become buttons */
   onSelect?: (index: number) => void;
-  /** formatted amounts drawn above each bar (same length as values) */
   valueLabels?: string[];
-  /** the picked bar wears a ring (testid `<testId>-selected`) */
   selectedIndex?: number;
   /** a sparkline inside a door (Home): no focus stops, hidden from readers — the door's text carries the numbers */
   decorative?: boolean;
@@ -214,10 +181,13 @@ export function Bars({
         />
       )}
       {average !== undefined && average > 0 && averageLabel && (
-        // above the line, or under it when the line runs along the top
-        <LineLabel
+        // #375: the line names itself at its right end — above it, or under it when it runs along the top
+        <HaloText
           x={width - 2}
           y={zeroY - average * upScale > 12 ? zeroY - average * upScale - 3 : zeroY - average * upScale + 10}
+          anchor="end"
+          size={9}
+          fill="var(--m-ink-2)"
           text={averageLabel}
           testId={suffixed(testId, 'average-label')}
         />

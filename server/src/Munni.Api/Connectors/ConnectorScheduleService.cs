@@ -5,20 +5,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The relay's own scheduler (docs/connectors/relay.md, "Scheduled syncs"):
-/// syncs every session whose bundle the relay keeps — a household agent's
-/// pointer, an open-banking consent — on the provider's own interval, the
-/// way <c>GcFetchService</c> drove open banking. Hourly; each session is
-/// due when <c>unattended_fetch</c> is on, its <c>min_interval_seconds</c>
-/// have passed, any <c>retry_after</c> a rate-limited refusal set has
-/// passed, and — when the party names a <c>preferred_fetch_hour_local</c>
-/// — it is that hour in the bank's zone (from the IBAN's country), or a
-/// later hour of a day that hour's tick was missed on. A fetch
-/// that became a job is followed for ten minutes and collected; a question
-/// is left to the person; a refusal that needs a sign-in drops the kept
-/// bundle, every other one is remembered and retried next time.
-/// </summary>
+// hourly; syncs every session whose bundle the relay keeps (a household agent's pointer, an open-banking consent)
+// on the provider's own interval (docs/connectors/relay.md)
 public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, TimeProvider time, ILogger<ConnectorScheduleService> logger) : BackgroundService
 {
     internal TimeSpan JobPatience { get; set; } = TimeSpan.FromMinutes(10);
@@ -39,7 +27,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
     private const string BackfillTrigger = "backfill";
     private const string DayFormat = "yyyy-MM-dd";
 
-    /// <summary>A pass's window and who asks for it: the schedule's own, or its pass over older history (#460).</summary>
     private sealed record Pass(string? Since, string? Until, string Trigger);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,7 +39,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>One tick: a cycle, and what its failure means for the next one.</summary>
     internal async Task CycleAsync(CancellationToken stoppingToken)
     {
         try
@@ -68,18 +54,12 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
     }
 
-    /// <summary>
-    /// How many cycles in a row the control plane could not be reached at all.
-    /// A deploy, a router swap or a container restart makes one or two such
-    /// cycles (GlitchTip 17–19, 2026-10-05): handled by the next tick, so a
-    /// warning — the error that pages the operator waits for the outage to
-    /// last <see cref="UnreachableCyclesBeforeError"/> cycles.
-    /// </summary>
+    // one or two unreachable cycles are normal on a deploy or router swap (GlitchTip 17-19, 2026-10-05): a warning.
+    // only UnreachableCyclesBeforeError in a row raises the error that pages
     private int _unreachableCycles;
 
     internal const int UnreachableCyclesBeforeError = 3;
 
-    /// <summary>A transport failure (the control plane did not answer, could not be named, answered with a gateway error) rather than a fault in the cycle itself.</summary>
     internal static bool IsTransport(Exception ex) =>
         ex is HttpRequestException or System.Net.Sockets.SocketException or TaskCanceledException or TimeoutException
         || (ex is ConnectorReplyException reply && (int)reply.Reply.Status is 502 or 503 or 504);
@@ -102,7 +82,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
     }
 
-    /// <summary>One cycle: every kept, active session that is due; returns how many ran.</summary>
     internal async Task<int> RunOnceAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
@@ -123,22 +102,8 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         return ran;
     }
 
-    /// <summary>
-    /// Due when the party fetches unattended, no retry-after stands, the
-    /// party's interval has passed, and — when the party prefers an hour —
-    /// it is that hour in <paramref name="zone"/>, or a later hour of a
-    /// day the schedule has not run on yet. A session that never ran is
-    /// due at once: the connect's own fetch was the person's, not the
-    /// schedule's.
-    /// </summary>
-    /// <remarks>
-    /// The catch-up: the tick that lands in the preferred hour is one of
-    /// twenty-four, and a deploy or a restart during that hour used to cost
-    /// a whole night — the next chance was the next night (prod 2026-10-08).
-    /// Later the same local day is still that day's run; the interval keeps
-    /// it to one, and the next night's tick lands in the preferred hour as
-    /// before.
-    /// </remarks>
+    // a session that never ran is due at once; catch-up: a restart in the preferred hour used to cost a whole night
+    // (prod 2026-10-08), so a later hour of a day not yet run also counts, and the interval keeps it to one run
     internal bool IsDue(ConnectorSession row, JsonObject manifest, TimeZoneInfo? zone = null)
     {
         if (manifest["unattended_fetch"]?.GetValue<bool>() != true) return false;
@@ -186,7 +151,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             }
             else if (end.Asked)
             {
-                // the person will find the question in the hub
                 row.State = "awaiting_input";
                 row.LastScheduleError = null;
                 row.PendingArtifactsJobId = null;
@@ -217,7 +181,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         await relay.Db.SaveChangesAsync(ct);
     }
 
-    /// <summary>How one pass ended: its finished view, the question it stopped at, or the refusal it met.</summary>
     private sealed record PassEnd(
         JsonObject? Finished = null,
         bool Asked = false,
@@ -227,7 +190,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         bool JobFailed = false,
         string? ArtifactsJobId = null);
 
-    /// <summary>One sync with the kept bundle over the pass's window, followed through every job its walk becomes.</summary>
     private async Task<PassEnd> PassAsync(ConnectorSyncService sync, ConnectorSession row, string subject, Pass pass, CancellationToken ct)
     {
         try
@@ -262,7 +224,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
                     var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, call, ct);
                     if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next)
                     {
-                        // the walk went on and the next pass became a job of its own: follow that one
                         jobId = next;
                         break;
                     }
@@ -286,13 +247,8 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         return new PassEnd(TimedOut: true);
     }
 
-    /// <summary>
-    /// One pass over the older history a partial run left (#460), declared to
-    /// the connector as <c>backfill</c>: it holds those to the party's interval
-    /// on a clock of their own, so a party sees the schedule's pass and one
-    /// backfill pass per interval. A refusal leaves the backfill for the next
-    /// run; only one the person must act on touches the session.
-    /// </summary>
+    // declared to the connector as backfill: it holds it to the party's interval on its own clock; a refusal leaves it
+    // for the next run, only one the person must act on touches the session
     private async Task BackfillAsync(ConnectorSyncService sync, ConnectorSession row, string subject, CancellationToken ct)
     {
         var pass = new Pass(
@@ -331,17 +287,8 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
     }
 
-    /// <summary>
-    /// What a finished pass says about older history (#460) — the same rule as
-    /// the app's (connectorSync.nextBackfill). The schedule's own pass that came
-    /// back partial leaves the days below the oldest one it brought, down to its
-    /// since (joined with a backfill already pending); a whole one leaves a
-    /// pending backfill as it was. A backfill pass moves the frontier down to
-    /// the oldest day it brought, or ends the backfill when it came back whole,
-    /// brought nothing dated, or reached no further. The frontier day itself is
-    /// asked again: a pass's cap can cut a day in half, and the ingest absorbs
-    /// the overlap.
-    /// </summary>
+    // the same rule as the app's connectorSync.nextBackfill (#460); the frontier day is asked again: a pass's cap can
+    // cut a day in half and the ingest absorbs the overlap
     internal static void NoteBackfill(ConnectorSession row, string? since, string? until, JsonObject finished)
     {
         var partial = finished["complete"]?.GetValue<bool>() == false;
@@ -392,12 +339,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
     private static int? RetryAfterOf(JsonObject body) =>
         body["error"]?["retryAfterSeconds"] is JsonValue value && value.TryGetValue<int>(out var seconds) ? seconds : null;
 
-    /// <summary>
-    /// A refusal that needs the person (a sign-in, an expired consent) drops
-    /// the kept bundle and asks for one; a block stops the session; the
-    /// party's budget (<c>rate_limited</c>) sets when to try again; every
-    /// other code is remembered and retried on the next cycle.
-    /// </summary>
     internal void Refused(ConnectorSession row, string code, int? retryAfterSeconds)
     {
         row.LastScheduleError = code;
