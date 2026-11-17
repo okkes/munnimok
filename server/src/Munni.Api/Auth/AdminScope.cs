@@ -12,9 +12,11 @@ public static class AdminScope
 
     public static bool HasAdminScope(HttpContext http) => HasAdminScope(http.User);
 
+    public static bool HasAdminScope(ClaimsPrincipal user) => HasScope(user, Scope);
+
     /// <summary>a JSON-array `scope` arrives as several claims, a string as one — both are read</summary>
-    public static bool HasAdminScope(ClaimsPrincipal user) =>
+    public static bool HasScope(ClaimsPrincipal user, string scope) =>
         user.FindAll("scope")
             .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Contains(Scope, StringComparer.Ordinal);
+            .Contains(scope, StringComparer.Ordinal);
 }

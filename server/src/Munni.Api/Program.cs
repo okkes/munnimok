@@ -153,7 +153,10 @@ else
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(AdminScope.Policy, policy => policy
         .RequireAuthenticatedUser()
-        .RequireAssertion(context => AdminScope.HasAdminScope(context.User)));
+        .RequireAssertion(context => AdminScope.HasAdminScope(context.User)))
+    .AddPolicy(LabReadScope.Policy, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => LabReadScope.MayRead(context.User)));
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>

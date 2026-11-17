@@ -183,6 +183,31 @@ test('vaultReplaceFolder on a 1.37+ server: every item carries the account\'s id
   assert.deepEqual(seen.filter((x) => x.method === 'DELETE').map((x) => x.url), ['http://vault.test/api/ciphers/c-m2m'], 'only the item whose replacement exists is deleted — the refused one keeps its old copy');
 });
 
+test('vaultReplaceFolder keeps a named item the run could not make again (it lives nowhere else) and replaces it once the run makes it', async () => {
+  const email = 'ops@munni.test';
+  const password = 'master-pw';
+  const sym = rnd64(64);
+  const keys = splitSymKey(sym);
+  const profileKey = encString(stretchKey(masterKey(email, password)), sym);
+  const deleted = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (url.endsWith('/identity/connect/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'T' }) };
+    if (url.includes('/api/sync')) return { ok: true, status: 200, json: async () => ({ profile: { id: 'user-uuid-9', key: profileKey }, folders: [{ id: 'f-env', name: encString(keys, 'munni-nas-prod') }], ciphers: [
+      { id: 'c-console', folderId: 'f-env', name: encString(keys, 'Logto console') },
+      { id: 'c-reader', folderId: 'f-env', name: encString(keys, 'Lab reader M2M') },
+    ] }) };
+    if (init.method === 'DELETE') { deleted.push(url.split('/').pop()); return { ok: true, status: 200 }; }
+    if (url.endsWith('/api/ciphers')) return { ok: true, status: 200, json: async () => ({ id: 'c-new' }) };
+    return { ok: false, status: 404 };
+  };
+  const consoleItem = { name: 'Logto console', username: 'admin', password: 'pw' };
+  await vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-nas-prod', items: [consoleItem], keep: ['Lab reader M2M'] }, fetchImpl);
+  assert.deepEqual(deleted, ['c-console'], 'Logto did not answer this run: the reader stays as it was filed');
+  deleted.length = 0;
+  await vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-nas-prod', items: [consoleItem, { name: 'Lab reader M2M', username: 'app1', password: 's1' }], keep: ['Lab reader M2M'] }, fetchImpl);
+  assert.deepEqual(deleted.sort(), ['c-console', 'c-reader'], 'made again: the old copy goes like any other');
+});
+
 test('platformValuesFromItems: the shared folder\'s items map to the secret names an environment needs; strangers and empty passwords are ignored', async () => {
   const { platformValuesFromItems } = await import('../modules/vault.mjs');
   assert.deepEqual(platformValuesFromItems([

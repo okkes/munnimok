@@ -166,8 +166,9 @@ export const vaultCreateCipher = (base, token, cipher, fetchImpl = insecureFetch
   fetchImpl(`${base}/api/ciphers`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(cipher) });
 
 // other folders are the operator's and stay untouched; items are encrypted with the profile's real user key,
-// so a hand-made account reads them too; registering needs signups open
-export async function vaultReplaceFolder(base, { email, password, folder, items }, fetchImpl = insecureFetch) {
+// so a hand-made account reads them too; registering needs signups open.
+// `keep` names items that live only here: a run that could not make one again leaves the old one in place
+export async function vaultReplaceFolder(base, { email, password, folder, items, keep = [] }, fetchImpl = insecureFetch) {
   const account = buildAccount(email, password);
   let token = await vaultLogin(base, email, account.hash, fetchImpl);
   let registered = false;
@@ -222,6 +223,7 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
     if (!inFolder && !strayOfOurs) continue;
     // a whole batch accepted replaces the folder; a partial one keeps every old item whose replacement was refused
     if (refused.length && !created.has(name)) continue;
+    if (inFolder && keep.includes(name) && !created.has(name)) continue;
     const del = await vaultDeleteCipher(base, token, c.id ?? c.Id, fetchImpl);
     if (del.ok) { if (inFolder) replaced++; else unfiled++; }
   }
