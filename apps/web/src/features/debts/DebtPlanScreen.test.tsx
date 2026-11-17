@@ -307,7 +307,7 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-debt-chart-min-loan-car-end')).toBeTruthy();
     // a big extra on the card (its minimum runs over four years): the plan lands within months — its line ends at its
     // dot, and the axis breaks to run on, compressed, to the minimum's end
-    fireEvent.change(screen.getByTestId('debtplan-debt-extra-loan-card'), { target: { value: '2000' } });
+    fireEvent.change(await screen.findByTestId('debtplan-debt-extra-loan-card'), { target: { value: '2000' } });
     await waitFor(() => expect(screen.getByTestId('debtplan-debt-chart-loan-card-break')).toBeTruthy());
     const planEnd = Number(screen.getByTestId('debtplan-debt-chart-plan-loan-card').getAttribute('d')!.split(' ').at(-1)!.split(',')[0]);
     const minEnd = Number(screen.getByTestId('debtplan-debt-chart-min-loan-card-end').getAttribute('cx'));
