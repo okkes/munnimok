@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { getProtocolIssue } from '@/lib/api';
 import { nativePlatform } from '@/lib/platform';
 import { nativeStoreUrl } from '@/domain/updateCheck';
+import { reloadIntoNewBuild } from './newBuild';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 
@@ -33,9 +34,7 @@ export function UpdateGate() {
       window.open(store, '_blank');
       return;
     }
-    // the web: the server already serves the new build — fetch it
-    void navigator.serviceWorker?.getRegistration().then((registration) => registration?.update()).catch(() => undefined);
-    globalThis.location.reload();
+    void reloadIntoNewBuild();
   };
 
   return (
