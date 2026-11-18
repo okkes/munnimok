@@ -557,6 +557,27 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("the jar sealed at sign-in stands", StringComparison.Ordinal));
     }
 
+    // the names are all a rename leaves behind, and the fetch that bol refuses is where the operator reads them
+    [Fact]
+    public async Task A_sign_in_that_learned_no_operation_seals_what_its_page_did_send()
+    {
+        var page = StubLoginPage.Showing();
+        using var ctx = LoginContext(page);
+        var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") } };
+        var quick = Options with { HashProbeMs = 20, ProbeMs = 1 };
+
+        var sealed_ = await Adapter(quick).SealAsync(
+            ctx, page, signedIn, new TaskCompletionSource<string>().Task, _ => Task.FromResult<BolPageRequest?>(null),
+            () => ["ShopOrdersNext", "not a name", "AccountMenu"], CancellationToken.None);
+
+        Assert.Null(BolPersistedQuery.Learned(sealed_.Material));
+        Assert.Equal(["AccountMenu", "ShopOrdersNext"], BolPersistedQuery.Seen(sealed_.Material));
+
+        var learned = await Adapter().SealAsync(
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(null), () => ["AccountMenu"], CancellationToken.None);
+        Assert.Null(BolPersistedQuery.Seen(learned.Material));
+    }
+
     [Fact]
     public async Task A_hash_whose_request_could_not_be_read_is_still_sealed_and_says_so()
     {
@@ -720,20 +741,6 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal));
     }
 
-    // prod 2026-10-05: a session that learned no hash is one sign-in away from working, so the refusal asks for the sign-in
-    [Fact]
-    public async Task A_refused_configured_hash_asks_for_a_new_sign_in()
-    {
-        var handler = new StubHttpHandler((_, _) => Stub.Json("""{"errors":[{"message":"Error(s) redacted."}]}"""));
-        using var ctx = FetchContext(handler);
-
-        var ex = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
-
-        Assert.Equal(ErrorCode.SessionExpired, ex.Code);
-        Assert.Contains("learned no hash", ex.Detail, StringComparison.Ordinal);
-    }
-
     [Fact]
     public async Task A_refused_learned_hash_is_a_change_bol_made_since_the_sign_in()
     {
@@ -808,13 +815,36 @@ public sealed class BolAdapterTests
         Assert.Contains("hash=sha256:0123456789ab ", change.Detail, StringComparison.Ordinal);
         Assert.Contains("body=replay", change.Detail, StringComparison.Ordinal);
 
-        using var configured = FetchContext(handler);
-        var expired = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().FetchAsync(configured, Requests.Receipts(), CancellationToken.None));
+    }
 
-        Assert.Equal(ErrorCode.SessionExpired, expired.Code);
-        Assert.Contains("code=INTERNAL_ERROR", expired.Detail, StringComparison.Ordinal);
-        Assert.Contains("body=rebuilt", expired.Detail, StringComparison.Ordinal);
+    // a sign-in is what learns the operation: asking for another one after it learned nothing asked for ever, and told
+    // neither the person nor the operator that bol had changed
+    [Fact]
+    public async Task A_refused_configured_operation_is_a_change_at_bol_and_never_a_reason_to_sign_in_again()
+    {
+        const string refused = """{"errors":[{"message":"Error(s) redacted.","path":["me"],"extensions":{"code":"INTERNAL_ERROR"}}]}""";
+        var handler = new StubHttpHandler((_, _) => Stub.Json(refused));
+        var jar = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") };
+
+        async Task<ConnectorException> RefusedAsync(SessionMaterial material)
+        {
+            using var ctx = new FakeJobContext(handler) { Material = material };
+            return await Assert.ThrowsAsync<ConnectorException>(() => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+        }
+
+        var renamed = await RefusedAsync(BolPersistedQuery.WithSeen(jar, ["ShopOrdersNext", "AccountMenu"]));
+        Assert.Equal(ErrorCode.ProviderChanged, renamed.Code);
+        Assert.Contains("the sign-in's page did send: AccountMenu, ShopOrdersNext", renamed.Detail, StringComparison.Ordinal);
+        Assert.Contains("code=INTERNAL_ERROR", renamed.Detail, StringComparison.Ordinal);
+        Assert.Contains("body=rebuilt", renamed.Detail, StringComparison.Ordinal);
+
+        var silent = await RefusedAsync(BolPersistedQuery.WithSeen(jar, []));
+        Assert.Equal(ErrorCode.ProviderChanged, silent.Code);
+        Assert.Contains("sent no other GraphQL operation", silent.Detail, StringComparison.Ordinal);
+
+        var unrecorded = await RefusedAsync(jar);
+        Assert.Equal(ErrorCode.ProviderChanged, unrecorded.Code);
+        Assert.Contains("left no record", unrecorded.Detail, StringComparison.Ordinal);
     }
 
     [Fact]

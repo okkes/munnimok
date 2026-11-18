@@ -17,6 +17,9 @@ internal static class BolPersistedQuery
     /// <summary>Where the page's request headers ride: a JSON object of name to value.</summary>
     public const string HeadersKey = "ordersHeaders";
 
+    /// <summary>What a sign-in that learned no orders operation saw its page send instead: operation names, comma-separated.</summary>
+    public const string SeenKey = "ordersSeen";
+
     /// <summary>Enough of a hash to tell two apart in a note or refusal, never the whole value.</summary>
     public const int PrefixLength = 19;
 
@@ -153,6 +156,22 @@ internal static class BolPersistedQuery
         var headers = material.Extra.TryGetValue(HeadersKey, out var json) ? ReadHeaders(json) : NoHeaders;
         return new BolPageRequest(body, headers);
     }
+
+    /// Sealed even when the page sent nothing: an empty record still says "this sign-in looked".
+    public static SessionMaterial WithSeen(SessionMaterial material, IEnumerable<string>? others)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+
+        var names = (others ?? []).Where(IsName).Order(StringComparer.Ordinal).Take(MaxOthers);
+        var extra = new Dictionary<string, string>(material.Extra, StringComparer.Ordinal) { [SeenKey] = string.Join(',', names) };
+        return material with { Extra = extra };
+    }
+
+    /// Null when the session carries no record: its sign-in learned the operation, or never looked.
+    public static IReadOnlyList<string>? Seen(SessionMaterial? material) =>
+        material?.Extra.TryGetValue(SeenKey, out var names) == true
+            ? [.. names.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(IsName).Take(MaxOthers)]
+            : null;
 
     public static string Prefix(string? hash)
     {

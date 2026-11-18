@@ -3281,6 +3281,8 @@ export const en = {
   'conn.pending.cancel': 'Cancel sign-in',
   'conn.pending.dismiss': 'Dismiss',
   'conn.state.waitUntil': 'The party asked munni to wait — try again after {time}',
+  'conn.state.failed': 'Last attempt failed · {what}',
+  'notif.syncFailedRow': '{name} could not sync: {what}',
   'connect.progress.closeNote': 'You can close this: the sign-in carries on, and the connection’s card shows where it stands.',
   'connect.progress.close': 'Close for now',
   'plan.segment.unplanned': 'Unplanned',

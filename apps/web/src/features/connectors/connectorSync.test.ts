@@ -6,6 +6,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { storeConnLinkId } from '@/domain/feedIds';
+import { readInbox } from '@/application/notifications';
 import { NO_INGEST } from '@/test/connectorFixtures';
 import { ConnectorError, connectorApi } from './api';
 import { readBundle } from './bundles';
@@ -97,6 +98,21 @@ describe('syncConnection — one pass through the relay', () => {
     const waited = await syncConnection(backend, repo, CONN);
     expect(waited).toMatchObject({ status: 'wait', retryAfterSeconds: 900 });
     expect((await backend.connectorConnGet(CONN))?.state).toBe('active');
+  });
+
+  it('#640: a sync that failed lands in the bell, once per failure and day — a pause the party asked for does not', async () => {
+    vi.spyOn(connectorApi, 'sync').mockRejectedValue(new ConnectorError(502, envelope('provider_changed')));
+    expect((await syncConnection(backend, repo, CONN)).status).toBe('error');
+    await syncConnection(backend, repo, CONN);
+    const inbox = await readInbox(backend);
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]).toMatchObject({ kind: 'syncFailed', payload: { name: 'Mock', code: 'provider_changed', hub: 'connections', connectionId: CONN } });
+    // the session is not the failure's: nothing asks for a sign-in
+    expect((await backend.connectorConnGet(CONN))?.state).toBe('active');
+
+    vi.spyOn(connectorApi, 'sync').mockRejectedValue(new ConnectorError(429, envelope('rate_limited', { retriable: true, userAction: 'wait', retryAfterSeconds: 900 })));
+    await syncConnection(backend, repo, CONN);
+    expect(await readInbox(backend)).toHaveLength(1);
   });
 
   it('a fetch that became a job is followed to its end and collected — the poll keeps a rotated bundle', async () => {

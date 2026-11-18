@@ -2,6 +2,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { ConnectorBackfill, ConnectorConnRow, ConnectorLastError, ConnectorSessionState } from '@/db/types';
 import type { SyncEngine } from '@/sync/engine';
+import { appendNotification, syncFailedKey } from '@/application/notifications';
 import { includedSpaces, reevaluateSpace, rematchSpaces } from '@/application/receiptMatching';
 import { ConnectorError, connectorApi } from './api';
 import { dropBundle, keepBundle, readBundle } from './bundles';
@@ -238,7 +239,18 @@ async function refused(storage: StorageBackend, connectionId: string, err: Conne
   const row = await storage.connectorConnGet(connectionId);
   const artifactsJobId = await shareOrLeave(row, err.artifactsJobId);
   await patchRow(storage, connectionId, { ...(state ? { state } : {}), pendingJob: undefined, lastError: lastErrorOf(envelope, artifactsJobId) });
+  await tellFailed(storage, connectionId, envelope.code);
   return report;
+}
+
+// #640: most syncs run with nobody watching (after a sign-in, after a bank sync, on the keep-alive), so a failure
+// goes to the bell; a pause the party asked for is no failure, and the row says until when
+async function tellFailed(storage: StorageBackend, connectionId: string, code: string): Promise<void> {
+  if (code === 'rate_limited') return;
+  const meta = (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
+  if (!meta) return;
+  const hub = meta.kind === 'bank' ? 'accounts' : 'connections';
+  await appendNotification(storage, 'syncFailed', { name: meta.displayName, code, hub, connectionId }, syncFailedKey(connectionId, code, new Date().toISOString().slice(0, 10)));
 }
 
 // a job accepted earlier and never collected is resumed before any new fetch; one the relay forgot (a day) is let go

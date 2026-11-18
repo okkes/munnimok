@@ -115,7 +115,9 @@ public sealed class BolAdapter : IProviderAdapter
 
         // the jar was sealed before the probe visited the overview, so cookies bol set there never reached a fetch (2026-10-07 prod)
         result = await ResealJarAsync(ctx, result, ct).ConfigureAwait(false);
-        if (hash is null) return result;
+
+        // what the page sent instead rides with the session: a fetch bol then refuses can name it where the operator reads it
+        if (hash is null) return result with { Material = BolPersistedQuery.WithSeen(result.Material, others()) };
 
         var request = await capture(ct).ConfigureAwait(false);
         ctx.Note(LearnedNote(hash, request));
@@ -309,11 +311,10 @@ public sealed class BolAdapter : IProviderAdapter
         }
         catch (ConnectorException ex) when (learned.Hash is null && IsRefusedOperation(ex))
         {
-            // configured hash refused and none learned: ask for a new sign-in (it learns the current hash) instead of provider_changed.
-            // a refused LEARNED hash is a change bol made since sign-in and stays provider_changed
-            throw ConnectorException.SessionExpired(
-                $"{ProviderId}: bol refused the configured orders operation and this session learned no hash of its own; " +
-                $"a new sign-in learns the one bol's page sends today ({ex.Detail})");
+            // never session_expired: the sign-in is what learns the operation, and one that learned none learns none the next
+            // time either, so asking for it again is a loop that tells nobody anything (#640). provider_changed tells the
+            // person, pages the operator and leaves the session alone
+            throw new ConnectorException(ErrorCode.ProviderChanged, NothingLearnedDetail(ctx.Material, ex), ex);
         }
 
         var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
@@ -330,6 +331,20 @@ public sealed class BolAdapter : IProviderAdapter
 
     private static bool IsRefusedOperation(ConnectorException ex) =>
         ex.Code == ErrorCode.ProviderChanged && (ex.Detail ?? string.Empty).Contains(BolGraphQlShape.RefusedMarker, StringComparison.Ordinal);
+
+    // the operator's whole view of a rename: the refusal, and the names the sign-in's page used instead
+    private static string NothingLearnedDetail(SessionMaterial? material, ConnectorException refusal)
+    {
+        var saw = BolPersistedQuery.Seen(material) switch
+        {
+            null => "the sign-in left no record of what bol's page sent",
+            { Count: 0 } => "the sign-in's page sent no other GraphQL operation",
+            var names => $"the sign-in's page did send: {string.Join(", ", names)}",
+        };
+
+        return $"{ProviderId}: bol refused the configured orders operation and this session's sign-in learned none of its own, " +
+               $"so another sign-in learns no more; {saw} ({refusal.Detail})";
+    }
 
     // a page step Playwright gave up on is bol's page misbehaving: provider_unavailable (retry), not internal, which paged
     // as unhandled exceptions (prod, GlitchTip #24-#28, #33-#34); a missing selector stays provider_changed

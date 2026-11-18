@@ -155,6 +155,30 @@ describe('NotificationsBell (user identity)', () => {
     await screen.findByTestId('screen-insights', {}, { timeout: 5000 });
   }, 15_000);
 
+  it('#640: a failed sync is in the bell with the party and the reason, and opens the screen its connection is on', async () => {
+    const store = new DexieBackend(new MunniDB(USER_TEST_DB));
+    const failed = { code: 'provider_changed', messageKey: 'connect.error.provider_changed', userAction: 'none' };
+    await store.connectorConnPut({ id: 'c-bol', provider: 'bol', sessionId: 'ses_1', state: 'active', refreshedAt: '2026-09-01T00:00:00Z', lastError: failed });
+    await appendNotification(store, 'syncFailed', { name: 'bol.com', code: 'provider_changed', hub: 'connections', connectionId: 'c-bol' }, 'syncFailed_c-bol_provider_changed_2026-11-18');
+    await store.metaPut('whatsNewSeenVersion', latestWhatsNewVersion());
+    const [entry] = await readInbox(store);
+    store.close();
+
+    renderAppAsUser('/home', {
+      api: {
+        'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+        'GET /me/invites': () => [],
+      },
+    });
+    await screen.findByTestId('screen-home');
+    fireEvent.click(await screen.findByTestId('home-notifications'));
+    const row = await screen.findByTestId(`notif-inbox-${entry.id}`, {}, { timeout: 5000 });
+    expect(row.textContent).toContain('bol.com could not sync: The party changed its site');
+
+    fireEvent.click(row);
+    await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
+  }, 15_000);
+
   it('#580, #614: Clear all empties what the bell shows, tells the person’s other devices, and leaves another space’s rows', async () => {
     const entry = await seedInbox('s-user', 's-trip');
     const puts: { clearedAt: string; scopes: string[] }[] = [];

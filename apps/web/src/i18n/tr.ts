@@ -3283,6 +3283,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'conn.pending.cancel': 'Girişi iptal et',
   'conn.pending.dismiss': 'Kapat',
   'conn.state.waitUntil': 'Taraf munni’den beklemesini istedi — {time} sonrasında yeniden dene',
+  'conn.state.failed': 'Son deneme başarısız · {what}',
+  'notif.syncFailedRow': '{name} eşitlenemedi: {what}',
   'connect.progress.closeNote': 'Bunu kapatabilirsin: giriş sürer ve bağlantının kartı nerede olduğunu gösterir.',
   'connect.progress.close': 'Şimdilik kapat',
   'plan.segment.unplanned': 'Plansız',

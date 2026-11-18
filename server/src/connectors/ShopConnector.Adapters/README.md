@@ -150,6 +150,16 @@ When a sign-in learns nothing its note says which operations the page did
 send. A renamed orders operation shows up there by name: read the job's notes
 (`node infra/lab-read.mjs <env> jobs provider=bol`) before anything else.
 
+A fetch bol refuses on the configured values, in a session whose sign-in
+learned nothing, ends as `provider_changed` and never as `session_expired`.
+The sign-in is what learns the operation, so another one learns no more:
+asking for it made a loop that told nobody bol had changed. As
+`provider_changed` the person reads that the party changed its site, the
+session stays usable, and the operator gets an event in GlitchTip. That
+event's detail carries bol's refusal and the names the sign-in's page did
+send (sealed into the session as `ordersSeen`); its job id is the one to
+open in the Lab.
+
 The response:
 
 ```

@@ -50,6 +50,10 @@ async function verdicts(store: StorageBackend, inbox: readonly InboxEntry[], tod
       if (loanId && !noRate.has(loanId)) verdict = 'drop';
     } else if (entry.kind === 'whatsnew') {
       if ((await store.metaGet(WHATS_NEW_SEEN_KEY))?.value === entry.payload?.version) verdict = 'drop';
+    } else if (entry.kind === 'syncFailed') {
+      // true only while the connection still stands on that failure: a sync that worked since, or a removal, ends it
+      const { connectionId, code } = entry.payload ?? {};
+      if (connectionId && (await store.connectorConnGet(connectionId))?.lastError?.code !== code) verdict = 'drop';
     }
     out.set(entry.id, verdict);
   }
