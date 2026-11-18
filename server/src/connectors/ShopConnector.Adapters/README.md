@@ -131,13 +131,26 @@ click is a GraphQL call:
 
 ```
 POST https://www.bol.com/api/graphql
-operationName: OrdersOverviewClient
+operationName: CsAccountOrdersOverviewClient
 extensions.persistedQuery.sha256Hash:
-  sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2
+  sha256:8b5eed70df09545fe331e288c5f12b58af210a5c0ec6a85f782ba0af645791b7
 variables: { "after": "5" }   then "10", "15" - a string offset, five per page
 ```
 
-An automatic persisted query: no document is sent, only the hash. The response:
+An automatic persisted query: no document is sent, only the hash. **Both the
+name and the hash move.** The name was `OrdersOverviewClient` until November
+2026 (read from a Lab recording of production, 2026-11-17); the answer below
+did not change with it. So the sign-in knows the operation by what its name
+contains (`BolOptions.OrdersOperationMarker`, "OrdersOverview"), learns the
+hash, the body and the headers from the page's own request, and a fetch names
+the operation as that body does. The two values above are only what a request
+is rebuilt from when a sign-in learned nothing.
+
+When a sign-in learns nothing its note says which operations the page did
+send. A renamed orders operation shows up there by name: read the job's notes
+(`node infra/lab-read.mjs <env> jobs provider=bol`) before anything else.
+
+The response:
 
 ```
 data.me.orders[]                                     ShopOrder

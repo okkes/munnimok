@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Playwright;
@@ -65,11 +66,23 @@ public sealed class BolAdapter : IProviderAdapter
         // bol refused a fetch rebuilt around a learned hash (2026-10-07 prod), so the fetch replays the page's own body and headers
         var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         IRequest? fired = null;
+
+        // what the page sent besides the orders operation: when bol renames it, these names are the only witness a
+        // sign-in leaves, and without them a rename reads as a page that sent nothing
+        var others = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         void OnRequest(object? _, IRequest request)
         {
             if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase)) return;
             if (!request.Url.Contains(_options.GraphQlUrl, StringComparison.OrdinalIgnoreCase)) return;
-            if (!BolPersistedQuery.TryReadHash(request.PostData, _options.OrdersOperationName, out var hash)) return;
+            if (!BolPersistedQuery.TryReadHash(request.PostData, _options, out var hash))
+            {
+                if (others.Count < BolPersistedQuery.MaxOthers && BolPersistedQuery.OperationName(request.PostData) is { } other)
+                {
+                    others.TryAdd(other, 0);
+                }
+
+                return;
+            }
 
             fired ??= request;
             learned.TrySetResult(hash);
@@ -81,7 +94,7 @@ public sealed class BolAdapter : IProviderAdapter
             var result = await LoginAsync(ctx, page, new BolSessionWatcher(ctx, page, _options, _time), ct)
                 .ConfigureAwait(false);
 
-            return await SealAsync(ctx, page, result, learned.Task, token => ReplayAsync(fired, token), ct)
+            return await SealAsync(ctx, page, result, learned.Task, token => ReplayAsync(fired, token), () => [.. others.Keys], ct)
                 .ConfigureAwait(false);
         }
         finally
@@ -92,13 +105,13 @@ public sealed class BolAdapter : IProviderAdapter
 
     internal async Task<LoginResult> SealAsync(
         IJobContext ctx, ILoginPage page, LoginResult result, Task<string> learned,
-        Func<CancellationToken, Task<BolPageRequest?>> capture, CancellationToken ct)
+        Func<CancellationToken, Task<BolPageRequest?>> capture, Func<IReadOnlyCollection<string>> others, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(capture);
 
-        var hash = await new BolHashProbe(_options).LearnAsync(ctx, page, learned, ct).ConfigureAwait(false);
+        var hash = await new BolHashProbe(_options, others).LearnAsync(ctx, page, learned, ct).ConfigureAwait(false);
 
         // the jar was sealed before the probe visited the overview, so cookies bol set there never reached a fetch (2026-10-07 prod)
         result = await ResealJarAsync(ctx, result, ct).ConfigureAwait(false);
@@ -143,7 +156,9 @@ public sealed class BolAdapter : IProviderAdapter
             : $"the page's own request body and {request.Headers.Count} header(s) " +
               $"[{string.Join(", ", request.Headers.Keys.OrderBy(name => name, StringComparer.Ordinal))}] were learned with it";
 
-        return $"{ProviderId}: the orders operation's persisted-query hash ({BolPersistedQuery.Prefix(hash)}) was learned " +
+        var named = BolPersistedQuery.OperationName(request?.Body) is { } name ? $" {name}" : string.Empty;
+
+        return $"{ProviderId}: the orders operation{named}'s persisted-query hash ({BolPersistedQuery.Prefix(hash)}) was learned " +
                $"from the page and sealed into the session; {learned}";
     }
 
@@ -345,7 +360,14 @@ public sealed class BolAdapter : IProviderAdapter
         var options = hash is null ? _options : _options with { OrdersPersistedQueryHash = hash };
         if (replay is not null)
         {
-            options = options with { OrdersRequestTemplate = replay.Body, OrdersRequestHeaders = replay.Headers };
+            options = options with
+            {
+                OrdersRequestTemplate = replay.Body,
+                OrdersRequestHeaders = replay.Headers,
+
+                // the page's own name for the operation: bol's edge wants it in a header too, and the two must agree
+                OrdersOperationName = BolPersistedQuery.OperationName(replay.Body) ?? options.OrdersOperationName,
+            };
         }
 
         return new BolLearned(options, hash, replay);
@@ -943,8 +965,13 @@ public sealed class BolAdapter : IProviderAdapter
 internal sealed class BolHashProbe
 {
     private readonly BolOptions _options;
+    private readonly Func<IReadOnlyCollection<string>>? _others;
 
-    public BolHashProbe(BolOptions options) => _options = options;
+    public BolHashProbe(BolOptions options, Func<IReadOnlyCollection<string>>? others = null)
+    {
+        _options = options;
+        _others = others;
+    }
 
     public async Task<string?> LearnAsync(IJobContext ctx, ILoginPage page, Task<string> learned, CancellationToken ct)
     {
@@ -972,9 +999,20 @@ internal sealed class BolHashProbe
             return learned.Result;
         }
 
-        ctx.Note($"{BolAdapter.ProviderId}: the orders page fired no persisted operation within {_options.HashProbeMs} ms, " +
-                 "not even after opening the overview and pressing 'Toon meer'; the configured hash stands");
+        ctx.Note($"{BolAdapter.ProviderId}: the orders page fired no persisted operation named like " +
+                 $"'{_options.OrdersOperationMarker}' within {_options.HashProbeMs} ms, not even after opening the overview " +
+                 $"and pressing 'Toon meer'; the configured hash stands. {Others()}");
         return null;
+    }
+
+    // a renamed orders operation shows up here by name; see BolOptions.OrdersOperationMarker
+    private string Others()
+    {
+        var names = (_others?.Invoke() ?? []).Order(StringComparer.Ordinal).ToList();
+
+        return names.Count == 0
+            ? "The page sent no other GraphQL operation either."
+            : $"The page did send: {string.Join(", ", names)}.";
     }
 
     private async Task<bool> ArrivedAsync(Task<string> learned, CancellationToken ct) =>

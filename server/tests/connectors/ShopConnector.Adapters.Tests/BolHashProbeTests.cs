@@ -100,6 +100,25 @@ public sealed class BolHashProbeTests
         Assert.Null(hash);
         Assert.Equal(new[] { Overview }, page.Visited);
         Assert.Contains(ctx.Notes, n => n.Contains("the configured hash stands", StringComparison.Ordinal));
+        Assert.Contains(ctx.Notes, n => n.Contains("The page sent no other GraphQL operation either.", StringComparison.Ordinal));
+    }
+
+    // prod 2026-11-16: the page DID send the orders under a new name, the note said it "fired no persisted operation",
+    // and the cause stayed hidden until a recording was read. The note now names what the page sent
+    [Fact]
+    public async Task A_sign_in_that_learned_nothing_names_the_operations_the_page_did_send()
+    {
+        var never = new TaskCompletionSource<string>();
+        var page = StubLoginPage.Showing();
+        using var ctx = new FakeJobContext();
+
+        var hash = await new BolHashProbe(Quick, () => ["SearchHistory", "AccountPurchasesClient"])
+            .LearnAsync(ctx, page, never.Task, CancellationToken.None);
+
+        Assert.Null(hash);
+        var note = Assert.Single(ctx.Notes, n => n.Contains("the configured hash stands", StringComparison.Ordinal));
+        Assert.Contains("no persisted operation named like 'OrdersOverview'", note, StringComparison.Ordinal);
+        Assert.EndsWith("The page did send: AccountPurchasesClient, SearchHistory.", note, StringComparison.Ordinal);
     }
 
     [Fact]
