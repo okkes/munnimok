@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
@@ -102,8 +103,9 @@ public static partial class ConnectorRelayEndpoints
         group.MapGet("/sessions", MySessions);
         group.MapGet("/accounts", MyAccounts);
         group.MapGet("/{provider}/options/{field}", Options);
-        // a public brand image an <img> tag fetches: no session to bind, nothing of anyone's in it
-        group.MapGet("/{provider}/options/{field}/{token}/logo", OptionLogo).AllowAnonymous();
+        // a public brand image an <img> tag fetches: no session to bind, nothing of anyone's in it.
+        // It names its own CORS answer (OptionLogo), so the origin policy stays off it
+        group.MapGet("/{provider}/options/{field}/{token}/logo", OptionLogo).AllowAnonymous().WithMetadata(new DisableCorsAttribute());
 
         group.MapPost("/{provider}/login", Login).WithValidation<ConnectorLoginRequest>();
         group.MapGet("/{provider}/login/{sessionId}", GetSession);
@@ -301,6 +303,9 @@ public static partial class ConnectorRelayEndpoints
     private static async Task<IResult> OptionLogo(
         string provider, string field, string token, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
+        // the same CORS answer to every asker (#655): the app shows the image with a plain tag AND reads its pixels
+        // through CORS, and the browser serves the second from what it kept of the first
+        http.Response.Headers.AccessControlAllowOrigin = "*";
         var reply = await relay.Client.GetAsync($"v1/{provider}/options/{field}/{token}/logo", new ConnectorCall(), ct);
         if (!reply.IsSuccess || reply.Bytes is null) return Relay(http, reply);
 

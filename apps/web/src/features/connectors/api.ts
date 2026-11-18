@@ -134,7 +134,9 @@ export const connectorApi = {
 
   /** an option's logo, vendored by the platform: an image tag fetches it, so the address is absolute and the route asks no credentials */
   optionLogoUrl(provider: string, field: string, value: string): string {
-    return `${config.apiUrl}${BASE}/${provider}/options/${field}/${lookupToken(value)}/logo`;
+    // #655: the query makes it an address no browser holds yet — an answer kept for its month from before the route
+    // named its CORS header is refused whenever a picture's pixels are read
+    return `${config.apiUrl}${BASE}/${provider}/options/${field}/${lookupToken(value)}/logo?cors=1`;
   },
 
   /** 200 = settled with the bundle attached, 202 = a run to follow */
