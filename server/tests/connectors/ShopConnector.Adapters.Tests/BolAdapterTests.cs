@@ -47,7 +47,7 @@ public sealed class BolAdapterTests
     private const string PageHash = "sha256:0123456789abcdef0123456789abcdef";
     private const string PageUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
     private const string PageBody =
-        """{"operationName":"OrdersOverviewClient","variables":{"after":"5","locale":"nl-NL"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:0123456789abcdef0123456789abcdef"}}}""";
+        """{"operationName":"CsAccountOrdersOverviewClient","variables":{"after":"5","locale":"nl-NL"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:0123456789abcdef0123456789abcdef"}}}""";
 
     private static readonly string[] SessionExpiredOnly = ["session_expired"];
 
@@ -523,7 +523,7 @@ public sealed class BolAdapterTests
         });
 
         var sealed_ = await Adapter().SealAsync(
-            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(request), CancellationToken.None);
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(request), () => [], CancellationToken.None);
 
         Assert.Contains("probe-xsrf-token", sealed_.Material.StorageState, StringComparison.Ordinal);
         Assert.Equal(PageHash, BolPersistedQuery.Learned(sealed_.Material));
@@ -549,12 +549,33 @@ public sealed class BolAdapterTests
         var quick = Options with { HashProbeMs = 20, ProbeMs = 1 };
 
         var sealed_ = await Adapter(quick).SealAsync(
-            ctx, page, signedIn, new TaskCompletionSource<string>().Task, _ => Task.FromResult<BolPageRequest?>(null), CancellationToken.None);
+            ctx, page, signedIn, new TaskCompletionSource<string>().Task, _ => Task.FromResult<BolPageRequest?>(null), () => [], CancellationToken.None);
 
         Assert.Contains("fixture-xsrf-token", sealed_.Material.StorageState, StringComparison.Ordinal);
         Assert.Null(BolPersistedQuery.Learned(sealed_.Material));
         Assert.Null(BolPersistedQuery.LearnedRequest(sealed_.Material));
         Assert.Contains(ctx.Notes, n => n.Contains("the jar sealed at sign-in stands", StringComparison.Ordinal));
+    }
+
+    // the names are all a rename leaves behind, and the fetch that bol refuses is where the operator reads them
+    [Fact]
+    public async Task A_sign_in_that_learned_no_operation_seals_what_its_page_did_send()
+    {
+        var page = StubLoginPage.Showing();
+        using var ctx = LoginContext(page);
+        var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") } };
+        var quick = Options with { HashProbeMs = 20, ProbeMs = 1 };
+
+        var sealed_ = await Adapter(quick).SealAsync(
+            ctx, page, signedIn, new TaskCompletionSource<string>().Task, _ => Task.FromResult<BolPageRequest?>(null),
+            () => ["ShopOrdersNext", "not a name", "AccountMenu"], CancellationToken.None);
+
+        Assert.Null(BolPersistedQuery.Learned(sealed_.Material));
+        Assert.Equal(["AccountMenu", "ShopOrdersNext"], BolPersistedQuery.Seen(sealed_.Material));
+
+        var learned = await Adapter().SealAsync(
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(null), () => ["AccountMenu"], CancellationToken.None);
+        Assert.Null(BolPersistedQuery.Seen(learned.Material));
     }
 
     [Fact]
@@ -565,7 +586,7 @@ public sealed class BolAdapterTests
         var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") } };
 
         var sealed_ = await Adapter().SealAsync(
-            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(null), CancellationToken.None);
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(null), () => [], CancellationToken.None);
 
         Assert.Equal(PageHash, BolPersistedQuery.Learned(sealed_.Material));
         Assert.Null(BolPersistedQuery.LearnedRequest(sealed_.Material));
@@ -720,20 +741,6 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal));
     }
 
-    // prod 2026-10-05: a session that learned no hash is one sign-in away from working, so the refusal asks for the sign-in
-    [Fact]
-    public async Task A_refused_configured_hash_asks_for_a_new_sign_in()
-    {
-        var handler = new StubHttpHandler((_, _) => Stub.Json("""{"errors":[{"message":"Error(s) redacted."}]}"""));
-        using var ctx = FetchContext(handler);
-
-        var ex = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
-
-        Assert.Equal(ErrorCode.SessionExpired, ex.Code);
-        Assert.Contains("learned no hash", ex.Detail, StringComparison.Ordinal);
-    }
-
     [Fact]
     public async Task A_refused_learned_hash_is_a_change_bol_made_since_the_sign_in()
     {
@@ -778,7 +785,7 @@ public sealed class BolAdapterTests
         Assert.Equal("https://www.bol.com", request.Header("Origin"));
         Assert.Equal("same-origin", request.Header("sec-fetch-site"));
         Assert.Equal("application/json", request.Header("Content-Type"));
-        Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
+        Assert.Equal("CsAccountOrdersOverviewClient", request.Header("bol-app-operation-name"));
 
         Assert.Contains("XSC=fixture-xsc-value", request.Header("Cookie"), StringComparison.Ordinal);
         Assert.DoesNotContain("stale", request.Header("Cookie"), StringComparison.Ordinal);
@@ -808,13 +815,36 @@ public sealed class BolAdapterTests
         Assert.Contains("hash=sha256:0123456789ab ", change.Detail, StringComparison.Ordinal);
         Assert.Contains("body=replay", change.Detail, StringComparison.Ordinal);
 
-        using var configured = FetchContext(handler);
-        var expired = await Assert.ThrowsAsync<ConnectorException>(
-            () => Adapter().FetchAsync(configured, Requests.Receipts(), CancellationToken.None));
+    }
 
-        Assert.Equal(ErrorCode.SessionExpired, expired.Code);
-        Assert.Contains("code=INTERNAL_ERROR", expired.Detail, StringComparison.Ordinal);
-        Assert.Contains("body=rebuilt", expired.Detail, StringComparison.Ordinal);
+    // a sign-in is what learns the operation: asking for another one after it learned nothing asked for ever, and told
+    // neither the person nor the operator that bol had changed
+    [Fact]
+    public async Task A_refused_configured_operation_is_a_change_at_bol_and_never_a_reason_to_sign_in_again()
+    {
+        const string refused = """{"errors":[{"message":"Error(s) redacted.","path":["me"],"extensions":{"code":"INTERNAL_ERROR"}}]}""";
+        var handler = new StubHttpHandler((_, _) => Stub.Json(refused));
+        var jar = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") };
+
+        async Task<ConnectorException> RefusedAsync(SessionMaterial material)
+        {
+            using var ctx = new FakeJobContext(handler) { Material = material };
+            return await Assert.ThrowsAsync<ConnectorException>(() => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+        }
+
+        var renamed = await RefusedAsync(BolPersistedQuery.WithSeen(jar, ["ShopOrdersNext", "AccountMenu"]));
+        Assert.Equal(ErrorCode.ProviderChanged, renamed.Code);
+        Assert.Contains("the sign-in's page did send: AccountMenu, ShopOrdersNext", renamed.Detail, StringComparison.Ordinal);
+        Assert.Contains("code=INTERNAL_ERROR", renamed.Detail, StringComparison.Ordinal);
+        Assert.Contains("body=rebuilt", renamed.Detail, StringComparison.Ordinal);
+
+        var silent = await RefusedAsync(BolPersistedQuery.WithSeen(jar, []));
+        Assert.Equal(ErrorCode.ProviderChanged, silent.Code);
+        Assert.Contains("sent no other GraphQL operation", silent.Detail, StringComparison.Ordinal);
+
+        var unrecorded = await RefusedAsync(jar);
+        Assert.Equal(ErrorCode.ProviderChanged, unrecorded.Code);
+        Assert.Contains("left no record", unrecorded.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -852,7 +882,7 @@ public sealed class BolAdapterTests
         Assert.Contains("application/json", request.Header("Content-Type"), StringComparison.Ordinal);
 
         using var sent = JsonDocument.Parse(request.Body!);
-        Assert.Equal("OrdersOverviewClient", sent.RootElement.GetProperty("operationName").GetString());
+        Assert.Equal("CsAccountOrdersOverviewClient", sent.RootElement.GetProperty("operationName").GetString());
         Assert.Equal(
             Options.OrdersPersistedQueryHash,
             sent.RootElement.GetProperty("extensions").GetProperty("persistedQuery")
@@ -861,6 +891,48 @@ public sealed class BolAdapterTests
         using var second = JsonDocument.Parse(handler.Requests[1].Body!);
         Assert.Equal("0", sent.RootElement.GetProperty("variables").GetProperty("after").GetString());
         Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
+    }
+
+    // prod 2026-11-16: bol renamed the operation. A replayed body names the page's operation, and the header beside it
+    // must say the same even when the page's own headers were not learned with it
+    [Fact]
+    public async Task A_replay_names_the_page_s_operation_in_the_header_whatever_the_configured_name_is()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+        var body = PageBody.Replace("CsAccountOrdersOverviewClient", "ShopOrdersOverviewNext", StringComparison.Ordinal);
+        var material = BolPersistedQuery.WithRequest(
+            BolPersistedQuery.WithHash(new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") }, PageHash),
+            new BolPageRequest(body, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["accept"] = "*/*" }));
+
+        using var ctx = new FakeJobContext(handler) { Material = material };
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        var request = handler.Requests[0];
+        using var sent = JsonDocument.Parse(request.Body!);
+        Assert.Equal("ShopOrdersOverviewNext", sent.RootElement.GetProperty("operationName").GetString());
+        Assert.Equal("ShopOrdersOverviewNext", request.Header("bol-app-operation-name"));
+    }
+
+    // a name the page wrote is trusted only as a GraphQL name: anything else leaves the configured one in the header
+    [Fact]
+    public async Task A_replayed_body_whose_operation_is_not_a_plain_name_keeps_the_configured_one_in_the_header()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+        var body = PageBody.Replace("CsAccountOrdersOverviewClient", "Orders Overview; X-Injected", StringComparison.Ordinal);
+        var material = BolPersistedQuery.WithRequest(
+            BolPersistedQuery.WithHash(new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") }, PageHash),
+            new BolPageRequest(body, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["accept"] = "*/*" }));
+
+        using var ctx = new FakeJobContext(handler) { Material = material };
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        Assert.Equal("CsAccountOrdersOverviewClient", handler.Requests[0].Header("bol-app-operation-name"));
     }
 
     // bol's edge wants the operation in a header (body only: 400 InvalidRequest) and x-xsrf-token (absent: 403 XSRF failed)
@@ -877,7 +949,7 @@ public sealed class BolAdapterTests
 
         var request = handler.Requests[0];
 
-        Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
+        Assert.Equal("CsAccountOrdersOverviewClient", request.Header("bol-app-operation-name"));
 
         // the value comes off the stored cookie: a hard-coded token would pass while the real thing failed
         Assert.Equal("fixture-xsrf-token", request.Header("x-xsrf-token"));
@@ -1177,7 +1249,7 @@ public sealed class BolAdapterTests
                 ["user-agent"] = PageUserAgent,
                 ["accept"] = "*/*",
                 ["content-type"] = "application/json",
-                ["bol-app-operation-name"] = "OrdersOverviewClient",
+                ["bol-app-operation-name"] = "CsAccountOrdersOverviewClient",
                 ["bol-app-version"] = "7.3.1",
                 ["origin"] = "https://www.bol.com",
                 ["sec-fetch-site"] = "same-origin",

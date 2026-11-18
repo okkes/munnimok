@@ -17,6 +17,9 @@ internal static class BolPersistedQuery
     /// <summary>Where the page's request headers ride: a JSON object of name to value.</summary>
     public const string HeadersKey = "ordersHeaders";
 
+    /// <summary>What a sign-in that learned no orders operation saw its page send instead: operation names, comma-separated.</summary>
+    public const string SeenKey = "ordersSeen";
+
     /// <summary>Enough of a hash to tell two apart in a note or refusal, never the whole value.</summary>
     public const int PrefixLength = 19;
 
@@ -36,11 +39,20 @@ internal static class BolPersistedQuery
         "accept-encoding",
     };
 
-    public static bool TryReadHash(string? postData, string operationName, out string hash)
+    /// <summary>How many other operations a sign-in's note names: enough to spot a rename, never a page's whole chatter.</summary>
+    public const int MaxOthers = 12;
+
+    /// <summary>A GraphQL name and nothing else: it goes into a header, a note and a refusal's detail.</summary>
+    private const int MaxNameLength = 64;
+
+    /// The orders operation by what its name contains (BolOptions.OrdersOperationMarker), never by its whole name.
+    public static bool TryReadHash(string? postData, BolOptions options, out string hash)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         hash = string.Empty;
         if (string.IsNullOrWhiteSpace(postData)) return false;
-        if (!postData.Contains(operationName, StringComparison.Ordinal)) return false;
+        if (!postData.Contains(options.OrdersOperationMarker, StringComparison.Ordinal)) return false;
 
         try
         {
@@ -49,7 +61,7 @@ internal static class BolPersistedQuery
 
             // via JsonAccess, never throwing accessors: a null where an object was expected answers "no hash" (the JSON read rule)
             var name = JsonAccess.StrOf(root, "operationName");
-            if (name is not null && !string.Equals(name, operationName, StringComparison.Ordinal)) return false;
+            if (name is not null && !name.Contains(options.OrdersOperationMarker, StringComparison.Ordinal)) return false;
 
             if (!JsonAccess.TryPath(root, "extensions.persistedQuery.sha256Hash", out var value)) return false;
             if (value.ValueKind != JsonValueKind.String) return false;
@@ -64,6 +76,29 @@ internal static class BolPersistedQuery
             return false;
         }
     }
+
+    /// The name a request body gives its operation; null unless it is a plain GraphQL name, because the page wrote it.
+    public static string? OperationName(string? postData)
+    {
+        if (string.IsNullOrWhiteSpace(postData)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(postData);
+            var name = JsonAccess.StrOf(document.RootElement, "operationName");
+
+            return IsName(name) ? name : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsName(string? name) =>
+        name is { Length: > 0 and <= MaxNameLength }
+        && !char.IsAsciiDigit(name[0])
+        && name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
 
     /// Pseudo headers (:authority) are HTTP/2 framing the browser reports; no client can set them.
     public static bool MayCarry(string? name) =>
@@ -121,6 +156,22 @@ internal static class BolPersistedQuery
         var headers = material.Extra.TryGetValue(HeadersKey, out var json) ? ReadHeaders(json) : NoHeaders;
         return new BolPageRequest(body, headers);
     }
+
+    /// Sealed even when the page sent nothing: an empty record still says "this sign-in looked".
+    public static SessionMaterial WithSeen(SessionMaterial material, IEnumerable<string>? others)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+
+        var names = (others ?? []).Where(IsName).Order(StringComparer.Ordinal).Take(MaxOthers);
+        var extra = new Dictionary<string, string>(material.Extra, StringComparer.Ordinal) { [SeenKey] = string.Join(',', names) };
+        return material with { Extra = extra };
+    }
+
+    /// Null when the session carries no record: its sign-in learned the operation, or never looked.
+    public static IReadOnlyList<string>? Seen(SessionMaterial? material) =>
+        material?.Extra.TryGetValue(SeenKey, out var names) == true
+            ? [.. names.Split(',', StringSplitOptions.RemoveEmptyEntries).Where(IsName).Take(MaxOthers)]
+            : null;
 
     public static string Prefix(string? hash)
     {

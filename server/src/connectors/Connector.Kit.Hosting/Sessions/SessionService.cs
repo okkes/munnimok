@@ -92,15 +92,32 @@ public sealed class SessionService(
     /// no-op when already there; an illegal edge throws: it is a bug in the caller, not an input error
     public async Task<SessionRow> TransitionAsync(SessionRow session, SessionState next, CancellationToken ct)
     {
+        if (!Stage(session, next)) return session;
+
+        await db.SaveChangesAsync(ct);
+        signals.Signal(ConnectorSignals.Session(session.Id));
+        return session;
+    }
+
+    /// the change alone, unsaved and unsignalled: for a caller whose own write has to carry it; false when already there
+    public bool Stage(SessionRow session, SessionState next)
+    {
         ArgumentNullException.ThrowIfNull(session);
-        if (session.State == next) return session;
+        if (session.State == next) return false;
 
         SessionStateMachine.EnsureTransition(session.State, next);
         session.State = next;
         session.UpdatedAt = time.GetUtcNow();
+        return true;
+    }
+
+    /// writes whatever is staged and wakes the session's watchers
+    public async Task CommitAsync(SessionRow session, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
         await db.SaveChangesAsync(ct);
         signals.Signal(ConnectorSignals.Session(session.Id));
-        return session;
     }
 
     /// the failure path lands on the nearest terminal state instead of throwing:

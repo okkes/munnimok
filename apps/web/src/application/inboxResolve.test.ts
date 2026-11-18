@@ -131,4 +131,24 @@ describe('resolveInbox (#614): a row leaves the bell once what it says stopped b
     await settleDigest(store, SPACE, 0);
     expect((await readInbox(store)).map((e) => e.payload?.spaceId)).toEqual(['other']);
   });
+
+  it('#640: a failed sync stays while the connection stands on that failure, and goes once a sync worked or the connection is gone', async () => {
+    const { store } = await fixture();
+    stores.push(store);
+    const row = { provider: 'bol', sessionId: 'ses_1', state: 'active' as const, refreshedAt: '2026-03-01T00:00:00Z' };
+    const failed = { code: 'provider_changed', messageKey: 'connect.error.provider_changed', userAction: 'none', at: '2026-03-15T08:00:00Z' };
+    await store.connectorConnPut({ id: 'c-bol', ...row, lastError: failed });
+    await store.connectorConnPut({ id: 'c-ah', ...row, provider: 'ah', lastError: failed });
+    await appendNotification(store, 'syncFailed', { name: 'bol.com', code: 'provider_changed', hub: 'connections', connectionId: 'c-bol' }, 'syncFailed_c-bol_provider_changed_2026-03-15');
+    await appendNotification(store, 'syncFailed', { name: 'Albert Heijn', code: 'provider_changed', hub: 'connections', connectionId: 'c-ah' }, 'syncFailed_c-ah_provider_changed_2026-03-15');
+
+    expect(await resolveInbox(store, TODAY)).toEqual([]);
+
+    await store.connectorConnPut({ id: 'c-bol', ...row, lastSyncAt: '2026-03-15T09:00:00Z' });
+    expect((await resolveInbox(store, TODAY)).map((e) => e.payload?.name)).toEqual(['bol.com']);
+
+    await store.connectorConnDelete('c-ah');
+    await resolveInbox(store, TODAY);
+    expect(await readInbox(store)).toEqual([]);
+  });
 });

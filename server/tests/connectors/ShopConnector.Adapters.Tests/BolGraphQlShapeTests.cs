@@ -61,13 +61,13 @@ public sealed class BolGraphQlShapeTests
         using var body = JsonDocument.Parse(Shape.Body(Options, page: 1)!);
         var root = body.RootElement;
 
-        Assert.Equal("OrdersOverviewClient", root.GetProperty("operationName").GetString());
+        Assert.Equal("CsAccountOrdersOverviewClient", root.GetProperty("operationName").GetString());
 
         // persisted query, hash only: bol's schema is not public, so there is no document to fall back to
         var persisted = root.GetProperty("extensions").GetProperty("persistedQuery");
         Assert.Equal(1, persisted.GetProperty("version").GetInt32());
         Assert.Equal(
-            "sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2",
+            "sha256:8b5eed70df09545fe331e288c5f12b58af210a5c0ec6a85f782ba0af645791b7",
             persisted.GetProperty("sha256Hash").GetString());
 
         Assert.Equal("https://www.bol.com/api/graphql", Shape.Url(Options, page: 1));
@@ -80,7 +80,7 @@ public sealed class BolGraphQlShapeTests
         var header = Assert.Single(Shape.Headers(Options));
 
         Assert.Equal("bol-app-operation-name", header.Key);
-        Assert.Equal("OrdersOverviewClient", header.Value);
+        Assert.Equal("CsAccountOrdersOverviewClient", header.Value);
 
         var renamed = Options with { OrdersOperationName = "OrdersOverviewV2" };
         Assert.Equal("OrdersOverviewV2", Assert.Single(Shape.Headers(renamed)).Value);
@@ -271,7 +271,7 @@ public sealed class BolGraphQlShapeTests
         var error = Assert.Throws<ConnectorException>(() => Shape.Parse(refused, Options, Zone));
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.StartsWith("bol: graphql refused OrdersOverviewClient: ", error.Detail, StringComparison.Ordinal);
+        Assert.StartsWith("bol: graphql refused CsAccountOrdersOverviewClient: ", error.Detail, StringComparison.Ordinal);
 
         var tokens = Tokens(error.Detail);
         Assert.Equal("Error-s--redacted.", tokens["message"]);
@@ -281,7 +281,7 @@ public sealed class BolGraphQlShapeTests
         Assert.Equal("me.orders", tokens["path"]);
         Assert.Equal("absent", tokens["data"]);
         Assert.Equal("-", tokens["me"]);
-        Assert.Equal("sha256:d195253b815a", tokens["hash"]);
+        Assert.Equal("sha256:8b5eed70df09", tokens["hash"]);
         Assert.Equal("rebuilt", tokens["body"]);
         Assert.Contains("refused the request before running it", error.Detail, StringComparison.Ordinal);
 

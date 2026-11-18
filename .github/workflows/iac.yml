@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # two bootstraps logged into DSM with the same account at once lose a session (119 "SID not found")
+      # one bootstrap at a time: they edit the same DSM lists (reverse-proxy rules, certificate bindings)
       max-parallel: 1
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}

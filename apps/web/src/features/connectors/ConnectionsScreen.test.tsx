@@ -747,6 +747,17 @@ describe('Connections hub (signed-in user)', () => {
     expect(screen.getByTestId('receipt-delete')).toBeTruthy();
   }, 20_000);
 
+  it('#640: a connection whose last sync failed says so and why — it used to read as connected and fine', async () => {
+    // synced a moment ago, so the hub does not start a sync of its own over the line
+    await seedConnection('c-failed', {
+      lastSyncAt: new Date().toISOString(),
+      lastError: { code: 'provider_changed', messageKey: 'connect.error.provider_changed', userAction: 'none' },
+    });
+    renderAppAsUser('/connections', { api: catalogue });
+    await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('conn-state-c-failed').textContent).toMatch(/Last attempt failed · The party changed its site/), { timeout: 5000 });
+  }, 15_000);
+
   it('a connection whose session died reads "reconnect", and removing it signs the party out', async () => {
     await seedConnection('c-dead', { state: 'needs_reauth', bundle: undefined });
     let loggedOut = false;

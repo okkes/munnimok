@@ -160,6 +160,8 @@ function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
   if (device.state !== 'active' || meta.status === 'expired') return { text: t('conn.state.reconnect'), warn: true };
   if (!hasBundle) return { text: t('conn.state.signIn'), warn: true };
   if (device.lastError?.code === 'rate_limited') return { text: pauseLine(device.lastError, t, lang), warn: false };
+  // #640: a sync nobody watched (the one after a sign-in) failed and the row read "not synced yet"
+  if (device.lastError) return { text: t('conn.state.failed', { what: t(errorKey(device.lastError.code)) }), warn: true };
   const text = device.lastSyncAt ? t('conn.state.synced', { when: fmtTimeAgo(device.lastSyncAt, lang) }) : t('conn.state.neverSynced');
   return { text, warn: false };
 }

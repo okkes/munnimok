@@ -7,17 +7,10 @@ set -euo pipefail
 URL="${SYNOLOGY_URL%/}"
 REMOTE="$1"; LOCAL="$2"
 
-resp=$(curl -sS "$URL/webapi/auth.cgi" \
-  --data-urlencode "api=SYNO.API.Auth" \
-  --data-urlencode "version=6" \
-  --data-urlencode "method=login" \
-  --data-urlencode "account=$SYNOLOGY_USER" \
-  --data-urlencode "passwd=$SYNOLOGY_PASS" \
-  --data-urlencode "session=FileStation" \
-  --data-urlencode "format=sid")
-echo "$resp" | grep -q '"success":true' || { echo "Synology login failed: $resp" >&2; exit 1; }
-SID=$(echo "$resp" | sed -n 's/.*"sid" *: *"\([^"]*\)".*/\1/p')
-trap 'curl -sS "$URL/webapi/auth.cgi?api=SYNO.API.Auth&version=6&method=logout&session=FileStation&_sid='"$SID"'" >/dev/null || true' EXIT
+# shellcheck source=deploy/nas/session.sh
+. "$(dirname "$0")/session.sh"
+SID=$(dsm_login)
+trap 'dsm_logout "$SID"' EXIT
 
 if [ "${REMOTE%/}" != "$REMOTE" ]; then
   FOLDER=$(printf '%s' "$REMOTE" | sed 's:/*$::')

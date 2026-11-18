@@ -36,6 +36,17 @@ async function dueVerdict(store: StorageBackend, entry: InboxEntry, today: strin
   return paid ? 'drop' : 'keep';
 }
 
+async function whatsNewVerdict(store: StorageBackend, entry: InboxEntry): Promise<Verdict> {
+  return (await store.metaGet(WHATS_NEW_SEEN_KEY))?.value === entry.payload?.version ? 'drop' : 'keep';
+}
+
+// #640: true only while the connection still stands on that failure — a sync that worked since, or a removal, ends it
+async function syncVerdict(store: StorageBackend, entry: InboxEntry): Promise<Verdict> {
+  const { connectionId, code } = entry.payload ?? {};
+  if (!connectionId) return 'keep';
+  return (await store.connectorConnGet(connectionId))?.lastError?.code === code ? 'keep' : 'drop';
+}
+
 /** one pass over the list; the loans without a rate are read once, and only when a nudge asks */
 async function verdicts(store: StorageBackend, inbox: readonly InboxEntry[], today: string): Promise<Map<string, Verdict>> {
   const out = new Map<string, Verdict>();
@@ -44,12 +55,12 @@ async function verdicts(store: StorageBackend, inbox: readonly InboxEntry[], tod
     let verdict: Verdict = 'keep';
     if (entry.kind === 'planOverspent') verdict = await planVerdict(store, entry, today);
     else if (entry.kind === 'recurringDue') verdict = await dueVerdict(store, entry, today);
+    else if (entry.kind === 'whatsnew') verdict = await whatsNewVerdict(store, entry);
+    else if (entry.kind === 'syncFailed') verdict = await syncVerdict(store, entry);
     else if (entry.kind === 'debtRate') {
       const loanId = RATE_MARK.exec(entry.payload?.dedupe ?? '')?.[1];
       noRate ??= new Set((await debtsMissingRate(store)).map((loan) => loan.id));
       if (loanId && !noRate.has(loanId)) verdict = 'drop';
-    } else if (entry.kind === 'whatsnew') {
-      if ((await store.metaGet(WHATS_NEW_SEEN_KEY))?.value === entry.payload?.version) verdict = 'drop';
     }
     out.set(entry.id, verdict);
   }

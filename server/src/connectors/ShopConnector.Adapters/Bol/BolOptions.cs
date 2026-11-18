@@ -174,13 +174,19 @@ public sealed record BolOptions
     /// <summary>CONFIRMED. The endpoint every "Toon meer" posts to.</summary>
     public string GraphQlUrl { get; init; } = "https://www.bol.com/api/graphql";
 
-    public string OrdersOperationName { get; init; } = "OrdersOverviewClient";
+    /// <summary>The name a rebuilt request carries; a request learned at sign-in carries the page's own.</summary>
+    public string OrdersOperationName { get; init; } = "CsAccountOrdersOverviewClient";
+
+    /// What the orders operation's name contains, whatever bol puts around it: OrdersOverviewClient became
+    /// CsAccountOrdersOverviewClient, a sign-in waiting for the exact name learned nothing, and every fetch then failed
+    /// on the configured hash and asked for another sign-in (prod, 2026-11-16).
+    public string OrdersOperationMarker { get; init; } = "OrdersOverview";
 
     /// Automatic persisted query: bol sends this hash and no document. It moves with every front-end release; an unknown
     /// hash answers PersistedQueryNotFound, reported as provider_changed naming this setting. No document fallback:
     /// the schema is not public.
     public string OrdersPersistedQueryHash { get; init; } =
-        "sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2";
+        "sha256:8b5eed70df09545fe331e288c5f12b58af210a5c0ec6a85f782ba0af645791b7";
 
     /// <summary>How long sign-in waits after the session lands for bol's page to fire the orders operation whose hash it
     /// learns (BolPersistedQuery); a page that never fires it falls back to the hash above.</summary>

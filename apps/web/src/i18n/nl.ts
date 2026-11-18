@@ -3283,6 +3283,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'conn.pending.cancel': 'Inloggen annuleren',
   'conn.pending.dismiss': 'Sluiten',
   'conn.state.waitUntil': 'De partij vroeg munni te wachten — probeer het na {time} opnieuw',
+  'conn.state.failed': 'Laatste poging mislukt · {what}',
+  'notif.syncFailedRow': '{name} kon niet synchroniseren: {what}',
   'connect.progress.closeNote': 'Je kunt dit sluiten: het inloggen gaat door en de kaart van de koppeling laat zien hoe het ervoor staat.',
   'connect.progress.close': 'Voorlopig sluiten',
   'plan.segment.unplanned': 'Ongepland',

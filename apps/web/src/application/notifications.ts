@@ -2,7 +2,10 @@ import type { StorageBackend } from '@/db/backend';
 
 // device-local per-identity meta list (the txSeen pattern); clearing travels to other devices (#580, inboxClear.ts)
 // the service worker imports this module: no network or window code
-export type InboxKind = 'whatsnew' | 'recurringDue' | 'debtRate' | 'digest' | 'planOverspent';
+export type InboxKind = 'whatsnew' | 'recurringDue' | 'debtRate' | 'digest' | 'planOverspent' | 'syncFailed';
+
+/** #640: one row per connection, failure and day — a sync that keeps failing is not news every time it is tried */
+export const syncFailedKey = (connectionId: string, code: string, day: string): string => `syncFailed_${connectionId}_${code}_${day}`;
 
 export interface InboxEntry {
   id: string;

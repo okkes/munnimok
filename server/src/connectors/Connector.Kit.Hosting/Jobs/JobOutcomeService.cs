@@ -81,24 +81,17 @@ public sealed class JobOutcomeService(
                 sessions.SealCredentials(session, inputs) ?? session.PendingCredentialBundle;
         }
 
-        // job recorded succeeded BEFORE the session goes active: the sync interval reads the job table, and a scheduled login
-        // that followed too closely found no succeeded run to measure from and was let through
+        // a session parked on a question is running again by definition: there is no edge awaiting_input -> active
+        if (session.State == SessionState.AwaitingInput) sessions.Stage(session, SessionState.Running);
+        if (SessionStateMachine.CanTransition(session.State, SessionState.Active)) sessions.Stage(session, SessionState.Active);
+
+        // ONE write for the job, the bundle and the session's state. A reader between two writes finds the bundle under
+        // `running`, takes it and stops asking (#631); and the sync interval, which measures from the job table, must
+        // never see an active session before its succeeded job
         await queue.CompleteAsync(job.Id, leaseOwner, ct);
 
-        // a session parked on a question is running again by definition: there is no edge awaiting_input -> active
-        if (session.State == SessionState.AwaitingInput)
-        {
-            await sessions.TransitionAsync(session, SessionState.Running, ct);
-        }
-
-        if (SessionStateMachine.CanTransition(session.State, SessionState.Active))
-        {
-            await sessions.TransitionAsync(session, SessionState.Active, ct);
-        }
-        else
-        {
-            await db.SaveChangesAsync(ct);
-        }
+        // a job that had ended already wrote nothing and woke nobody
+        await sessions.CommitAsync(session, ct);
 
         // recovers only `degraded` (machine-set): `paused` and `retired` are human decisions a success must not overrule
         await providerStatus.RecoverAsync(job.ProviderId, ct);

@@ -12,6 +12,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.25.0',
+    date: '2026-11-18',
+    items: [
+      {
+        en: 'bol.com receipts are fetched again. bol had changed its site: a sign-in went through and nothing came in after it.',
+        nl: 'Bonnen van bol.com worden weer opgehaald. bol had zijn site veranderd: inloggen lukte en daarna kwam er niets binnen.',
+        tr: 'bol.com fişleri yeniden alınıyor. bol sitesini değiştirmişti: giriş yapılıyor ama ardından hiçbir şey gelmiyordu.',
+      },
+      {
+        en: 'A sync that fails no longer looks fine. The connection’s card says that the last attempt failed and why, and the bell on Home tells you too; the row leaves by itself once a sync works again.',
+        nl: 'Een synchronisatie die mislukt ziet er niet langer goed uit. De kaart van de koppeling zegt dat de laatste poging mislukte en waarom, en de bel op Thuis meldt het ook; de melding verdwijnt vanzelf zodra een synchronisatie weer lukt.',
+        tr: 'Başarısız olan bir eşitleme artık sorunsuz görünmüyor. Bağlantının kartı son denemenin başarısız olduğunu ve nedenini söyler, Ana sayfadaki zil de haber verir; bir eşitleme yeniden çalıştığında satır kendiliğinden kaybolur.',
+      },
+      {
+        en: 'Signing in to ING could stay on “Signing in…” after you had approved it in the ING app and pressed the card in munni. It now finishes.',
+        nl: 'Inloggen bij ING kon op “Bezig met inloggen…” blijven staan nadat je het in de ING-app had goedgekeurd en op de kaart in munni had gedrukt. Het wordt nu afgerond.',
+        tr: 'ING’ye giriş, ING uygulamasında onay verip munni’deki karta bastıktan sonra “Giriş yapılıyor…” ekranında kalabiliyordu. Artık tamamlanıyor.',
+      },
+    ],
+  },
+  {
     version: '5.23.2',
     date: '2026-11-17',
     items: [

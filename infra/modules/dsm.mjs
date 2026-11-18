@@ -6,7 +6,7 @@
 export const DSM_CODE_ADVICE = {
   402: 'DSM refused the login for the application it names (its password is right): either the account may not use it — Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow), and the administrators group (User groups tab) for the Control Panel APIs — or the login named a session DSM does not know (found live 2026-09-16: "Core" is refused for every account; the bootstrap names none, like DSM\'s own UI); --verify prints which login shapes DSM accepts',
   105: 'DSM treats this session as a non-administrator (its own init data says is_admin=false — verify prints it): Control Panel APIs are admin-only. Check User & Group → the deploy user → Edit → User groups → the administrators group is ticked AND saved, then sign in to DSM as this account once in a browser on the LAN: an administrator\'s desktop there but not here means Adaptive MFA (Control Panel → Security → Account; on by default for administrators without 2FA — a sign-in from GitHub\'s runners is "risky" and, with no e-mail on the account, gets a plain user\'s session): switch it off for administrators, or enroll the account in 2FA and give the pipeline its OTP secret (not supported yet)',
-  119: 'DSM did not recognise the session for this call (119 = "SID not found"): the sid and the SynoToken must ride the query string / the X-SYNO-TOKEN header (DSM 7.3 does not read them from a POST body — found live 2026-09-16), or the session expired; --verify prints which call shapes DSM accepts',
+  119: 'DSM did not recognise the session for this call (119 = "SID not found"): the sid and the SynoToken must ride the query string / the X-SYNO-TOKEN header (DSM 7.3 does not read them from a POST body — found live 2026-09-16), or the session expired, or DSM handed out a sid it does not know (about one login in fifty: a session is checked and asked for again, so this one was lost several times in a row); --verify prints which call shapes DSM accepts',
   103: 'the API method does not exist in this form (103) — the version or the method name is wrong for this DSM',
   4800: 'DSM rejected the task parameters (4800) — the message only shows in /var/log/synoscgi.log on the NAS',
   5524: 'Let’s Encrypt’s rate limit for this name is used up (5 certificates per exact name set per week) — wait a week; never delete and re-request',
@@ -108,13 +108,32 @@ export async function dsmLogout(base, sid, fetchImpl = fetch, session = null) {
 
 // read() adds the restart-proof retry: safe for reads only, a repeated create duplicates
 // `session` names a DSM application (FileStation for files); none for the Control Panel APIs
+// sid and token ride the QUERY STRING and X-SYNO-TOKEN header: DSM 7.3 does not read them from a POST body
+// (a body-only sid answered 119 "SID not found")
+const carried = ({ sid, token }) => ({ auth: { _sid: sid, ...(token ? { SynoToken: token } : {}) }, headers: token ? { 'X-SYNO-TOKEN': token } : null });
+
+export const DSM_LOGIN_ATTEMPTS = 4;
+
+// DSM 7.3 answers about one login in fifty with a sid it does not know itself: the first call with it is refused
+// with 119 and so is every later one (measured with nothing else signed in, #638). A login counts once DSM answers
+// a call with it; only 119 says "unknown", any other answer (a refusal for rights too) proves the session.
+// The refused sid is signed out all the same: DSM accepts that, and lists the session for a week when nobody does (#639)
+async function knownLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl }) {
+  for (let attempt = 1; ; attempt++) {
+    const login = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
+    const { auth, headers } = carried(login);
+    const refusal = await dsmCall(base, 'entry.cgi', { api: 'SYNO.FileStation.Info', version: '2', method: 'get', ...auth }, fetchImpl, { query: auth, headers, sleepImpl })
+      .then(() => null, (e) => e);
+    if (dsmCode(refusal) !== 119 || attempt >= DSM_LOGIN_ATTEMPTS) return login;
+    await dsmLogout(base, login.sid, fetchImpl, session);
+  }
+}
+
 export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { session = null, retry = DSM_RETRY, sleepImpl = sleep } = {}) {
   const base = url.replace(/\/$/, '');
-  const { sid, token } = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
-  const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
-  // sid and token ride the QUERY STRING and X-SYNO-TOKEN header: DSM 7.3 does not read them from a POST body
-  // (a body-only sid answered 119 "SID not found")
-  const carry = { query: auth, headers: token ? { 'X-SYNO-TOKEN': token } : null };
+  const { sid, token } = await knownLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
+  const { auth, headers } = carried({ sid, token });
+  const carry = { query: auth, headers };
   const call = (api, version, method, params = {}, opts = {}) => dsmCall(base, 'entry.cgi', { api, version: String(version), method, ...params, ...auth }, fetchImpl, { sleepImpl, ...carry, ...opts });
   return {
     base,

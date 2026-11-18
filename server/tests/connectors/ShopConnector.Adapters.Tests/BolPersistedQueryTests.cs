@@ -6,7 +6,7 @@ namespace ShopConnector.Adapters.Tests;
 
 public sealed class BolPersistedQueryTests
 {
-    private const string Operation = "OrdersOverviewClient";
+    private static readonly BolOptions Options = new();
 
     [Fact]
     public void The_operation_s_hash_is_read_exactly_as_the_page_spelled_it()
@@ -15,8 +15,48 @@ public sealed class BolPersistedQueryTests
             {"operationName":"OrdersOverviewClient","variables":{"after":"0"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"abc123DEF"}}}
             """;
 
-        Assert.True(BolPersistedQuery.TryReadHash(body, Operation, out var hash));
+        Assert.True(BolPersistedQuery.TryReadHash(body, Options, out var hash));
         Assert.Equal("abc123DEF", hash);
+    }
+
+    // prod 2026-11-16: bol put "CsAccount" in front of the name; a sign-in waiting for the exact old name learned nothing,
+    // every fetch then ran on the configured hash, was refused, and asked for another sign-in
+    [Theory]
+    [InlineData("CsAccountOrdersOverviewClient")]
+    [InlineData("OrdersOverviewClient")]
+    [InlineData("ShopOrdersOverviewNext")]
+    public void The_orders_operation_is_known_by_what_its_name_contains_whatever_bol_puts_around_it(string name)
+    {
+        var body = """{"operationName":"NAME","variables":{"after":"5"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:8b5e"}}}"""
+            .Replace("NAME", name, StringComparison.Ordinal);
+
+        Assert.True(BolPersistedQuery.TryReadHash(body, Options, out var hash));
+        Assert.Equal("sha256:8b5e", hash);
+        Assert.Equal(name, BolPersistedQuery.OperationName(body));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("""{"variables":{}}""")]
+    [InlineData("""{"operationName":7}""")]
+    [InlineData("""{"operationName":""}""")]
+    [InlineData("""{"operationName":"Orders Overview"}""")]
+    [InlineData("""{"operationName":"9Lives"}""")]
+    [InlineData("""{"operationName":"Name\r\nX-Injected: 1"}""")]
+    public void A_body_s_operation_counts_as_a_name_only_when_it_is_a_plain_GraphQL_name(string? body)
+    {
+        Assert.Null(BolPersistedQuery.OperationName(body));
+    }
+
+    [Fact]
+    public void A_name_longer_than_a_header_should_carry_is_no_name()
+    {
+        var body = """{"operationName":"NAME"}""".Replace("NAME", new string('a', 65), StringComparison.Ordinal);
+
+        Assert.Null(BolPersistedQuery.OperationName(body));
+        Assert.Equal("SearchHistory", BolPersistedQuery.OperationName("""{"operationName":"SearchHistory"}"""));
     }
 
     [Theory]
@@ -28,7 +68,7 @@ public sealed class BolPersistedQueryTests
     [InlineData("""{"operationName":"OrdersOverviewClient","extensions":{"persistedQuery":{"sha256Hash":""}}}""")]
     public void Anything_that_is_not_the_operation_s_persisted_query_is_refused(string? body)
     {
-        Assert.False(BolPersistedQuery.TryReadHash(body, Operation, out var hash));
+        Assert.False(BolPersistedQuery.TryReadHash(body, Options, out var hash));
         Assert.Equal(string.Empty, hash);
     }
 

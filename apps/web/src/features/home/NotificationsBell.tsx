@@ -19,6 +19,7 @@ import { clearNotifications, syncNotificationsCleared } from '@/application/inbo
 import { settleAnswered, settleReviewed } from '@/application/deliveredResolve';
 import { settleInbox } from '@/application/inboxResolve';
 import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
+import { errorKey } from '@/features/connectors/manifestForm';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
 import { latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from '@/features/help/releaseNotes';
 import { apiFetch } from '@/lib/api';
@@ -134,12 +135,13 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
 };
 const GENERIC_VISUAL: { key: TranslationKey; icon: string } = { key: 'act.generic', icon: 'history' };
 
-const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debts' | '/insights' | '/planning' }> = {
+const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debts' | '/insights' | '/planning' | '/connections' }> = {
   whatsnew: { icon: 'bullhorn-variant-outline' },
   recurringDue: { icon: 'autorenew', to: '/recurring' },
   debtRate: { icon: 'scale-balance', to: '/debts' },
   digest: { icon: 'lightbulb-on-outline', to: '/insights' },
   planOverspent: { icon: 'clipboard-alert-outline', to: '/planning' },
+  syncFailed: { icon: 'sync-alert', to: '/connections' },
 };
 
 /** #614: the name of a part of the list — "General", then the open space */
@@ -178,6 +180,7 @@ function inboxLine(t: TFunc, entry: InboxEntry): string {
   if (entry.kind === 'recurringDue') return t('notif.recurringDueRow', { name: p.name ?? '', date: p.date ?? '' });
   if (entry.kind === 'debtRate') return t('debts.rateReminderBody', { name: p.name ?? '' });
   if (entry.kind === 'planOverspent') return t('notif.planOverspentRow', { names: p.names ?? '' });
+  if (entry.kind === 'syncFailed') return t('notif.syncFailedRow', { name: p.name ?? '', what: t(errorKey(p.code)) });
   return t('ins.digestBody', { n: p.n ?? '' });
 }
 
@@ -347,7 +350,8 @@ export function NotificationsBell() {
       setWhatsnewOpen(true);
       return;
     }
-    const to = INBOX_VISUAL[entry.kind].to;
+    // a bank's connection lives on All accounts, every other one on Connected services
+    const to = entry.kind === 'syncFailed' && entry.payload?.hub === 'accounts' ? '/accounts' : INBOX_VISUAL[entry.kind].to;
     if (to) {
       setOpen(false);
       // #551: the screen opens in the space the row is about
