@@ -100,7 +100,7 @@ describe('syncConnection — one pass through the relay', () => {
     expect((await backend.connectorConnGet(CONN))?.state).toBe('active');
   });
 
-  it('#640: a sync that failed lands in the bell, once per failure and day — a pause the party asked for does not', async () => {
+  it('#640: a sync that failed lands in the bell, once per failure and day — a pause the party asked for and a session that ended do not', async () => {
     vi.spyOn(connectorApi, 'sync').mockRejectedValue(new ConnectorError(502, envelope('provider_changed')));
     expect((await syncConnection(backend, repo, CONN)).status).toBe('error');
     await syncConnection(backend, repo, CONN);
@@ -112,6 +112,11 @@ describe('syncConnection — one pass through the relay', () => {
 
     vi.spyOn(connectorApi, 'sync').mockRejectedValue(new ConnectorError(429, envelope('rate_limited', { retriable: true, userAction: 'wait', retryAfterSeconds: 900 })));
     await syncConnection(backend, repo, CONN);
+    expect(await readInbox(backend)).toHaveLength(1);
+
+    // ING ends its session after every sync: the card asks for the sign-in, the bell stays quiet
+    vi.spyOn(connectorApi, 'sync').mockRejectedValue(new ConnectorError(401, envelope('session_expired', { userAction: 'reauth' })));
+    expect((await syncConnection(backend, repo, CONN)).status).toBe('signin');
     expect(await readInbox(backend)).toHaveLength(1);
   });
 

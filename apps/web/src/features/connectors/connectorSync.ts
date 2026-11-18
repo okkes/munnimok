@@ -244,9 +244,10 @@ async function refused(storage: StorageBackend, connectionId: string, err: Conne
 }
 
 // #640: most syncs run with nobody watching (after a sign-in, after a bank sync, on the keep-alive), so a failure
-// goes to the bell; a pause the party asked for is no failure, and the row says until when
+// goes to the bell. Not a pause the party asked for (the card says until when), and not a session that ended: for a
+// party that wants a sign-in for every sync that is how each sync ends, and the card asks for the sign-in
 async function tellFailed(storage: StorageBackend, connectionId: string, code: string): Promise<void> {
-  if (code === 'rate_limited') return;
+  if (code === 'rate_limited' || SIGN_IN_CODES.has(code)) return;
   const meta = (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
   if (!meta) return;
   const hub = meta.kind === 'bank' ? 'accounts' : 'connections';
