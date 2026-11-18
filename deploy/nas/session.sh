@@ -3,6 +3,7 @@
 
 # DSM 7.3 answers about one login in fifty with a sid it does not know itself: the first call with it is refused with 119,
 # and so is every later one (measured with nothing else signed in, #638). A login counts once DSM answers a call with it.
+# The refused sid is signed out all the same: DSM accepts that, and lists the session for a week when nobody does (#639).
 dsm_login() {
   local resp sid check attempt
   for attempt in 1 2 3 4; do
@@ -30,6 +31,7 @@ dsm_login() {
       echo "$sid"
       return 0
     fi
+    dsm_logout "$sid"
     echo "DSM does not know the session it just handed out (119) — signing in again (attempt $attempt of 4)" >&2
   done
   echo "Synology login: four sessions in a row were not recognised by DSM (119)" >&2

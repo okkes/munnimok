@@ -121,6 +121,8 @@ test('dsm session: a login whose sid DSM does not know (119 on the first call wi
   assert.deepEqual(lost.seen.filter((c) => c.key === 'SYNO.FileStation.Info.get').map((c) => [c.sid, c.token]), [['S1', 'T1'], ['S2', 'T2']], 'each login is checked with its own sid and token, carried as every call carries them');
   await s.call('SYNO.FileStation.List', 2, 'list_share');
   assert.deepEqual([lost.seen.at(-1).sid, lost.seen.at(-1).token], ['S2', 'T2'], 'the calls ride the session DSM answered with');
+  // DSM lists a session it refused for a week unless it is signed out, and it accepts that sign-out (#639)
+  assert.deepEqual(lost.seen.map((c) => `${c.key} ${c.sid ?? '-'}`).slice(0, 4), ['SYNO.API.Auth.login -', 'SYNO.FileStation.Info.get S1', 'SYNO.API.Auth.logout S1', 'SYNO.API.Auth.login -'], 'the session DSM did not know is signed out before the next one is asked for');
 
   const known = nas([ok()]);
   await dsmSession(CREDS, known.fetchImpl, { sleepImpl: noWait });
@@ -141,6 +143,8 @@ test('dsm session: a login whose sid DSM does not know (119 on the first call wi
   const g = await dsmSession(CREDS, gone.fetchImpl, { sleepImpl: noWait });
   assert.equal(gone.logins(), DSM_LOGIN_ATTEMPTS, 'it stops asking');
   await assert.rejects(g.call('SYNO.FileStation.Info', 2, 'get'), (e) => /"code":119/.test(e.message) && /one login in fifty/.test(dsmAdvice(e)));
+  await g.logout();
+  assert.deepEqual(gone.seen.filter((c) => c.key === 'SYNO.API.Auth.logout').map((c) => c.sid), ['S1', 'S2', 'S3', 'S4'], 'every session asked for is signed out, the last one by whoever holds it');
 });
 
 test('dsm transport: a login that gets no answer fails fast for the wizard check, and is retried through a web-server restart for a session', async () => {

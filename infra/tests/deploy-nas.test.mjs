@@ -255,11 +255,15 @@ test('upload.sh: a session DSM does not know is asked for again before a file is
   assert.equal(lost.logins, 2);
   assert.equal(lost.uploads.length, 1);
   assert.match(lost.uploads[0], /entry\.cgi\?_sid=SID2 /, 'the file goes with the session DSM answered with');
-  assert.ok(lost.calls.some((c) => c.includes('method=logout') && c.includes('_sid=SID2')), 'and that session is the one closed');
+  const signedOut = (run) => run.calls.filter((c) => c.includes('method=logout')).map((c) => /_sid=(SID\d+)/.exec(c)[1]);
+  // DSM lists a session it refused for a week unless it is signed out (#639)
+  assert.deepEqual(signedOut(lost), ['SID1', 'SID2'], 'the session DSM did not know is signed out too, before the next one is asked for');
+  assert.ok(lost.calls.findIndex((c) => c.includes('method=logout') && c.includes('_sid=SID1')) < lost.calls.findLastIndex((c) => c.includes('method=login')));
 
   const gone = upload({ dead: '1 2 3 4' });
   assert.equal(gone.status, 1);
   assert.equal(gone.logins, 4);
+  assert.deepEqual(signedOut(gone), ['SID1', 'SID2', 'SID3', 'SID4'], 'a run that ends without a session leaves none behind');
   assert.deepEqual(gone.uploads, [], 'nothing is sent without a session');
   assert.match(gone.stderr, /four sessions in a row were not recognised/);
 });

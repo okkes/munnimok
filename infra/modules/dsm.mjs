@@ -116,7 +116,8 @@ export const DSM_LOGIN_ATTEMPTS = 4;
 
 // DSM 7.3 answers about one login in fifty with a sid it does not know itself: the first call with it is refused
 // with 119 and so is every later one (measured with nothing else signed in, #638). A login counts once DSM answers
-// a call with it; only 119 says "unknown", any other answer (a refusal for rights too) proves the session
+// a call with it; only 119 says "unknown", any other answer (a refusal for rights too) proves the session.
+// The refused sid is signed out all the same: DSM accepts that, and lists the session for a week when nobody does (#639)
 async function knownLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl }) {
   for (let attempt = 1; ; attempt++) {
     const login = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
@@ -124,6 +125,7 @@ async function knownLogin(base, user, pass, fetchImpl, { session, retry, sleepIm
     const refusal = await dsmCall(base, 'entry.cgi', { api: 'SYNO.FileStation.Info', version: '2', method: 'get', ...auth }, fetchImpl, { query: auth, headers, sleepImpl })
       .then(() => null, (e) => e);
     if (dsmCode(refusal) !== 119 || attempt >= DSM_LOGIN_ATTEMPTS) return login;
+    await dsmLogout(base, login.sid, fetchImpl, session);
   }
 }
 

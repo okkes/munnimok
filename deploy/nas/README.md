@@ -43,6 +43,15 @@ by `upload.sh` and `download.sh`) and `dsmSession` in
 `infra/modules/dsm.mjs` read once with the fresh session and sign in
 again on 119, four times at most.
 
+DSM lists a sign-in (Control Panel → Info Center → Connected users, or
+`SYNO.Core.CurrentConnection` → `list`) until its sign-out arrives, and
+for a week when none does. So every path signs out what it signed in,
+also on a failure, and a session DSM refused is signed out before the
+next one is asked for: DSM accepts that sign-out. One kind still stays
+its week: a sign-in whose answer never reached the runner because the
+NAS stood still for minutes. Nobody ever held that session's id, so
+nobody can sign it out or use it.
+
 ## The poller
 
 `deploy/nas/apply.sh` is a DSM Task Scheduler entry (root, every five
