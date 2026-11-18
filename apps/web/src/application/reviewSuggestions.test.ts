@@ -52,6 +52,15 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     expect(map.q4).toMatchObject({ recurringId: 'rec1', draft: { catId: 'subs' } });
   });
 
+  it('#649: a refund from the party of a recurring cost, of its size, is no recurring cost and is not filed under its category', async () => {
+    const { store, repo } = await seed();
+    await repo.upsert('transaction', SPACE, 'q9', { accountId: 'chk', currency: 'EUR', date: '2026-10-31', amountCents: 1599, merchant: 'Netflix', catId: 'uncategorized', needsReview: 1 });
+    const map = await prepareSpaceSuggestions(store, SPACE);
+    expect(map.q9.recurringId).toBeUndefined();
+    expect(map.q9.draft.catId).not.toBe('subs');
+    expect(map.q4).toMatchObject({ recurringId: 'rec1', draft: { catId: 'subs' } });
+  });
+
   it('the stored map speaks for a row only while the row is what it was prepared on', async () => {
     const { store, repo } = await seed();
     await prepareReviewSuggestions(store);

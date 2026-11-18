@@ -5,7 +5,7 @@ import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
-import { propagateRecurringCategory, realignRecurringCategories } from './recurring';
+import { propagateRecurringCategory, realignRecurringCategories, unlinkIncomeFromRecurrings } from './recurring';
 
 const SPACE = 'sp1';
 
@@ -48,6 +48,17 @@ describe('recurring category propagation (the recurring owns the category)', () 
     expect((await store.get('transaction', 'expecting'))?.catId).toBe('expenseReimburse');
     expect((await store.get('transaction', 'other'))?.catId).toBe('groceries');
     expect(await realignRecurringCategories(store, repo)).toBe(0);
+  });
+
+  it('#649: money that came in lets go of its recurring cost and keeps its category; what went out stays linked', async () => {
+    const { store, repo } = await seed();
+    const refund = { accountId: 'a', currency: 'EUR', txType: 'expense' as const, needsReview: 0 as const, merchant: 'Gym' };
+    await repo.upsert('transaction', SPACE, 'refund', { ...refund, date: '2026-07-12', amountCents: 2_500, recurringId: 'rec1', catId: 'sport' });
+    expect(await unlinkIncomeFromRecurrings(store, repo)).toBe(1);
+    expect((await store.get('transaction', 'refund'))?.recurringId).toBe('');
+    expect((await store.get('transaction', 'refund'))?.catId).toBe('sport');
+    expect((await store.get('transaction', 'linked1'))?.recurringId).toBe('rec1');
+    expect(await unlinkIncomeFromRecurrings(store, repo)).toBe(0);
   });
 
   it('a cleared recurring category files linked rows as uncategorized', async () => {

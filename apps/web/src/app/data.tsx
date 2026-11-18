@@ -162,7 +162,9 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   const { settlePristineLoans } = await import('@/application/loanBalance');
   if (confirmed) await settlePristineLoans(store, upkeep);
   // the recurring owns the category: a linked row a fetch's overlay re-filed takes it back every boot
-  const { realignRecurringCategories } = await import('@/application/recurring');
+  const { realignRecurringCategories, unlinkIncomeFromRecurrings } = await import('@/application/recurring');
+  // first: a refund still linked would be re-filed under its recurring's category by the pass after it
+  await unlinkIncomeFromRecurrings(store, upkeep);
   await realignRecurringCategories(store, upkeep);
   // transfers are one event with two legs: paired within each space's books, never across (funding covers that)
   const { linkTransferPairs } = await import('@/application/transferMatch');
