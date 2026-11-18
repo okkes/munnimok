@@ -62,7 +62,8 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync());
         var settled = await AwaitBundleAsync(client, Captcha, sessionId);
         Assert.StartsWith("sb_v1.", settled, StringComparison.Ordinal);
-        Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
+        // read at once: the answer that carried the bundle is the last one anybody asks for, so it has to carry the state
+        Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
 
         var frames = await DrainFramesAsync(reader, TimeSpan.FromSeconds(10), f => f["sessionId"]?.GetValue<string>() == sessionId);
         frames.InsertRange(0, asked);

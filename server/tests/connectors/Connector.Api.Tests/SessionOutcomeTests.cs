@@ -1,9 +1,16 @@
 using System.Diagnostics;
 using System.Net;
+using Connector.Kit.AgentProtocol;
 using Connector.Kit.Errors;
+using Connector.Kit.Hosting;
+using Connector.Kit.Hosting.Data;
+using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Jobs;
 using Connector.Kit.Jobs;
+using Connector.Kit.Manifests;
+using Connector.Kit.Security;
 using Connector.Kit.Sessions;
+using Microsoft.Extensions.DependencyInjection;
 using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
@@ -86,6 +93,62 @@ public sealed class SessionOutcomeTests(ShopApiFactory factory)
         var again = await Flows.ResumeAsync(http, Provider, connection);
         var page = await Flows.FetchPageAsync(http, Provider, $"/v1/{Provider}/receipts?since=2026-01-01", again);
         Assert.Single(page.GetProperty("data").EnumerateArray());
+    }
+
+    /// whoever reads the bundle stops asking, and keeps the state that came with it: a bundle under `running` left a
+    /// finished login looking busy
+    [Fact]
+    public async Task A_login_s_bundle_is_never_readable_before_its_session_is_active()
+    {
+        using var http = factory.CreateAuthorizedClient();
+        var subject = Flows.NewSubject("settles");
+        http.ActAs(subject);
+        using var request = Wire.Post($"/v1/{PooledStoreAdapter.ProviderId}/login", new
+        {
+            subject,
+            inputs = new Dictionary<string, string> { [PooledStoreAdapter.UsernameField] = "shopper" },
+        });
+        using var response = await http.SendAsync(request);
+        var sessionId = (await response.JsonAsync()).Text("session_id");
+        var job = Db.LatestJob(factory, sessionId);
+        var agentId = EnrollFleetAgent();
+
+        using var scope = factory.Services.CreateScope();
+        var leased = await scope.ServiceProvider.GetRequiredService<ILeasedJobQueue>().TryLeaseAsync(
+            agentId, null, new AgentCapabilities { Providers = [PooledStoreAdapter.ProviderId] }, [JobKind.Login],
+            TimeSpan.FromMinutes(2), CancellationToken.None);
+        Assert.Equal(job.Id, leased?.JobId);
+
+        var seen = new List<(SessionState State, bool Bundle)>();
+        scope.ServiceProvider.GetRequiredService<ConnectorDbContext>().SavedChanges += (_, _) => seen.Add(Db.Read(factory, db => db.Sessions
+            .Where(s => s.Id == sessionId)
+            .Select(s => new { s.State, Bundle = s.PendingBundle != null })
+            .AsEnumerable()
+            .Select(s => (s.State, s.Bundle))
+            .Single()));
+
+        await scope.ServiceProvider.GetRequiredService<JobOutcomeService>().SucceedAsync(
+            job.Id, agentId, new JobResultRequest { SessionMaterial = new SessionMaterial { AccessToken = "token" } }, CancellationToken.None);
+
+        Assert.Contains(seen, s => s.Bundle);
+        Assert.All(seen.Where(s => s.Bundle), s => Assert.Equal(SessionState.Active, s.State));
+    }
+
+    private string EnrollFleetAgent()
+    {
+        var id = "agt_" + Guid.NewGuid().ToString("N");
+        Db.Write(factory, db => db.Agents.Add(new AgentRow
+        {
+            Id = id,
+            Name = "session outcome test agent",
+            Class = AgentClass.Pooled,
+            OwnerSubject = ConnectorOptions.DevFleetSubject,
+            CapabilitiesJson = ConnectorJson.Serialize(new AgentCapabilities { Providers = [PooledStoreAdapter.ProviderId] }),
+            TokenHash = Connector.Kit.Hosting.Auth.AgentAuth.Hash("tok_" + Guid.NewGuid().ToString("N")),
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
+        }));
+        return id;
     }
 
     /// a fetch refused inside its window answers 429 at once; one the window outran fails as a polled job: the same refusal

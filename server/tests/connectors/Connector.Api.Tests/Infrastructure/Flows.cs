@@ -76,7 +76,6 @@ internal static class Flows
         throw new UnreachableException();
     }
 
-    // separate from AwaitBundleAsync: the bundle can land one save before the state
     public static async Task<JsonElement> AwaitStateAsync(HttpClient http, string provider, string sessionId, string state)
     {
         ArgumentNullException.ThrowIfNull(http);
