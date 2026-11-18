@@ -1,5 +1,27 @@
 # Changelog
 
+## [5.25.0](https://github.com/okkes/munnimok/compare/v5.24.0...v5.25.0) (2026-11-18)
+
+
+### ✨ Features
+
+* **connectors:** a fetch that fails is told to the person and the operator ([#640](https://github.com/okkes/munnimok/issues/640)) ([e4712a6](https://github.com/okkes/munnimok/commit/e4712a66c41caae20a1e4b4775e18cf82bf378ed))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** a job's success and its session's state are one write ([#631](https://github.com/okkes/munnimok/issues/631)) ([92d71d8](https://github.com/okkes/munnimok/commit/92d71d853ac17620447ffad2a212093a7a3a9b06))
+* **connectors:** a session that ended is not a failed sync in the bell ([#640](https://github.com/okkes/munnimok/issues/640)) ([7016caf](https://github.com/okkes/munnimok/commit/7016caf698534a1cd9a3cacf1c577a14db8df2ad))
+* **connectors:** an answer never puts a finished job back to running ([#644](https://github.com/okkes/munnimok/issues/644)) ([c057712](https://github.com/okkes/munnimok/commit/c057712cfb46949b234068ddfea8131f47f74b1f))
+* **connectors:** bol's orders request is known by what its name contains ([#624](https://github.com/okkes/munnimok/issues/624)) ([161f15a](https://github.com/okkes/munnimok/commit/161f15aa87eeb77625b54b4a680934d20e5630fa))
+* **infra:** a DSM session counts once DSM answers with it ([#638](https://github.com/okkes/munnimok/issues/638)) ([e7abdfe](https://github.com/okkes/munnimok/commit/e7abdfe352ed40f4cedbf8d5d1d47c7623a0d3d9))
+* **infra:** a session DSM refused is signed out before the next one ([#639](https://github.com/okkes/munnimok/issues/639)) ([7b55138](https://github.com/okkes/munnimok/commit/7b55138efc94753e03fee0a3fbacfb398a079fa3))
+
+
+### 🛠️ Build System
+
+* **native:** the iOS app is built with Xcode 27 ([#643](https://github.com/okkes/munnimok/issues/643)) ([3c5a327](https://github.com/okkes/munnimok/commit/3c5a327e51c8a981de1ae3407baf8aa018f1f6d8))
+
 ## [5.24.0](https://github.com/okkes/munnimok/compare/v5.23.2...v5.24.0) (2026-11-17)
 
 
