@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
-  dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
+  dsmAdvice, dsmLogin, dsmSession, DSM_LOGIN_ATTEMPTS, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
   probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
   readPollerLog, proxyRules, systemInfo,
 } from '../modules/dsm.mjs';
@@ -99,12 +99,57 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   assert.equal(isPermissionError(new Error('DSM x failed: {"code":5524}')), false);
 });
 
+test('dsm session: a login whose sid DSM does not know (119 on the first call with it) is made again, and any other answer proves the session', async () => {
+  // answers[n - 1] is what DSM says to the first call of the n-th login; the last one repeats
+  const nas = (answers) => {
+    const seen = [];
+    let logins = 0;
+    const fetchImpl = async (url, init) => {
+      const p = Object.fromEntries(new URLSearchParams(init?.body ?? ''));
+      seen.push({ key: `${p.api}.${p.method}`, sid: new URL(url).searchParams.get('_sid'), token: init?.headers?.['X-SYNO-TOKEN'] ?? null });
+      if (p.method === 'login') { logins++; return { json: async () => ok({ sid: `S${logins}`, synotoken: `T${logins}` }) }; }
+      if (p.api === 'SYNO.FileStation.Info') return { json: async () => answers[Math.min(logins, answers.length) - 1] };
+      return { json: async () => ok({ shares: [] }) };
+    };
+    return { seen, fetchImpl, logins: () => logins };
+  };
+
+  const lost = nas([fail(119), ok()]);
+  const s = await dsmSession(CREDS, lost.fetchImpl, { session: 'FileStation', sleepImpl: noWait });
+  assert.equal(lost.logins(), 2, 'the session DSM did not know is asked for again');
+  assert.deepEqual([s.sid, s.token], ['S2', 'T2']);
+  assert.deepEqual(lost.seen.filter((c) => c.key === 'SYNO.FileStation.Info.get').map((c) => [c.sid, c.token]), [['S1', 'T1'], ['S2', 'T2']], 'each login is checked with its own sid and token, carried as every call carries them');
+  await s.call('SYNO.FileStation.List', 2, 'list_share');
+  assert.deepEqual([lost.seen.at(-1).sid, lost.seen.at(-1).token], ['S2', 'T2'], 'the calls ride the session DSM answered with');
+
+  const known = nas([ok()]);
+  await dsmSession(CREDS, known.fetchImpl, { sleepImpl: noWait });
+  assert.equal(known.logins(), 1);
+
+  // a refusal for rights is an answer too: DSM knows the session
+  const noRights = nas([fail(105)]);
+  await dsmSession(CREDS, noRights.fetchImpl, { sleepImpl: noWait });
+  assert.equal(noRights.logins(), 1);
+
+  // a check that gets no answer proves nothing: the call that follows says what is wrong
+  const silent = nas([netErr('ECONNRESET')]);
+  const quiet = async (url, init) => { const r = await silent.fetchImpl(url, init); const body = await r.json(); if (body instanceof Error) throw body; return { json: async () => body }; };
+  await dsmSession(CREDS, quiet, { sleepImpl: noWait });
+  assert.equal(silent.logins(), 1);
+
+  const gone = nas([fail(119)]);
+  const g = await dsmSession(CREDS, gone.fetchImpl, { sleepImpl: noWait });
+  assert.equal(gone.logins(), DSM_LOGIN_ATTEMPTS, 'it stops asking');
+  await assert.rejects(g.call('SYNO.FileStation.Info', 2, 'get'), (e) => /"code":119/.test(e.message) && /one login in fifty/.test(dsmAdvice(e)));
+});
+
 test('dsm transport: a login that gets no answer fails fast for the wizard check, and is retried through a web-server restart for a session', async () => {
   let n = 0;
   const flaky = async (url, init) => {
+    const p = Object.fromEntries(new URLSearchParams(init.body));
+    if (p.method !== 'login') return { json: async () => ok() };
     n++;
     if (n === 1) throw netErr('ECONNREFUSED');
-    const p = Object.fromEntries(new URLSearchParams(init.body));
     return { json: async () => ({ success: true, data: { sid: 'S', synotoken: 'T', session: p.session } }) };
   };
   await assert.rejects(dsmLogin('https://nas.example', 'u', 'p', flaky), (e) => isTransport(e) && /no answer \(ECONNREFUSED\)/.test(e.message));

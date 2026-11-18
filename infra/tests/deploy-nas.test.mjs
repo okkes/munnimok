@@ -196,3 +196,70 @@ test('readiness step: a dispatch never asks for newer runs, and an environment w
   assert.match(bare.log, /not bootstrapped yet/);
   assert.deepEqual(bare.asked, []);
 });
+
+// DSM as upload.sh meets it through curl: FAKE_DEAD lists the logins (1, 2, …) whose sid DSM then does not know
+const FAKE_CURL = `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_CURL_LOG"
+case "$*" in
+  *method=login*)
+    n=$(( $(cat "$FAKE_CURL_COUNT" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$FAKE_CURL_COUNT"
+    printf '{"data":{"sid":"SID%s"},"success":true}' "$n" ;;
+  *SYNO.FileStation.Info*)
+    case " $FAKE_DEAD " in
+      *" $(cat "$FAKE_CURL_COUNT") "*) printf '{"error":{"code":119},"success":false}' ;;
+      *) printf '{"data":{"hostname":"nas"},"success":true}' ;;
+    esac ;;
+  *) printf '{"success":true}' ;;
+esac
+`;
+
+function upload({ dead = '' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'munni-upload-'));
+  mkdirSync(join(dir, 'bin'));
+  writeFileSync(join(dir, 'bin', 'curl'), FAKE_CURL, { mode: 0o755 });
+  writeFileSync(join(dir, 'bundle.tgz'), 'x');
+  const log = join(dir, 'curl.log');
+  writeFileSync(log, '');
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  const env = {
+    ...process.env,
+    [pathKey]: `${join(dir, 'bin')}${delimiter}${process.env[pathKey]}`,
+    SYNOLOGY_URL: 'https://nas.example:5001/', SYNOLOGY_USER: 'deploy', SYNOLOGY_PASS: 'pw', SYNOLOGY_PATH: '/docker/munni-nas/published',
+    FAKE_CURL_LOG: posix(log), FAKE_CURL_COUNT: posix(join(dir, 'logins')), FAKE_DEAD: dead,
+  };
+  let status = 0;
+  let stdout = '';
+  let stderr = '';
+  try {
+    stdout = execFileSync('bash', [posix(fileURLToPath(new URL('deploy/nas/upload.sh', ROOT))), posix(join(dir, 'bundle.tgz'))], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    status = e.status;
+    stdout = String(e.stdout);
+    stderr = String(e.stderr);
+  }
+  const calls = readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  return { status, stdout, stderr, calls, logins: calls.filter((c) => c.includes('method=login')).length, uploads: calls.filter((c) => c.includes('SYNO.FileStation.Upload')) };
+}
+
+test('upload.sh: a session DSM does not know is asked for again before a file is sent, and four in a row end the upload with nothing sent', () => {
+  const clean = upload();
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(clean.logins, 1);
+  assert.match(clean.uploads[0], /entry\.cgi\?_sid=SID1 /, 'the sid rides the query string');
+  assert.match(clean.stdout, /uploaded bundle\.tgz/);
+
+  // what failed the shared stack's deploy of v5.24.0: the first call with a fresh sid answered 119
+  const lost = upload({ dead: '1' });
+  assert.equal(lost.status, 0, lost.stderr);
+  assert.equal(lost.logins, 2);
+  assert.equal(lost.uploads.length, 1);
+  assert.match(lost.uploads[0], /entry\.cgi\?_sid=SID2 /, 'the file goes with the session DSM answered with');
+  assert.ok(lost.calls.some((c) => c.includes('method=logout') && c.includes('_sid=SID2')), 'and that session is the one closed');
+
+  const gone = upload({ dead: '1 2 3 4' });
+  assert.equal(gone.status, 1);
+  assert.equal(gone.logins, 4);
+  assert.deepEqual(gone.uploads, [], 'nothing is sent without a session');
+  assert.match(gone.stderr, /four sessions in a row were not recognised/);
+});
