@@ -48,6 +48,20 @@ describe('ApiSyncBackend', () => {
     }
   });
 
+  it('#654: a session known to be gone sends nothing — the round fails as the server\'s 401 would fail it', async () => {
+    const { markSessionExpired, resetSessionExpiryForTests } = await import('@/app/sessionExpiry');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([]));
+    markSessionExpired();
+    try {
+      await expect(backend({ bearer: 'tok' }).heads()).rejects.toMatchObject({ status: 401 });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      resetSessionExpiryForTests();
+    }
+    await backend({ bearer: 'tok' }).heads();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('test-auth identities send the X-User-Sub header instead', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ops: [], latestSeq: 0 }));
     await backend({ testSub: 'alice' }).pull('s1', 5);

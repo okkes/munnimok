@@ -124,7 +124,10 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     expect(isSessionExpired()).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('double 401'));
 
-    await apiFetch('/me/spaces');
+    // #654: from here the session is known to be gone — the next call asks the server nothing
+    const again = await apiFetch('/me/spaces');
+    expect(again.status).toBe(401);
+    expect(calls).toHaveLength(2);
     expect(warn).toHaveBeenCalledTimes(1);
     setAccessTokenGetter(null);
     resetSessionExpiryForTests();

@@ -1,3 +1,4 @@
+import { isSessionExpired } from '@/app/sessionExpiry';
 import { deviceHeaders, noticeDeviceRevoked } from '@/lib/api';
 import type { Op, SnapshotRow } from './merge';
 
@@ -66,6 +67,8 @@ export class ApiSyncBackend implements SyncBackend {
   /** the same device pair apiFetch sends: the server refuses calls naming no device (401 device-required) */
   private async headers(): Promise<Record<string, string>> {
     const auth = await this.options.getAuth();
+    // #654: a session known to be gone sends nothing — the round ends as the server's 401 would end it
+    if (!auth.testSub && isSessionExpired()) throw new SyncHttpError(401);
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...deviceHeaders() };
     if (auth.bearer) headers.Authorization = `Bearer ${auth.bearer}`;
     if (auth.testSub) headers['X-User-Sub'] = auth.testSub;

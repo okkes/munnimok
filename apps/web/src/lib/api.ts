@@ -1,6 +1,7 @@
 import { config } from '@/app/config';
 import { getAccessToken, waitForAuthReady } from '@/app/authToken';
 import { readSessionIdentity } from '@/app/session';
+import { isSessionExpired } from '@/app/sessionExpiry';
 import { protocolIssueFor } from './protocol';
 import type { ProtocolIssue } from './protocol';
 import { getDeviceId } from '@/db/device';
@@ -57,6 +58,8 @@ export async function apiFetch(
   // cold-start guard: screens fire requests before Logto restores the session; those went out bearer-less, hit 401 twice
   // and logged the user out, wiping a healthy refresh token, on every app update. Wait for the restore
   if (identity?.kind === 'user' && !identity.testAuth) await waitForAuthReady();
+  // #654: a session known to be gone asks the server nothing — the answer is the 401 it would give
+  if (identity?.kind === 'user' && !identity.testAuth && isSessionExpired()) return new Response(null, { status: 401 });
   let sentBearer = false;
   const attempt = async (): Promise<Response> => {
     const headers = new Headers(init.headers);
