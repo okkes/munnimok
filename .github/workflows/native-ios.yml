@@ -45,7 +45,9 @@ jobs:
   ios:
     needs: stacks
     if: ${{ needs.stacks.outputs.count != '0' }}
-    runs-on: macos-26
+    # App Store Connect takes only builds made with the iOS 27 SDK from April 2027 (ITMS-90725), and GitHub keeps one
+    # Xcode major per image: Xcode 27 lives under this label, a preview until macOS 27 gets a label of its own
+    runs-on: xcode-27
     strategy:
       fail-fast: false
       matrix:
@@ -119,7 +121,7 @@ jobs:
         env:
           PLIST_B64: ${{ vars.NATIVE_IOS_FIREBASE_PLIST_B64 }}
 
-      # App Store Connect needs the iOS 26 SDK; the runner's default Xcode is older
+      # the image's default Xcode is not its newest, and the SDK the build is made with is the selected Xcode's
       - name: Select the newest Xcode
         run: |
           LATEST="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
@@ -263,6 +265,10 @@ jobs:
           set -e
           if [ "$status" -ne 0 ] && grep -q "Cloud signing permission error" "$RUNNER_TEMP/archive.log"; then
             echo "::error title=ASC key cannot cloud-sign::The App Store Connect API key cannot create/use the cloud-managed certificate. Fix once: App Store Connect → Users and Access → Integrations → this key → role Admin (or App Manager WITH 'Access to Cloud Managed Distribution Certificate' ticked), wait a minute, rebuild."
+          fi
+          # the SDK is what Apple's yearly floor is about: named in the log of every build that goes to the store
+          if [ "$status" -eq 0 ]; then
+            echo "built with SDK $(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app/Info.plist")"
           fi
           if [ "$status" -ne 0 ] && grep -q "has no devices from which to generate a provisioning profile" "$RUNNER_TEMP/archive.log"; then
             echo "::error title=Enable one device at Apple::Automatic signing archives against a development profile, and Apple issues one only for a team with at least one ENABLED registered device — yours has none. Once: developer.apple.com → Certificates, Identifiers & Profiles → Devices → enable a registered iPhone (or ＋ to register any iPhone you own: name + UDID, which iTunes or Finder shows behind the serial number). Then press Build again. TestFlight itself needs no device."
