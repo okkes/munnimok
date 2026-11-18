@@ -125,28 +125,42 @@ public sealed class ChallengeService(
         row.AnsweredAt = now;
         row.AnswerValue = value;
         row.ImageBytes = null;
-
-        var job = await db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct);
-        if (job is not null && job.State == JobState.AwaitingInput)
-        {
-            job.State = JobState.Running;
-            job.Step = JobStep.Authenticating;
-            job.UpdatedAt = now;
-
-            // the session returns with it: the state machine has no edge from awaiting_input to active
-            var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == job.SessionId, ct);
-            if (session is not null && session.State == SessionState.AwaitingInput)
-            {
-                session.State = SessionState.Running;
-                session.UpdatedAt = now;
-            }
-        }
-
         await db.SaveChangesAsync(ct);
 
+        // conditional updates, never a copy read earlier: an adapter that sees the approval itself (ING's page moves on)
+        // can finish while this answer is on its way, and a copy saved after its result put the finished job and its
+        // session back to running for good
+        var resumed = await db.Jobs
+            .Where(j => j.Id == jobId && j.State == JobState.AwaitingInput)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(j => j.State, JobState.Running)
+                    .SetProperty(j => j.Step, JobStep.Authenticating)
+                    .SetProperty(j => j.UpdatedAt, now),
+                ct);
+
+        var sessionId = await db.Jobs.Where(j => j.Id == jobId).Select(j => j.SessionId).FirstOrDefaultAsync(ct);
+        if (resumed > 0 && sessionId is not null)
+        {
+            // the session returns with it: the state machine has no edge from awaiting_input to active
+            await db.Sessions
+                .Where(s => s.Id == sessionId && s.State == SessionState.AwaitingInput)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(x => x.State, SessionState.Running).SetProperty(x => x.UpdatedAt, now),
+                    ct);
+        }
+
+        await RefreshAsync(jobId, sessionId, ct);
+
         signals.Signal(ConnectorSignals.Job(jobId));
-        if (job is not null) signals.Signal(ConnectorSignals.Session(job.SessionId));
+        if (sessionId is not null) signals.Signal(ConnectorSignals.Session(sessionId));
         return row;
+    }
+
+    // the caller answers from the copies it loaded before this call: they have to read as the rows do now
+    private async Task RefreshAsync(string jobId, string? sessionId, CancellationToken ct)
+    {
+        if (db.Jobs.Local.FirstOrDefault(j => j.Id == jobId) is { } job) await db.Entry(job).ReloadAsync(ct);
+        if (db.Sessions.Local.FirstOrDefault(s => s.Id == sessionId) is { } session) await db.Entry(session).ReloadAsync(ct);
     }
 
     /// null = expired unanswered: the caller fails the job cleanly instead of leaving a hung browser
