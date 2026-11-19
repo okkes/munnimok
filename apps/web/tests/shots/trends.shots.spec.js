@@ -17,7 +17,7 @@ for (const V of VARIANTS) {
 
     await page.click('[data-testid="trends-cat-picker"]');
     await page.click('[data-testid="trends-cat-consumption"]');
-    await expect(page.locator('[data-testid="trends-cat-picker"]')).toContainText('Consumption');
+    await expect(page.locator('[data-testid="trends-cat-picker"]')).toContainText('Eating out');
     await shot(page, k('66-trends-picker'));
 
     await page.click('[data-testid="trends-view-cashflow"]');

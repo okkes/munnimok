@@ -38,7 +38,7 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Bubble Tea');
     // #389: siblings never share an icon — coffee-outline is the built-in
-    // Coffee sub's under Consumption, so the new sub takes a free one
+    // Coffee & Cafés sub's under Eating out, so the new sub takes a free one
     await page.click('[data-testid="catform-icon-tent"]');
     await page.waitForTimeout(400);
     await shot(page, k('30-cats-create') + '--s1');
