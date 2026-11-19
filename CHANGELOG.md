@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.26.0](https://github.com/okkes/munnimok/compare/v5.25.0...v5.26.0) (2026-11-19)
+
+
+### ✨ Features
+
+* **web:** Groceries is a main of its own and Consumption is Eating out ([#653](https://github.com/okkes/munnimok/issues/653)) ([f1a4555](https://github.com/okkes/munnimok/commit/f1a45558690530240feef156deb4ad83c9294df8))
+* **web:** the categories screen is a list of cards, the subs open inside them ([#651](https://github.com/okkes/munnimok/issues/651)) ([c8b34da](https://github.com/okkes/munnimok/commit/c8b34dafc7c237bc020a142298669c7e3e6fe35d))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** a bank's logo answers every asker with its CORS header ([#655](https://github.com/okkes/munnimok/issues/655)) ([e0b0c9c](https://github.com/okkes/munnimok/commit/e0b0c9cbd4a54d0e8eb64dff9e6ef1d3ca5b6b94))
+* **web:** a receipt is picked for a payment only when its amount and shop fit ([#650](https://github.com/okkes/munnimok/issues/650)) ([8c21976](https://github.com/okkes/munnimok/commit/8c21976cce565a091d4de6bd0e7745bfffe9f2eb))
+* **web:** a session that is gone is always said, and asks the server nothing ([#654](https://github.com/okkes/munnimok/issues/654)) ([d7e50be](https://github.com/okkes/munnimok/commit/d7e50be1c24f8f8019e1e8f75dd7e60889db1eb7))
+* **web:** money coming in is never a recurring cost ([#649](https://github.com/okkes/munnimok/issues/649)) ([8f71363](https://github.com/okkes/munnimok/commit/8f7136357d646fd1eb327067126cf943da347e0f))
+* **web:** the update gate's Reload hands the page to the new build ([#652](https://github.com/okkes/munnimok/issues/652)) ([cc938fb](https://github.com/okkes/munnimok/commit/cc938fbf9d382f74bd26825c0f2c6cc068c15d6d))
+
 ## [5.25.0](https://github.com/okkes/munnimok/compare/v5.24.0...v5.25.0) (2026-11-18)
 
 
