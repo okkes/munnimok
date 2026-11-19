@@ -1283,6 +1283,8 @@ export const en = {
   'cats.newMain': 'New main category',
   'cats.newSub': 'New sub-category',
   'cats.addSub': 'Add sub-category',
+  'cats.subCount': '{n} sub-categories',
+  'cats.subCountOne': '1 sub-category',
   'cats.other': 'Other',
   'cats.color': 'Color',
   'cats.impactTitle': 'This change affects transactions',

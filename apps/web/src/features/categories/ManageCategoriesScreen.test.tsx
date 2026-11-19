@@ -36,6 +36,21 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(row.dataset.custom).toBeUndefined();
   });
 
+  it('#651: a main is one card as wide as the list — it says how many subs it holds, and they open inside it', async () => {
+    await openScreen();
+    const card = screen.getByTestId('cats-card-grocery');
+    expect(card.contains(screen.getByTestId('cats-group-grocery'))).toBe(true);
+    expect(screen.getByTestId('cats-count-grocery').textContent).toBe('18 sub-categories');
+    expect(screen.getByTestId('cats-count-adjustment').textContent).toBe('1 sub-category');
+    expandGroup('grocery');
+    const sub = await screen.findByTestId('cats-subrow-groceryDairy');
+    expect(card.contains(sub)).toBe(true);
+    expect(card.contains(screen.getByTestId('cats-addsub-grocery'))).toBe(true);
+    // the catalog's Other closes its main's list, whatever its id
+    const rows = [...card.querySelectorAll('[data-testid^="cats-subrow-"]')].map((el) => el.getAttribute('data-testid'));
+    expect(rows.at(-1)).toBe('cats-subrow-groceries');
+  });
+
   it('#261: Adjustment is a locked special — ◆-marked, no add-sub door through either entrance', async () => {
     await openScreen();
     await screen.findByTestId('cats-group-adjustment');

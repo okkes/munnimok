@@ -1285,6 +1285,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cats.newMain': 'Nieuwe hoofdcategorie',
   'cats.newSub': 'Nieuwe subcategorie',
   'cats.addSub': 'Subcategorie toevoegen',
+  'cats.subCount': '{n} subcategorieën',
+  'cats.subCountOne': '1 subcategorie',
   'cats.other': 'Overig',
   'cats.color': 'Kleur',
   'cats.impactTitle': 'Deze wijziging raakt transacties',

@@ -1285,6 +1285,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cats.newMain': 'Yeni ana kategori',
   'cats.newSub': 'Yeni alt kategori',
   'cats.addSub': 'Alt kategori ekle',
+  'cats.subCount': '{n} alt kategori',
+  'cats.subCountOne': '1 alt kategori',
   'cats.other': 'Diğer',
   'cats.color': 'Renk',
   'cats.impactTitle': 'Bu değişiklik işlemleri etkiliyor',
