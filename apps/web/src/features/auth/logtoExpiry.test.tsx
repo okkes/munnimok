@@ -15,6 +15,8 @@ import {
 // #222: the SDK swallows invalid_grant into the shared context error; the bridge must name the state and silently
 // re-enter sign-in once
 let mockError: Error | null = null;
+/** whether the SDK restored a session */
+let mockAuthenticated = true;
 const mockSignIn = vi.fn(async () => undefined);
 /** what the SDK's getAccessToken answers: a token, undefined (the hook swallowed a failure) or a throw (a client that does not) */
 const mockGetAccessToken = vi.fn(async (): Promise<string | undefined> => undefined);
@@ -25,7 +27,7 @@ vi.mock('@logto/react', () => ({
     error: mockError,
     getIdTokenClaims: async () => undefined,
     getAccessToken: () => mockGetAccessToken(),
-    isAuthenticated: true,
+    isAuthenticated: mockAuthenticated,
     isLoading: false,
     signIn: mockSignIn,
     signOut: async () => undefined,
@@ -68,6 +70,7 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     mockGetAccessToken.mockReset();
     mockGetAccessToken.mockResolvedValue(undefined);
     mockError = null;
+    mockAuthenticated = true;
   });
   afterEach(() => {
     cleanup();
@@ -81,7 +84,7 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     const { LogtoAppProvider } = await import('./logto');
     render(<LogtoAppProvider>{null}</LogtoAppProvider>);
     await waitFor(() => expect(isSessionExpired()).toBe(true));
-    await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback` }));
+    await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback`, clearTokens: false }));
     expect(sessionStorage.getItem('munni_grant_reheal')).toBe('1');
     expect(await getAccessToken()).toBeUndefined();
   });
@@ -94,6 +97,7 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     await waitFor(() =>
       expect(mockSignIn).toHaveBeenCalledWith({
         redirectUri: `${window.location.origin}/auth-callback`,
+        clearTokens: false,
         directSignIn: { method: 'social', target: 'google' },
       }),
     );
@@ -128,6 +132,44 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     expect(sessionStorage.getItem('munni_grant_reheal')).toBeNull();
   });
 
+  // #654: every call went out without a token and came back 401 while the app showed nothing
+  describe('a signed-in person whose SDK holds no session', () => {
+    const signedIn = (identity: object) => localStorage.setItem('munni_session', JSON.stringify(identity));
+
+    it('is told to sign in again when the SDK restores nothing (keys wiped, a sign-in started and left) — no redirect by itself', async () => {
+      signedIn({ kind: 'user', sub: 'u1' });
+      mockAuthenticated = false;
+      const { LogtoAppProvider } = await import('./logto');
+      render(<LogtoAppProvider>{null}</LogtoAppProvider>);
+      await waitFor(() => expect(isSessionExpired()).toBe(true));
+      expect(mockSignIn).not.toHaveBeenCalled();
+      expect(await getAccessToken()).toBeUndefined();
+    });
+
+    it('nobody signed in, or a test identity, has no session to miss', async () => {
+      mockAuthenticated = false;
+      const { LogtoAppProvider } = await import('./logto');
+      render(<LogtoAppProvider>{null}</LogtoAppProvider>);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(isSessionExpired()).toBe(false);
+      cleanup();
+      signedIn({ kind: 'user', sub: 'u1', testAuth: true });
+      render(<LogtoAppProvider>{null}</LogtoAppProvider>);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(isSessionExpired()).toBe(false);
+    });
+
+    it('is told too when the SDK says it has nothing to mint with (another tab left for a sign-in) — and never redirected for it', async () => {
+      signedIn({ kind: 'user', sub: 'u1' });
+      mockError = Object.assign(new Error('Not authenticated.'), { name: 'LogtoClientError', code: 'not_authenticated' });
+      const { LogtoAppProvider } = await import('./logto');
+      render(<LogtoAppProvider>{null}</LogtoAppProvider>);
+      await waitFor(() => expect(isSessionExpired()).toBe(true));
+      expect(mockSignIn).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem('munni_grant_reheal')).toBeNull();
+    });
+  });
+
   // prod Logto logs 2026-10-08: nothing may ask Logto to refresh a dead grant in a loop
   describe('the token getter (the attempt site)', () => {
     it('an invalid_grant the SDK throws marks the session expired at once — the next call asks nobody; the web re-enters once', async () => {
@@ -140,7 +182,7 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
       expect(warn).toHaveBeenCalledTimes(1); // a breadcrumb, not an event
       expect(await getAccessToken()).toBeUndefined();
       expect(mockGetAccessToken).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback` }));
+      await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback`, clearTokens: false }));
     });
 
     it('a transient failure is connectivity, not identity: no mark, but the next 15 s ask nobody — a later token clears the cooldown', async () => {

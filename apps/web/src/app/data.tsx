@@ -158,11 +158,16 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
   if (confirmed) await migrateBareSpecialRows(store, upkeep);
   if (confirmed) await refileCashTransfers(store, upkeep);
+  // #653: categories the catalog merged away, and a person's own Groceries tree, move to the catalog's ids
+  const { applyCategoryMoves } = await import('@/application/categoryMoves');
+  if (confirmed) await applyCategoryMoves(store, upkeep);
   // #509: a loan typed at its original amount counts every payment linked to it, its date's included
   const { settlePristineLoans } = await import('@/application/loanBalance');
   if (confirmed) await settlePristineLoans(store, upkeep);
   // the recurring owns the category: a linked row a fetch's overlay re-filed takes it back every boot
-  const { realignRecurringCategories } = await import('@/application/recurring');
+  const { realignRecurringCategories, unlinkIncomeFromRecurrings } = await import('@/application/recurring');
+  // first: a refund still linked would be re-filed under its recurring's category by the pass after it
+  await unlinkIncomeFromRecurrings(store, upkeep);
   await realignRecurringCategories(store, upkeep);
   // transfers are one event with two legs: paired within each space's books, never across (funding covers that)
   const { linkTransferPairs } = await import('@/application/transferMatch');

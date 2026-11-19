@@ -19,11 +19,12 @@ import {
   clearReentryMark,
   clearSessionExpired,
   isInvalidGrantError,
+  isNoSessionError,
   isSessionExpired,
   markSessionExpired,
   watchForRevival,
 } from '@/app/sessionExpiry';
-import { useSession } from '@/app/session';
+import { readSessionIdentity, useSession } from '@/app/session';
 import { takeAfterLogin } from '@/app/afterLogin';
 import { continueOptions, readLastAccount, readSignInWay, rememberLastAccount } from './lastAccount';
 import { Logo } from '@/ui/Logo';
@@ -34,6 +35,12 @@ import { Logo } from '@/ui/Logo';
 export const callbackUri = () =>
   isNativeApp() ? nativeCallbackUri() : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
+
+/** a person the app holds as signed in through Logto; the callback is the moment the SDK gets its session */
+function signedInWithoutSession(): boolean {
+  const identity = readSessionIdentity();
+  return identity?.kind === 'user' && !identity.testAuth && !isCallbackPath();
+}
 
 export function LogtoAppProvider({ children }: { children: ReactNode }) {
   if (!logtoConfigured) {
@@ -60,8 +67,12 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
 
 function TokenBridge() {
   const { error, getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
-  // #559: the same person signs in the way they came in: Logto's session continues, once gone straight to their provider
-  const continueSignIn = useCallback((uri: string) => signIn({ redirectUri: uri, ...continueOptions(readLastAccount()) }), [signIn]);
+  // #559: the same person signs in the way they came in: Logto's session continues, once gone straight to their provider.
+  // #654: the SDK empties its tokens before it leaves for Logto; a sign-in nobody finishes must leave them as they were
+  const continueSignIn = useCallback(
+    (uri: string) => signIn({ redirectUri: uri, clearTokens: false, ...continueOptions(readLastAccount()) }),
+    [signIn],
+  );
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
     // prompt=login makes Logto ask for credentials with its session alive;
@@ -76,7 +87,14 @@ function TokenBridge() {
     // #222: the SDK swallows refresh failures into the SHARED context error; invalid_grant means the refresh grant is spent,
     // so tokens never mint again without a fresh sign-in: report once, and near app open silently re-enter the OIDC flow.
     // Never during the callback exchange: its errors have their own wipe handling.
-    if (!error || isCallbackPath() || !isInvalidGrantError(error)) return;
+    if (!error || isCallbackPath()) return;
+    // #654: no tokens to mint with is the same state to the person (every call is refused), named by the banner alone:
+    // a sign-out empties the SDK too, and a redirect of our own must never race it
+    if (isNoSessionError(error)) {
+      markSessionExpired();
+      return;
+    }
+    if (!isInvalidGrantError(error)) return;
     if (markSessionExpired()) {
       // a breadcrumb, not an event: the re-entry or the banner handles it; a sign-in that then fails reports where it fails
       console.warn('refresh grant dead: invalid_grant on token refresh — re-entering sign-in');
@@ -115,6 +133,9 @@ function TokenBridge() {
       });
     } else {
       setAccessTokenGetter(null);
+      // #654: the app still holds a signed-in person, the SDK no session (its keys were wiped, or a sign-in was started
+      // and left): every call goes out without a token and is refused, so the banner has to say it
+      if (signedInWithoutSession()) markSessionExpired();
     }
     signalAuthReady(); // restore finished (either outcome) — sync may start
     return () => setAccessTokenGetter(null);

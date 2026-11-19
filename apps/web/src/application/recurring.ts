@@ -8,7 +8,7 @@ import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
 import { debtsMissingRate } from './debts';
 import { merchantKey } from '@/domain/merchantKey';
-import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
+import { addDays, canBeRecurringCost, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
 import { logActivity, logRowActivity } from './activity';
 import { txTitle } from '@/lib/text';
@@ -85,6 +85,21 @@ export async function realignRecurringCategories(store: StorageBackend, repo: Re
   return touched;
 }
 
+/** every boot (#649): money that came in lets go of the recurring cost it was linked to — the review offered one for a
+ *  refund of the same party and size; its category stays the person's to set */
+export async function unlinkIncomeFromRecurrings(store: StorageBackend, repo: Repo): Promise<number> {
+  let touched = 0;
+  for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0)) {
+    if (!repo.canWrite(space.id)) continue;
+    for (const tx of await visibleTransactions(store, space.id)) {
+      if (tx.deleted !== 0 || !tx.recurringId || canBeRecurringCost(tx.amountCents)) continue;
+      await writeTxTransform(repo, tx, { recurringId: '' });
+      touched++;
+    }
+  }
+  return touched;
+}
+
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -122,6 +137,7 @@ export function useRecurringOps(): RecurringOps {
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
     linkTx: async (tx, recurringId) => {
+      if (recurringId && !canBeRecurringCost(tx.amountCents)) return;
       // the recurring OWNS the category: linking re-files, unless filed as expected reimbursement or reimbursed
       const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
       // linking by the person counts as the review (a category decision on the row); the automatic linker never writes the flag

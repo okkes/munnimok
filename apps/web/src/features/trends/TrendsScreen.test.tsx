@@ -48,7 +48,7 @@ describe('TrendsScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('trends-cat-picker'));
     fireEvent.click(await screen.findByTestId('trends-cat-consumption'));
-    await waitFor(() => expect(screen.getByTestId('trends-cat-picker').textContent).toContain('Consumption'));
+    await waitFor(() => expect(screen.getByTestId('trends-cat-picker').textContent).toContain('Eating out'));
 
     fireEvent.click(screen.getByTestId('trends-view-cashflow'));
     await screen.findByTestId('trends-flow-chart');
@@ -102,7 +102,7 @@ describe('TrendsScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('trends-graph-name'), { target: { value: 'Food' } });
     fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
     fireEvent.click(screen.getByTestId('trends-graph-fold-consumption'));
-    expect(screen.getByTestId('trends-graph-cat-groceries')).toBeTruthy();
+    expect(screen.getByTestId('trends-graph-cat-restaurants')).toBeTruthy();
     expect(save.hasAttribute('disabled')).toBe(false);
     fireEvent.click(save);
 
@@ -116,14 +116,14 @@ describe('TrendsScreen (demo identity)', () => {
     const name = await screen.findByTestId('trends-graph-name');
     await waitFor(() => expect((name as HTMLInputElement).value).toBe('Food'));
     fireEvent.change(name, { target: { value: 'Food out' } });
-    fireEvent.click(screen.getByTestId('trends-graph-cat-groceries'));
+    fireEvent.click(screen.getByTestId('trends-graph-cat-restaurants'));
     fireEvent.click(screen.getByTestId('trends-graph-save'));
     await screen.findByText('Food out', {}, { timeout: 5000 });
     await waitFor(async () => {
       const graph = (await readSpace())?.trendGraphs?.[0];
       expect(graph?.name).toBe('Food out');
       expect(graph?.catIds).not.toContain('consumption');
-      expect(graph?.catIds).not.toContain('groceries');
+      expect(graph?.catIds).not.toContain('restaurants');
       expect(graph?.catIds).toContain('coffee');
     });
 

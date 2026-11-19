@@ -3,6 +3,7 @@ import type { ReceiptEntry } from '@/application/receiptLinks';
 import type { ReceiptOps } from '@/application/receipts';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
+import { compareFits, receiptFit } from '@/domain/storeReceipts';
 import { LOCALES } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { partyName } from '@/features/connectors/logos';
@@ -11,15 +12,15 @@ import { txTitle } from '@/lib/text';
 
 // neutral module: the review's helpers and the detail's section both import it without a cycle through the components
 
-const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
+/** what a receipt is told by against a payment */
+export type ReceiptTx = Pick<SpaceTx, 'date' | 'amountCents' | 'merchant' | 'description'>;
 
-export function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: readonly ReceiptRow[]): ReceiptRow[] {
-  const target = Math.abs(tx.amountCents);
-  return [...receipts].sort((a, b) => {
-    const amountGap = Math.abs(a.totalCents - target) - Math.abs(b.totalCents - target);
-    if (amountGap !== 0) return amountGap;
-    return dayDiff(a.date, tx.date) - dayDiff(b.date, tx.date);
-  });
+// #650: the amount alone put another shop's receipt first when it happened to cost nearly the same
+export function rankForTx(tx: ReceiptTx, receipts: readonly ReceiptRow[]): ReceiptRow[] {
+  return receipts
+    .map((receipt) => ({ receipt, fit: receiptFit(receipt, tx) }))
+    .sort((a, b) => compareFits(a.fit, b.fit))
+    .map(({ receipt }) => receipt);
 }
 
 /** how many receipts a picker suggests when nothing is attached (#542: "3 or something") */
@@ -32,7 +33,7 @@ export const SUGGESTION_LIMIT = 3;
  * very transaction (#496).
  */
 export function candidatesFor(
-  tx: Pick<SpaceTx, 'id' | 'date' | 'amountCents'>,
+  tx: ReceiptTx & Pick<SpaceTx, 'id'>,
   inventory: AttachableReceipts | undefined,
   excludeId?: string,
 ): ReceiptRow[] {

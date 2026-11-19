@@ -22,6 +22,11 @@ describe('#565 the card rows a filing can use (the rest stand disabled)', () => 
     expect(cardRowGates({ catId: 'groceries', txType: 'expense' }, { ...open, loanCounter: true }).recurring).toBe(false);
   });
 
+  it('#649: money coming in is never a recurring cost, whatever it is filed under', () => {
+    expect(cardRowGates({ catId: 'telecom', txType: 'expense' }, { ...open, moneyIn: true })).toEqual({ counter: false, recurring: false, event: true });
+    expect(cardRowGates({ catId: undefined, txType: 'income' }, { ...open, moneyIn: true }).recurring).toBe(false);
+  });
+
   it('a recurring cost owns the category, so the counterparty stays shut; an adjustment takes nothing', () => {
     expect(cardRowGates({ catId: 'groceries', txType: 'expense' }, { ...open, recurringOwnsCategory: true }).counter).toBe(false);
     expect(cardRowGates({ catId: 'adjustment', txType: 'adjustment' }, open)).toEqual({ counter: false, recurring: false, event: false });

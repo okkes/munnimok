@@ -8,11 +8,11 @@ export interface CardRowGates {
 }
 
 // #565: every row always stands, disabled when the filing cannot use it, never hidden. Counterparty: open while nothing is
-// filed or for a special category (#339). Recurring: open before a category (#525), never for a debt payment.
-// Event: ordinary spending only (#339). An adjustment takes none.
+// filed or for a special category (#339). Recurring: open before a category (#525), never for a debt payment or for
+// money coming in (#649). Event: ordinary spending only (#339). An adjustment takes none.
 export function cardRowGates(
   draft: Pick<ReviewDraft, 'catId' | 'txType'> | null,
-  opts: { recurringOwnsCategory: boolean; loanCounter: boolean },
+  opts: { recurringOwnsCategory: boolean; loanCounter: boolean; moneyIn?: boolean },
 ): CardRowGates {
   const catId = draft?.catId;
   const filed = !!catId && catId !== UNCATEGORIZED_ID;
@@ -20,7 +20,7 @@ export function cardRowGates(
   const adjustment = draft?.txType === 'adjustment';
   return {
     counter: !adjustment && !opts.recurringOwnsCategory && (!filed || !!family),
-    recurring: !adjustment && !opts.loanCounter && family !== 'debtPayment',
+    recurring: !adjustment && !opts.loanCounter && !opts.moneyIn && family !== 'debtPayment',
     event: !adjustment && !family,
   };
 }

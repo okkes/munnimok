@@ -157,7 +157,7 @@ describe('Receipts (demo identity)', () => {
       fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
       await screen.findByText('Halfvolle melk');
       expect(screen.getByText('Volkoren brood')).toBeTruthy();
-      expect(screen.getByText(/^Suggested: .*Grocery/)).toBeTruthy();
+      expect(screen.getByText(/^Suggested: .*Other/)).toBeTruthy();
       expect(read.mock.calls[0][0]).toEqual([FAKE_PHOTO]);
       await waitFor(() => expect(screen.getByTestId('receipt-ai-read').textContent).toBe('Read again'));
     } finally {
@@ -239,13 +239,13 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
     fireEvent.click(screen.getByTestId('receiptcats-categorise'));
     fireEvent.click(await screen.findByTestId('catpicker-sweets'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
     expect(screen.getByTestId('receiptcats-left').textContent).toContain('15.88');
-    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Grocery');
+    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Other');
     fireEvent.click(screen.getByTestId('receiptcats-apply'));
 
-    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Sweets & Treats.*7\.22/));
-    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Grocery.*15\.88/);
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Treats.*7\.22/));
+    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Other.*15\.88/);
     await waitFor(async () => {
       const stored = await repo.store.get('receiptLink', link.id);
       expect(stored?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
@@ -253,7 +253,7 @@ describe('Receipts (demo identity)', () => {
     db.close();
 
     fireEvent.click(screen.getByTestId('receipt-categorise'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
     expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
   }, 20_000);
 
@@ -521,10 +521,10 @@ describe('Receipts (demo identity)', () => {
     const ASKED_C = 'rcpt:ah:demo_conn_ah:wc';
     const FIT_D = 'rcpt:ah:demo_conn_ah:wd';
     await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn' });
-    await repo.upsert('transaction', 'demo_space', 'walk-a', { accountId: 'demo_main', date: '2026-03-02', amountCents: -1250, currency: 'EUR', merchant: 'WALKSHOP', catId: 'groceries', needsReview: 1 });
+    await repo.upsert('transaction', 'demo_space', 'walk-a', { accountId: 'demo_main', date: '2026-03-02', amountCents: -1250, currency: 'EUR', merchant: 'AH Walkshop', catId: 'groceries', needsReview: 1 });
     const siblings = [['walk-b', 2380, FIT_B], ['walk-c', 3100, ASKED_C], ['walk-d', 4410, FIT_D]] as const;
     for (const [id, cents, receiptId] of siblings) {
-      await repo.upsert('transaction', 'demo_space', id, { accountId: 'demo_main', date: '2026-03-09', amountCents: -cents, currency: 'EUR', merchant: 'WALKSHOP', catId: 'groceries', needsReview: 1 });
+      await repo.upsert('transaction', 'demo_space', id, { accountId: 'demo_main', date: '2026-03-09', amountCents: -cents, currency: 'EUR', merchant: 'AH Walkshop', catId: 'groceries', needsReview: 1 });
       await repo.upsert('receipt', DEMO_STORE_FEED_ID, receiptId, { source: 'ah', instanceId: 'demo_conn_ah', date: '2026-03-09', totalCents: cents, merchant: 'Albert Heijn' });
     }
     await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', ASKED_C), {
@@ -568,9 +568,10 @@ describe('Receipts (demo identity)', () => {
     const r = (id: string, totalCents: number, source = 'ah') => ({ id, spaceId: 'feed', source, date: '2026-03-01', totalCents, deleted: 0 }) as ReceiptRow;
     const rows = [r('a', 1000), r('b', 1010), r('c', 990), r('d', 5000), r('e', 1005, 'bol')];
     const inventory = { rows, attachedTo: new Map([['d', ['other']]]), rejectedFor: new Map([['b', ['tx']]]), heldTxIds: new Set(['held']) };
-    const tx = { id: 'tx', date: '2026-03-01', amountCents: -1000 };
-    expect(candidatesFor(tx, inventory).map((x) => x.id)).toEqual(['a', 'e', 'c']);
-    expect(candidatesFor(tx, inventory, 'a').map((x) => x.id)).toEqual(['e', 'c']);
+    const tx = { id: 'tx', date: '2026-03-01', amountCents: -1000, merchant: 'Albert Heijn 1842' };
+    // #650: the exact amount first, then the payment's own shop before another shop's nearer amount
+    expect(candidatesFor(tx, inventory).map((x) => x.id)).toEqual(['a', 'c', 'e']);
+    expect(candidatesFor(tx, inventory, 'a').map((x) => x.id)).toEqual(['c', 'e']);
     expect(candidatesFor(tx, undefined)).toEqual([]);
     expect(suggestionsFor(null, rows).map((x) => x.id)).toEqual(['a', 'b', 'c']);
     expect(suggestionsFor(r('z', 1), rows).map((x) => x.id)).toEqual(['z', 'a']);
@@ -578,7 +579,7 @@ describe('Receipts (demo identity)', () => {
     expect(rows.filter(receiptFilter('', 'bol')).map((x) => x.id)).toEqual(['e']);
     expect(rows.filter(receiptFilter('50,00', null)).map((x) => x.id)).toEqual(['d']);
 
-    const sibling = (id: string, needsReview: 0 | 1, amountCents = -1000) => ({ id, date: '2026-03-02', amountCents, needsReview }) as SpaceTx;
+    const sibling = (id: string, needsReview: 0 | 1, amountCents = -1000) => ({ id, date: '2026-03-02', amountCents, needsReview, merchant: 'Albert Heijn 1842' }) as SpaceTx;
     const proposals = [{ id: 'l', proposedTxId: 'asked' }] as ReceiptLinkRow[];
     const walk = receiptsToVerify([sibling('fresh', 1), sibling('reviewed', 0), sibling('asked', 0), sibling('held', 1), sibling('nofit', 1, -7777)], inventory, proposals);
     expect(walk.map((x) => x.id)).toEqual(['fresh', 'asked']);

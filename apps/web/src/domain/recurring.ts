@@ -109,9 +109,12 @@ export const cycleMonths = (rec: Pick<RecurringRow, 'every' | 'everyN'>): number
   return n;
 };
 
+/** #649: a recurring COST is money going out — money coming in is never one, however alike the party and the amount */
+export const canBeRecurringCost = (txAmountCents: number): boolean => txAmountCents < 0;
+
 /** an actual payment within 25% (or €1 for small amounts) of the estimate */
 export const recurringAmountMatches = (rec: Pick<RecurringRow, 'amountCents'>, txAmountCents: number): boolean =>
-  Math.abs(Math.abs(txAmountCents) - rec.amountCents) <= Math.max(100, rec.amountCents * 0.25);
+  canBeRecurringCost(txAmountCents) && Math.abs(Math.abs(txAmountCents) - rec.amountCents) <= Math.max(100, rec.amountCents * 0.25);
 
 export const isDueWithin = (
   rec: Pick<RecurringRow, 'active'> & CadenceFields,

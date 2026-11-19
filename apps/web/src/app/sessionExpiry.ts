@@ -41,6 +41,11 @@ export function isInvalidGrantError(err: unknown): boolean {
   return code.includes('invalid_grant') || message.includes('Grant request is invalid');
 }
 
+/** the SDK holds nothing to mint with (`not_authenticated`: no id token, or no refresh token once the access token ran out) */
+export function isNoSessionError(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as { code?: unknown }).code === 'not_authenticated';
+}
+
 const PAGE_LOADED_AT = Date.now();
 const REENTRY_KEY = 'munni_grant_reheal';
 /** #272: cross-tab cooldown so a dead IdP session can't redirect-loop */

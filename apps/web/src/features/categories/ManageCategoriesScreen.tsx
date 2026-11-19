@@ -94,6 +94,13 @@ function useHoldMenu(enabled: boolean, onMenu: () => void) {
   };
 }
 
+/** the plate under a category's icon: its own colour thinned, so the icon stays the loudest thing on it */
+const tileTint = (color: string | undefined): string => `color-mix(in srgb, ${color || 'var(--m-ink-3)'} 14%, transparent)`;
+
+/** where a sub's row starts: under its main's icon, past the chevron — the nesting is read from the row, the card stays whole */
+const SUB_INSET = 'pl-[42px]';
+const SUB_RULE = 'ml-[42px] mr-3 h-px bg-line-2';
+
 function SubCatRow({
   cat,
   parentColor,
@@ -113,10 +120,11 @@ function SubCatRow({
 }>) {
   const canHold = !!cat.custom && !cat.isOther;
   const hold = useHoldMenu(canHold, onMenu);
+  const ink = useUserInk();
   return (
     <div
       data-testid={`cats-subrow-${cat.id}`}
-      className="flex select-none items-center"
+      className={`flex select-none items-center pr-1.5 ${SUB_INSET}`}
       style={dragging ? { opacity: 0.3 } : undefined}
     >
       <button
@@ -128,9 +136,14 @@ function SubCatRow({
           if (hold.fired.fired) return;
           onEdit();
         }}
-        className={`m-tap relative isolate flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink disabled:pointer-events-none ${hold.holding ? 'm-holding' : ''}`}
+        className={`m-tap relative isolate flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent py-2 pr-2 pl-0 text-left text-[14px] text-ink disabled:pointer-events-none ${hold.holding ? 'm-holding' : ''}`}
       >
-        <Icon name={cat.icon} size={19} color={parentColor} />
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+          style={{ backgroundColor: tileTint(parentColor), color: ink(parentColor) }}
+        >
+          <Icon name={cat.icon} size={16} />
+        </span>
         <SpecialCatMark cat={cat} color={parentColor} />
         <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
         {/* #386: no badge or wash: the pencil and the handle say "yours" */}
@@ -156,6 +169,7 @@ function SubCatRow({
 
 function GroupHeader({
   parent,
+  subCount,
   mainHidden,
   isExpanded,
   onToggle,
@@ -164,6 +178,7 @@ function GroupHeader({
   t,
 }: Readonly<{
   parent: Cat;
+  subCount: number;
   mainHidden: boolean;
   isExpanded: boolean;
   onToggle: () => void;
@@ -174,7 +189,7 @@ function GroupHeader({
   const ink = useUserInk();
   const hold = useHoldMenu(true, onMenu);
   return (
-    <div className="mt-5 mb-1 flex items-center gap-2 px-1">
+    <div className="flex items-center gap-2 px-3 py-2.5">
       <button
         data-testid={`cats-group-${parent.id}`}
         aria-expanded={isExpanded}
@@ -183,14 +198,25 @@ function GroupHeader({
           if (hold.fired.fired) return;
           onToggle();
         }}
-        className={`m-tap relative isolate flex h-8 min-w-0 flex-1 select-none items-center gap-2.5 border-none bg-transparent p-0 text-left text-[14px] font-semibold ${hold.holding ? 'm-holding' : ''}`}
-        style={{ color: ink(parent.color) }}
+        className={`m-tap relative isolate flex min-w-0 flex-1 select-none items-center gap-2.5 border-none bg-transparent p-0 text-left ${hold.holding ? 'm-holding' : ''}`}
       >
-        <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
-        <Icon name={parent.icon} size={20} />
-        <SpecialCatMark cat={parent} color={parent.color} />
-        <span className="min-w-0 flex-1 truncate">{catName(parent, t)}</span>
-        <span className="rounded-md bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
+        <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} color="var(--m-ink-3)" />
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+          style={{ backgroundColor: tileTint(parent.color), color: ink(parent.color) }}
+        >
+          <Icon name={parent.icon} size={20} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{catName(parent, t)}</span>
+            <SpecialCatMark cat={parent} color={parent.color} />
+          </span>
+          <span className="block text-[12px] leading-tight text-ink-3" data-testid={`cats-count-${parent.id}`}>
+            {t(subCount === 1 ? 'cats.subCountOne' : 'cats.subCount', { n: subCount })}
+          </span>
+        </span>
+        <span className="shrink-0 rounded-md bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
           {t(`tx.type.${parent.txTypes[0]}`)}
         </span>
       </button>
@@ -200,7 +226,7 @@ function GroupHeader({
           title={t('action.edit')}
           data-testid={`cats-editmain-btn-${parent.id}`}
           onClick={onEdit}
-          className="m-tap flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+          className="m-tap flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-ink-3"
         >
           <Icon name="pencil-outline" size={16} />
         </button>
@@ -595,12 +621,13 @@ export function ManageCategoriesScreen() {
           const drop = lifted && !mainHidden ? dropStateOf(parent.id, lifted, cats.all) : null;
           return (
             <div key={parent.id} data-cat-group={!dragging || drop === 'open' ? parent.id : undefined} className={mainHidden ? 'opacity-55' : ''}>
-              {/* -mx-2/px-2: the fold clips, and the hold highlight reaches past the header row */}
-              <div className="-mx-2">
               <Collapse open={!dragging}>
-              <div className="px-2">
+              {/* #651: one card per main, as wide as the list — its subs open inside it, inset under its icon */}
+              <div className="pt-2.5">
+              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`cats-card-${parent.id}`}>
               <GroupHeader
                 parent={parent}
+                subCount={cats.childrenOf(parent.id).length}
                 mainHidden={mainHidden}
                 isExpanded={expandedGroups.has(parent.id)}
                 onToggle={() => toggleGroup(parent.id)}
@@ -609,16 +636,16 @@ export function ManageCategoriesScreen() {
                 t={t}
               />
               {mainHidden && (
-                <p className="px-1 text-[11px] text-ink-4" data-testid={`cats-hiddennote-${parent.id}`}>
+                <p className={`pr-3 pb-2.5 text-[11px] text-ink-4 ${SUB_INSET}`} data-testid={`cats-hiddennote-${parent.id}`}>
                   {t('cats.hiddenNote')}
                 </p>
               )}
               {!mainHidden && (
               <Collapse open={expandedGroups.has(parent.id)}>
-              <div className="ml-7 overflow-hidden rounded-card border border-line bg-surface">
+              <div className="border-t border-line-2 py-1">
                 {cats.childrenOf(parent.id).map((cat, i) => (
                   <div key={cat.id}>
-                    {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+                    {i > 0 && <div className={SUB_RULE} />}
                     <SubCatRow
                       cat={cat}
                       parentColor={parent.color}
@@ -640,13 +667,15 @@ export function ManageCategoriesScreen() {
                 {/* #382 (user): the add door sits below "Other", where the new sub will land */}
                 {canEdit && !LOCKED_MAIN_IDS.has(parent.id) && (
                   <>
-                    <div className="mx-4 h-px bg-line-2" />
+                    <div className={SUB_RULE} />
                     <button
                       data-testid={`cats-addsub-${parent.id}`}
                       onClick={() => openNewSub(parent.id)}
-                      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[13px] font-medium text-accent-deep"
+                      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent py-2 pr-4 text-left text-[13px] font-medium text-accent-deep ${SUB_INSET}`}
                     >
-                      <Icon name="plus-circle-outline" size={19} />
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+                        <Icon name="plus-circle-outline" size={19} />
+                      </span>
                       {t('cats.addSub')}
                     </button>
                   </>
@@ -655,8 +684,8 @@ export function ManageCategoriesScreen() {
               </Collapse>
               )}
               </div>
-              </Collapse>
               </div>
+              </Collapse>
               <Collapse open={!!dragging && !mainHidden}>
                 {lifted && drop && <DropRow parent={parent} state={drop} target={dropTarget === parent.id} home={parent.id === lifted.parentId} t={t} />}
               </Collapse>

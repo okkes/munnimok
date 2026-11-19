@@ -13,6 +13,8 @@ export interface BuiltinCategory {
   isParent?: boolean;
   hidden?: boolean;
   positive?: boolean;
+  /** the main's catch-all where its id does not say so (`<main>Other`): it closes the list */
+  isOther?: boolean;
   txTypes: TxType[];
   direction: CatDirection;
 }
@@ -55,17 +57,36 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"parking","parentId":"transport","nameKey":"cat.parking","icon":"parking","txTypes":["expense"],"direction":"debit"},
   {"id":"bikes","parentId":"transport","nameKey":"cat.bikes","icon":"bike","txTypes":["expense"],"direction":"debit"},
   {"id":"transportOther","parentId":"transport","nameKey":"cat.transportOther","icon":"bus-side","txTypes":["expense"],"direction":"debit"},
+  // #653: what is bought to take home. `groceries` and `tobacco` keep the ids they had under `consumption`, so every row
+  // filed under them still resolves: `groceries` is this main's Other
+  {"id":"grocery","nameKey":"cat.grocery","icon":"cart-outline","color":"#7CB342","isParent":true,"txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryAlcohol","parentId":"grocery","nameKey":"cat.groceryAlcohol","icon":"bottle-wine-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryBread","parentId":"grocery","nameKey":"cat.groceryBread","icon":"baguette","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryBreakfast","parentId":"grocery","nameKey":"cat.groceryBreakfast","icon":"egg-fried","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryCooking","parentId":"grocery","nameKey":"cat.groceryCooking","icon":"shaker-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryCoffee","parentId":"grocery","nameKey":"cat.groceryCoffee","icon":"coffee-maker-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryDairy","parentId":"grocery","nameKey":"cat.groceryDairy","icon":"cheese","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryDrinks","parentId":"grocery","nameKey":"cat.groceryDrinks","icon":"bottle-soda-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryFish","parentId":"grocery","nameKey":"cat.groceryFish","icon":"fish","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryFruit","parentId":"grocery","nameKey":"cat.groceryFruit","icon":"food-apple-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryHousehold","parentId":"grocery","nameKey":"cat.groceryHousehold","icon":"spray-bottle","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryMealKits","parentId":"grocery","nameKey":"cat.groceryMealKits","icon":"package-variant-closed","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryMeat","parentId":"grocery","nameKey":"cat.groceryMeat","icon":"food-steak","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryReadyMeals","parentId":"grocery","nameKey":"cat.groceryReadyMeals","icon":"microwave","txTypes":["expense"],"direction":"debit"},
+  {"id":"grocerySnacks","parentId":"grocery","nameKey":"cat.grocerySnacks","icon":"cookie-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryToiletries","parentId":"grocery","nameKey":"cat.groceryToiletries","icon":"lotion-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"tobacco","parentId":"grocery","nameKey":"cat.tobacco","icon":"smoking","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceryVegetables","parentId":"grocery","nameKey":"cat.groceryVegetables","icon":"carrot","txTypes":["expense"],"direction":"debit"},
+  {"id":"groceries","parentId":"grocery","nameKey":"cat.groceries","icon":"cart-variant","isOther":true,"txTypes":["expense"],"direction":"debit"},
+  // #653: eating and drinking out; the id predates the name. `coffee` and `alcohol` are its cafés and bars
   {"id":"consumption","nameKey":"cat.consumption","icon":"food-outline","color":"#27AE60","isParent":true,"txTypes":["expense"],"direction":"debit"},
-  {"id":"groceries","parentId":"consumption","nameKey":"cat.groceries","icon":"cart-variant","txTypes":["expense"],"direction":"debit"},
   {"id":"breakfast","parentId":"consumption","nameKey":"cat.breakfast","icon":"bread-slice-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"sweets","parentId":"consumption","nameKey":"cat.sweets","icon":"candy-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"restaurants","parentId":"consumption","nameKey":"cat.restaurants","icon":"room-service-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"takeout","parentId":"consumption","nameKey":"cat.takeout","icon":"food-takeout-box-outline","txTypes":["expense"],"direction":"debit"},
-  {"id":"sweets","parentId":"consumption","nameKey":"cat.sweets","icon":"candy-outline","txTypes":["expense"],"direction":"debit"},
-  {"id":"alcohol","parentId":"consumption","nameKey":"cat.alcohol","icon":"glass-cocktail","txTypes":["expense"],"direction":"debit"},
-  {"id":"softDrinks","parentId":"consumption","nameKey":"cat.softDrinks","icon":"bottle-soda-classic-outline","txTypes":["expense"],"direction":"debit"},
-  {"id":"tobacco","parentId":"consumption","nameKey":"cat.tobacco","icon":"smoking","txTypes":["expense"],"direction":"debit"},
-  {"id":"coffee","parentId":"consumption","nameKey":"cat.coffee","icon":"coffee-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"lunchWork","parentId":"consumption","nameKey":"cat.lunchWork","icon":"silverware-fork-knife","txTypes":["expense"],"direction":"debit"},
+  {"id":"coffee","parentId":"consumption","nameKey":"cat.coffee","icon":"coffee-outline","txTypes":["expense"],"direction":"debit"},
+  {"id":"alcohol","parentId":"consumption","nameKey":"cat.alcohol","icon":"glass-cocktail","txTypes":["expense"],"direction":"debit"},
   {"id":"consumptionOther","parentId":"consumption","nameKey":"cat.consumptionOther","icon":"food-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"personalCare","nameKey":"cat.personalCare","icon":"mirror","color":"#9B59B6","isParent":true,"txTypes":["expense"],"direction":"debit"},
   {"id":"haircut","parentId":"personalCare","nameKey":"cat.haircut","icon":"content-cut","txTypes":["expense"],"direction":"debit"},

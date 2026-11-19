@@ -10,6 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { EventPickList } from '@/features/events/EventPickList';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
+import { canBeRecurringCost } from '@/domain/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { LOCALES, useLang } from '@/i18n';
@@ -582,8 +583,8 @@ function DetailActionsCard({
   onOpenEvent: () => void;
 }>) {
   const { t } = useLang();
-  // funding is recurring-shaped money too (#264)
-  const recurringRow = (tx.txType === 'expense' || tx.txType === 'funding') && !multiPart;
+  // funding is recurring-shaped money too (#264); a refund files under an expense category and is no cost (#649)
+  const recurringRow = (tx.txType === 'expense' || tx.txType === 'funding') && canBeRecurringCost(tx.amountCents) && !multiPart;
   // received money joins an event too; only a movement between own accounts has none (#448)
   const eventRow = isEventMoney(tx.txType) && !multiPart;
   if (splitDoorMode === 'none' && !recurringRow && !eventRow) return null;

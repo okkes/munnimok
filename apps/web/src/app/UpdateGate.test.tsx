@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
+import { reloadIntoNewBuild } from './newBuild';
+
+vi.mock('./newBuild', () => ({ reloadIntoNewBuild: vi.fn(async () => undefined) }));
 
 /** the forced update: a server that no longer speaks this build takes the screen, not just the banner */
 describe('UpdateGate', () => {
@@ -22,6 +25,8 @@ describe('UpdateGate', () => {
     const gate = await screen.findByTestId('update-gate', {}, { timeout: 5000 });
     expect(gate.textContent).toContain('Update munni');
     expect(screen.getByTestId('update-gate-go').textContent).toBe('Reload');
+    fireEvent.click(screen.getByTestId('update-gate-go'));
+    expect(reloadIntoNewBuild).toHaveBeenCalledTimes(1);
   }, 15_000);
 
   it('stays out of the way while the handshake agrees', async () => {

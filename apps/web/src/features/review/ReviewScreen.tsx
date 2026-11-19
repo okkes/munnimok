@@ -40,6 +40,7 @@ import type { AccountType, EventRow, ReceiptLinkRow, ReceiptRow, RecurringEvery,
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { cardRowGates } from './cardRows';
+import { canBeRecurringCost } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -234,10 +235,10 @@ function stagedNoteFor(noteDraft: string | null, container: boolean, current: st
 const rowOff = (enabled: boolean): string => (enabled ? '' : ' opacity-50');
 
 // a stamped account's parts name no counterparty (R1)
-function partRowGates(part: TxSplit, rowType: TxType, counter: { type: AccountType } | undefined, lockedKind: boolean) {
+function partRowGates(part: TxSplit, rowType: TxType, counter: { type: AccountType } | undefined, lockedKind: boolean, moneyIn: boolean) {
   const gates = cardRowGates(
     { catId: part.catId, txType: part.txType ?? rowType },
-    { recurringOwnsCategory: false, loanCounter: counter?.type === 'loan' || counter?.type === 'mortgage' },
+    { recurringOwnsCategory: false, loanCounter: counter?.type === 'loan' || counter?.type === 'mortgage', moneyIn },
   );
   return { ...gates, counter: gates.counter && !lockedKind };
 }
@@ -744,7 +745,7 @@ export function ReviewPartDeck({
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
   // a stamped account owns its parts' story (#565)
   const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
-  const partGates = partRowGates(active, rowType, partCounterAcct, lockedKind);
+  const partGates = partRowGates(active, rowType, partCounterAcct, lockedKind, !canBeRecurringCost(tx.amountCents));
   const partCounterTxFace = partCounterTxFaceOf(active, partCounterAcct, allTxs, tx.currency, lang, t);
   const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
   const deckDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
@@ -1750,11 +1751,12 @@ export function ReviewScreen() {
 
   // the recurring owns the category: linking one stages it, and the editor then only offers it or expected reimbursement
   const debtFiled = isLoanCounter || specialCatType(draft?.catId) === 'debtPayment';
+  const moneyIn = !!tx && !canBeRecurringCost(tx.amountCents);
   const chosenRec = useMemo(() => {
-    if (debtFiled) return undefined; // debt payments never carry a recurring link
+    if (debtFiled || moneyIn) return undefined; // neither a debt payment nor money coming in carries a recurring link
     const id = chosenRecurringId(recMatch, linkRecurring, manualRecId);
     return id ? (recurrings ?? []).find((r) => r.id === id) : undefined;
-  }, [recMatch, linkRecurring, manualRecId, recurrings, debtFiled]);
+  }, [recMatch, linkRecurring, manualRecId, recurrings, debtFiled, moneyIn]);
   useEffect(() => {
     if (!chosenRec?.catId || !draft) return;
     // a split container never takes the recurring's category: the parts own theirs
@@ -1768,7 +1770,7 @@ export function ReviewScreen() {
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
   const catChosen = !!draft?.catId && draft.catId !== UNCATEGORIZED_ID;
-  const gates = cardRowGates(draft, { recurringOwnsCategory: !!recurringAllowedCats, loanCounter: isLoanCounter });
+  const gates = cardRowGates(draft, { recurringOwnsCategory: !!recurringAllowedCats, loanCounter: isLoanCounter, moneyIn });
   const counterRowDoors = buildCounterRowDoors({
     draft,
     locked: !gates.counter,

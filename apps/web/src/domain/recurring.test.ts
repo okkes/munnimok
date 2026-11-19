@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  canBeRecurringCost,
   computeRange,
   cycleKeyOf,
   cycleMonths,
@@ -9,6 +10,7 @@ import {
   monthlyRecurringSeries,
   nextDueDate,
   occurrencesBetween,
+  recurringAmountMatches,
   summarize,
 } from './recurring';
 import { detectRecurring } from './detectRecurring';
@@ -124,6 +126,15 @@ describe('every-N and weekly cadences', () => {
 });
 
 describe('recurring amounts and summaries', () => {
+  it('#649: a payment near the estimate matches; the same amount coming in never does', () => {
+    const rec = { amountCents: 6_973 };
+    expect(recurringAmountMatches(rec, -6_973)).toBe(true);
+    expect(recurringAmountMatches(rec, -8_000)).toBe(true);
+    expect(recurringAmountMatches(rec, -9_000)).toBe(false);
+    expect(recurringAmountMatches(rec, 6_973)).toBe(false);
+    expect(canBeRecurringCost(0)).toBe(false);
+  });
+
   it('the amount is the USER value — linked actuals never rewrite it (2026-07-24 ruling)', () => {
     // drift is surfaced via detectPriceChange + a one-tap update instead
     expect(effectiveAmountCents(rec({ amountCents: 1000 }))).toBe(1000);

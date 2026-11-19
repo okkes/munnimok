@@ -57,12 +57,27 @@ describe('the review card: prepared suggestions and every row standing', () => {
     const card = await screen.findByTestId('review-card', {}, { timeout: 8000 });
     expect(card.textContent).toContain('Bakkerij Jansen');
     // no waiting: the suggestion is there when the card is
-    expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery');
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Other · Groceries');
     // an ordinary category takes no counterparty and so no counter transaction — both stand disabled
     expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('review-countertx-row') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('review-recurring-row') as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByTestId('review-event-row') as HTMLButtonElement).disabled).toBe(false);
+  }, 30_000);
+
+  it('#649: a refund from a recurring cost of the same size arrives without it — the recurring row stands disabled and its category is not the cost\u2019s', async () => {
+    await land(async (repo) => {
+      await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-net', {
+        name: 'Internet', kind: 'fixed', amountCents: 6973, every: 'month', dueDay: 1, active: 1, catId: 'telecom', merchantKey: 'kabel noord',
+      });
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'net-back', { ...flagged, date: '2026-01-01', amountCents: 6973, merchant: 'Kabel Noord', catId: 'uncategorized' });
+    });
+    await prepared('net-back');
+    await openReview('Kabel Noord');
+    const row = screen.getByTestId('review-recurring-row') as HTMLButtonElement;
+    expect(row.disabled).toBe(true);
+    expect(row.textContent).not.toContain('Internet');
+    expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Telecom');
   }, 30_000);
 
   it('#525: before any category a recurring cost can be linked — it files its category, and taking it off frees the choice again', async () => {

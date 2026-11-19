@@ -5,6 +5,7 @@ import { REIMB_CAT_IDS, netAmountCents, netCreditCents } from '@/domain/reimburs
 import type { TransactionRow } from '@/db/types';
 import { REIMBURSED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { isOtherSub } from '@/domain/catalog';
 import type { TFunc } from '@/i18n';
 import { Highlight, amountQueryFor } from './Highlight';
 import { Icon } from './Icon';
@@ -41,7 +42,9 @@ function txVisual(
   }
   const cat = cats.byId(distinctCatIds.length === 1 ? distinctCatIds[0] : tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
-  return { icon: cat.icon, color: cat.color ?? parent?.color ?? 'var(--m-ink-3)', label: catName(cat, t) };
+  // #653: a row names no main, and "Other" alone names nothing — a main's catch-all reads as the main
+  const named = parent && isOtherSub(cat) ? parent : cat;
+  return { icon: cat.icon, color: cat.color ?? parent?.color ?? 'var(--m-ink-3)', label: catName(named, t) };
 }
 
 export type TxRowEdge = 'first' | 'last' | 'both' | 'none';

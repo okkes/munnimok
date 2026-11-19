@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { bestMatch, candidateLadder, expensesByCost, matchCandidates, parseReceiptText, setCatalogStorePatterns } from './storeReceipts';
+import {
+  bestMatch,
+  candidateLadder,
+  compareFits,
+  expensesByCost,
+  matchCandidates,
+  parseReceiptText,
+  receiptFit,
+  receiptParty,
+  setCatalogStorePatterns,
+} from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
 import type { TxView } from '@/db/types';
 
@@ -82,6 +92,26 @@ describe('receipt ↔ transaction matching', () => {
     expect(bestMatch(named, [tx({ id: 'a', merchant: 'Snackbar' })], new Set())).toBeNull();
     expect(bestMatch(photo, [tx({ id: 'near', amountCents: -2351 })], new Set())).toBeNull();
     expect(bestMatch(photo, [tx({ id: 'late', date: '2026-07-09' })], new Set())).toBeNull();
+  });
+
+  it('#650: whose shop a payment went to is read from the bank’s title and description', () => {
+    expect(receiptParty({ source: 'ah' }, { merchant: 'Albert Heijn 1842' })).toBe('same');
+    expect(receiptParty({ source: 'ah' }, { merchant: 'CCV*5812', description: 'AH to go Den Haag' })).toBe('same');
+    expect(receiptParty({ source: 'ah' }, { merchant: 'WWW.AMAZON.* H40FC73G5' })).toBe('other');
+    expect(receiptParty({ source: 'amazon-nl' }, { merchant: 'AMZN Mktp NL*2K4' })).toBe('same');
+    // a connector nobody wrote a fingerprint for goes by the name on its receipts, or names nobody
+    expect(receiptParty({ source: 'newshop', merchant: 'Hema' }, { merchant: 'HEMA EV 123 DEN HAAG' })).toBe('same');
+    expect(receiptParty({ source: 'newshop' }, { merchant: 'Hema' })).toBe('other');
+    expect(receiptParty({ source: 'photo' }, { merchant: 'Hema' })).toBe('unknown');
+    expect(receiptParty({ source: 'photo', merchant: 'Bakkerij van Dam' }, { merchant: 'Slagerij van Leeuwen' })).toBe('other');
+  });
+
+  it('#650: fits rank by the amount to the cent, then the shop, then how near amount and day are', () => {
+    const pay = { date: '2026-07-05', amountCents: -2350, merchant: 'Albert Heijn' };
+    const fit = (source: string, totalCents: number, date = '2026-07-05') => receiptFit({ source, totalCents, date }, pay);
+    expect(fit('ah', 2350)).toEqual({ gapCents: 0, days: 0, party: 'same' });
+    const ranked = [fit('bol', 2352), fit('ah', 2400), fit('bol', 2350), fit('ah', 2350, '2026-07-07'), fit('ah', 2350)].sort(compareFits);
+    expect(ranked.map((f) => `${f.party}:${f.gapCents}:${f.days}`)).toEqual(['same:0:0', 'same:0:2', 'other:0:0', 'same:50:0', 'other:2:0']);
   });
 
   it('payment tails constrain matching when a candidate account matches (R5)', () => {

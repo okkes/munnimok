@@ -83,16 +83,16 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    await screen.findByTestId('catpicker-groceries');
+    await screen.findByTestId('catpicker-breakfast');
 
     // "padel" matches only the custom PARENT — its Other sub must survive
     fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'padel' } });
     await screen.findByTestId('catpicker-demo_cat_padel_other');
-    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+    expect(screen.queryByTestId('catpicker-breakfast')).toBeNull();
 
     // #187: the <mark> must not sit as a direct child of the gapped flex row
-    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'ocer' } });
-    const row = await screen.findByTestId('catpicker-groceries');
+    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'reakfas' } });
+    const row = await screen.findByTestId('catpicker-breakfast');
     const mark = row.querySelector('mark');
     expect(mark).toBeTruthy();
     expect(mark!.parentElement!.className).not.toContain('gap-');

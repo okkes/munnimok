@@ -370,8 +370,17 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.OK, logo.StatusCode);
         Assert.Equal("image/png", logo.Content.Headers.ContentType?.MediaType);
         Assert.Contains("immutable", logo.Headers.CacheControl?.ToString());
+        // #655: a plain image tag names no origin, and what the browser keeps of its answer serves the CORS read too
+        Assert.Equal("*", Assert.Single(logo.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.False(logo.Headers.Contains("Vary"));
+        using var asked = new HttpRequestMessage(HttpMethod.Get, $"/connectors/{Consent}/options/institution/{Token(MockBankConsentAdapter.Institution)}/logo");
+        asked.Headers.Add("Origin", "https://app.mock.invalid");
+        using var crossOrigin = await client.SendAsync(asked);
+        Assert.Equal("*", Assert.Single(crossOrigin.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.False(crossOrigin.Headers.Contains("Vary"));
         using var none = await client.GetAsync($"/connectors/{Consent}/options/institution/{Token("mock-institution-plain")}/logo");
         Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
+        Assert.Equal("*", Assert.Single(none.Headers.GetValues("Access-Control-Allow-Origin")));
         using var unsupported = await client.GetAsync("/connectors/mock-store-simple/options/institution");
         Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);   // the connector's own refusal, relayed
 

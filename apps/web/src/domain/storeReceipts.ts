@@ -9,7 +9,8 @@ const STORE_MERCHANT: Partial<Record<string, RegExp>> = {
   bol: /bol\.com|\bbol\b/i,
   coolblue: /coolblue/i,
   'mediamarkt-nl': /media\s*markt/i,
-  'amazon-nl': /amazon/i,
+  // the card statement abbreviates it: "AMZN Mktp NL"
+  'amazon-nl': /amazon|\bamzn\b/i,
 };
 
 /** admin-curated catalog patterns win over the bundled ones so matching improves without releases (R9) */
@@ -94,12 +95,55 @@ export function expensesByCost(txs: readonly TxView[]): (totalCents: number) => 
   };
 }
 
-// #567: a photo has no fingerprint: it is told by its shop's name against the payment's title,
-// or by amount and day alone when nobody named it
-const merchantHit = (receipt: Pick<MatchableReceipt, 'source' | 'merchant'>, tx: TxView): boolean => {
-  if (receipt.source === 'photo') return !receipt.merchant || titleLikeness(receipt.merchant, tx.merchant) > 0;
-  return (catalogStorePatterns[receipt.source] ?? STORE_MERCHANT[receipt.source])?.test(tx.merchant ?? '') ?? false;
-};
+type NamedReceipt = Pick<MatchableReceipt, 'source' | 'merchant'>;
+type PaymentText = Pick<TxView, 'merchant' | 'description'>;
+
+/** the fingerprint a receipt's shop goes by: its connector's, or for a photo the known shop its printed name reads as */
+function fingerprintOf(receipt: NamedReceipt): RegExp | undefined {
+  if (receipt.source !== 'photo') return catalogStorePatterns[receipt.source] ?? STORE_MERCHANT[receipt.source];
+  if (!receipt.merchant) return undefined;
+  const known = [...Object.values(catalogStorePatterns), ...Object.values(STORE_MERCHANT)];
+  return known.find((pattern) => pattern?.test(receipt.merchant ?? ''));
+}
+
+/** the share of the shop's name the payment has to carry: one shared word ("van", "de") names nobody */
+const NAME_SHARE = 0.5;
+
+export type ReceiptParty = 'same' | 'unknown' | 'other';
+
+// #650: whether the payment went to the receipt's shop, read from the bank's title and description.
+// 'unknown' only where nothing names the shop (a photo nobody read): there the amount and the day speak alone (#567)
+export function receiptParty(receipt: NamedReceipt, tx: PaymentText): ReceiptParty {
+  const text = `${tx.merchant ?? ''} ${tx.description ?? ''}`;
+  const fingerprint = fingerprintOf(receipt);
+  if (fingerprint) return fingerprint.test(text) ? 'same' : 'other';
+  if (receipt.merchant) return titleLikeness(receipt.merchant, text) >= NAME_SHARE ? 'same' : 'other';
+  return receipt.source === 'photo' ? 'unknown' : 'other';
+}
+
+const merchantHit = (receipt: NamedReceipt, tx: PaymentText): boolean => receiptParty(receipt, tx) !== 'other';
+
+/** how well a receipt fits a payment: the cents between them, the days between them, and whose shop it is */
+export interface ReceiptFit {
+  gapCents: number;
+  days: number;
+  party: ReceiptParty;
+}
+
+export const receiptFit = (
+  receipt: NamedReceipt & Pick<MatchableReceipt, 'date' | 'totalCents'>,
+  tx: PaymentText & Pick<TxView, 'date' | 'amountCents'>,
+): ReceiptFit => ({
+  gapCents: Math.abs(receipt.totalCents - Math.abs(tx.amountCents)),
+  days: dayDiff(tx.date, receipt.date),
+  party: receiptParty(receipt, tx),
+});
+
+const PARTY_RANK: Record<ReceiptParty, number> = { same: 0, unknown: 1, other: 2 };
+
+/** best first: the amount to the cent, then the shop, then how near the amount and the day are */
+export const compareFits = (a: ReceiptFit, b: ReceiptFit): number =>
+  Number(a.gapCents !== 0) - Number(b.gapCents !== 0) || PARTY_RANK[a.party] - PARTY_RANK[b.party] || a.gapCents - b.gapCents || a.days - b.days;
 
 function scoreOf(receipt: MatchableReceipt, tx: TxView): number {
   const merchant = merchantHit(receipt, tx) ? 2 : 0;

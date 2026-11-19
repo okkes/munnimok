@@ -53,7 +53,7 @@ describe('toCsvRows', () => {
       amount: '-12.50',
       net_amount: '-12.50',
       category: 'cat.groceries',
-      main_category: 'cat.consumption',
+      main_category: 'cat.grocery',
       status: 'unreviewed',
       description: 'AH · BONUS',
       notes: 'x',

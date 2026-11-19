@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.26.0',
+    date: '2026-11-19',
+    items: [
+      {
+        en: 'Groceries is now a category of its own, with sub-categories such as Bread & Grains, Fruit and Household & Cleaning. Consumption is now called Eating out. Your payments keep their place, and a Groceries category you made yourself is folded into the new one.',
+        nl: 'Boodschappen is nu een eigen categorie, met subcategorieën zoals Brood & Granen, Fruit en Huishouden & Schoonmaak. Consumptie heet nu Horeca. Je betalingen houden hun plek, en een categorie Boodschappen die je zelf had gemaakt gaat op in de nieuwe.',
+        tr: 'Market artık kendi başına bir kategori; Ekmek & Tahıllar, Meyve ve Ev & Temizlik gibi alt kategorileri var. Tüketim’in adı artık Dışarıda yeme içme. Ödemelerin yerinde kalır; kendi oluşturduğun bir Market kategorisi yenisiyle birleştirilir.',
+      },
+      {
+        en: 'The categories screen is easier to read: every main category is a card that says how many sub-categories it holds, and they open inside it.',
+        nl: 'Het categorieënscherm leest makkelijker: elke hoofdcategorie is een kaart die zegt hoeveel subcategorieën erin zitten, en ze klappen daarbinnen open.',
+        tr: 'Kategoriler ekranı daha kolay okunuyor: her ana kategori, kaç alt kategorisi olduğunu söyleyen bir kart; alt kategoriler kartın içinde açılır.',
+      },
+      {
+        en: 'A receipt is put on a payment for you only when the amount is the same to the cent and the payment is from the receipt’s shop. A receipt that only costs about the same is still offered when you pick one yourself.',
+        nl: 'Een bon wordt alleen voor je aan een betaling gehangen als het bedrag tot op de cent gelijk is en de betaling van de winkel van de bon komt. Een bon die alleen ongeveer evenveel kost wordt nog wel aangeboden als je er zelf een kiest.',
+        tr: 'Bir fiş, yalnızca tutar kuruşu kuruşuna aynıysa ve ödeme fişin mağazasından geliyorsa senin için bir ödemeye eklenir. Yalnızca yaklaşık aynı tutardaki bir fiş, kendin seçerken yine sunulur.',
+      },
+      {
+        en: 'Money coming in is never labelled as a recurring cost. A refund from your internet provider used to get the subscription’s label and category.',
+        nl: 'Geld dat binnenkomt krijgt nooit het label van een vaste last. Een terugbetaling van je internetprovider kreeg eerder het label en de categorie van het abonnement.',
+        tr: 'Gelen para asla düzenli gider olarak etiketlenmez. İnternet sağlayıcından gelen bir iade, daha önce aboneliğin etiketini ve kategorisini alıyordu.',
+      },
+      {
+        en: 'When your sign-in has ended, munni now says so and asks you to sign in again, instead of quietly not syncing. And the Reload button on “Update munni to continue” now opens the new version.',
+        nl: 'Als je aanmelding is verlopen, zegt munni dat nu en vraagt het je opnieuw in te loggen, in plaats van stilletjes niet te synchroniseren. En de knop Herladen op “Werk munni bij om verder te gaan” opent nu de nieuwe versie.',
+        tr: 'Oturumun sona erdiğinde munni artık bunu söylüyor ve yeniden giriş yapmanı istiyor; sessizce eşitlemeyi bırakmıyor. “Devam etmek için munni’yi güncelle” ekranındaki Yeniden yükle düğmesi de artık yeni sürümü açıyor.',
+      },
+    ],
+  },
+  {
     version: '5.25.0',
     date: '2026-11-18',
     items: [

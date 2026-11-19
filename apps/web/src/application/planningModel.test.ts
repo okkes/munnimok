@@ -212,7 +212,7 @@ describe('planning model (#128)', () => {
     stores.push(store);
     await repo.upsert('budget', SPACE, 'food', { name: 'Food', amountCents: 20_000, every: 'period', anchor: '2026-01-01', catIds: ['groceries'], active: 1 });
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
-    await repo.upsert('planSubject', SPACE, 'cons', { planId: march, segment: 'expenses', order: 0, name: 'Consumption', catIds: ['consumption'], targetCents: 11_000, fundedCents: 0 });
+    await repo.upsert('planSubject', SPACE, 'cons', { planId: march, segment: 'expenses', order: 0, name: 'Consumption', catIds: ['grocery'], targetCents: 11_000, fundedCents: 0 });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'budgets', 'food'), { planId: march, segment: 'budgets', order: 0, name: 'Food', sourceId: 'food', fundedCents: 0 });
     const model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     const views = new Map(model.viewsOf(model.plan!).map((v) => [v.subject.name, v]));
@@ -426,7 +426,7 @@ describe('planning model (#128)', () => {
     const { store, repo } = await fixture();
     stores.push(store);
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01', segments: [{ kind: 'goals' }, { kind: 'expenses' }, { kind: 'budgets', hidden: 1 }] });
-    await repo.upsert('planSubject', SPACE, 'gro', { planId: march, segment: 'expenses', order: 1, name: 'Groceries', catIds: ['consumption'], excludeCatIds: ['coffee'], targetCents: 15_000, fundedCents: 20_000 });
+    await repo.upsert('planSubject', SPACE, 'gro', { planId: march, segment: 'expenses', order: 1, name: 'Groceries', catIds: ['grocery'], excludeCatIds: ['groceryCoffee'], targetCents: 15_000, fundedCents: 20_000 });
     await repo.upsert('planSubject', SPACE, 'r', { planId: march, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 0 });
 
     expect(segmentsOf({ segments: [{ kind: 'goals' }, { kind: 'expenses' }, { kind: 'budgets', hidden: 1 }] }).map((s) => s.kind)).toEqual(['goals', 'expenses', 'budgets', 'recurring', 'debts', 'events']);
@@ -434,6 +434,6 @@ describe('planning model (#128)', () => {
     expect(sortSubjects(model.subjectsOf(model.plan!), model.segmentsOf(model.plan!)).map((s) => s.id)).toEqual(['gro', 'r']);
     const availability = availabilityByCat(model);
     expect(availability.get('groceries')).toMatchObject({ subjectName: 'Groceries', cents: 20_000 - 11_000 });
-    expect(availability.has('coffee')).toBe(false);
+    expect(availability.has('groceryCoffee')).toBe(false);
   });
 });

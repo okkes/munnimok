@@ -562,17 +562,20 @@ function FormCategorySlot({
 
 function RecurringLinkRow({
   adjustment,
+  moneyIn,
   recurrings,
   recurringId,
   onOpen,
 }: Readonly<{
   adjustment: boolean;
+  /** #649: money coming in is no recurring cost */
+  moneyIn: boolean;
   recurrings: readonly Pick<RecurringRow, 'id' | 'name'>[] | undefined;
   recurringId: string | null;
   onOpen: () => void;
 }>) {
   const { t } = useLang();
-  if (adjustment || (recurrings?.length ?? 0) === 0) return null;
+  if (adjustment || moneyIn || (recurrings?.length ?? 0) === 0) return null;
   return (
     <button
       data-testid="txform-recurring"
@@ -903,7 +906,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
         txType: effectiveType,
         stagedCats: adjustment ? null : stagedCats,
         linkedAccountId: adjustment ? null : linkedAccountId,
-        recurringId: adjustment ? null : recurringId,
+        recurringId: adjustment || !isExpense ? null : recurringId,
         ...(extended ? { story: { notes, eventId: adjustment ? null : eventId } } : {}),
       });
       await repo.upsert('transaction', spaceId, rowId, { ...fields, ...entryFieldsFor(onBank, tx, canCount && countIn, bank?.apart) });
@@ -1119,7 +1122,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
             currency={formCurrency}
           />
 
-          <RecurringLinkRow adjustment={adjustment} recurrings={recurrings} recurringId={recurringId} onOpen={() => setRecurringOpen(true)} />
+          <RecurringLinkRow adjustment={adjustment} moneyIn={!isExpense} recurrings={recurrings} recurringId={recurringId} onOpen={() => setRecurringOpen(true)} />
 
           {extended && !adjustment && (
             <StoryRows

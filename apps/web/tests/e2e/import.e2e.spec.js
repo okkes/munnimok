@@ -38,7 +38,7 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('Bank · 4300');
     await page.click('[data-testid="tab-transactions"]');
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('Jumbo Amsterdam');
-    await expect(page.locator('[data-testid="tx-list"]')).toContainText('Grocery');
+    await expect(page.locator('[data-testid="tx-list"]')).toContainText('Groceries');
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('Onbekende Winkel XQZ');
     await shot(page, k('20-import-run') + '--s2');
 

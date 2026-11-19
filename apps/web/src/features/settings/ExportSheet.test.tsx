@@ -70,7 +70,8 @@ describe('ExportSheet (demo identity)', () => {
     expect(lines[0].endsWith('tx_id,account_id,category_id,space_id')).toBe(true);
     expect(lines[1].endsWith(',demo_space')).toBe(true);
     expect(text).toContain('Albert Heijn');
-    expect(text).toContain('Grocery');
+    // the sub and its main side by side, both in the reader's language
+    expect(text).toContain('Other,Groceries');
     expect(lines.length).toBeGreaterThan(50);
   }, 15_000);
 
