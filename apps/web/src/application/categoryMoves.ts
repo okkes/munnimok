@@ -41,19 +41,29 @@ async function moveTransactions(store: StorageBackend, repo: Repo, spaceId: stri
   return touched;
 }
 
-async function moveLists(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {
+async function moveRecurrings(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {
   let touched = 0;
   for (const rec of await store.bySpace('recurring', spaceId)) {
     if (rec.deleted !== 0 || !rec.catId || !moves.has(rec.catId)) continue;
     await repo.upsert('recurring', spaceId, rec.id, { catId: moves.get(rec.catId) });
     touched += 1;
   }
+  return touched;
+}
+
+async function moveBudgets(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {
+  let touched = 0;
   for (const budget of await store.bySpace('budget', spaceId)) {
     const catIds = budget.deleted === 0 ? movedIds(budget.catIds, moves) : null;
     if (!catIds) continue;
     await repo.upsert('budget', spaceId, budget.id, { catIds });
     touched += 1;
   }
+  return touched;
+}
+
+async function moveSubjects(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {
+  let touched = 0;
   for (const subject of await store.bySpace('planSubject', spaceId)) {
     if (subject.deleted !== 0) continue;
     const catIds = movedIds(subject.catIds, moves);
@@ -86,7 +96,7 @@ async function moveReceipts(store: StorageBackend, repo: Repo, spaceId: string, 
 
 async function moveSpaceRow(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {
   const space = await store.get('space', spaceId);
-  if (!space || space.deleted !== 0) return 0;
+  if (space?.deleted !== 0) return 0;
   const hiddenMains = movedIds(space.hiddenMains, moves);
   const graphs = space.trendGraphs ?? [];
   const trendGraphs = graphs.some((graph) => movedIds(graph.catIds, moves))
@@ -102,7 +112,9 @@ export async function moveCategoriesInSpace(store: StorageBackend, repo: Repo, s
   if (moves.size === 0 || !repo.canWrite(spaceId)) return 0;
   return (
     (await moveTransactions(store, repo, spaceId, moves)) +
-    (await moveLists(store, repo, spaceId, moves)) +
+    (await moveRecurrings(store, repo, spaceId, moves)) +
+    (await moveBudgets(store, repo, spaceId, moves)) +
+    (await moveSubjects(store, repo, spaceId, moves)) +
     (await moveReceipts(store, repo, spaceId, moves)) +
     (await moveSpaceRow(store, repo, spaceId, moves))
   );

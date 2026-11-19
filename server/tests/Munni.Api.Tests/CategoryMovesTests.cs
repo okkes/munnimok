@@ -11,6 +11,13 @@ namespace Munni.Api.Tests;
 // #653: the catalog's groceries main. Counted per space: the test database is shared with the other repair specs
 public class CategoryMovesTests : IClassFixture<FeedsApiFactory>
 {
+    private static readonly string[] OldMain = ["consumption"];
+    private static readonly string[] OldMainAndMerged = ["consumption", "softDrinks"];
+    private static readonly string[] TobaccoAndMerged = ["tobacco", "softDrinks"];
+    private static readonly string[] Entertainment = ["entertainment"];
+    private static readonly string[] Tobacco = ["tobacco"];
+    private static readonly string[] Coffee = ["coffee"];
+
     private readonly FeedsApiFactory _factory;
 
     public CategoryMovesTests(FeedsApiFactory factory) => _factory = factory;
@@ -62,11 +69,11 @@ public class CategoryMovesTests : IClassFixture<FeedsApiFactory>
             Op(spaceId, "space", spaceId, "000000100-0000-dev1", new
             {
                 name = "Home",
-                hiddenMains = new[] { "consumption" },
+                hiddenMains = OldMain,
                 trendGraphs = new object[]
                 {
-                    new { id = "g1", name = "Food", catIds = new[] { "consumption", "softDrinks" } },
-                    new { id = "g2", name = "Fun", catIds = new[] { "entertainment" } },
+                    new { id = "g1", name = "Food", catIds = OldMainAndMerged },
+                    new { id = "g2", name = "Fun", catIds = Entertainment },
                 },
             }),
             Op(spaceId, "transaction", "t-soft", hlc, new { amountCents = -250, catId = "softDrinks" }),
@@ -84,11 +91,11 @@ public class CategoryMovesTests : IClassFixture<FeedsApiFactory>
             Op(spaceId, "transaction", "t-plain", hlc, new { amountCents = -900, catId = "groceries" }),
             Op(spaceId, "txMeta", "m1", hlc, new { txId = "feed-tx", catId = "softDrinks", needsReview = 0 }),
             Op(spaceId, "recurring", "r1", hlc, new { name = "Cola", catId = "softDrinks" }),
-            Op(spaceId, "budget", "b-food", hlc, new { name = "Food", catIds = new[] { "consumption", "softDrinks" } }),
-            Op(spaceId, "budget", "b-smoke", hlc, new { name = "Smoke", catIds = new[] { "tobacco" } }),
-            Op(spaceId, "budget", "b-subs", hlc, new { name = "Coffee", catIds = new[] { "coffee" } }),
-            Op(spaceId, "planSubject", "ps-food", hlc, new { planId = "p1", name = "Food", catIds = new[] { "consumption" }, excludeCatIds = new[] { "tobacco", "softDrinks" } }),
-            Op(spaceId, "planSubject", "ps-other-plan", hlc, new { planId = "p2", name = "Food", catIds = new[] { "consumption" } }),
+            Op(spaceId, "budget", "b-food", hlc, new { name = "Food", catIds = OldMainAndMerged }),
+            Op(spaceId, "budget", "b-smoke", hlc, new { name = "Smoke", catIds = Tobacco }),
+            Op(spaceId, "budget", "b-subs", hlc, new { name = "Coffee", catIds = Coffee }),
+            Op(spaceId, "planSubject", "ps-food", hlc, new { planId = "p1", name = "Food", catIds = OldMain, excludeCatIds = TobaccoAndMerged }),
+            Op(spaceId, "planSubject", "ps-other-plan", hlc, new { planId = "p2", name = "Food", catIds = OldMain }),
             Op(spaceId, "receiptLink", "l1", hlc, new
             {
                 source = "photo",
@@ -148,12 +155,12 @@ public class CategoryMovesTests : IClassFixture<FeedsApiFactory>
         (await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
         [
             Op(spaceId, "space", spaceId, "000000100-0000-dev1", new { name = "Home" }),
-            Op(spaceId, "budget", "b1", "000000200-0000-dev1", new { name = "Food", catIds = new[] { "consumption" } }),
+            Op(spaceId, "budget", "b1", "000000200-0000-dev1", new { name = "Food", catIds = OldMain }),
         ]))).EnsureSuccessStatusCode();
         Assert.Equal(1, await RepairAsync(spaceId));
         // a device that had not pulled yet narrows the budget: its stamp is later than the repair's
         (await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
-            [Op(spaceId, "budget", "b1", "000000201-0000-dev1", new { catIds = new[] { "consumption" } })]))).EnsureSuccessStatusCode();
+            [Op(spaceId, "budget", "b1", "000000201-0000-dev1", new { catIds = OldMain })]))).EnsureSuccessStatusCode();
         Assert.Equal(["consumption"], Ids(Data(spaceId, "budget", "b1").GetProperty("catIds")));
         // the repair's op is known: nothing is added a second time
         Assert.Equal(0, await RepairAsync(spaceId));

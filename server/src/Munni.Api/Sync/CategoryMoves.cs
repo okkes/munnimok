@@ -164,13 +164,12 @@ public static class CategoryMoves
     {
         if (node is JsonArray list)
         {
-            foreach (var item in list) if (item is not null) Walk(item);
+            foreach (var item in list.OfType<JsonNode>()) Walk(item);
             return;
         }
         if (node is not JsonObject bag) return;
-        foreach (var (key, value) in bag.ToList())
+        foreach (var (key, value) in bag.Where(pair => pair.Value is not null).Select(pair => (pair.Key, pair.Value!)).ToList())
         {
-            if (value is null) continue;
             if (key != "catId" && key != CatIds)
             {
                 Walk(value);
@@ -185,24 +184,34 @@ public static class CategoryMoves
     /// (2) what listed the old main as a whole keeps the subs that left it
     private static void Cover(EntityRow row, string field, JsonObject data, ref JsonNode node, Listed listed)
     {
-        if (row.Entity == Budget && field == CatIds) node = Covered(node, id => listed.Budgets.Any(b => b.Key != row.EntityId && b.Value.Contains(id)));
-        else if (row.Entity == PlanSubject && field == CatIds)
+        node = (row.Entity, field) switch
         {
-            var planId = listed.Subjects.GetValueOrDefault(row.EntityId).PlanId;
-            var excluded = Ids(data[ExcludeCatIds]).ToHashSet(StringComparer.Ordinal);
-            node = Covered(node, id => excluded.Contains(id)
-                || listed.Subjects.Any(s => s.Key != row.EntityId && s.Value.PlanId == planId && s.Value.Ids.Contains(id)));
-        }
-        else if (row.Entity == SpaceEntity && field == HiddenMains) node = WithAll(node, [NewMain]);
-        else if (row.Entity == SpaceEntity && field == TrendGraphs && node is JsonArray graphs)
+            (Budget, CatIds) => Covered(node, id => listed.Budgets.Any(b => b.Key != row.EntityId && b.Value.Contains(id))),
+            (PlanSubject, CatIds) => CoveredSubject(row, data, node, listed),
+            (SpaceEntity, HiddenMains) => WithAll(node, [NewMain]),
+            (SpaceEntity, TrendGraphs) => CoveredGraphs(node),
+            _ => node,
+        };
+    }
+
+    /// a subject keeps what it counted: not what it left out, and not what another subject of its plan names
+    private static JsonNode CoveredSubject(EntityRow row, JsonObject data, JsonNode node, Listed listed)
+    {
+        var planId = listed.Subjects.GetValueOrDefault(row.EntityId).PlanId;
+        var excluded = Ids(data[ExcludeCatIds]).ToHashSet(StringComparer.Ordinal);
+        return Covered(node, id => excluded.Contains(id)
+            || listed.Subjects.Any(s => s.Key != row.EntityId && s.Value.PlanId == planId && s.Value.Ids.Contains(id)));
+    }
+
+    private static JsonNode CoveredGraphs(JsonNode node)
+    {
+        foreach (var graph in (node as JsonArray ?? []).OfType<JsonObject>())
         {
-            foreach (var graph in graphs.OfType<JsonObject>())
-            {
-                if (graph[CatIds] is not { } ids) continue;
-                var covered = Covered(ids, _ => false);
-                if (!ReferenceEquals(covered, ids)) graph[CatIds] = covered;
-            }
+            if (graph[CatIds] is not { } ids) continue;
+            var covered = Covered(ids, _ => false);
+            if (!ReferenceEquals(covered, ids)) graph[CatIds] = covered;
         }
+        return node;
     }
 
     private static JsonNode Covered(JsonNode node, Func<string, bool> taken)
