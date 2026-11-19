@@ -84,7 +84,7 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
     fireEvent.click(await screen.findByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
+    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Other'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
     // generous timeout: coverage instrumentation slows the liveQuery round-trip
@@ -93,7 +93,7 @@ describe('TxFormSheet (demo identity)', () => {
         const detail = screen.getByTestId('screen-tx-detail');
         expect(detail.textContent).toContain('Bakker Bart');
         expect(screen.getByTestId('tx-detail-amount').textContent).toContain('12.34');
-        expect(detail.textContent).toContain('Grocery');
+        expect(detail.textContent).toContain('Other');
       },
       { timeout: 5000 },
     );

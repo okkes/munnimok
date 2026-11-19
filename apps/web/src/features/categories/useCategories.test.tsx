@@ -43,7 +43,7 @@ describe('useCategories', () => {
 
   it('serves built-ins with localized names and safe fallbacks', async () => {
     renderWithData(<Probe />);
-    expect((await screen.findByTestId('probe')).textContent).toBe('Grocery');
+    expect((await screen.findByTestId('probe')).textContent).toBe('Other');
     expect(latest!.byId(undefined).id).toBe(UNCATEGORIZED_ID);
     expect(latest!.byId('never-existed').id).toBe(UNCATEGORIZED_ID);
     expect(latest!.parents.length).toBeGreaterThan(0);

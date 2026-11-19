@@ -158,6 +158,9 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
   if (confirmed) await migrateBareSpecialRows(store, upkeep);
   if (confirmed) await refileCashTransfers(store, upkeep);
+  // #653: categories the catalog merged away, and a person's own Groceries tree, move to the catalog's ids
+  const { applyCategoryMoves } = await import('@/application/categoryMoves');
+  if (confirmed) await applyCategoryMoves(store, upkeep);
   // #509: a loan typed at its original amount counts every payment linked to it, its date's included
   const { settlePristineLoans } = await import('@/application/loanBalance');
   if (confirmed) await settlePristineLoans(store, upkeep);

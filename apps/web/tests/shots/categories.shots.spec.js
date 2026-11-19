@@ -17,7 +17,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
-    await page.click('[data-testid="cats-group-consumption"]');
+    await page.click('[data-testid="cats-group-grocery"]');
     await expect(page.locator('[data-testid="managecat-groceries"]')).toBeVisible();
     // demo seed ships a custom main with its locked Other sub
     await page.click('[data-testid="cats-group-demo_cat_padel"]');

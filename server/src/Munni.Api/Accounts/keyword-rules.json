@@ -360,7 +360,15 @@
   "catId": "alcohol",
   "keywords": [
    "bier",
-   "wijn",
+   "wijn"
+  ],
+  "direction": "debit",
+  "txType": "expense"
+ },
+ {
+  "lang": "nl",
+  "catId": "groceryAlcohol",
+  "keywords": [
    "sterke drank",
    "slijterij",
    "gall & gall",
@@ -398,7 +406,15 @@
    "espresso",
    "coffee",
    "kiosk",
-   "koffie",
+   "koffie"
+  ],
+  "direction": "debit",
+  "txType": "expense"
+ },
+ {
+  "lang": "nl",
+  "catId": "groceryCoffee",
+  "keywords": [
    "nespresso",
    "douwe egberts",
    "senseo"

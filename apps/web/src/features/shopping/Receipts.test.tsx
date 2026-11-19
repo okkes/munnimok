@@ -157,7 +157,7 @@ describe('Receipts (demo identity)', () => {
       fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
       await screen.findByText('Halfvolle melk');
       expect(screen.getByText('Volkoren brood')).toBeTruthy();
-      expect(screen.getByText(/^Suggested: .*Grocery/)).toBeTruthy();
+      expect(screen.getByText(/^Suggested: .*Other/)).toBeTruthy();
       expect(read.mock.calls[0][0]).toEqual([FAKE_PHOTO]);
       await waitFor(() => expect(screen.getByTestId('receipt-ai-read').textContent).toBe('Read again'));
     } finally {
@@ -239,13 +239,13 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
     fireEvent.click(screen.getByTestId('receiptcats-categorise'));
     fireEvent.click(await screen.findByTestId('catpicker-sweets'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
     expect(screen.getByTestId('receiptcats-left').textContent).toContain('15.88');
-    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Grocery');
+    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Other');
     fireEvent.click(screen.getByTestId('receiptcats-apply'));
 
-    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Sweets & Treats.*7\.22/));
-    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Grocery.*15\.88/);
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Treats.*7\.22/));
+    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Other.*15\.88/);
     await waitFor(async () => {
       const stored = await repo.store.get('receiptLink', link.id);
       expect(stored?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
@@ -253,7 +253,7 @@ describe('Receipts (demo identity)', () => {
     db.close();
 
     fireEvent.click(screen.getByTestId('receipt-categorise'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
     expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
   }, 20_000);
 

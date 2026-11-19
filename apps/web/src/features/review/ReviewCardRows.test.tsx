@@ -57,7 +57,7 @@ describe('the review card: prepared suggestions and every row standing', () => {
     const card = await screen.findByTestId('review-card', {}, { timeout: 8000 });
     expect(card.textContent).toContain('Bakkerij Jansen');
     // no waiting: the suggestion is there when the card is
-    expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery');
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Other · Groceries');
     // an ordinary category takes no counterparty and so no counter transaction — both stand disabled
     expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('review-countertx-row') as HTMLButtonElement).disabled).toBe(true);

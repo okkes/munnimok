@@ -33,7 +33,9 @@ describe('TxRow', () => {
   it('renders merchant, category name and negative amount', async () => {
     renderWithData(<TxRow tx={tx({})} />);
     expect((await screen.findByTestId('tx-row-t1')).textContent).toContain('Albert Heijn');
-    expect(screen.getByTestId('tx-row-t1').textContent).toContain('Grocery');
+    // #653: filed under its main's Other, the row reads as the main
+    expect(screen.getByTestId('tx-row-t1').textContent).toContain('Groceries');
+    expect(screen.getByTestId('tx-row-t1').textContent).not.toContain('Other');
     expect(screen.getByTestId('tx-row-t1').textContent).toContain('-€12.50');
   });
 
@@ -55,7 +57,7 @@ describe('TxRow', () => {
       <TxRow tx={tx({ amountCents: -6000, catId: 'restaurants', cats: [{ catId: 'reimbursed', amountCents: 3000 }, { catId: 'restaurants', amountCents: 3000 }] })} />,
     );
     const row = await screen.findByTestId('tx-row-t1');
-    expect(row.textContent).toContain('Dining Out');
+    expect(row.textContent).toContain('Dining out');
     expect(row.textContent).not.toContain('Multiple categories');
     cleanup();
     // settled + still-expected money + a dinner: the expectation is a real opinion, so the face stays mixed

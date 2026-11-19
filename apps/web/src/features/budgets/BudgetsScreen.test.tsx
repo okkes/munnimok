@@ -20,7 +20,7 @@ async function createBudget(name: string, amount: string, catTestId = 'budget-ca
   fireEvent.change(screen.getByTestId('budgetform-anchor'), {
     target: { value: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-01` },
   });
-  fireEvent.click(await screen.findByTestId('budgetform-fold-consumption'));
+  fireEvent.click(await screen.findByTestId('budgetform-fold-grocery'));
   fireEvent.click(await screen.findByTestId(catTestId));
   fireEvent.click(screen.getByTestId('budgetform-save'));
   await screen.findByTestId('screen-budgets');
@@ -57,19 +57,19 @@ describe('Budgets (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('budgets-add'));
     await screen.findByTestId('screen-budget-form');
-    fireEvent.click(await screen.findByTestId('budgetform-fold-consumption'));
+    fireEvent.click(await screen.findByTestId('budgetform-fold-grocery'));
     const conflict = await screen.findByTestId('budget-cat-conflict-groceries');
     expect(conflict.textContent).toContain('Food');
     expect((screen.getByTestId('budget-cat-groceries') as HTMLInputElement).disabled).toBe(true);
     // #374: the main stays pickable — it takes every sub that is still free, and with
     // groceries held by Food it is only partly this budget's: indeterminate, never a full tick
-    const main = screen.getByTestId('budget-cat-consumption') as HTMLInputElement;
+    const main = screen.getByTestId('budget-cat-grocery') as HTMLInputElement;
     expect(main.disabled).toBe(false);
     fireEvent.click(main);
     expect(main.dataset.state).toBe('half');
     expect([main.checked, main.indeterminate]).toEqual([false, true]);
     expect((screen.getByTestId('budget-cat-groceries') as HTMLInputElement).disabled).toBe(true);
-    const coffee = screen.getByTestId('budget-cat-coffee') as HTMLInputElement;
+    const coffee = screen.getByTestId('budget-cat-groceryCoffee') as HTMLInputElement;
     expect(coffee.dataset.state).toBe('checked');
     fireEvent.click(coffee);
     expect(coffee.dataset.state).toBe('off');

@@ -265,7 +265,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Other · Groceries'));
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -1498,7 +1498,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Other · Groceries'));
   }, 15_000);
 });
 
@@ -1598,7 +1598,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested'), { timeout: 5000 });
     // the beans as the person filed beans before, the cable under what the card suggested anyway
     await waitFor(() => expect(screen.getByTestId('review-cats').textContent).toMatch(/Coffee/));
-    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Other/);
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const db = new MunniDB('munni_demo');
@@ -1630,7 +1630,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     fireEvent.click(screen.getByTestId('review-receipt-row'));
     fireEvent.click(await screen.findByTestId('review-receipt-none'));
     await waitFor(() => expect(screen.getByTestId('review-cats').textContent).not.toMatch(/Coffee/));
-    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Groceries/);
   }, 25_000);
 
   async function attachAmazonToCard() {

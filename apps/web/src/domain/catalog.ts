@@ -64,6 +64,10 @@ function toCat(row: CategoryRow, parentById: Map<string, CategoryRow>): Cat {
   };
 }
 
+/** a main's catch-all: marked as one (a custom main's, the catalog's Groceries › Other), or `<main>Other` in the catalog */
+export const isOtherSub = (c: Pick<Cat, 'id' | 'parentId' | 'isOther' | 'custom'>): boolean =>
+  !!c.isOther || (!c.custom && !!c.parentId && c.id.endsWith('Other'));
+
 /** the space's own custom rows only: another space's categories are COPIED over, never shared (#387, #390) */
 export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly CategoryRow[], spaceId: string): { rows: CategoryRow[]; sharedScope: boolean; hiddenMains: string[] } {
   const active = spaces.find((s) => s.id === spaceId);
@@ -88,8 +92,7 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
     if (LOCKED_MAIN_IDS.has(c.id)) return 2;
     return c.id === 'income' ? 1 : 0;
   };
-  // #388: a built-in main's "Other" (`<main>Other` in the catalog) closes the list like a custom main's
-  const isOtherSub = (c: Cat): boolean => !!c.isOther || (!c.custom && !!c.parentId && c.id.endsWith('Other'));
+  // #388: a main's "Other" closes the list
   const childRank = (c: Cat): number => {
     if (isOtherSub(c)) return 2;
     return c.custom ? 1 : 0;

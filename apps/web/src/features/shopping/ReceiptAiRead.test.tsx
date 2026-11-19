@@ -55,7 +55,7 @@ describe('reading a receipt photo', () => {
     const [images, categories] = read.mock.calls[0];
     expect(images).toEqual([PHOTO]);
     // every sub under its main, so the reader can tell a grocery from a restaurant
-    expect(categories.find((c) => c.id === 'groceries')?.name).toBe('Consumption › Grocery');
+    expect(categories.find((c) => c.id === 'groceries')?.name).toBe('Groceries › Other');
     expect(onRead).toHaveBeenCalledWith({
       reconciled: true,
       totalCents: 879,

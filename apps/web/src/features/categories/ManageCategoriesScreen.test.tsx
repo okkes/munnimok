@@ -30,7 +30,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('lists built-in categories as read-only rows', async () => {
     await openScreen();
-    expandGroup('consumption');
+    expandGroup('grocery');
     const row = await screen.findByTestId('managecat-groceries');
     expect((row as HTMLButtonElement).disabled).toBe(true);
     expect(row.dataset.custom).toBeUndefined();
@@ -57,7 +57,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.pointerUp(header);
     expect(header.className).not.toContain('m-holding');
     fireEvent.click(header);
-    await screen.findByTestId('managecat-groceries');
+    await screen.findByTestId('managecat-restaurants');
     expect(screen.queryByTestId('cats-group-menu')).toBeNull();
   });
 

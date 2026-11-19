@@ -73,7 +73,7 @@ describe('categorySeries', () => {
 
   it('a main covers its subs; category spreads and parts count toward their own category (#211)', () => {
     const txs = [
-      tx({ date: '2026-06-05', catId: 'groceries', amountCents: -1500 }),
+      tx({ date: '2026-06-05', catId: 'restaurants', amountCents: -1500 }),
       tx({ date: '2026-06-06', catId: 'gym', amountCents: -3000 }),
       tx({
         date: '2026-06-07',
@@ -86,16 +86,16 @@ describe('categorySeries', () => {
       }),
       tx({
         date: '2026-06-08',
-        catId: 'groceries',
+        catId: 'restaurants',
         amountCents: -900,
         splits: [
-          { id: 'p1', catId: 'groceries', amountCents: 400 },
+          { id: 'p1', catId: 'restaurants', amountCents: 400 },
           { id: 'p2', catId: 'gym', amountCents: 500, label: 'day pass' },
         ],
       }),
     ];
     expect(categorySeries(txs, periods, catalog, 'consumption')).toEqual([0, 2900]);
-    expect(categorySeries(txs, periods, catalog, 'groceries')).toEqual([0, 1900]);
+    expect(categorySeries(txs, periods, catalog, 'restaurants')).toEqual([0, 1900]);
   });
 });
 
@@ -105,14 +105,14 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
     expect(scopeIds(catalog, [])).toBeNull();
     const ids = scopeIds(catalog, ['consumption', 'gym'])!;
     expect(ids.has('consumption')).toBe(true);
-    expect(ids.has('groceries')).toBe(true);
+    expect(ids.has('restaurants')).toBe(true);
     expect(ids.has('gym')).toBe(true);
     expect(ids.has('sport')).toBe(false);
   });
 
   it('expenseSeries sums the scope per period and scopedContribution names a row’s share', () => {
     const txs = [
-      tx({ date: '2026-06-05', catId: 'groceries', amountCents: -1500 }),
+      tx({ date: '2026-06-05', catId: 'restaurants', amountCents: -1500 }),
       tx({ date: '2026-06-06', catId: 'gym', amountCents: -3000 }),
       tx({ date: '2026-06-07', catId: 'subs', amountCents: -400 }),
       tx({ date: '2026-06-08', catId: 'gym', amountCents: -100, pending: 1 }),
@@ -126,15 +126,15 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
 
   it('scopedBreakdown files each slice under its own category, largest first', () => {
     const txs = [
-      tx({ date: '2026-06-05', catId: 'groceries', amountCents: -1500 }),
-      tx({ date: '2026-06-06', catId: 'groceries', amountCents: -500 }),
+      tx({ date: '2026-06-05', catId: 'restaurants', amountCents: -1500 }),
+      tx({ date: '2026-06-06', catId: 'restaurants', amountCents: -500 }),
       tx({ date: '2026-06-06', catId: 'coffee', amountCents: -400 }),
       tx({
         date: '2026-06-07',
-        catId: 'groceries',
+        catId: 'restaurants',
         amountCents: -900,
         splits: [
-          { id: 'p1', catId: 'groceries', amountCents: 400 },
+          { id: 'p1', catId: 'restaurants', amountCents: 400 },
           { id: 'p2', catId: 'alcohol', amountCents: 500 },
         ],
       }),
@@ -142,7 +142,7 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
       tx({ date: '2026-06-09', catId: 'gym', amountCents: -3000 }),
     ];
     expect(scopedBreakdown(txs, periods[1], scopeIds(catalog, ['consumption']))).toEqual([
-      { catId: 'groceries', cents: 2400 },
+      { catId: 'restaurants', cents: 2400 },
       { catId: 'alcohol', cents: 500 },
       { catId: 'coffee', cents: 400 },
     ]);
@@ -274,12 +274,12 @@ describe('another currency in a sum: restated in the space’s own first', () =>
   it('spending, the net and a pay day count a row of another currency at its restated worth', () => {
     const txs = [
       tx({ date: '2026-06-05', amountCents: -1000 }),
-      tx({ date: '2026-06-05', amountCents: -3000, currency: 'USD', catId: 'groceries' }),
+      tx({ date: '2026-06-05', amountCents: -3000, currency: 'USD', catId: 'restaurants' }),
       tx({ date: '2026-06-06', amountCents: 100_000, currency: 'USD', txType: 'income' }),
     ];
     expect(expenseSeries(txs, periods, null, halve)).toEqual([0, 2500]);
     expect(cumulativeByDay(txs, periods[1], null, catalog, halve)[4]).toBe(2500);
-    expect(scopedBreakdown(txs, periods[1], null, halve).find((row) => row.catId === 'groceries')?.cents).toBe(1500);
+    expect(scopedBreakdown(txs, periods[1], null, halve).find((row) => row.catId === 'restaurants')?.cents).toBe(1500);
     expect(cashflowSeries(txs, [periods[1]], halve)[0]).toEqual({ incomeCents: 50_000, expenseCents: 2500, netCents: 47_500 });
     expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 50_000, halve).map((spike) => spike.cents)).toEqual([50_000]);
     expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 60_000, halve)).toEqual([]);

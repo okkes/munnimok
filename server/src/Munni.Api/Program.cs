@@ -214,6 +214,8 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     await Munni.Api.Connectors.ReservedRowRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // receipt-file repair (#630): photos and invoices leave the receipts that held them, once per database
     await ReceiptFileSplit.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
+    // #653: the catalog's groceries main — a merged sub is replaced, and what listed the old main keeps what it counted
+    await CategoryMoves.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // #615: the spaces deleted before the server erased anything, and an erase a restart cut short — every start
     await SpaceErasure.SweepAsync(migrated, app.Logger, CancellationToken.None);
 }
