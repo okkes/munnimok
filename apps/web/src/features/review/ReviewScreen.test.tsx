@@ -1704,11 +1704,12 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revwalk'), { trackOutbox: false });
     const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
-    // a newer payment of the same shop, the Coolblue receipt its fit to the cent
+    // a newer payment of the same shop, with a receipt of that shop that fits it to the cent (#650: another shop's would not be asked about)
+    const SECOND = 'rcpt:amazon-nl:demo_conn_amz:a2';
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'ra2', {
       accountId: 'demo_main', date: '2026-01-11', amountCents: -5798, currency: 'EUR', merchant: 'Amzn Mktp NL', catId: 'groceries', needsReview: 1,
     });
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-11', totalCents: 5798, merchant: 'Coolblue' });
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, SECOND, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-11', totalCents: 5798, merchant: 'Amazon.nl' });
     seed.close();
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -1719,14 +1720,14 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const context = await screen.findByTestId('receipt-queue-context', {}, { timeout: 8000 });
     expect(context.textContent).toContain('1/1');
     expect(screen.getByTestId('review-card').getAttribute('data-held')).toBe('1');
-    fireEvent.click(screen.getByTestId(`receipt-queue-pick-${COOLBLUE}`));
+    fireEvent.click(screen.getByTestId(`receipt-queue-pick-${SECOND}`));
     fireEvent.click(await screen.findByTestId('receipt-queue-peek-attach'));
     await waitFor(() => expect(screen.queryByTestId('receipt-queue-context')).toBeNull(), { timeout: 5000 });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const links = await db.receiptLinks.toArray();
       expect(links.find((l) => l.receiptId === AMAZON)?.txId).toBe('ra1');
-      expect(links.find((l) => l.receiptId === COOLBLUE)?.txId).toBe('ra2');
+      expect(links.find((l) => l.receiptId === SECOND)?.txId).toBe('ra2');
     }, { timeout: 8000 });
     db.close();
   }, 30_000);
