@@ -43,6 +43,21 @@ export function resetAuthExpiryGuard(): void {
   handlingAuthExpiry = false;
 }
 
+// a fresh token still refused: the session is spent (IdP restart, revocation), retrying is useless
+// local-first: nobody is logged out or wiped; the offline banner offers Sign in (#222), near app open OIDC re-mints silently
+// a breadcrumb, not an event (GlitchTip 7/13/14): a sign-in that then fails reports from where it fails
+async function noteSessionRefused(): Promise<void> {
+  if (!handlingAuthExpiry) {
+    handlingAuthExpiry = true;
+    console.warn('session refused: double 401 on a fresh token — asking for a sign-in, nothing logged out');
+  }
+  const { markSessionExpired, attemptSilentReentry } = await import('@/app/sessionExpiry');
+  if (!markSessionExpired()) return;
+  const { oidcSignIn } = await import('@/app/authToken');
+  const { callbackUri } = await import('@/features/auth/logto');
+  void attemptSilentReentry(() => oidcSignIn(callbackUri()).then(() => undefined)).catch(() => undefined);
+}
+
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
@@ -55,11 +70,13 @@ export async function apiFetch(
 ): Promise<Response> {
   assertNetworkAllowed();
   const identity = readSessionIdentity();
+  /** signed in through Logto: the only identity that carries a bearer and can lose its session */
+  const oidcUser = identity?.kind === 'user' && !identity.testAuth;
   // cold-start guard: screens fire requests before Logto restores the session; those went out bearer-less, hit 401 twice
   // and logged the user out, wiping a healthy refresh token, on every app update. Wait for the restore
-  if (identity?.kind === 'user' && !identity.testAuth) await waitForAuthReady();
+  if (oidcUser) await waitForAuthReady();
   // #654: a session known to be gone asks the server nothing — the answer is the 401 it would give
-  if (identity?.kind === 'user' && !identity.testAuth && isSessionExpired()) return new Response(null, { status: 401 });
+  if (oidcUser && isSessionExpired()) return new Response(null, { status: 401 });
   let sentBearer = false;
   const attempt = async (): Promise<Response> => {
     const headers = new Headers(init.headers);
@@ -77,25 +94,11 @@ export async function apiFetch(
   };
   let response = await attempt();
   await noticeDeviceRevoked(response);
-  if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth && !opts?.partyAuth) {
+  if (response.status === 401 && oidcUser && !opts?.partyAuth) {
     response = await attempt();
     // a 401 WITHOUT a bearer proves nothing about the refresh token —
     // only a rejected real token means the session is truly dead
-    if (response.status === 401 && sentBearer) {
-      // a fresh token still refused: the session is spent (IdP restart, revocation), retrying is useless
-      // local-first: nobody is logged out or wiped; the offline banner offers Sign in (#222), near app open OIDC re-mints silently
-      // a breadcrumb, not an event (GlitchTip 7/13/14): a sign-in that then fails reports from where it fails
-      if (!handlingAuthExpiry) {
-        handlingAuthExpiry = true;
-        console.warn('session refused: double 401 on a fresh token — asking for a sign-in, nothing logged out');
-      }
-      const { markSessionExpired, attemptSilentReentry } = await import('@/app/sessionExpiry');
-      if (markSessionExpired()) {
-        const { oidcSignIn } = await import('@/app/authToken');
-        const { callbackUri } = await import('@/features/auth/logto');
-        void attemptSilentReentry(() => oidcSignIn(callbackUri()).then(() => undefined)).catch(() => undefined);
-      }
-    }
+    if (response.status === 401 && sentBearer) await noteSessionRefused();
   }
   // #186: unexpected answers reach GlitchTip from here; 401/403/410 have own handlers, plain 4xx are the caller's business
   // 500 and 409 are "should not happen"; 502/503/504 are a gateway's or restart's answer, left to the callers' retry UI
