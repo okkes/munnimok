@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.27.0',
+    date: '2026-11-20',
+    items: [
+      {
+        en: 'Home in a desktop window is tidier: every block is a card with its title and “See all” inside, and the two columns are about the same length.',
+        nl: 'Thuis is in een desktopvenster overzichtelijker: elk blok is een kaart met zijn titel en “Alles zien” erin, en de twee kolommen zijn ongeveer even lang.',
+        tr: 'Ana sayfa masaüstü penceresinde daha düzenli: her blok, başlığı ve “Tümünü gör” bağlantısı içinde olan bir kart; iki sütun da yaklaşık aynı uzunlukta.',
+      },
+      {
+        en: '“This space’s accounts” shows each account’s balance. An account whose bank states no balance shows a dash, and a loan that ING only offered you is no longer listed as an account.',
+        nl: '“Rekeningen van deze ruimte” toont het saldo van elke rekening. Een rekening waarvoor de bank geen saldo opgeeft toont een streepje, en een lening die ING je alleen heeft aangeboden staat niet meer als rekening in de lijst.',
+        tr: '“Bu alanın hesapları” her hesabın bakiyesini gösteriyor. Bankanın bakiye bildirmediği bir hesap çizgi gösterir; ING’nin yalnızca teklif ettiği bir kredi de artık hesap olarak listelenmiyor.',
+      },
+      {
+        en: 'Savings accounts read the right way round: money leaving one is “Taken out”, money arriving is “Set aside”, and transactions filed the wrong way are corrected by themselves. A bonus or a gift paid into a savings account can now be filed as income.',
+        nl: 'Spaarrekeningen lezen nu de goede kant op: geld dat eraf gaat is “Opgenomen”, geld dat erbij komt is “Opzijgezet”, en transacties die verkeerd om stonden worden vanzelf verbeterd. Een bonus of een cadeau dat op een spaarrekening wordt gestort kun je nu als inkomen boeken.',
+        tr: 'Birikim hesapları artık doğru yönden okunuyor: hesaptan çıkan para “Geri çekilen”, hesaba gelen para “Kenara konan”; ters kaydedilmiş işlemler de kendiliğinden düzeltilir. Bir birikim hesabına yatan ikramiye veya hediye artık gelir olarak kaydedilebilir.',
+      },
+      {
+        en: 'In a desktop window a popup grows out of the button you pressed and shrinks back into it.',
+        nl: 'In een desktopvenster groeit een pop-up uit de knop waarop je drukte en krimpt hij daar weer in terug.',
+        tr: 'Masaüstü penceresinde bir açılır pencere, bastığın düğmeden büyüyerek açılır ve kapanırken yine oraya küçülür.',
+      },
+      {
+        en: 'The munni app icon can follow your phone’s theme: themed icons on Android 13 and later, dark and tinted icons on iOS 18 and later.',
+        nl: 'Het pictogram van de munni-app kan het thema van je telefoon volgen: themapictogrammen op Android 13 en later, donkere en getinte pictogrammen op iOS 18 en later.',
+        tr: 'munni uygulama simgesi telefonunun temasına uyabilir: Android 13 ve sonrasında temalı simgeler, iOS 18 ve sonrasında koyu ve renk tonlu simgeler.',
+      },
+    ],
+  },
+  {
     version: '5.26.0',
     date: '2026-11-19',
     items: [
