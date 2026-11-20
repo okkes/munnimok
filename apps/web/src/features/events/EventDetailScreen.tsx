@@ -27,6 +27,41 @@ export function partEntries(tx: TransactionRow): { part: TxSplit; idx: number }[
   return (tx.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
 }
 export const partPickKey = (txId: string, idx: number): string => `${txId}#${idx}`;
+
+export interface EventListUnit<T> {
+  key: string;
+  date: string;
+  rows: T[];
+}
+
+type UnitTx = Pick<TransactionRow, 'id' | 'date' | 'reimbursements' | 'splits'>;
+
+// #493: an expense and the credits that paid it back are one story: they stand together, at the expense's day,
+// wherever the credit's own day falls. A split shows its parts and is never the head of one
+export function eventListUnits<T extends UnitTx>(list: readonly T[]): EventListUnit<T>[] {
+  const byId = new Map(list.map((tx) => [tx.id, tx]));
+  const member = new Set<string>();
+  const creditsOf = new Map<string, T[]>();
+  for (const tx of list) {
+    if (member.has(tx.id) || (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
+    const credits = new Set<T>();
+    for (const link of tx.reimbursements ?? []) {
+      const credit = byId.get(link.txId);
+      if (credit && credit.id !== tx.id && !member.has(credit.id) && !creditsOf.has(credit.id)) credits.add(credit);
+    }
+    if (credits.size === 0) continue;
+    creditsOf.set(tx.id, [...credits]);
+    for (const credit of credits) member.add(credit.id);
+  }
+  return list.filter((tx) => !member.has(tx.id)).map((tx) => ({ key: tx.id, date: tx.date, rows: [tx, ...(creditsOf.get(tx.id) ?? [])] }));
+}
+
+/** the units under their day, in the order they came */
+export function unitsByDay<T>(units: readonly EventListUnit<T>[]): [string, EventListUnit<T>[]][] {
+  const days = new Map<string, EventListUnit<T>[]>();
+  for (const unit of units) days.set(unit.date, [...(days.get(unit.date) ?? []), unit]);
+  return [...days.entries()];
+}
 export function suggestionKeysOf(txs: readonly TransactionRow[] | undefined): string[] {
   return (txs ?? []).flatMap((tx) => {
     const entries = partEntries(tx);
@@ -99,6 +134,39 @@ export function EventDetailScreen() {
   });
 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmtDay = (iso: string) => new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
+  const days = unitsByDay(eventListUnits(filteredList));
+  const canFindMore = canEdit && view.suggestions.length > 0 && view.list.length > 0;
+  // a row in a linked unit names its own day when that is not the day it stands under
+  const renderTx = (tx: (typeof filteredList)[number], showDate: boolean) => {
+    const entries = partEntries(tx);
+    if (entries.length > 1) {
+      const sign = tx.amountCents < 0 ? -1 : 1;
+      return entries
+        .map((e, ordinal) => ({ ...e, ordinal }))
+        .filter((e) => (e.part.eventId ?? tx.eventId) === event.id)
+        .map((e) => (
+          <TxPartRow
+            key={partPickKey(tx.id, e.idx)}
+            tx={tx}
+            part={e.part}
+            index={e.ordinal}
+            amountText={money(sign * partNetCents(e.part))}
+            onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })}
+            showDate={showDate}
+          />
+        ));
+    }
+    return (
+      <TxRow
+        key={tx.id}
+        tx={tx}
+        showDate={showDate}
+        givenCents={givenByCredit.get(tx.id) ?? 0}
+        onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+      />
+    );
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-event-detail">
@@ -232,28 +300,6 @@ export function EventDetailScreen() {
           <span>
             {t('overview.payments')} · {filteredList.length}
           </span>
-          {canEdit && view.suggestions.length > 0 && view.list.length > 0 && (
-            <button
-              data-testid="eventdetail-find-more"
-              onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
-              className="m-tap ml-auto flex items-center gap-1 border-none bg-transparent p-0 text-[11px] font-semibold text-accent-deep normal-case"
-            >
-              <Icon name="magnify" size={13} />
-              {t('events.findMore', { n: view.suggestions.length })}
-            </button>
-          )}
-          {canEdit && (
-            <button
-              data-testid="eventdetail-add"
-              onClick={() => void navigate({ to: '/events/$eventId/add', params: { eventId: event.id } })}
-              className={`m-tap flex items-center gap-1 border-none bg-transparent p-0 text-[11px] font-semibold text-accent-deep normal-case ${
-                view.suggestions.length > 0 && view.list.length > 0 ? '' : 'ml-auto'
-              }`}
-            >
-              <Icon name="plus" size={13} />
-              {t('events.addTxs')}
-            </button>
-          )}
           {drillMain && (
             <button
               data-testid="eventdetail-filter-clear"
@@ -267,40 +313,53 @@ export function EventDetailScreen() {
               <Icon name="close" size={11} />
             </button>
           )}
+          {canEdit && (
+            <button
+              data-testid="eventdetail-add"
+              onClick={() => void navigate({ to: '/events/$eventId/add', params: { eventId: event.id } })}
+              className="m-tap ml-auto flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-semibold text-accent-deep normal-case"
+            >
+              <Icon name="plus" size={13} />
+              {t('events.addTxs')}
+            </button>
+          )}
         </div>
+        {/* #493: an offer, not a second action beside Add: payments of these days that are not on the event yet */}
+        {canFindMore && (
+          <button
+            data-testid="eventdetail-find-more"
+            onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
+            className="m-tap mb-1 flex w-full items-center gap-2.5 rounded-card border border-dashed border-line bg-surface px-3 py-2.5 text-left"
+          >
+            <Icon name="magnify" size={16} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1 text-[12px] text-ink-2">
+              {view.suggestions.length === 1 ? t('events.findMoreOne') : t('events.findMoreMany', { n: view.suggestions.length })}
+            </span>
+            <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
+          </button>
+        )}
         {filteredList.length > 0 ? (
-          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
-            {filteredList.map((tx) => {
-              const entries = partEntries(tx);
-              if (entries.length > 1) {
-                const sign = tx.amountCents < 0 ? -1 : 1;
-                return entries
-                  .map((e, ordinal) => ({ ...e, ordinal }))
-                  .filter((e) => (e.part.eventId ?? tx.eventId) === event.id)
-                  .map((e) => (
-                    <TxPartRow
-                      key={partPickKey(tx.id, e.idx)}
-                      tx={tx}
-                      part={e.part}
-                      index={e.ordinal}
-                      amountText={money(sign * partNetCents(e.part))}
-                      onClick={() =>
-                        void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })
-                      }
-                      showDate
-                    />
-                  ));
-              }
-              return (
-                <TxRow
-                  key={tx.id}
-                  tx={tx}
-                  showDate
-                  givenCents={givenByCredit.get(tx.id) ?? 0}
-                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
-                />
-              );
-            })}
+          <div data-testid="eventdetail-txs">
+            {days.map(([date, units]) => (
+              <div key={date} data-testid={`eventdetail-day-${date}`}>
+                <div className="m-cap sticky top-0 z-10 -mx-1 mt-3 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
+                <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1">
+                  {units.map((unit) =>
+                    unit.rows.length > 1 ? (
+                      <div key={unit.key} className="py-1.5" data-testid={`eventdetail-linked-${unit.key}`}>
+                        <div className="mb-0.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+                          <Icon name="cash-refund" size={12} color="var(--m-accent-deep)" />
+                          {t('tx.linkedReimbursement')}
+                        </div>
+                        <div className="rounded-card bg-bg px-2">{unit.rows.map((tx) => renderTx(tx, tx.date !== date))}</div>
+                      </div>
+                    ) : (
+                      renderTx(unit.rows[0], false)
+                    ),
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <p className="px-1 text-[12px] text-ink-4" data-testid="eventdetail-empty">
