@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { Sheet as ModalSheet, type SheetRef } from 'react-modal-sheet';
@@ -219,18 +219,64 @@ function popSheetSoon(id: number) {
   );
 }
 
-// the dialog grows out of where the user clicked and shrinks back; the last pointerdown is the best proxy for the source
-let lastPointer = { x: 0, y: 0 };
+// the dialog grows out of where the user pressed and shrinks back into it; the last pointerdown is the best proxy for the source
+interface Point {
+  x: number;
+  y: number;
+}
+let lastPress: (Point & { at: number }) | null = null;
 if (typeof document !== 'undefined') {
   document.addEventListener(
     'pointerdown',
     (e) => {
-      lastPointer = { x: e.clientX, y: e.clientY };
+      lastPress = { x: e.clientX, y: e.clientY, at: performance.now() };
     },
     { capture: true, passive: true },
   );
 }
-const PANEL_MS = 220;
+export const PANEL_MS = 220;
+/** how long a press still names the control that opened a dialog; after it the keyboard or the app itself opened it */
+export const PRESS_FRESH_MS = 1500;
+const PANEL_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const PANEL_FROM_SCALE = 0.1;
+
+/** where an opening dialog comes from: the press that opened it, else the focused control, else nowhere (it grows in place) */
+export function openingPoint(now: number = performance.now()): Point | null {
+  if (lastPress && now - lastPress.at < PRESS_FRESH_MS) return { x: lastPress.x, y: lastPress.y };
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && focused !== document.body) {
+    const box = focused.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  }
+  return null;
+}
+
+/** the panel's transform while it is away: shrunk onto the point it came from */
+export function panelAwayTransform(origin: Point | null, viewport: { width: number; height: number }): string {
+  const dx = origin ? origin.x - viewport.width / 2 : 0;
+  const dy = origin ? origin.y - viewport.height / 2 : 0;
+  return `translate(${Math.round(dx)}px, ${Math.round(dy)}px) scale(${PANEL_FROM_SCALE})`;
+}
+
+// a sheet its screen removes while it is open (a create form that unmounts on save) has no exit of its own:
+// a lifeless copy of the dialog shrinks back in its place. Content that restarts when copied is left alone
+export function leaveGhost(layer: HTMLElement, away: string): void {
+  if (layer.querySelector('iframe, video, canvas, object, embed')) return;
+  const ghost = layer.cloneNode(true) as HTMLElement;
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.inert = true;
+  ghost.style.pointerEvents = 'none';
+  for (const el of [ghost, ...ghost.querySelectorAll<HTMLElement>('[id], [data-testid], [data-sheet-body]')]) {
+    el.removeAttribute('id');
+    el.removeAttribute('data-testid');
+    el.removeAttribute('data-sheet-body');
+  }
+  document.body.appendChild(ghost);
+  const timing: KeyframeAnimationOptions = { duration: PANEL_MS, easing: PANEL_EASING, fill: 'forwards' };
+  ghost.querySelector<HTMLElement>('[data-sheet-panel]')?.animate?.([{ transform: 'none', opacity: 1 }, { transform: away, opacity: 0 }], timing);
+  ghost.querySelector<HTMLElement>('[data-sheet-backdrop]')?.animate?.([{ opacity: 1 }, { opacity: 0 }], { ...timing, easing: 'ease-out' });
+  setTimeout(() => ghost.remove(), PANEL_MS);
+}
 
 interface SheetProps {
   open: boolean;
@@ -295,11 +341,19 @@ interface DesktopDialogProps {
 
 function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, steady, full, onDismiss }: Readonly<DesktopDialogProps>) {
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
-  const originRef = useRef({ x: 0, y: 0 });
+  const [origin, setOrigin] = useState<Point | null>(null);
+  // the origin is taken in the render that opens the dialog: taken an effect later, the first frame stood on the
+  // previous origin (the screen's corner the first time) and the dialog flew in from there
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setOrigin(openingPoint());
+      setPhase('hidden');
+    }
+  }
   useEffect(() => {
     if (open) {
-      originRef.current = { ...lastPointer };
-      setPhase('hidden');
       const raf = requestAnimationFrame(() => requestAnimationFrame(() => setPhase('open')));
       return () => cancelAnimationFrame(raf);
     }
@@ -307,6 +361,17 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
     const timer = setTimeout(() => setPhase('closed'), PANEL_MS);
     return () => clearTimeout(timer);
   }, [open]);
+
+  const layerRef = useRef<HTMLDivElement | null>(null);
+  const away = typeof window === 'undefined' ? 'none' : panelAwayTransform(origin, { width: window.innerWidth, height: window.innerHeight });
+  const leaving = useRef({ shown: false, away });
+  leaving.current = { shown: phase === 'open', away };
+  useLayoutEffect(
+    () => () => {
+      if (layerRef.current && leaving.current.shown && !IS_TEST) leaveGhost(layerRef.current, leaving.current.away);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open || isLocked) return;
@@ -319,51 +384,54 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
 
   if (!open && phase === 'closed') return null;
   const hidden = phase !== 'open';
-  const from = originRef.current;
-  const dx = from.x - window.innerWidth / 2;
-  const dy = from.y - window.innerHeight / 2;
   // portaled to body: inside the master-detail pane its slide transform made `fixed` pane-relative
   // (half-grayed app, wrong grow origin)
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+    <div ref={layerRef} className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <button
         aria-label="close"
         tabIndex={-1}
+        data-sheet-backdrop=""
         onClick={() => !isLocked && onDismiss()}
         className="absolute inset-0 cursor-default border-none bg-black/40"
         style={{ opacity: hidden ? 0 : 1, transition: `opacity ${PANEL_MS}ms ease-out` }}
       />
-      {/* #290: wears the sheet container class so AppLayout's keyboard reveal (a pure yank without a keyboard) stands down */}
-      <dialog
-        open
-        aria-modal="true"
-        data-sheet-body=""
-        data-full={full ? '' : undefined}
-        ref={(el) => registerCoveredEl(id, el)}
-        // #389/#390: overflow-hidden, or the pinned footer's rectangular background squares off the bottom corners
-        className={`react-modal-sheet-container relative z-10 m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col overflow-hidden rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
+      {/* the coming and going live on this wrapper: the dialog's own transform and opacity belong to the covered-parent
+          recede, which writes them straight onto the element and wiped an enter or exit written on the same one */}
+      <div
+        data-sheet-panel=""
+        data-testid="sheet-panel"
+        className="relative z-10 flex max-w-full"
         style={{
-          // #276: grows with its content (the phone's fixed heights left half-empty dialogs); the size sets a floor,
-          // the ceiling is viewport-relative
-          // #344: `steady` opts out of the growth: per-keystroke content made the dialog pump between floor and ceiling
-          ...dialogHeights(full, steady, fixedHeight),
-          minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
-          // the covered-parent recede writes the same properties, so they are handed over only while entering/exiting
-          ...(hidden || !isCoveredNow(id)
-            ? {
-                transform: hidden ? `translate(${dx}px, ${dy}px) scale(0.2)` : undefined,
-                opacity: hidden ? 0 : undefined,
-                transition: `transform ${PANEL_MS}ms cubic-bezier(0.32, 0.72, 0, 1), opacity ${PANEL_MS}ms ease-out`,
-              }
-            : {}),
+          transform: hidden ? away : 'none',
+          opacity: hidden ? 0 : 1,
+          transition: `transform ${PANEL_MS}ms ${PANEL_EASING}, opacity ${PANEL_MS}ms ease-out`,
         }}
       >
-        {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
-        {/* flex-auto, not flex-1: basis 0% collapses an auto-height body in WebKit, as on the mobile sheet on iOS */}
-        {/* #290: the browser's native focus scroll reveals hidden fields here; scroll-padding gives them air */}
-        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5 [scroll-padding-block:16px]">{children}</div>
-        {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
-      </dialog>
+        {/* #290: wears the sheet container class so AppLayout's keyboard reveal (a pure yank without a keyboard) stands down */}
+        <dialog
+          open
+          aria-modal="true"
+          data-sheet-body=""
+          data-full={full ? '' : undefined}
+          ref={(el) => registerCoveredEl(id, el)}
+          // #389/#390: overflow-hidden, or the pinned footer's rectangular background squares off the bottom corners
+          className={`react-modal-sheet-container relative m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col overflow-hidden rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
+          style={{
+            // #276: grows with its content (the phone's fixed heights left half-empty dialogs); the size sets a floor,
+            // the ceiling is viewport-relative
+            // #344: `steady` opts out of the growth: per-keystroke content made the dialog pump between floor and ceiling
+            ...dialogHeights(full, steady, fixedHeight),
+            minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
+          }}
+        >
+          {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
+          {/* flex-auto, not flex-1: basis 0% collapses an auto-height body in WebKit, as on the mobile sheet on iOS */}
+          {/* #290: the browser's native focus scroll reveals hidden fields here; scroll-padding gives them air */}
+          <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5 [scroll-padding-block:16px]">{children}</div>
+          {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
+        </dialog>
+      </div>
     </div>,
     document.body,
   );
