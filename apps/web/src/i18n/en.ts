@@ -2438,6 +2438,7 @@ export const en = {
   'pf.total': 'total',
   'pf.concentrated': '{name} is over 40% of the portfolio.',
   'pf.unpriced': '{n} holdings have no usable price and are left out of the totals.',
+  'pf.soonBody': 'Portfolio is still being built. Your investments get their place here once it is ready.',
   'pf.emptyTitle': 'Nothing here yet',
   'pf.emptyBody': 'Add a holding by hand or import your broker’s CSV export below.',
   'pf.import': 'Import broker CSV',

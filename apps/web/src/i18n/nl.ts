@@ -2440,6 +2440,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'pf.total': 'totaal',
   'pf.concentrated': '{name} is meer dan 40% van de portefeuille.',
   'pf.unpriced': '{n} posities hebben geen bruikbare koers en tellen niet mee in de totalen.',
+  'pf.soonBody': 'Portefeuille wordt nog gebouwd. Je beleggingen krijgen hier hun plek zodra het klaar is.',
   'pf.emptyTitle': 'Nog niets hier',
   'pf.emptyBody': 'Voeg handmatig een positie toe of importeer hieronder de CSV-export van je broker.',
   'pf.import': 'Broker-CSV importeren',

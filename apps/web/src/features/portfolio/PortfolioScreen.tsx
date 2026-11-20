@@ -21,6 +21,7 @@ import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
 import { DecimalInput } from '@/ui/DecimalInput';
+import { usePortfolioOpen } from './portfolioGate';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
   { id: 'stock', labelKey: 'pf.classStock', icon: 'chart-line' },
@@ -232,6 +233,24 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
 }
 
 export function PortfolioScreen() {
+  return usePortfolioOpen() ? <PortfolioWorkspace /> : <PortfolioComingSoon />;
+}
+
+function PortfolioComingSoon() {
+  const { t } = useLang();
+  return (
+    <div className="m-fade flex h-full flex-col" data-testid="screen-portfolio">
+      <AppBar large title={t('pf.title')} />
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-8 pt-16 text-center" data-testid="pf-coming-soon">
+        <Icon name="chart-timeline-variant" size={34} color="var(--m-ink-4)" />
+        <p className="text-[15px] font-medium text-ink-2">{t('portfolio.comingSoon')}</p>
+        <p className="max-w-[340px] text-[13px] text-ink-4">{t('pf.soonBody')}</p>
+      </div>
+    </div>
+  );
+}
+
+function PortfolioWorkspace() {
   const { t } = useLang();
   const navigate = useNavigate();
   const model = usePortfolio();

@@ -2440,6 +2440,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'pf.total': 'toplam',
   'pf.concentrated': '{name} portföyün %40’ından fazlası.',
   'pf.unpriced': '{n} pozisyonun kullanılabilir fiyatı yok; toplamların dışında.',
+  'pf.soonBody': 'Portföy hâlâ yapım aşamasında. Hazır olduğunda yatırımların burada yer alacak.',
   'pf.emptyTitle': 'Henüz bir şey yok',
   'pf.emptyBody': 'Elle pozisyon ekle veya aşağıdan aracı kurumunun CSV dışa aktarımını içe aktar.',
   'pf.import': 'Aracı kurum CSV içe aktar',

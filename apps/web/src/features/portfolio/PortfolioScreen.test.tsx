@@ -1,8 +1,16 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+
+// #677: an account reads Coming soon; the workspace's own behaviour for an account (delayed quotes) is kept working
+// for the day it opens, so its test opens the gate itself
+const gate = vi.hoisted(() => ({ open: false }));
+vi.mock('./portfolioGate', async (original) => {
+  const real = await original<typeof import('./portfolioGate')>();
+  return { usePortfolioOpen: () => gate.open || real.usePortfolioOpen() };
+});
 
 const DEGIRO_TX = [
   'Datum,Tijd,Product,ISIN,Beurs,Uitvoeringsplaats,Aantal,Koers,,Lokale waarde,,Waarde,,Wisselkoers,Transactiekosten en/of,,Totaal,Order ID',
@@ -32,6 +40,7 @@ describe('Portfolio (demo identity)', () => {
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
     indexedDB.deleteDatabase(USER_TEST_DB);
+    gate.open = false;
   });
 
   it('a manual holding with lots values the position and totals', async () => {
@@ -88,7 +97,22 @@ describe('Portfolio (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('pf-import-result').textContent).toMatch(/0 .* 0|0 pos|0 holdings/i));
   }, 15_000);
 
+  it('an account reads Coming soon: no way to add or import, and a holding address leads back to it', async () => {
+    renderAppAsUser('/portfolio/h_any');
+    await screen.findByTestId('pf-coming-soon', {}, { timeout: 5000 });
+    expect(screen.getByTestId('screen-portfolio').textContent).toContain('Coming soon');
+    expect(screen.queryByTestId('pf-add')).toBeNull();
+    expect(screen.queryByTestId('pf-import')).toBeNull();
+    expect(screen.queryByTestId('pfdetail-hero')).toBeNull();
+
+    cleanup();
+    renderAppAsUser('/help');
+    await screen.findByTestId('help-tour-budgets', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('help-tour-portfolio')).toBeNull();
+  }, 15_000);
+
   it('a signed-in user searches a symbol and delayed quotes price the position', async () => {
+    gate.open = true;
     const api = {
       'GET /quotes/search': () => ({ stocks: [{ symbol: 'ASML.AS', name: 'ASML Holding', exchange: 'Amsterdam' }], coins: [] }),
       'GET /quotes': () => ({
