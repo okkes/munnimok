@@ -183,6 +183,9 @@ describe('#313: desktop columns follow what actually renders', () => {
     expect(overview.className).toContain('lg:border');
     expect(overview.querySelector('.m-cap')?.textContent).toContain('See all');
     expect(overview.contains(screen.getByTestId('home-overview-income'))).toBe(true);
+    // the block's own card stands inside the block card and gives up its frame there: one card, not a frame in a frame
+    expect(overview.querySelector('.rounded-card')).toBeTruthy();
+    expect(overview.className).toContain('lg:[&_.rounded-card]:border-0');
     expect((block('review').firstElementChild as HTMLElement).className).not.toContain('lg:border');
   }, 20_000);
 });
