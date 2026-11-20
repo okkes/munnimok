@@ -49,6 +49,23 @@ function SourceRow({
   );
 }
 
+/** the pool as a source: what it gives and where that leaves it, said as a warning when it goes below zero (#669) */
+function PoolRow({ give, after, overdraws, onPick }: Readonly<{ give: string; after: string; overdraws: boolean; onPick: () => void }>) {
+  const { t } = useLang();
+  return (
+    <Row
+      kind="data"
+      testId="plan-review-from-pool"
+      icon="bank-outline"
+      title={t('plan.review.fromPool')}
+      sub={<span className={overdraws ? 'text-warning' : undefined}>{t(overdraws ? 'plan.review.poolOver' : 'plan.review.poolLeaves', { left: after })}</span>}
+      trailing={<span className="m-num text-[13px] font-semibold text-ink">{give}</span>}
+      chevron={false}
+      onClick={onPick}
+    />
+  );
+}
+
 // no auto-fix button, on purpose: every euro moved is a conscious choice; nothing moves by itself (#557)
 export function OverspentReview({
   onClose,
@@ -139,19 +156,11 @@ export function OverspentReview({
             <div className="m-cap px-1">{t('plan.review.from')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {fromPool > 0 && (
-                <Row
-                  kind="data"
-                  testId="plan-review-from-pool"
-                  icon="bank-outline"
-                  title={t('plan.review.fromPool')}
-                  sub={
-                    <span className={overdraws ? 'text-warning' : undefined}>
-                      {t(overdraws ? 'plan.review.poolOver' : 'plan.review.poolLeaves', { left: balance(left - fromPool, currency) })}
-                    </span>
-                  }
-                  trailing={<span className="m-num text-[13px] font-semibold text-ink">{balance(fromPool, currency)}</span>}
-                  chevron={false}
-                  onClick={() => overBudget.guard(left, fromPool, () => void ops.fund(current.subject.id, current.fundedCents + fromPool))}
+                <PoolRow
+                  give={balance(fromPool, currency)}
+                  after={balance(left - fromPool, currency)}
+                  overdraws={overdraws}
+                  onPick={() => overBudget.guard(left, fromPool, () => void ops.fund(current.subject.id, current.fundedCents + fromPool))}
                 />
               )}
               {candidates.map((view) => (
