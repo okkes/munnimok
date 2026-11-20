@@ -215,6 +215,43 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
   }, 25_000);
 
+  it('#670: a subject that holds more than it spent offers Spent, and one tap sets it back to what it used', async () => {
+    await startEmptyPlan();
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/€[1-9]/));
+    fireEvent.click((await screen.findAllByTestId(/^plan-unplanned-(?!sheet|plan)/))[0]);
+    await screen.findByTestId('plan-unplanned-sheet');
+    fireEvent.click(screen.getByTestId('plan-unplanned-plan'));
+    await screen.findByTestId('plan-editor');
+    const spent = (screen.getByTestId('plan-editor-target') as HTMLInputElement).value;
+    // a target above the spending, and well inside what the pool can give
+    const target = (Number(spent) + 50).toFixed(2);
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: target } });
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+
+    const openSubject = async () => {
+      fireEvent.click((await screen.findAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/))[0]);
+      await screen.findByTestId('plan-sheet');
+    };
+    await openSubject();
+    fireEvent.click(screen.getByTestId('plan-fund-chip-target'));
+    fireEvent.click(screen.getByTestId('plan-fund-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-sheet')).toBeNull());
+
+    // funded to its target, above what it spent: the way back is one chip
+    await openSubject();
+    await waitFor(() => expect((screen.getByTestId('plan-fund-input') as HTMLInputElement).value).toBe(target));
+    fireEvent.click(screen.getByTestId('plan-fund-chip-spent'));
+    expect((screen.getByTestId('plan-fund-input') as HTMLInputElement).value).toBe(spent);
+    fireEvent.click(screen.getByTestId('plan-fund-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-sheet')).toBeNull());
+
+    // it now holds exactly what it spent, so the chip has nothing left to offer
+    await openSubject();
+    await waitFor(() => expect((screen.getByTestId('plan-fund-input') as HTMLInputElement).value).toBe(spent));
+    expect(screen.queryByTestId('plan-fund-chip-spent')).toBeNull();
+  }, 25_000);
+
   it('#613 #618: Back to the pool empties a subject in one tap, and the history names the subject and the amounts', async () => {
     await startEmptyPlan();
     const before = screen.getByTestId('plan-toallocate').textContent;
