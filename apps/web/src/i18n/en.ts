@@ -3249,6 +3249,7 @@ export const en = {
   'plan.review.from': 'Cover it from',
   'plan.review.fromPool': 'Money left to give a job',
   'plan.review.poolLeaves': 'leaves {left} to give a job',
+  'plan.review.poolOver': 'nothing is left to give — this takes it to {left}',
   'plan.review.leaves': 'leaves it {left}',
   'plan.review.leavesShort': 'leaves it {left} of its {target} target — it will need money again',
   'plan.review.nowhere': 'No subject has money to spare. Leave it in the red for now, or move money into your accounts.',

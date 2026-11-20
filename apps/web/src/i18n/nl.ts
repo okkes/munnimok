@@ -3251,6 +3251,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'plan.review.from': 'Dekken uit',
   'plan.review.fromPool': 'Geld dat nog een taak moet krijgen',
   'plan.review.poolLeaves': 'laat {left} over om een taak te geven',
+  'plan.review.poolOver': 'er is niets meer te verdelen — hiermee komt het op {left}',
   'plan.review.leaves': 'laat er {left} over',
   'plan.review.leavesShort': 'laat er {left} van het doel {target} over — het heeft later weer geld nodig',
   'plan.review.nowhere': 'Geen onderwerp heeft geld over. Laat het voorlopig in het rood, of zet geld op je rekeningen.',

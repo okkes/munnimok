@@ -471,6 +471,31 @@ describe('Planning (demo identity)', () => {
     expect(screen.getAllByTestId(/^plan-subject-bar-.*-stripes$/)).toHaveLength(1);
   }, 30_000);
 
+  it('#669: with nothing left to give, the review still offers the pool — it goes below zero and says so', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('9999999');
+    fireEvent.click((await screen.findAllByTestId(/^plan-subject-need-/))[0]);
+    fireEvent.click(await screen.findByTestId('plan-overbudget-confirm'));
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/-/));
+
+    fireEvent.click(screen.getByTestId('plan-segment-add-expenses'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.change(screen.getByTestId('plan-editor-name'), { target: { value: 'Food' } });
+    fireEvent.click(screen.getByTestId('plan-editor-cat-consumption'));
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Over by/));
+
+    fireEvent.click(await screen.findByTestId('plan-attention-review'));
+    await screen.findByTestId('plan-review');
+    const pool = screen.getByTestId('plan-review-from-pool');
+    expect(pool.textContent).toMatch(/nothing is left to give/);
+    expect(pool.textContent).toMatch(/-€[1-9]/);
+    fireEvent.click(pool);
+    await screen.findByTestId('plan-review-done');
+    expect(screen.getByTestId('plan-review-done').textContent).toMatch(/out of the red/);
+  }, 30_000);
+
   it('an unplanned main is funded for this period only: the row reads funded, the head comes down, and nothing joins the plan (#494)', async () => {
     await startEmptyPlan();
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/€[1-9]/));

@@ -3251,6 +3251,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'plan.review.from': 'Şuradan karşıla',
   'plan.review.fromPool': 'Görev verilecek kalan para',
   'plan.review.poolLeaves': 'görev verilecek {left} kalır',
+  'plan.review.poolOver': 'verilecek para kalmadı — bu onu {left} seviyesine indirir',
   'plan.review.leaves': 'ona {left} kalır',
   'plan.review.leavesShort': 'ona {target} hedefinden {left} kalır — yeniden paraya ihtiyacı olacak',
   'plan.review.nowhere': 'Hiçbir konunun ayıracak parası yok. Şimdilik eksiye bırak ya da hesaplarına para aktar.',
