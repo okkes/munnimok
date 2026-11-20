@@ -1861,6 +1861,8 @@ describe('title rename (user request)', () => {
     await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-b', { ...row, merchant: 'WWW.AMAZON.* H40FC73G5', importRef: 'bank-amz-b' });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-c', { ...row, merchant: 'WWW.AMAZON.* 5O5AC6Y85', importRef: 'bank-amz-c', titleOverride: 'Amazon' });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-d', { ...row, merchant: 'Amazon', importRef: 'bank-amz-d' });
+    // the card statement's other spelling of the same shop
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-e', { ...row, merchant: 'Amzn Mktp NL*AB1CD2EF3 LUXEMBOURG LUX', importRef: 'bank-amz-e' });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'other', { ...row, merchant: 'Hema', importRef: 'bank-other' });
     cleanup();
 
@@ -1868,11 +1870,12 @@ describe('title rename (user request)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-rename'));
     fireEvent.change(await screen.findByTestId('tx-rename-input'), { target: { value: 'Amazon' } });
     fireEvent.click(screen.getByTestId('tx-rename-save'));
-    // amz-b is the one row left to rename: amz-c and amz-d read "Amazon" already
+    // three rows are left to rename: amz-b, the other spelling and the demo's own "Amazon.nl"; amz-c and amz-d read "Amazon" already
     const offer = await screen.findByTestId('tx-detail-title-bulk');
-    expect(offer.textContent).toMatch(/\b1\b/);
+    expect(offer.textContent).toMatch(/\b3\b/);
     fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
     await waitFor(async () => expect((await db.transactions.get('amz-b'))?.titleOverride).toBe('Amazon'));
+    await waitFor(async () => expect((await db.transactions.get('amz-e'))?.titleOverride).toBe('Amazon'));
     expect((await db.transactions.get('amz-d'))?.titleOverride).toBeUndefined();
     db.close();
   }, 20_000);

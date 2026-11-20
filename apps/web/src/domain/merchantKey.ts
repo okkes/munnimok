@@ -1,3 +1,5 @@
+import { brandKey } from './merchantBrands';
+
 /** same merchant, same key across statements and devices: processor prefixes, store/terminal numbers and dates go */
 const PROCESSOR_PREFIXES = ['ccv', 'zettle', 'sumup', 'payl.', 'ideal', 'paypal', 'bck', 'sepa'];
 
@@ -42,6 +44,15 @@ function stripTrailingCity(value: string): string {
     break;
   }
   return tokens.join(' ');
+}
+
+// a card line closes with the country it was paid in ("DELFT NLD"); the shops with a bare spelling trade in these two
+const CARD_COUNTRIES = new Set(['nld', 'bel']);
+
+/** nothing but a place: a city this list knows, a country code behind it, or both */
+function isPlace(rest: readonly string[]): boolean {
+  const city = CARD_COUNTRIES.has(rest.at(-1) ?? '') ? rest.slice(0, -1) : rest;
+  return city.length === 0 || SQUASHED_CITIES.has(squashCity(city.join(' ')));
 }
 
 // #346: legal forms are spelled differently per bank line ("B.V." vs "BV"): trailing tokens only, one or two words ("b v")
@@ -108,10 +119,15 @@ function normalize(merchant: string, spelling: Spelling): string {
 }
 
 export function merchantKey(merchant: string): string {
+  const spelled = normalize(merchant, 674);
+  return brandKey(spelled, isPlace) ?? spelled;
+}
+
+/** the key as spelled before the brand list, before #674 and before #578; read only by the stored-key migration (application/merchantKeyRekey.ts) */
+export function merchantKeyBeforeBrands(merchant: string): string {
   return normalize(merchant, 674);
 }
 
-/** the key as spelled before #674 and before #578; read only by the stored-key migration (application/merchantKeyRekey.ts) */
 export function merchantKeyBefore674(merchant: string): string {
   return normalize(merchant, 673);
 }

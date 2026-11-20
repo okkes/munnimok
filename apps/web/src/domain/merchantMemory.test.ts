@@ -15,7 +15,7 @@ const confirmed = (over: Partial<MemoryInput>): MemoryInput => ({
 
 describe('merchantKey', () => {
   it('strips processor prefixes, store numbers and punctuation', () => {
-    expect(merchantKey('CCV*ALBERT HEIJN 1470 AMS')).toBe('albert heijn ams');
+    expect(merchantKey('CCV*ALBERT HEIJN 1470 AMS')).toBe('albert heijn');
     expect(merchantKey('Albert Heijn 1470')).toBe('albert heijn');
     expect(merchantKey('Zettle_*Bakkerij Jansen')).toBe('bakkerij jansen');
     expect(merchantKey('PayPal *NETFLIX.COM')).toBe('netflix com');
@@ -28,7 +28,7 @@ describe('merchantKey', () => {
   it('drops trailing branch cities and dates so branches group (user request)', () => {
     expect(merchantKey('Albert Heijn 10-04-2026')).toBe('albert heijn');
     expect(merchantKey('Albert Heijn 12-04-2026')).toBe('albert heijn');
-    expect(merchantKey('AH DELFT')).toBe('ah');
+    expect(merchantKey('AH DELFT')).toBe('albert heijn');
     expect(merchantKey("JUMBO 'S-GRAVENHAGE")).toBe('jumbo');
     expect(merchantKey('Restaurant Den Haag')).toBe('restaurant');
     expect(merchantKey('Albert Heijn 1473 SGRAVENHAGE')).toBe('albert heijn');

@@ -9,7 +9,7 @@ import { recurringDismissId } from '@/domain/feedIds';
 import { merchantKeyBefore578, merchantKeyBefore674 } from '@/domain/merchantKey';
 import { useSession } from '@/app/session';
 import { LAST_SYNC_KEY } from '@/sync/engine';
-import { MERCHANT_KEY_REKEY_674_MARKER, MERCHANT_KEY_REKEY_MARKER, rekeyMerchantKeys } from './merchantKeyRekey';
+import { MERCHANT_KEY_REKEY_674_MARKER, MERCHANT_KEY_REKEY_BRANDS_MARKER, MERCHANT_KEY_REKEY_MARKER, rekeyMerchantKeys } from './merchantKeyRekey';
 
 const SPACE = 'sp1';
 const AH = 'Albert Heijn 1842 >S-GRAVENH30.10.2026 1';
@@ -93,9 +93,29 @@ describe('#578: stored merchant keys follow the new spelling once', () => {
     await repo.upsert('recurring', SPACE, 'ah', { name: 'Groceries', amountCents: 1309, every: 'month', active: 1, merchantKey: 'albert heijn' });
 
     expect(await rekeyMerchantKeys(store, repo)).toBe(1);
-    expect((await store.get('recurring', 'amz'))?.merchantKey).toBe('www amazon');
+    expect((await store.get('recurring', 'amz'))?.merchantKey).toBe('amazon');
     expect((await store.get('recurring', 'ah'))?.merchantKey).toBe('albert heijn');
     expect((await store.metaGet(MERCHANT_KEY_REKEY_674_MARKER))?.value).toBe(true);
+    expect(await rekeyMerchantKeys(store, repo)).toBe(0);
+  });
+
+  it('#674: a device that dropped the order codes moves its keys once more onto the shop each spelling belongs to', async () => {
+    const { store, repo } = await seed();
+    await store.metaPut(MERCHANT_KEY_REKEY_MARKER, true);
+    await store.metaPut(MERCHANT_KEY_REKEY_674_MARKER, true);
+    await repo.upsert('transaction', SPACE, 't10', { accountId: 'a', currency: 'EUR', needsReview: 0, catId: 'shopping', date: '2026-11-15', amountCents: -4998, merchant: 'Amzn Mktp NL*AB1CD2EF3 LUXEMBOURG LUX' });
+    await repo.upsert('recurring', SPACE, 'mktp', { name: 'Amazon', amountCents: 4998, every: 'month', active: 1, merchantKey: 'amzn mktp nl luxembourg lux' });
+    // no transaction carries this one any more: the key is read on its own
+    await repo.upsert('recurring', SPACE, 'prime', { name: 'Prime', amountCents: 499, every: 'month', active: 1, merchantKey: 'amznprimenl luxembourg lux' });
+    await repo.upsert('recurring', SPACE, 'aws', { name: 'Cloud', amountCents: 1200, every: 'month', active: 1, merchantKey: 'amazon web services emea' });
+    await repo.upsert('recurringDismiss', SPACE, recurringDismissId(SPACE, 'jumbo stationsstraat utrecht nld@1309'), { merchantKey: 'jumbo stationsstraat utrecht nld@1309' });
+
+    expect(await rekeyMerchantKeys(store, repo)).toBe(3);
+    expect((await store.get('recurring', 'mktp'))?.merchantKey).toBe('amazon');
+    expect((await store.get('recurring', 'prime'))?.merchantKey).toBe('amazon prime');
+    expect((await store.get('recurring', 'aws'))?.merchantKey).toBe('amazon web services emea');
+    expect((await store.get('recurringDismiss', recurringDismissId(SPACE, 'jumbo@1309')))?.merchantKey).toBe('jumbo@1309');
+    expect((await store.metaGet(MERCHANT_KEY_REKEY_BRANDS_MARKER))?.value).toBe(true);
     expect(await rekeyMerchantKeys(store, repo)).toBe(0);
   });
 });
