@@ -268,8 +268,8 @@ export function leaveGhost(layer: HTMLElement, away: string): void {
   ghost.style.pointerEvents = 'none';
   for (const el of [ghost, ...ghost.querySelectorAll<HTMLElement>('[id], [data-testid], [data-sheet-body]')]) {
     el.removeAttribute('id');
-    el.removeAttribute('data-testid');
-    el.removeAttribute('data-sheet-body');
+    delete el.dataset.testid;
+    delete el.dataset.sheetBody;
   }
   document.body.appendChild(ghost);
   const timing: KeyframeAnimationOptions = { duration: PANEL_MS, easing: PANEL_EASING, fill: 'forwards' };
