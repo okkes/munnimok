@@ -131,7 +131,7 @@ export function fmtDisplay(
   opts?: { sign?: boolean; date?: string },
 ): string {
   const target = display?.currency;
-  if (!display || !target || target === currency) return fmtCents(cents, currency, lang, opts);
+  if (!display || !target || target === currency || !Number.isFinite(cents)) return fmtCents(cents, currency, lang, opts);
   const day = (opts?.date ? display.cache.days[opts.date] : undefined) ?? display.cache.days.latest;
   const converted = convertCents(cents, currency, target, day, display.manual);
   if (converted === null) return fmtCents(cents, currency, lang, opts);

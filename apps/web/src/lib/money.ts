@@ -78,7 +78,15 @@ export function evalAmountCents(input: string): number | null {
 }
 
 /** #254: 'XXX' is ISO-4217's "no currency": wallets (PayPal) without one render the bare amount, not "XXX 12.34" */
+/** what stands where an amount is not known */
+export const NO_AMOUNT = '—';
+
+// a bank that states no balance for an account leaves the field out: its sums read it as nothing
+export const knownCents = (cents: number | undefined): number => (typeof cents === 'number' && Number.isFinite(cents) ? cents : 0);
+
 export function fmtCents(cents: number, currency: string, lang: Lang, opts?: { sign?: boolean }): string {
+  // an account whose bank states no balance carries none: a dash, never "NaN"
+  if (!Number.isFinite(cents)) return NO_AMOUNT;
   const noCurrency = !currency || currency === 'XXX';
   const formatted = new Intl.NumberFormat(
     LOCALE[lang],

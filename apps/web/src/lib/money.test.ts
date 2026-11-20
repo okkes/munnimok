@@ -22,7 +22,8 @@ describe('evalAmountCents (little arithmetic in amount fields)', () => {
     expect(evalAmountCents('1+2)')).toBeNull();
   });
 });
-import { fmtCents, parseCents } from './money';
+import { fmtCents, knownCents, parseCents } from './money';
+import { fmtDisplay } from './rates';
 
 describe('parseCents (user input -> integer cents)', () => {
   it('parses EU format (comma decimal, dot thousands)', () => {
@@ -57,6 +58,15 @@ describe('fmtCents (integer cents -> localized string)', () => {
     expect(fmtCents(123456, 'EUR', 'en')).toBe('€1,234.56');
     expect(fmtCents(123456, 'EUR', 'nl')).toBe('€\u00A01.234,56');
     expect(fmtCents(-2899, 'EUR', 'en')).toBe('-€28.99');
+  });
+
+  it('#656: an amount that is not known prints a dash, never "NaN"; a sum reads it as nothing', () => {
+    expect(fmtCents(undefined as unknown as number, 'EUR', 'en')).toBe('—');
+    expect(fmtCents(Number.NaN, 'EUR', 'nl', { sign: true })).toBe('—');
+    expect(fmtDisplay(undefined as unknown as number, 'EUR', 'en', { currency: 'USD', cache: { days: {} }, manual: {} } as never)).toBe('—');
+    expect(knownCents(undefined)).toBe(0);
+    expect(knownCents(Number.NaN)).toBe(0);
+    expect(knownCents(-1250)).toBe(-1250);
   });
 
   it('adds an explicit plus sign only when asked and positive', () => {

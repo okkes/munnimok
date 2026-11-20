@@ -3,6 +3,7 @@ import { useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { POOL_TYPES } from '@/domain/planning';
+import { knownCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -40,7 +41,7 @@ export function PoolSheet({
       return next;
     });
   const sameAsDefault = ticks.size === defaults.size && [...ticks].every((id) => defaults.has(id));
-  const total = candidates.filter((a) => ticks.has(a.id)).reduce((sum, a) => sum + a.balanceCents, 0);
+  const total = candidates.filter((a) => ticks.has(a.id)).reduce((sum, a) => sum + knownCents(a.balanceCents), 0);
   const save = async () => {
     await ops.setPoolAccounts(sameAsDefault ? null : [...ticks]);
     onOpenChange(false);

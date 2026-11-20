@@ -1,4 +1,5 @@
 import type { AccountRow, AccountType, RecurringRow, SpaceRow, SpendSetAside, TxView } from '@/db/types';
+import { knownCents } from '@/lib/money';
 import { debtPaymentCadence, isDebtTracked } from './debts';
 import { periodAt, periodLengthDays } from './planning';
 import type { Period } from './periods';
@@ -192,7 +193,7 @@ export function safeToSpend(input: {
   if (!input.accounts.some(isSpendCandidate)) return null;
   const period = periodAt(input.space, input.today);
   const accounts = input.accounts.filter((a) => isSpendAccount(a, input.space));
-  const balanceCents = accounts.reduce((sum, a) => sum + a.balanceCents, 0);
+  const balanceCents = accounts.reduce((sum, a) => sum + knownCents(a.balanceCents), 0);
   const dues = spendDues({ ...input, spendIds: new Set(accounts.map((a) => a.id)), period });
   const dueCents = dues.reduce((sum, due) => sum + due.cents, 0);
   const chosen = new Set(input.space.spendSetAsides ?? []);

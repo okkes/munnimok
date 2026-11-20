@@ -1,4 +1,5 @@
 import type { AccountRow, RecurringRow, SpacePeriodType, TxView } from '@/db/types';
+import { knownCents } from '@/lib/money';
 import { LIQUID_TYPES } from './balanceBand';
 import type { PaydayInfo } from './cashflow';
 import { REIMBURSED_ID, mainCatOf } from './categories';
@@ -187,7 +188,7 @@ export function netWorthSeries(
   inSpace: InSpaceCurrency = AS_RECORDED,
 ): NetWorthPoint[] {
   const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1);
-  const nowCents = live.reduce((sum, account) => sum + inSpace(account.balanceCents, account.currency), 0);
+  const nowCents = live.reduce((sum, account) => sum + inSpace(knownCents(account.balanceCents), account.currency), 0);
   const accountIds = new Set(live.map((account) => account.id));
   const movements = txs
     .filter((tx) => tx.deleted === 0 && tx.pending !== 1 && accountIds.has(tx.accountId))
@@ -217,7 +218,7 @@ export function dailyBalanceSeries(
 ): DailyPoint[] {
   const counts = (account: LiquidAccount) => (picked ? picked.includes(account.id) : LIQUID_TYPES.has(account.type));
   const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1 && counts(account));
-  const nowCents = live.reduce((sum, account) => sum + inSpace(account.balanceCents, account.currency), 0);
+  const nowCents = live.reduce((sum, account) => sum + inSpace(knownCents(account.balanceCents), account.currency), 0);
   const accountIds = new Set(live.map((account) => account.id));
   const perDay = new Map<string, number>();
   let beyond = 0; // movements after the window — already "after" every day in it
