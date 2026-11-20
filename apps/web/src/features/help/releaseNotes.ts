@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.28.0',
+    date: '2026-11-20',
+    items: [
+      {
+        en: 'An event’s payments are grouped by day, and an expense stands together with the payment that paid it back. “Find more” is now an offer above the list, apart from “Add”.',
+        nl: 'De betalingen van een gebeurtenis staan per dag, en een uitgave staat samen met de betaling waarmee ze is terugbetaald. “Meer zoeken” is nu een aanbod boven de lijst, los van “Toevoegen”.',
+        tr: 'Bir etkinliğin ödemeleri güne göre gruplanıyor ve bir harcama, onu geri ödeyen ödemeyle birlikte duruyor. “Daha fazla bul” artık listenin üstünde, “Ekle”den ayrı bir öneri.',
+      },
+      {
+        en: 'Renaming a transaction offers the new name only to transactions that do not carry it yet, and the offer no longer follows you to another transaction. Every Amazon and bol.com payment now counts as the same shop, whatever its order code.',
+        nl: 'Een transactie hernoemen biedt de nieuwe naam alleen aan voor transacties die hem nog niet hebben, en het aanbod gaat niet meer mee naar een andere transactie. Elke betaling aan Amazon en bol.com telt nu als dezelfde winkel, wat de bestelcode ook is.',
+        tr: 'Bir işlemi yeniden adlandırmak, yeni adı yalnızca henüz o adı taşımayan işlemlere önerir ve öneri artık başka bir işleme geçince peşinden gelmez. Her Amazon ve bol.com ödemesi, sipariş kodu ne olursa olsun artık aynı mağaza sayılır.',
+      },
+      {
+        en: 'Planning: a subject in the red can be covered from the pool even when nothing is left to give, a funded subject offers “Spent” to go back to what it used, and funding an unplanned row shows “Funded” and “Still needed” apart.',
+        nl: 'Plannen: een onderwerp in het rood kan uit de pot worden gedekt, ook als er niets meer te verdelen is; een gevuld onderwerp biedt “Uitgegeven” om terug te gaan naar wat het gebruikte; en bij het vullen van een ongeplande regel staan “Gevuld” en “Nog nodig” apart.',
+        tr: 'Planlama: ekside olan bir konu, verilecek para kalmasa bile havuzdan karşılanabilir; karşılanmış bir konu, kullandığı tutara dönmek için “Harcanan” seçeneğini sunar; planlanmamış bir satır karşılanırken “Karşılanan” ve “Kalan ihtiyaç” ayrı gösterilir.',
+      },
+      {
+        en: 'Charts with points you can tap: a dot grows under the pointer, it is easier to hit, and Periods and the recurring year chart show their values at the left. In a desktop window the review’s Skip and Confirm no longer move from card to card.',
+        nl: 'Grafieken met punten waarop je kunt tikken: een punt groeit onder de aanwijzer, is makkelijker te raken, en Periodes en de jaargrafiek van Terugkerend tonen links hun waarden. In een desktopvenster verspringen Overslaan en Bevestigen in de controle niet meer per kaart.',
+        tr: 'Dokunulabilen noktaları olan grafikler: nokta işaretçinin altında büyür, vurması daha kolaydır; Dönemler ve düzenli ödemelerin yıl grafiği değerlerini solda gösterir. Masaüstü penceresinde incelemedeki Atla ve Onayla düğmeleri artık karttan karta yer değiştirmiyor.',
+      },
+      {
+        en: 'For a Google account the welcome screen now says “Continue with Google”: Google asks which account in any case.',
+        nl: 'Voor een Google-account staat op het welkomstscherm nu “Doorgaan met Google”: Google vraagt hoe dan ook welk account.',
+        tr: 'Google hesabı için karşılama ekranında artık “Google ile devam et” yazıyor: Google zaten hangi hesap olduğunu soruyor.',
+      },
+    ],
+  },
+  {
     version: '5.27.0',
     date: '2026-11-20',
     items: [
