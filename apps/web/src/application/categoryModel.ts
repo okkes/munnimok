@@ -253,6 +253,15 @@ function stampedRefile(catId: string | undefined, sourceType: AccountType, amoun
   return fitted && fitted !== catId ? fitted : null;
 }
 
+/** the same for a stored row: only a whole row on a stamped ledger, never a split or a spread */
+function stampedRowRefile(raw: TransactionRow, meta: TxMetaRow | undefined, stamped: ReadonlyMap<string, AccountType>): string | null {
+  const sourceType = stamped.get(raw.accountId);
+  if (!sourceType) return null;
+  const view = meta ?? raw;
+  if (view.splits?.length || view.cats?.length) return null;
+  return stampedRefile(meta?.catId ?? raw.catId, sourceType, raw.amountCents);
+}
+
 // #663: a link written without the ledger's stamp filed a savings account's own row from the regular side, so money
 // leaving the pot read "Set aside"; a whole row takes the matrix's sibling, every boot, idempotent
 export async function refileStampedMovements(store: StorageBackend, repo: Repo): Promise<number> {
@@ -262,9 +271,7 @@ export async function refileStampedMovements(store: StorageBackend, repo: Repo):
     const stamped = new Map((await visibleAccounts(store, space.id)).filter((a) => !!accountStamp(a.type)).map((a) => [a.id, a.type]));
     if (stamped.size === 0) continue;
     for (const { raw, meta } of await spaceStoredRows(store, space.id)) {
-      const sourceType = stamped.get(raw.accountId);
-      const partitioned = !!(meta ? meta.splits : raw.splits)?.length || !!(meta ? meta.cats : raw.cats)?.length;
-      const catId = sourceType && !partitioned ? stampedRefile(meta?.catId ?? raw.catId, sourceType, raw.amountCents) : null;
+      const catId = stampedRowRefile(raw, meta, stamped);
       if (!catId) continue;
       await writeTxTransform(
         repo,
