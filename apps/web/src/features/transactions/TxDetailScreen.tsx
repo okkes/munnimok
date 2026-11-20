@@ -845,7 +845,7 @@ const titleBulkTargets = (
   allTxs: SpaceTx[] | undefined,
   tx: SpaceTx,
   bulk: { title: string } | null,
-): SpaceTx[] => (bulk ? similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== bulk.title) : []);
+): SpaceTx[] => (bulk ? similarTo(allTxs, tx, (item) => txTitle(item) !== bulk.title) : []);
 const normalizedCounterIban = (tx: SpaceTx | undefined): string | undefined =>
   tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
 const givenOutFor = (tx: SpaceTx | undefined, allTxs: readonly SpaceTx[] | undefined): number =>
@@ -1792,6 +1792,14 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const bulkArmedReimbRef = useRef(0);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #674: an offer belongs to the transaction it was made on; beside the list this screen stays mounted while another
+  // row opens, and the offer stood on the next one
+  useEffect(() => {
+    setTitleBulk(null);
+    setBulkOffer(null);
+    setSplitBulk(null);
+    setCatsBulk(null);
+  }, [txId]);
   const navigate = useNavigate();
   // a detour to another transaction stays under the tree this detail was opened in; the default is /transactions
   const open: OpenTx = openTx ?? ((txId, part) => void navigate({ to: '/transactions/$txId', params: { txId }, search: part ? { part } : {} }));
@@ -2075,7 +2083,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     const title = raw.trim();
     const next = title && title !== cleanBankText(tx.merchant) ? title : '';
     void transform(tx, { titleOverride: next });
-    const similar = similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== next);
+    // #674: a row that reads the new title already has nothing to take over
+    const similar = similarTo(allTxs, tx, (item) => txTitle(item) !== next);
     setTitleBulk(next && similar.length > 0 ? { title: next } : null);
     setTitleSelected(new Set(similar.map((item) => item.id)));
   };

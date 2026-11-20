@@ -13,6 +13,22 @@ const PAD = 8;
 const WIDTH = 320;
 const TIP_W = 118;
 const TIP_LINE = 11;
+/** the gutter a value scale stands in: wide enough for "€12.5K" at the scale's size */
+export const AXIS_W = 32;
+/** a dot is 3 px: the finger and the pointer get this much around it, less only where the points stand closer */
+const HIT_MAX = 14;
+const HIT_MIN = 8;
+
+/** the tap radius of a point: half the way to its neighbour, between the two limits */
+export const hitRadius = (plotWidth: number, points: number): number =>
+  Math.max(HIT_MIN, Math.min(HIT_MAX, points > 1 ? plotWidth / (points - 1) / 2 : HIT_MAX));
+
+/** where a value scale puts its lines: the top, the bottom, and zero or the middle between them */
+export function scaleTicks(min: number, max: number): number[] {
+  if (max === min) return [max];
+  const inner = min < 0 && max > 0 ? 0 : (min + max) / 2;
+  return [max, inner, min];
+}
 
 type Values = readonly (number | null)[];
 
@@ -166,6 +182,7 @@ function ChartDot({
   color,
   isSelected,
   onPick,
+  hit,
   testId,
 }: Readonly<{
   si: number;
@@ -175,6 +192,7 @@ function ChartDot({
   color: string;
   isSelected: boolean;
   onPick: (seriesIndex: number, pointIndex: number) => void;
+  hit: number;
   testId?: string;
 }>) {
   const activate = () => onPick(si, i);
@@ -183,7 +201,7 @@ function ChartDot({
       role="button"
       tabIndex={0}
       aria-pressed={isSelected}
-      className="cursor-pointer outline-none"
+      className="group cursor-pointer outline-none"
       onClick={activate}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -192,10 +210,19 @@ function ChartDot({
         }
       }}
     >
-      {/* #500: every dot keeps its size — the selection is the marker gliding on top */}
-      <circle cx={cx} cy={cy} r={3} fill={color} />
+      {/* #500: at rest every dot keeps its size (the selection is the marker gliding on top); under the pointer or the
+          keyboard's focus it grows inside a halo, which says "this can be pressed" before anything is pressed */}
+      <circle cx={cx} cy={cy} r={7} fill={color} pointerEvents="none" data-halo="" className="opacity-0 transition-opacity duration-150 group-hover:opacity-20 group-focus-visible:opacity-25" />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={3}
+        fill={color}
+        data-dot=""
+        className="origin-center transition-transform duration-150 [transform-box:fill-box] group-hover:scale-[1.7] group-focus-visible:scale-[1.7]"
+      />
       {/* transparent hit target — a 3px dot is untappable */}
-      <circle cx={cx} cy={cy} r={8} fill="transparent" data-testid={testId} />
+      <circle cx={cx} cy={cy} r={hit} fill="transparent" data-testid={testId} />
     </g>
   );
 }
@@ -210,6 +237,7 @@ export function MultiLine({
   selected,
   bandBetween,
   scrub,
+  scale,
 }: Readonly<{
   series: readonly {
     values: readonly (number | null)[];
@@ -226,6 +254,8 @@ export function MultiLine({
   selected?: { seriesIndex: number; pointIndex: number } | null;
   bandBetween?: readonly [number, number];
   scrub?: ChartScrub;
+  /** #500: names the chart's own values on a scale at the left, so a line is not drawn in a void */
+  scale?: (value: number) => string;
 }>) {
   const ink = useUserInk();
   const series = useMemo(() => given.map((s) => ({ ...s, color: ink(s.color) })), [given, ink]);
@@ -242,8 +272,11 @@ export function MultiLine({
   const min = Math.min(...all, 0);
   const max = Math.max(...all, 0);
   const span = max - min || 1;
-  const x = (i: number) => (n === 1 ? width / 2 : (i / (n - 1)) * width);
+  const axisZone = scale ? AXIS_W : 0;
+  const plotWidth = width - axisZone;
+  const x = (i: number) => axisZone + (n === 1 ? plotWidth / 2 : (i / (n - 1)) * plotWidth);
   const y = (value: number) => height - PAD - ((value - min) / span) * (height - 2 * PAD);
+  const hit = hitRadius(plotWidth, n);
   const marker = selected && markerAt !== null ? trackPoint(series, selected.seriesIndex, markerAt, x, y) : null;
 
   const pickScrub = (index: number | null, follow: boolean) => {
@@ -251,7 +284,9 @@ export function MultiLine({
     setScrubbed(index);
     scrub?.onScrub?.(index);
   };
-  const scrubIndexOf = (e: PointerEvent<SVGSVGElement>) => Math.round(pointerFraction(e) * (n - 1));
+  // the pointer is read across the whole picture; the points stand right of the scale's gutter
+  const scrubIndexOf = (e: PointerEvent<SVGSVGElement>) =>
+    Math.min(n - 1, Math.max(0, Math.round(((pointerFraction(e) * width - axisZone) / plotWidth) * (n - 1))));
   const scrubHandlers = scrub
     ? {
         tabIndex: 0,
@@ -291,6 +326,7 @@ export function MultiLine({
             color={color}
             isSelected={selected?.seriesIndex === si && selected?.pointIndex === i}
             onPick={handlePick}
+            hit={hit}
             testId={testId ? `${testId}-dot-${si}-${i}` : undefined}
           />,
         ];
@@ -310,11 +346,24 @@ export function MultiLine({
   return (
     <svg
       viewBox={`0 0 ${width} ${height + labelZone}`}
-      className="w-full outline-none"
+      // a dot on the first or the last point stands on the picture's edge: it must not be cut there, least of all grown
+      className="w-full overflow-visible outline-none"
       aria-hidden={onPointClick || scrub ? undefined : true}
       data-testid={testId}
       {...scrubHandlers}
     >
+      {scale && (
+        <g pointerEvents="none" data-testid={testId ? `${testId}-scale` : undefined}>
+          {scaleTicks(min, max).map((tick) => (
+            <g key={tick}>
+              <line x1={axisZone} x2={width} y1={y(tick)} y2={y(tick)} stroke="var(--m-line-2)" strokeWidth={1} />
+              <text x={axisZone - 5} y={y(tick) + 3} textAnchor="end" fontSize={8} fill="var(--m-ink-4)" className="m-num">
+                {scale(tick)}
+              </text>
+            </g>
+          ))}
+        </g>
+      )}
       {markerIndex !== undefined && (
         <line
           x1={x(markerIndex)}

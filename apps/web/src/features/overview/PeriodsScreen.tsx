@@ -14,6 +14,7 @@ import { periodHistoryCovering, periodMonthsLabel } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
 import { localDate } from '@/domain/trends';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { compactMoney } from '@/features/trends/format';
 import { HelpButton } from '@/features/help/HelpButton';
 import { SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -71,7 +72,7 @@ export function PeriodsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
-  const { fmt, fmtSensitive, hideSensitive } = useDisplayMoney();
+  const { fmt, fmtSensitive, hideSensitive, sensitive } = useDisplayMoney();
   const currency = space?.currency ?? 'EUR';
   const periodType = space?.periodType ?? 'month';
   const periodDay = space?.periodDay ?? 1;
@@ -108,6 +109,9 @@ export function PeriodsScreen() {
   const money = (cents: number) => fmt(cents, currency);
   // #530: what comes in and what is put aside stay hidden here too, the deltas included
   const privateMoney = (cents: number) => fmtSensitive(cents, currency);
+  // #500: the charts' scale, short enough for its gutter; a hidden figure hides here as well
+  const compact = (cents: number) => compactMoney(cents, currency, lang);
+  const privateCompact = sensitive(compact);
   const labels = useMemo(() => periodLabels(periods, periodType, lang), [periods, periodType, lang]);
   const captionFor = (i: number): string => {
     if (i === last) return t('periods.thisPeriod');
@@ -187,6 +191,7 @@ export function PeriodsScreen() {
               index={index}
               labels={labels}
               money={SENSITIVE_KINDS.has(kind) ? privateMoney : money}
+              scale={SENSITIVE_KINDS.has(kind) ? privateCompact : compact}
               // a percentage beside a hidden amount gives half of it away
               withPct={!(hideSensitive && SENSITIVE_KINDS.has(kind))}
               onSelect={select}
@@ -206,6 +211,7 @@ function MetricCard({
   index,
   labels,
   money,
+  scale,
   withPct,
   onSelect,
   onOpen,
@@ -217,6 +223,7 @@ function MetricCard({
   index: number;
   labels: string[];
   money: (cents: number) => string;
+  scale: (cents: number) => string;
   withPct: boolean;
   onSelect: (index: number) => void;
   onOpen: () => void;
@@ -276,6 +283,7 @@ function MetricCard({
           testId={`periods-chart-${kind}`}
           onPointClick={(_series, point) => onSelect(point)}
           selected={selected}
+          scale={(value) => scale(Math.round(value * 100))}
         />
       </div>
     </section>

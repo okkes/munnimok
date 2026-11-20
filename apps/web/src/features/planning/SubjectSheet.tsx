@@ -118,7 +118,8 @@ function AmountChips({
   const { t } = useLang();
   const chips: AmountSuggestion[] = [];
   if (view.targetCents !== null && view.targetCents > 0) chips.push({ id: 'target', label: t('plan.fund.chipTarget'), cents: view.targetCents });
-  if (view.realizedCents > view.fundedCents) chips.push({ id: 'spent', label: t('plan.fund.chipSpent'), cents: view.realizedCents });
+  // #670: also once it holds MORE than it spent — a funded subject goes back to what it used in one tap
+  if (view.realizedCents > 0 && view.realizedCents !== view.fundedCents) chips.push({ id: 'spent', label: t('plan.fund.chipSpent'), cents: view.realizedCents });
   if (view.subject.segment === 'expenses') {
     const estimate = model.estimate(subjectFamily(view.subject, model.data.catalog));
     if (estimate.lastCents !== null) chips.push({ id: 'last', label: t('plan.subject.estimateLast'), cents: estimate.lastCents });

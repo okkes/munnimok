@@ -59,8 +59,20 @@ function OneOffFunding({
     // beyond the pool asks once a day, as every funding door does
     overBudget.guard(model.toAllocateOf(plan), typed - funded, () => void ops.fundOneOff(plan, unplannedKey(row), typed, name).then(onDone));
   };
+  // #494: the field holds the TOTAL set aside, so what it already holds and what is still missing stand on their own
+  const needed = Math.max(0, row.cents - funded);
   return (
     <div className="flex flex-col gap-2" data-testid="plan-oneoff">
+      <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface">
+        <div className="px-3 py-2" data-testid="plan-oneoff-funded">
+          <div className="text-[11px] text-ink-4">{t('plan.oneOff.fundedLabel')}</div>
+          <div className="m-num text-[15px] font-semibold text-ink">{fmt(funded, currency)}</div>
+        </div>
+        <div className="border-l border-line-2 px-3 py-2" data-testid="plan-oneoff-needed">
+          <div className="text-[11px] text-ink-4">{t('plan.oneOff.neededLabel')}</div>
+          <div className={`m-num text-[15px] font-semibold ${needed > 0 ? 'text-negative' : 'text-accent-deep'}`}>{fmt(needed, currency)}</div>
+        </div>
+      </div>
       <div className="m-cap px-1">{t('plan.oneOff.title', { currency })}</div>
       <div className="flex gap-2">
         <input

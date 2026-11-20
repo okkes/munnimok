@@ -39,6 +39,17 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
+  it('#666: beside the sidebar the buttons stand under the room of a full card, not under whatever this card holds', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const room = screen.getByTestId('review-card-room');
+    // the card and its bulk strip live inside the kept room; the buttons come after it, so neither moves them
+    expect(room.contains(screen.getByTestId('review-card'))).toBe(true);
+    expect(room.contains(screen.getByTestId('review-confirm-btn'))).toBe(false);
+    expect(room.className).toMatch(/md:min-h-\[\d+px\]/);
+    expect(room.nextElementSibling?.contains(screen.getByTestId('review-skip-btn'))).toBe(true);
+  });
+
   it('the outgoing card flies out WITH the next card, never before it (user ss 2026-10-06: the slide played twice on a phone)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

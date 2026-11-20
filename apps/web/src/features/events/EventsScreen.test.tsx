@@ -8,6 +8,7 @@ import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+import { eventListUnits, unitsByDay } from './EventDetailScreen';
 
 // happy-dom has no canvas: the downscaler is covered by lib/image.test.ts (#446)
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
@@ -400,7 +401,36 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-flows')).toBeNull();
     expect(txs.querySelector('[data-testid="tx-row-hotel493"]')?.textContent).toContain('Reimbursed');
+
+    // the expense and its credit are one linked unit under the expense's day; the credit's own day has no group of its own
+    const unit = screen.getByTestId('eventdetail-linked-hotel493');
+    expect(unit.textContent).toContain('Linked reimbursement');
+    expect(unit.querySelector('[data-testid="tx-row-hotel493"]')).toBeTruthy();
+    expect(unit.querySelector('[data-testid="tx-row-back493"]')).toBeTruthy();
+    expect(screen.getByTestId(`eventdetail-day-${isoDaysAgo(20)}`).contains(unit)).toBe(true);
+    expect(screen.queryByTestId(`eventdetail-day-${isoDaysAgo(21)}`)).toBeNull();
+    // every other payment stands under its own day
+    expect(screen.getByTestId(`eventdetail-day-${isoDaysAgo(19)}`).querySelector('[data-testid="tx-row-fuel493"]')).toBeTruthy();
   }, 20_000);
+
+  it('#493: the units of an event list — a credit joins the expense it paid back, a split is never a head, order is kept', () => {
+    const tx = (id: string, date: string, over: Record<string, unknown> = {}) => ({ id, date, ...over });
+    const list = [
+      tx('late-credit', '2026-07-14'),
+      tx('shell', '2026-07-13'),
+      tx('hotel', '2026-07-11', { reimbursements: [{ txId: 'late-credit', amountCents: 5000 }, { txId: 'early-credit', amountCents: 5100 }] }),
+      tx('split', '2026-07-11', { reimbursements: [{ txId: 'shell', amountCents: 1 }], splits: [{ id: 'a', catId: 'groceries', amountCents: 1 }, { id: 'b', catId: 'coffee', amountCents: 1 }] }),
+      tx('early-credit', '2026-07-10'),
+      tx('elsewhere', '2026-07-09', { reimbursements: [{ txId: 'not-in-the-list', amountCents: 1 }] }),
+    ];
+    const units = eventListUnits(list);
+    expect(units.map((u) => u.rows.map((r) => r.id))).toEqual([['shell'], ['hotel', 'late-credit', 'early-credit'], ['split'], ['elsewhere']]);
+    expect(unitsByDay(units).map(([day, dayUnits]) => [day, dayUnits.length])).toEqual([
+      ['2026-07-13', 1],
+      ['2026-07-11', 2],
+      ['2026-07-09', 1],
+    ]);
+  });
 
   it('settings row reaches events; archiving dims the card', async () => {
     renderApp('/settings');

@@ -12,6 +12,7 @@ import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
 import { StatusBar, statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
+import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { STATUS_TONE } from './planningUi';
 
 const moveFrom = (from: SubjectView, needCents: number): number => Math.min(slackCents(from), needCents);
@@ -48,6 +49,23 @@ function SourceRow({
   );
 }
 
+/** the pool as a source: what it gives and where that leaves it, said as a warning when it goes below zero (#669) */
+function PoolRow({ give, after, overdraws, onPick }: Readonly<{ give: string; after: string; overdraws: boolean; onPick: () => void }>) {
+  const { t } = useLang();
+  return (
+    <Row
+      kind="data"
+      testId="plan-review-from-pool"
+      icon="bank-outline"
+      title={t('plan.review.fromPool')}
+      sub={<span className={overdraws ? 'text-warning' : undefined}>{t(overdraws ? 'plan.review.poolOver' : 'plan.review.poolLeaves', { left: after })}</span>}
+      trailing={<span className="m-num text-[13px] font-semibold text-ink">{give}</span>}
+      chevron={false}
+      onClick={onPick}
+    />
+  );
+}
+
 // no auto-fix button, on purpose: every euro moved is a conscious choice; nothing moves by itself (#557)
 export function OverspentReview({
   onClose,
@@ -75,7 +93,11 @@ export function OverspentReview({
 
   const need = current ? Math.max(0, current.realizedCents - current.fundedCents) : 0;
   const left = model.toAllocateOf(plan);
-  const fromPool = Math.min(Math.max(0, left), need);
+  // #669: with nothing left to give the pool still pays, going below zero — said on the row, and asked like any
+  // other funding past the pool. While something is left it gives only that, as before
+  const overdraws = left <= 0;
+  const fromPool = overdraws ? need : Math.min(left, need);
+  const overBudget = useOverBudgetGuard(plan.spaceId);
   const candidates = current ? coverCandidates(views, current.subject.id).all : [];
   const stillRed = queue.filter((id) => views.find((v) => v.subject.id === id)?.status === 'overspent').length;
 
@@ -134,15 +156,11 @@ export function OverspentReview({
             <div className="m-cap px-1">{t('plan.review.from')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {fromPool > 0 && (
-                <Row
-                  kind="data"
-                  testId="plan-review-from-pool"
-                  icon="bank-outline"
-                  title={t('plan.review.fromPool')}
-                  sub={t('plan.review.poolLeaves', { left: balance(left - fromPool, currency) })}
-                  trailing={<span className="m-num text-[13px] font-semibold text-ink">{balance(fromPool, currency)}</span>}
-                  chevron={false}
-                  onClick={() => void ops.fund(current.subject.id, current.fundedCents + fromPool)}
+                <PoolRow
+                  give={balance(fromPool, currency)}
+                  after={balance(left - fromPool, currency)}
+                  overdraws={overdraws}
+                  onPick={() => overBudget.guard(left, fromPool, () => void ops.fund(current.subject.id, current.fundedCents + fromPool))}
                 />
               )}
               {candidates.map((view) => (
@@ -156,7 +174,7 @@ export function OverspentReview({
                   onMove={(cents) => void ops.cover(view.subject.id, current.subject.id, cents)}
                 />
               ))}
-              {fromPool === 0 && candidates.length === 0 && (
+              {overdraws && candidates.length === 0 && (
                 <p className="px-4 py-3 text-[12px] text-ink-4" data-testid="plan-review-nowhere">
                   {t('plan.review.nowhere')}
                 </p>
@@ -165,6 +183,7 @@ export function OverspentReview({
           </>
         )}
       </div>
+      <OverBudgetSheet guard={overBudget} fmt={fmt} currency={currency} />
     </Sheet>
   );
 }

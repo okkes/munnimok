@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { MultiLine } from './MultiLine';
+import { AXIS_W, MultiLine, hitRadius, scaleTicks } from './MultiLine';
 import { monotonePath, monotonePointAt, monotoneTangents } from './monotone';
 import type { ChartPt } from './monotone';
 // harness registers RTL cleanup between tests
@@ -162,7 +162,7 @@ describe('MultiLine', () => {
         selected={{ seriesIndex: 0, pointIndex: 1 }}
       />,
     );
-    const dots = [...screen.getByTestId('sel').querySelectorAll('g[role="button"] > circle:first-child')];
+    const dots = [...screen.getByTestId('sel').querySelectorAll('g[role="button"] > circle[data-dot]')];
     expect(dots.map((dot) => dot.getAttribute('r'))).toEqual(['3', '3', '3', '3']);
     const marker = () => screen.getByTestId('sel-selected');
     const hit = (i: number) => screen.getByTestId(`sel-dot-0-${i}`);
@@ -183,6 +183,47 @@ describe('MultiLine', () => {
     // tests snap to the end of the glide (no motion under vitest)
     expect(marker().getAttribute('cx')).toBe(hit(3).getAttribute('cx'));
     expect(marker().getAttribute('cy')).toBe(hit(3).getAttribute('cy'));
+  });
+
+  it('#500: a tappable dot has room around it and answers the pointer before it is pressed', () => {
+    render(<MultiLine series={[{ values: [10, 40, 20, 30, 25], color: 'teal' }]} height={120} testId="tap" onPointClick={() => undefined} />);
+    const hit = screen.getByTestId('tap-dot-0-2');
+    // five points across 320: each owns a 14 px radius, not the 8 of before
+    expect(hit.getAttribute('r')).toBe('14');
+    const dot = hit.parentElement!.querySelector('circle[data-dot]')!;
+    const halo = hit.parentElement!.querySelector('circle[data-halo]')!;
+    expect(dot.getAttribute('class')).toContain('group-hover:scale-');
+    expect(dot.getAttribute('class')).toContain('group-focus-visible:scale-');
+    expect(halo.getAttribute('class')).toContain('group-hover:opacity-');
+    expect(halo.getAttribute('pointer-events')).toBe('none');
+
+    // where the points stand close the room shrinks with them, never under the old 8
+    expect(hitRadius(320, 5)).toBe(14);
+    expect(hitRadius(320, 13)).toBeCloseTo(320 / 12 / 2);
+    expect(hitRadius(320, 40)).toBe(8);
+    expect(hitRadius(320, 1)).toBe(14);
+  });
+
+  it('#500: a scale names the top, the bottom and the line between, in a gutter the points stand right of', () => {
+    expect(scaleTicks(0, 400)).toEqual([400, 200, 0]);
+    expect(scaleTicks(-100, 300)).toEqual([300, 0, -100]);
+    expect(scaleTicks(0, 0)).toEqual([0]);
+
+    render(
+      <MultiLine series={[{ values: [0, 400, 200], color: 'teal' }]} height={120} testId="scaled" onPointClick={() => undefined} scale={(value) => `€${value}`} />,
+    );
+    const scale = screen.getByTestId('scaled-scale');
+    expect([...scale.querySelectorAll('text')].map((text) => text.textContent)).toEqual(['€400', '€200', '€0']);
+    expect(Number(screen.getByTestId('scaled-dot-0-0').getAttribute('cx'))).toBe(AXIS_W);
+    expect(Number(screen.getByTestId('scaled-dot-0-2').getAttribute('cx'))).toBe(320);
+    // the top line runs through the highest point
+    const lines = [...scale.querySelectorAll('line')];
+    expect(lines[0].getAttribute('y1')).toBe(screen.getByTestId('scaled-dot-0-1').getAttribute('cy'));
+
+    // without a scale the chart keeps its whole width
+    render(<MultiLine series={[{ values: [0, 400, 200], color: 'teal' }]} height={120} testId="plain" onPointClick={() => undefined} />);
+    expect(screen.queryByTestId('plain-scale')).toBeNull();
+    expect(Number(screen.getByTestId('plain-dot-0-0').getAttribute('cx'))).toBe(0);
   });
 
   it('#510: a scrub reads any index — a guide, a dot on each line there, the tip, and the index reported upward; the keys walk it and Escape lets go', () => {

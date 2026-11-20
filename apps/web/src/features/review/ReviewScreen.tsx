@@ -71,6 +71,9 @@ import { AUTO_STAGE, cardReceipt, markedReceiptId, receiptSettlement } from './r
 import type { ReceiptStage } from './reviewReceipt';
 import { keepFiledPicks, useReceiptFiled } from './useReceiptFiled';
 
+// the height of a full card: a title, two description lines, every row, the notes and the bulk strip under it
+const CARD_ROOM_MD = 'md:min-h-[540px]';
+
 const REASON_KEYS = {
   history: 'review.reasonHistory',
   'history-amount': 'review.reasonAmount',
@@ -2023,7 +2026,9 @@ export function ReviewScreen() {
                 dangerouslySetInnerHTML={{ __html: leavingHtml }} // NOSONAR
               />
             )}
-            <div key={`card-${tx.id}`} ref={cardRef} data-card-id={tx.id} className="m-card-in">
+            {/* #666: beside the sidebar the buttons hang under the card, so every card would move them: a description line
+                more, the bulk strip coming or going. The room of a full card is kept, and they stand still */}
+            <div key={`card-${tx.id}`} ref={cardRef} data-card-id={tx.id} data-testid="review-card-room" className={`m-card-in ${CARD_ROOM_MD}`}>
             <div
               className="mt-4 overflow-hidden rounded-card border border-line bg-surface"
               data-testid="review-card"

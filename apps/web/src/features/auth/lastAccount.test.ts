@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { continueOptions, forgetLastAccount, readLastAccount, readSignInWay, rememberLastAccount, signInWayOf } from './lastAccount';
+import { continueLabel, continueOptions, forgetLastAccount, readLastAccount, readSignInWay, rememberLastAccount, signInWayOf } from './lastAccount';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -68,6 +68,14 @@ describe('the account step: who signed in last, and how they get back in (#559)'
     });
     expect(continueOptions({ name: 'A', at: 1 })).toBeNull();
     expect(continueOptions(null)).toBeNull();
+  });
+
+  it('#657: the way back in is offered by name only where the name can be kept; Google is offered as Google', () => {
+    expect(continueLabel({ name: 'A', at: 1, social: 'google' })).toEqual({ kind: 'provider', provider: 'Google' });
+    expect(continueLabel({ name: 'A', at: 1, social: 'apple' })).toEqual({ kind: 'name', name: 'A' });
+    expect(continueLabel({ name: 'A', at: 1, username: 'a' })).toEqual({ kind: 'name', name: 'A' });
+    expect(continueLabel({ name: 'A', at: 1 })).toBeNull();
+    expect(continueLabel(null)).toBeNull();
   });
 
   it('reads the identities off Logto’s userinfo with the fresh token — a failure only leaves them unknown', async () => {

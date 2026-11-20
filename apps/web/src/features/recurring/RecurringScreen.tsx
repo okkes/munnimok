@@ -18,6 +18,7 @@ import type { RecurringRow } from '@/db/types';
 import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import { nextPeriod, periodHistory } from '@/domain/periods';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { compactMoney } from '@/features/trends/format';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
@@ -402,6 +403,7 @@ export function RecurringScreen() {
             estimateSelected={
               !!selectedDot && isEstimateMonth(selectedDot.seriesIndex, selectedDot.pointIndex, chartYear, today)
             }
+            scale={(cents) => compactMoney(cents, currency, lang)}
             money={money}
             monthNameOf={monthNameOf}
           />
@@ -446,6 +448,7 @@ function RecurringChartCard({
   showTxsEnabled,
   estimateSelected,
   money,
+  scale,
   monthNameOf,
 }: Readonly<{
   monthly: { expected: number[]; paid: number[] };
@@ -461,6 +464,8 @@ function RecurringChartCard({
   showTxsEnabled: boolean;
   estimateSelected: boolean;
   money: (cents: number) => string;
+  /** #500: the chart's scale, in the short form its gutter has room for */
+  scale: (cents: number) => string;
   monthNameOf: (idx: number) => string;
 }>) {
   const { t } = useLang();
@@ -511,6 +516,7 @@ function RecurringChartCard({
         markerIndex={markerIndex}
         onPointClick={onSelect}
         selected={selected}
+        scale={(value) => scale(Math.round(value * 100))}
       />
       {selected !== null && selectedCents !== null && (
         <div className="mt-2 flex items-center justify-between gap-2" data-testid="recurring-chart-value">

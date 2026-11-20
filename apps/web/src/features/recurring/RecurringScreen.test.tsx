@@ -7,6 +7,7 @@ import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { clearRecurringView } from './recurringView';
+import { AXIS_W } from '@/ui/charts/MultiLine';
 import { daysFromToday } from './RecurringScreen';
 import { propagateRecurringCategory, reconcileRecurringLinks } from '@/application/recurring';
 import { mirrorTxId } from '@/domain/feedIds';
@@ -500,7 +501,9 @@ describe('RecurringScreen editing (demo identity)', () => {
     expect(screen.queryByTestId('recurring-chart-est')).toBeNull();
     expect(screen.queryByTestId('recurring-chart-act')).toBeNull();
     const marker = await screen.findByTestId('recurring-chart-start');
-    expect(marker.getAttribute('x1')).toBe('0');
+    // the first month stands at the left edge of the plot, right of the value scale's gutter (#500)
+    expect(marker.getAttribute('x1')).toBe(String(AXIS_W));
+    expect(screen.getByTestId('recurring-chart-scale').textContent).toMatch(/€/);
     expect(screen.queryByTestId('recurring-chart-now')).toBeNull();
     const paths = [...svg.querySelectorAll('path')];
     // in Jan/Dec one line is a single point (a lone dot, no path)
