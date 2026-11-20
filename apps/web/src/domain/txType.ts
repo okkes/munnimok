@@ -1,4 +1,4 @@
-import { autoSubFor, isMovementCat, specialCatType } from './categories';
+import { autoSubFor, isMovementCat, specialCatType, stampMovementSub } from './categories';
 import type { AccountType, TxType } from '@/db/types';
 
 // special accounts stamp every row's type (R1); credit is NOT stamped: its feed rows are purchases,
@@ -131,6 +131,12 @@ export function categoryConflictsWithType(catTxTypes: TxType[], txType: TxType):
   return catTxTypes.length > 0 && !catTxTypes.includes(txType);
 }
 
+// money leaving a savings account was taken out of it: the sign-picked pair of an unstamped leg would say "set aside"
+function familySubFor(nextType: TxType, amountCents: number | undefined, ownStamp: TxType | undefined): string | undefined {
+  if (amountCents === undefined) return undefined;
+  return (ownStamp ? stampMovementSub(ownStamp, amountCents) : undefined) ?? autoSubFor(nextType, amountCents);
+}
+
 // nextType is the family the counter's kind means (nothing stores it); a conflicting category falls back to
 // uncategorized + review, except with the sign known: the family's locked sub is truthful and needsReview stays untouched
 export function applyTypeChange(options: {
@@ -139,9 +145,11 @@ export function applyTypeChange(options: {
   currentCatId: string | undefined;
   catTxTypes: TxType[];
   amountCents?: number;
+  /** the row's own ledger (a savings, loan or brokerage account): its movement reads from the pot's side */
+  ownStamp?: TxType;
 }): { linkedAccountId?: string; catId?: string; needsReview?: 0 | 1 } {
   const conflict = categoryConflictsWithType(options.catTxTypes, options.nextType);
-  const familySub = options.amountCents === undefined ? undefined : autoSubFor(options.nextType, options.amountCents);
+  const familySub = familySubFor(options.nextType, options.amountCents, options.ownStamp);
   const placeholder = !options.currentCatId || options.currentCatId === 'uncategorized';
   if (familySub && (conflict || placeholder)) {
     return { linkedAccountId: options.linkedAccountId ?? undefined, catId: familySub };

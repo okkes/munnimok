@@ -6,4 +6,9 @@
     <foreground>
         <inset android:drawable="@mipmap/ic_launcher_dev" android:inset="16.7%" />
     </foreground>
+    <!-- the leaf alone: a launcher that themes its icons (Android 13 and later) colours this layer itself;
+         older systems ignore the element -->
+    <monochrome>
+        <inset android:drawable="@mipmap/ic_launcher_monochrome" android:inset="16.7%" />
+    </monochrome>
 </adaptive-icon>

@@ -1,5 +1,6 @@
 import { countsInBalance } from '@/domain/entryMatch';
 import { txMetaId } from '@/domain/feedIds';
+import { isIncomeBuiltin, isIncomeFamily } from '@/domain/categories';
 import { accountStamp } from '@/domain/txType';
 import { deriveTxType } from '@/domain/txDerive';
 import type { StorageBackend } from './backend';
@@ -87,6 +88,8 @@ interface SpaceAccountFacts {
   funding: Set<string>;
   /** #133: what each account means as a counterparty, for the per-row type derivation at the join */
   counter: Map<string, { funding: boolean }>;
+  /** #664: the person's own subs of the Income family, which the catalog cannot name */
+  ownIncomeCats: Set<string>;
 }
 
 async function accountFacts(store: StorageBackend, spaceId: string, links: AccountLinkRow[]): Promise<SpaceAccountFacts> {
@@ -109,7 +112,10 @@ async function accountFacts(store: StorageBackend, spaceId: string, links: Accou
     const account = await store.get('account', link.accountId);
     put(account, account ? linkEffectiveType(link, account) : undefined);
   }
-  return { stamps, funding, counter };
+  const ownIncomeCats = new Set(
+    (await store.allRows('category')).filter((c) => c.deleted === 0 && isIncomeFamily(c)).map((c) => c.id),
+  );
+  return { stamps, funding, counter, ownIncomeCats };
 }
 
 /** #133: the view's txType is derived, row and parts alike, never stored; the adjustment marker is the row's own field */
@@ -126,6 +132,7 @@ function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
       counterFunding: counterOf(linkedId)?.funding === true,
       multiPart,
       adjustment,
+      incomeCat: isIncomeBuiltin(catId) || (!!catId && facts.ownIncomeCats.has(catId)),
     });
   // #228: entries of a spread carry no counterparties: each derives with the owner's link,
   // so a settled movement row's entries still read as their family
@@ -155,14 +162,14 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   ]);
   // the space's own rows respect the history start too: stored in full, filtered at display like attached feed rows
   const startGate = space?.historyStartDate;
-  const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
+  const facts = await accountFacts(store, spaceId, links);
+  const { funding } = facts;
   // #152: funding accounts complete the counterparty picture; their transactions never enter the space's lists
   const ownRows = own.filter(
     (t) => t.deleted === 0 && !funding.has(t.accountId) && (!startGate || t.date >= startGate),
   );
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
-  const facts = { stamps, funding, counter };
   const out: SpaceTx[] = ownRows.map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
@@ -185,9 +192,9 @@ export async function historyTransactions(store: StorageBackend, spaceId: string
     spaceAccountLinks(store, spaceId),
     store.bySpace('txMeta', spaceId),
   ]);
-  const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
+  const facts = await accountFacts(store, spaceId, links);
+  const { funding } = facts;
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
-  const facts = { stamps, funding, counter };
   const out: SpaceTx[] = own
     .filter((t) => t.deleted === 0 && !funding.has(t.accountId))
     .map((t) => deriveViewTypes({ ...t }, facts));

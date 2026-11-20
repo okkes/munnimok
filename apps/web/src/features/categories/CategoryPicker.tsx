@@ -2,7 +2,7 @@ import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
-import { REIMBURSED_ID, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
+import { REIMBURSED_ID, isIncomeFamily, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
 import { allowedSpecialCats, counterTypesFor } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
@@ -76,6 +76,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     // #133 r5: with row context, movement-family subs narrow to the
     // matrix cell (source account type × money side); null = no context
     const allowedMovement = sourceAccountType && direction ? allowedSpecialCats(sourceAccountType, direction) : null;
+    // #664: a savings account is paid a bonus or a gift too; such a row is income that landed in the pot
+    const incomeOnPot = sourceAccountType === 'savings' && direction === 'credit';
     return cats.parents
       .map((parent) => {
         // #214: a query hitting the PARENT's name keeps the whole group
@@ -93,6 +95,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
             (c) =>
               !txType ||
               c.txTypes.includes(txType) ||
+              (incomeOnPot && isIncomeFamily(c)) ||
               // #261: the Adjustment family never rides this escape: its rows are system-minted only
               (kindOf(txType) === 'standard' && isSpecialCategory(c) && mainCatOf(c.id) !== 'adjustment'),
           )

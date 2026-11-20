@@ -73,6 +73,11 @@ describe('safe to spend — the accounts (#541)', () => {
     expect(result.balanceCents).toBe(152_000);
   });
 
+  it('#656: an account whose bank states no balance adds nothing, and the total stays a number', () => {
+    const blank = account('blank', 'checking', undefined as unknown as number);
+    expect(run({ accounts: [main, wallet, blank] })!.balanceCents).toBe(152_000);
+  });
+
   it('a picked list wins — savings and a credit card count once picked, what is owed taking off', () => {
     const result = run({ accounts: [main, wallet, savings, card], space: { ...MONTH, spendAccountIds: ['main', 'card'] } })!;
     expect(result.accounts.map((a) => a.id)).toEqual(['main', 'card']);

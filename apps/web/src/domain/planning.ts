@@ -12,6 +12,7 @@ import type {
   TxView,
 } from '@/db/types';
 import { compareHlc } from '@/sync/hlc';
+import { knownCents } from '@/lib/money';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
 import { LOCKED_MAIN_IDS, REIMBURSED_ID } from './categories';
@@ -113,7 +114,7 @@ export function planPoolAccounts<A extends PoolAccount>(accounts: readonly A[], 
 }
 
 export const poolCents = (accounts: readonly PoolAccount[], space: PoolSpace): number =>
-  planPoolAccounts(accounts, space).reduce((sum, a) => sum + a.balanceCents, 0);
+  planPoolAccounts(accounts, space).reduce((sum, a) => sum + knownCents(a.balanceCents), 0);
 
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };

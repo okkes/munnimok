@@ -46,3 +46,17 @@ repository variables `NATIVE_*` and uploads a debug APK.
 
 `assets/logo.png` (from the PWA icon) is the source:
 `npx @capacitor/assets generate --android --ios --iconBackgroundColor '#faf6ee' --iconBackgroundColorDark '#1a1a17' --splashBackgroundColor '#faf6ee' --splashBackgroundColorDark '#1a1a17'`
+
+### Themed icons (#659)
+
+A phone that colours its app icons to the wallpaper or the theme needs the leaf on its own:
+
+- **Android 13 and later** — the adaptive icon carries a `<monochrome>` layer
+  (`android/app/src/app/res/mipmap-anydpi-v26/ic_launcher*.xml` → `mipmap-xxxhdpi/ic_launcher_monochrome.png`);
+  the launcher colours it when the person turns themed icons on.
+- **iOS 18 and later** — each icon set has a dark variant (the leaf alone, the system lays its dark background
+  under it) and a tinted variant (a greyscale leaf on black, the system colours it), named in its `Contents.json`.
+
+They are derived from the icons above, so they keep their place and edge:
+`node apps/native/assets/themed-icons.mjs` (from the repository root). Run it again after the icons change —
+`@capacitor/assets` does not write these, and it rewrites the iOS `Contents.json`, so put the two entries back.

@@ -696,6 +696,39 @@ public sealed class IngReaderTests
         Assert.DoesNotContain(page.Transactions, t => t.ExternalId.StartsWith("ing-d-", StringComparison.Ordinal));
     }
 
+    // a loan that was only offered stands among the agreements with no balance and nothing to open (#656): the app
+    // showed it as an account without a figure. A loan that states a balance, or anything to open, stays
+    [Fact]
+    public void A_loan_that_was_only_offered_is_not_listed_as_an_account()
+    {
+        const string Payload = """
+            {"agreements":[
+              {"type":"LOAN","group":"LOAN","status":"OFFERED","identifierType":"LOCAL_ID","id":"D1",
+               "commercialId":{"type":"NL_CORBANK_ID","value":"D1"},"productName":"Persoonlijke Lening","_links":[]},
+              {"type":"LOAN","group":"LOAN","status":"ACTIVE","identifierType":"LOCAL_ID","id":"R2",
+               "commercialId":{"type":"NL_CORBANK_ID","value":"R2"},"balance":{"currency":"EUR","value":"-2713.43"},
+               "_links":[{"rel":"transactions","href":"/v1/agreements/r2/transactions"}]},
+              {"type":"LOAN","group":"LOAN","status":"ACTIVE","identifierType":"LOCAL_ID","id":"S3",
+               "commercialId":{"type":"NL_CORBANK_ID","value":"S3"},
+               "_links":[{"rel":"transactions","href":"/v1/agreements/s3/transactions"}]},
+              {"type":"CARD","group":"CARD","status":"ACTIVE","identifierType":"LOCAL_ID","id":"C4",
+               "commercialId":{"type":"MASKED_PAN","value":"C4"},"_links":[]}
+            ]}
+            """;
+        using var document = JsonDocument.Parse(Payload);
+        var notes = new List<string>();
+
+        var accounts = IngAccounts.ReadAgreements(document, SessionId, AsOf, notes.Add);
+
+        Assert.Equal(["R2", "S3", "C4"], accounts.Select(a => a.Record.ExternalId));
+        Assert.Equal(-271_343, accounts[0].Record.Balance?.Amount.Value);
+
+        // the note names ING's own status word, so the Lab shows what an offer is called; it names no account
+        var note = Assert.Single(notes);
+        Assert.Contains("'OFFERED'", note, StringComparison.Ordinal);
+        Assert.DoesNotContain("D1", note, StringComparison.Ordinal);
+    }
+
     // the agreement list replaced three endpoints: ING fetches savings and cards on the statement screen only when its
     // picker is switched, so the other route reported an own savings account unreachable
     [Fact]

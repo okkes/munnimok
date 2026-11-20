@@ -1,4 +1,5 @@
 import type { AccountRow, GoalRow, SpacePeriodType, SpaceRow, TxView } from '@/db/types';
+import { knownCents } from '@/lib/money';
 import { mainCatOf } from './categories';
 import { contributionCents } from './overview';
 import { inPeriod, nextPeriod, periodHistory } from './periods';
@@ -17,7 +18,7 @@ export function poolAccounts<A extends Pick<AccountRow, 'id' | 'type' | 'deleted
 }
 
 export function savingsTotalCents(accounts: readonly AccountRow[], space?: PoolSpace): number {
-  return poolAccounts(accounts, space).reduce((sum, a) => sum + a.balanceCents, 0);
+  return poolAccounts(accounts, space).reduce((sum, a) => sum + knownCents(a.balanceCents), 0);
 }
 
 export interface GoalOverview {

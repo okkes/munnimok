@@ -370,6 +370,27 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     expect(screen.getByTestId('space-accounts-group-cash').querySelector('[data-testid="space-account-manual-1"]')).toBeTruthy();
   }, 15_000);
 
+  it('#660: every account shows its balance — an attached one, the space’s own, and a dash where the bank states none', async () => {
+    await seedRows();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t660'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-3', 'feedacct-3', { name: 'Card', type: 'credit', source: 'connector', currency: 'EUR' });
+    await repo.upsert('accountLink', 's-user', 'link-3', { feedSpaceId: 'feed-3', accountId: 'feedacct-3', type: 'credit' });
+    db.close();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: apiWithCandidate('personal'),
+    });
+
+    expect((await screen.findByTestId('space-account-balance-link-1', {}, { timeout: 5000 })).textContent).toBe('€50.00');
+    expect(screen.getByTestId('space-account-balance-manual-1').textContent).toBe('€10.00');
+    expect(screen.getByTestId('space-account-balance-link-3').textContent).toBe('—');
+  }, 15_000);
+
   it('#536: the attach step starts on the type the bank reported — the space still picks', async () => {
     await seedRows();
     await seedCandidate();

@@ -154,10 +154,12 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   if (confirmed) await repairDanglingCounterparties(store, upkeep);
   // #133/#546: bare movement rows link the account their text names (the ATM pair: the cash wallet); every boot, as the server
   // keeps writing predicted movement categories. #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
-  const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
+  // #663: a pot's own row that an earlier link filed from the regular side takes the movement of its own side
+  const { migrateBareSpecialRows, refileCashTransfers, refileStampedMovements } = await import('@/application/categoryModel');
   // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
   if (confirmed) await migrateBareSpecialRows(store, upkeep);
   if (confirmed) await refileCashTransfers(store, upkeep);
+  if (confirmed) await refileStampedMovements(store, upkeep);
   // #653: categories the catalog merged away, and a person's own Groceries tree, move to the catalog's ids
   const { applyCategoryMoves } = await import('@/application/categoryMoves');
   if (confirmed) await applyCategoryMoves(store, upkeep);

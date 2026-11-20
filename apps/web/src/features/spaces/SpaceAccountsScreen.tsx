@@ -25,7 +25,8 @@ import { useMyRole } from './SpaceSharing';
 import { ReadOnlyNote } from './ReadOnlyNote';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
-import { linkEffectiveType } from '@/db/joined';
+import { linkEffectiveType, visibleAccounts } from '@/db/joined';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -120,6 +121,7 @@ function infoFacts(t: T, lang: Lang, info: AttachedAccountEntry, mySub: string |
 export function SpaceAccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo } = useData();
+  const { fmtSensitive } = useDisplayMoney();
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
   const router = useRouter();
@@ -261,6 +263,9 @@ export function SpaceAccountsScreen() {
   };
 
   const archived = (entries ?? []).filter((entry) => entry.archived);
+  // the figure the space counts with: the bank's balance plus what was typed in on top (#547)
+  const counted = useQuery(store, async () => new Map((await visibleAccounts(store, spaceId)).map((a) => [a.id, a.balanceCents])), [spaceId]);
+  const balanceOf = (account: AccountRow): number => (counted?.has(account.id) ? counted.get(account.id)! : account.balanceCents);
 
   const renderRow = (entry: AttachedAccountEntry) => {
     const logo = entry.account?.logo ?? institutionLogoUrl(entry.account);
@@ -300,6 +305,11 @@ export function SpaceAccountsScreen() {
           </Pill>
         )}
         {entry.archived && <Pill>{t('acct.archived')}</Pill>}
+        {entry.account && (
+          <span className="m-num shrink-0 text-[14px] font-semibold text-ink" data-testid={`space-account-balance-${entry.key}`}>
+            {fmtSensitive(balanceOf(entry.account), entry.account.currency, { asRecorded: true })}
+          </span>
+        )}
         {entry.account && (
           <Icon name={SOURCE_ICONS[entry.account.source]} size={16} color="var(--m-ink-4)" />
         )}
