@@ -72,4 +72,16 @@ describe('linkAllCounterparties', () => {
     expect((await db.accounts.get('acct-save'))?.balanceCents).toBe(10000);
     db.close();
   });
+
+  it('#663: a savings account’s own rows read from the pot’s side: money leaving it was taken out, money arriving was set aside', async () => {
+    const { db, repo } = await setup();
+    await repo.upsert('account', 's1', 'acct-save', { name: 'Piggy', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, iban: 'NL02SAVE0000000002' });
+    const row = { accountId: 'acct-save', currency: 'EUR', needsReview: 1 as const, merchant: 'Checking', counterIban: 'NL01MAIN0000000001' };
+    await repo.upsert('transaction', 's1', 'tx-out', { ...row, date: '2026-09-24', amountCents: -5000 });
+    await repo.upsert('transaction', 's1', 'tx-in', { ...row, date: '2026-09-25', amountCents: 2500 });
+    expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(2);
+    expect(await db.transactions.get('tx-out')).toMatchObject({ linkedAccountId: 'acct-main', catId: 'savingWithdraw' });
+    expect(await db.transactions.get('tx-in')).toMatchObject({ linkedAccountId: 'acct-main', catId: 'savingDeposit' });
+    db.close();
+  });
 });

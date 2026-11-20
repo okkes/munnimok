@@ -1,6 +1,6 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { TransactionRow, TxMetaRow, TxSplit } from '@/db/types';
+import type { AccountType, TransactionRow, TxMetaRow, TxSplit } from '@/db/types';
 import { visibleAccounts, writeTxTransform } from '@/db/joined';
 import type { SpaceAccount, TxTransformFields } from '@/db/joined';
 import { UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
@@ -8,7 +8,7 @@ import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueTx } from '@/domain/counterClue';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import type { DefaultFamily } from '@/domain/defaultAccounts';
-import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
+import { accountStamp, counterTypesFor, fitToMatrix, movementCatFor } from '@/domain/txType';
 import { walletForAutoLink } from './defaultAccounts';
 
 /** a user rename counts as a title clue too (#228 r3) */
@@ -244,6 +244,37 @@ async function spaceStoredRows(store: StorageBackend, spaceId: string): Promise<
     if (raw?.deleted === 0) rows.push({ raw, meta });
   }
   return rows;
+}
+
+/** the sibling a pot's own ledger files for a movement stored from the regular side, else null */
+function stampedRefile(catId: string | undefined, sourceType: AccountType, amountCents: number): string | null {
+  if (!catId || !isMovementCat(catId)) return null;
+  const fitted = fitToMatrix(catId, sourceType, amountCents < 0 ? 'debit' : 'credit');
+  return fitted && fitted !== catId ? fitted : null;
+}
+
+// #663: a link written without the ledger's stamp filed a savings account's own row from the regular side, so money
+// leaving the pot read "Set aside"; a whole row takes the matrix's sibling, every boot, idempotent
+export async function refileStampedMovements(store: StorageBackend, repo: Repo): Promise<number> {
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
+  for (const space of spaces) {
+    const stamped = new Map((await visibleAccounts(store, space.id)).filter((a) => !!accountStamp(a.type)).map((a) => [a.id, a.type]));
+    if (stamped.size === 0) continue;
+    for (const { raw, meta } of await spaceStoredRows(store, space.id)) {
+      const sourceType = stamped.get(raw.accountId);
+      const partitioned = !!(meta ? meta.splits : raw.splits)?.length || !!(meta ? meta.cats : raw.cats)?.length;
+      const catId = sourceType && !partitioned ? stampedRefile(meta?.catId ?? raw.catId, sourceType, raw.amountCents) : null;
+      if (!catId) continue;
+      await writeTxTransform(
+        repo,
+        { id: raw.id, spaceId: space.id, feedSpaceId: meta ? raw.spaceId : undefined, needsReview: meta?.needsReview ?? raw.needsReview },
+        { catId },
+      );
+      touched++;
+    }
+  }
+  return touched;
 }
 
 // #574: a cash counter means the ATM pair alone (txType's counter table): Transfer out/in filed against a cash account

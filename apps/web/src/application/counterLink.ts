@@ -2,7 +2,7 @@ import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joi
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { normalizeIban } from '@/domain/feedIds';
-import { applyTypeChange, familyForCounter } from '@/domain/txType';
+import { accountStamp, applyTypeChange, familyForCounter } from '@/domain/txType';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { cachedCatalog } from '@/sync/catalogSync';
 
@@ -15,6 +15,7 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
     if (account.iban) byIban.set(normalizeIban(account.iban), account);
   }
   if (byIban.size === 0) return 0;
+  const typeOf = new Map(accounts.map((a) => [a.id, a.type]));
 
   const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
@@ -27,14 +28,16 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
     const account = byIban.get(normalizeIban(tx.counterIban));
     if (!account || account.id === tx.accountId) continue;
     const keepType = tx.txType !== 'expense' && tx.txType !== 'income';
+    const ownStamp = accountStamp(typeOf.get(tx.accountId));
     // #133 r5: the counter's kind names the family: a savings IBAN files the saving story, not a blanket transfer
-    const nextType = keepType ? tx.txType : familyForCounter(account.type);
+    const nextType = ownStamp ?? (keepType ? tx.txType : familyForCounter(account.type));
     const fields = applyTypeChange({
       nextType,
       linkedAccountId: account.id,
       currentCatId: tx.catId,
       catTxTypes: catalog.byId(tx.catId).txTypes,
       amountCents: tx.amountCents,
+      ownStamp,
     });
     await writeTxTransform(repo, tx, fields);
     linked++;

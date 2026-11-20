@@ -7,7 +7,7 @@ import { Repo } from '@/db/repo';
 import { writeTxTransform } from '@/db/joined';
 import { HlcClock } from '@/sync/hlc';
 import { cashWalletId, defaultAccountId, ensureCashWallet, retireDefaultAccounts, walletForAutoLink } from './defaultAccounts';
-import { migrateBareSpecialRows, refileCashTransfers } from './categoryModel';
+import { migrateBareSpecialRows, refileCashTransfers, refileStampedMovements } from './categoryModel';
 
 const SPACE = 's1';
 
@@ -337,5 +337,41 @@ describe('#574: a cash counter means the ATM pair', () => {
     expect(parts[1].linkedAccountId).toBe('wallet');
     expect((await store.get('transaction', 'out1'))?.linkedAccountId).toBe('wallet');
     expect(await refileCashTransfers(store, repo)).toBe(0);
+  });
+});
+
+describe('#663: a pot’s own ledger reads a movement from its own side', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('re-files a movement stored from the regular side, on savings and loan ledgers alike, and leaves the rest', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_stamprefile_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('stamprefile'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', kind: 'personal', currency: 'EUR' });
+    const acct = { source: 'manual' as const, currency: 'EUR', balanceCents: 0 };
+    await repo.upsert('account', SPACE, 'main', { ...acct, name: 'Checking', type: 'checking' });
+    await repo.upsert('account', SPACE, 'pot', { ...acct, name: 'Piggy', type: 'savings' });
+    await repo.upsert('account', SPACE, 'loan', { ...acct, name: 'Loan', type: 'loan' });
+    const row = { currency: 'EUR', merchant: 'Checking', linkedAccountId: 'main', needsReview: 1 as const };
+    await repo.upsert('transaction', SPACE, 'potOut', { ...row, accountId: 'pot', date: '2026-09-24', amountCents: -5000, catId: 'savingDeposit' });
+    await repo.upsert('transaction', SPACE, 'potIn', { ...row, accountId: 'pot', date: '2026-09-25', amountCents: 2500, catId: 'savingWithdraw', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 'potRight', { ...row, accountId: 'pot', date: '2026-09-26', amountCents: -100, catId: 'savingWithdraw' });
+    await repo.upsert('transaction', SPACE, 'potInterest', { ...row, accountId: 'pot', date: '2026-09-27', amountCents: 12, catId: 'savingInterest', linkedAccountId: undefined });
+    await repo.upsert('transaction', SPACE, 'loanPaid', { ...row, accountId: 'loan', date: '2026-09-28', amountCents: 30000, catId: 'debtBorrowed' });
+    // the regular side of the same story keeps its own reading
+    await repo.upsert('transaction', SPACE, 'mainOut', { ...row, accountId: 'main', date: '2026-09-24', amountCents: -5000, catId: 'savingDeposit', linkedAccountId: 'pot' });
+
+    expect(await refileStampedMovements(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'potOut'))?.catId).toBe('savingWithdraw');
+    expect(await store.get('transaction', 'potIn')).toMatchObject({ catId: 'savingDeposit', needsReview: 0 });
+    expect((await store.get('transaction', 'potRight'))?.catId).toBe('savingWithdraw');
+    expect((await store.get('transaction', 'potInterest'))?.catId).toBe('savingInterest');
+    expect((await store.get('transaction', 'loanPaid'))?.catId).toBe('loanRepayment');
+    expect((await store.get('transaction', 'mainOut'))?.catId).toBe('savingDeposit');
+    expect((await store.get('transaction', 'potOut'))?.linkedAccountId).toBe('main');
+    expect(await refileStampedMovements(store, repo)).toBe(0);
   });
 });
