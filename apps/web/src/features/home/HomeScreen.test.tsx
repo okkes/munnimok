@@ -176,5 +176,13 @@ describe('#313: desktop columns follow what actually renders', () => {
     await screen.findByTestId('home-explore', {}, { timeout: 10_000 });
     expect(screen.getByTestId('home-overview-income')).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('home-columns').getAttribute('data-columns')).toBe('2'), { timeout: 10_000 });
+
+    // #665: in two columns a block is one card that holds its own header; a banner is a card already and stays bare
+    const block = (id: string) => screen.getByTestId('home-columns').querySelector<HTMLElement>(`[data-home-block="${id}"]`)!;
+    const overview = block('overview').firstElementChild as HTMLElement;
+    expect(overview.className).toContain('lg:border');
+    expect(overview.querySelector('.m-cap')?.textContent).toContain('See all');
+    expect(overview.contains(screen.getByTestId('home-overview-income'))).toBe(true);
+    expect((block('review').firstElementChild as HTMLElement).className).not.toContain('lg:border');
   }, 20_000);
 });

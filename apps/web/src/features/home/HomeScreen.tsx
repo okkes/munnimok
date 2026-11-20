@@ -88,6 +88,19 @@ const tileCorners = (i: number, len: number): string =>
 
 /** #313: a sparse desktop home keeps ONE centered column (~720px) */
 const SINGLE_COLUMN_LG = 'lg:mx-auto lg:max-w-[720px]';
+// #665: in two columns every block is one card that holds its own header; loose headers between cards made the
+// columns read as one long unordered list. They are CSS columns: the browser balances their heights, where a split
+// by count left one column far longer than the other
+const COLUMNS_LG = 'lg:columns-2 lg:gap-x-6';
+// the space under an item is padding inside its unbreakable box: WebKit carries a margin over a column break and the
+// second column then starts lower than the first
+const ITEM_LG = 'lg:break-inside-avoid lg:pb-4';
+const NUDGES_LG = `${ITEM_LG} lg:empty:hidden lg:[&>*]:mt-0 lg:[&>*+*]:mt-4`;
+const BLOCK_LG = 'lg:[&>*:first-child]:mt-0';
+const BLOCK_CARD_LG = `${BLOCK_LG} lg:rounded-[18px] lg:border lg:border-line lg:bg-surface lg:p-3 lg:[&_.m-cap]:mb-2`;
+/** blocks that are one card already: a banner, the shortcut tiles */
+const BARE_BLOCKS: ReadonlySet<HomeBlockId> = new Set(['review', 'receipts', 'shortcuts']);
+const blockClassLg = (id: HomeBlockId): string => (BARE_BLOCKS.has(id) ? BLOCK_LG : BLOCK_CARD_LG);
 
 // #313: only blocks that actually render count toward the two-column bar of four (#155); while core data loads
 // the configured count stands in, so a content-rich home does not flash single-column
@@ -475,10 +488,10 @@ export function HomeScreen() {
         <div
           data-testid="home-columns"
           data-columns={twoColumns ? '2' : '1'}
-          className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : SINGLE_COLUMN_LG}
+          className={twoColumns ? COLUMNS_LG : SINGLE_COLUMN_LG}
         >
           {/* the fold-out sits beside the header button: nested buttons are invalid HTML */}
-          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          <div className={`min-w-0 ${twoColumns ? ITEM_LG : ''}`}>
             <div className="w-full rounded-card bg-brand px-5 py-4 text-on-brand">
               <div className="relative">
                 <button
@@ -572,25 +585,15 @@ export function HomeScreen() {
             </div>
           </div>
 
-          {/* the first nudge loses its top margin at lg so both column tops sit level */}
-          <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:[&>*:first-child]:mt-0">
+          <div className={`min-w-0 ${twoColumns ? NUDGES_LG : ''}`}>
             <UpdateCard />
             <InstallHint />
-
           </div>
-
-          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-            {(twoColumns ? renderedBlocks.slice(0, Math.ceil(renderedBlocks.length / 2)) : renderedBlocks).map((entry) => (
-              <div key={entry.id}>{entry.node}</div>
-            ))}
-          </div>
-          {twoColumns && (
-            <div className="min-w-0 lg:col-start-2 lg:row-start-2">
-              {renderedBlocks.slice(Math.ceil(renderedBlocks.length / 2)).map((entry) => (
-                <div key={entry.id}>{entry.node}</div>
-              ))}
+          {renderedBlocks.map((entry) => (
+            <div key={entry.id} data-home-block={entry.id} className={twoColumns ? ITEM_LG : undefined}>
+              <div className={twoColumns ? blockClassLg(entry.id) : undefined}>{entry.node}</div>
             </div>
-          )}
+          ))}
         </div>
 
         {/* #313: the door joins the centered column on sparse desktops */}
