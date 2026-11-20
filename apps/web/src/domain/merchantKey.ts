@@ -67,9 +67,33 @@ function cutAtPlaceMarker(value: string): string {
   return /\p{L}/u.test(head) ? head : value;
 }
 
-function normalize(merchant: string, since578: boolean): string {
+// #674: an order or reference code differs per charge and is no part of the name ("WWW.AMAZON.* HF12S4JW5",
+// "bol.com C000KD5LPH", an IBAN). A run of letters and digits is one when the two keep alternating: three switches or
+// more, or two around four digits or more. A name with a number in it switches once or twice ("ah1470", "car2go")
+export function isReferenceCode(run: string): boolean {
+  if (run.length < 6) return false;
+  let switches = 0;
+  let digits = 0;
+  let previous: 'digit' | 'letter' | null = null;
+  for (const char of run) {
+    const kind = char >= '0' && char <= '9' ? 'digit' : 'letter';
+    if (kind === 'digit') digits++;
+    if (previous && previous !== kind) switches++;
+    previous = kind;
+  }
+  return switches >= 3 || (switches === 2 && digits >= 4);
+}
+
+const dropReferenceCodes = (value: string): string => value.replaceAll(/[\p{L}\p{N}]+/gu, (run) => (isReferenceCode(run) ? ' ' : run));
+
+/** the spellings a key has had: stored keys of an older one are moved once (application/merchantKeyRekey.ts) */
+type Spelling = 577 | 673 | 674;
+
+function normalize(merchant: string, spelling: Spelling): string {
+  const since578 = spelling >= 673;
   const lowered = merchant.toLowerCase().trim();
-  const cleaned = stripProcessorPrefix(since578 ? cutAtPlaceMarker(lowered) : lowered)
+  const named = stripProcessorPrefix(since578 ? cutAtPlaceMarker(lowered) : lowered);
+  const cleaned = (spelling >= 674 ? dropReferenceCodes(named) : named)
     // #450: date and time differ between visits to the same till and come glued to the name, which a word boundary never caught
     .replaceAll(/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/g, ' ') // 8.08.2026, 11-09-26
     .replaceAll(/\d{4}-\d{2}-\d{2}/g, ' ') // 2026-09-11
@@ -84,10 +108,14 @@ function normalize(merchant: string, since578: boolean): string {
 }
 
 export function merchantKey(merchant: string): string {
-  return normalize(merchant, true);
+  return normalize(merchant, 674);
 }
 
-/** the key as spelled before #578; read only by the stored-key migration (application/merchantKeyRekey.ts) */
+/** the key as spelled before #674 and before #578; read only by the stored-key migration (application/merchantKeyRekey.ts) */
+export function merchantKeyBefore674(merchant: string): string {
+  return normalize(merchant, 673);
+}
+
 export function merchantKeyBefore578(merchant: string): string {
-  return normalize(merchant, false);
+  return normalize(merchant, 577);
 }

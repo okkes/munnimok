@@ -44,7 +44,7 @@ export interface ReviewSuggestion {
 export type ReviewSuggestions = Record<string, ReviewSuggestion>;
 
 /** bumped whenever the stored shape or the rules change — an older map is simply prepared again */
-const VERSION = 3;
+const VERSION = 4;
 const keyFor = (spaceId: string) => `reviewSuggest:${spaceId}`;
 const FINGERPRINT_KEY = 'reviewSuggest:fingerprint';
 

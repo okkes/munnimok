@@ -1849,6 +1849,33 @@ describe('title rename (user request)', () => {
     expect((await db.transactions.get('ttl-a'))?.titleOverride).toBe('Odido');
     db.close();
   }, 15_000);
+
+  it('#674: the offer leaves out a row that reads the new title already, sees past an order code, and does not follow to another transaction', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-674'), { trackOutbox: false });
+    const row = { accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR', catId: 'shopping', needsReview: 0 as const };
+    // the same shop, an order code apart; one of them carries the new name by itself, one by an earlier rename
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-a', { ...row, merchant: 'WWW.AMAZON.* HF12S4JW5', importRef: 'bank-amz-a' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-b', { ...row, merchant: 'WWW.AMAZON.* H40FC73G5', importRef: 'bank-amz-b' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-c', { ...row, merchant: 'WWW.AMAZON.* 5O5AC6Y85', importRef: 'bank-amz-c', titleOverride: 'Amazon' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'amz-d', { ...row, merchant: 'Amazon', importRef: 'bank-amz-d' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'other', { ...row, merchant: 'Hema', importRef: 'bank-other' });
+    cleanup();
+
+    renderApp('/transactions/amz-a');
+    fireEvent.click(await screen.findByTestId('tx-detail-rename'));
+    fireEvent.change(await screen.findByTestId('tx-rename-input'), { target: { value: 'Amazon' } });
+    fireEvent.click(screen.getByTestId('tx-rename-save'));
+    // amz-b is the one row left to rename: amz-c and amz-d read "Amazon" already
+    const offer = await screen.findByTestId('tx-detail-title-bulk');
+    expect(offer.textContent).toMatch(/\b1\b/);
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
+    await waitFor(async () => expect((await db.transactions.get('amz-b'))?.titleOverride).toBe('Amazon'));
+    expect((await db.transactions.get('amz-d'))?.titleOverride).toBeUndefined();
+    db.close();
+  }, 20_000);
 });
 
 describe('detail sections customize (user request)', () => {

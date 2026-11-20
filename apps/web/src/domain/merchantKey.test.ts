@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { merchantKey } from './merchantKey';
+import { isReferenceCode, merchantKey, merchantKeyBefore674 } from './merchantKey';
 
 describe('merchantKey', () => {
   it('#346: the legal form behind a name is noise — B.V., BV and N.V. spell the same merchant', () => {
@@ -33,6 +33,28 @@ describe('merchantKey', () => {
     // a line that is nothing but place keeps its text rather than going blank
     expect(merchantKey('>S-GRAVENH30.10.2026')).toBe('s gravenh');
     expect(merchantKey('Kruidvat 2go 3')).toBe('kruidvat 2go');
+  });
+
+  it('#674 (user ss): an order code is no part of the name — every Amazon and bol.com charge is one merchant', () => {
+    expect(merchantKey('WWW.AMAZON.* HF12S4JW5')).toBe('www amazon');
+    expect(merchantKey('WWW.AMAZON.* H40FC73G5')).toBe('www amazon');
+    expect(merchantKey('WWW.AMAZON.* 5O5AC6Y85')).toBe('www amazon');
+    expect(merchantKey('AMZN Mktp NL*2A3B4C5D6')).toBe('amzn mktp nl');
+    expect(merchantKey('bol.com C000KD5LPH')).toBe('bol com');
+    // an IBAN in the line is a reference too
+    expect(merchantKey('Incasso NL69INGB0123456789 Vattenfall')).toBe('incasso vattenfall');
+    // before #674 each charge had a key of its own
+    expect(merchantKeyBefore674('WWW.AMAZON.* HF12S4JW5')).not.toBe(merchantKeyBefore674('WWW.AMAZON.* H40FC73G5'));
+  });
+
+  it('#674: a name with a number in it is not a code — letters and digits must keep alternating', () => {
+    expect(isReferenceCode('hf12s4jw5')).toBe(true);
+    expect(isReferenceCode('ab1234cd')).toBe(true);
+    for (const name of ['ah1470', 'car2go', 'fit4free', 'covid19test', 'windows11', '3fm', 'a1b2', '123456', 'amazon']) {
+      expect(isReferenceCode(name)).toBe(false);
+    }
+    expect(merchantKey('car2go Deutschland')).toBe('car2go deutschland');
+    expect(merchantKey('Fit4Free Rotterdam')).toBe('fit4free');
   });
 
   it('keeps a name that merely ends in a look-alike word', () => {

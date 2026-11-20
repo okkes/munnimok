@@ -6,10 +6,10 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { recurringDismissId } from '@/domain/feedIds';
-import { merchantKeyBefore578 } from '@/domain/merchantKey';
+import { merchantKeyBefore578, merchantKeyBefore674 } from '@/domain/merchantKey';
 import { useSession } from '@/app/session';
 import { LAST_SYNC_KEY } from '@/sync/engine';
-import { MERCHANT_KEY_REKEY_MARKER, rekeyMerchantKeys } from './merchantKeyRekey';
+import { MERCHANT_KEY_REKEY_674_MARKER, MERCHANT_KEY_REKEY_MARKER, rekeyMerchantKeys } from './merchantKeyRekey';
 
 const SPACE = 'sp1';
 const AH = 'Albert Heijn 1842 >S-GRAVENH30.10.2026 1';
@@ -80,5 +80,22 @@ describe('#578: stored merchant keys follow the new spelling once', () => {
     await repo.upsert('recurring', SPACE, 'gone', { name: 'Gone', amountCents: 500, every: 'month', active: 1, merchantKey: 'kiosk 7' });
     expect(await rekeyMerchantKeys(store, repo)).toBe(1);
     expect((await store.get('recurring', 'gone'))?.merchantKey).toBe('kiosk');
+  });
+
+  it('#674: a device that moved its keys for #578 moves them once more when the key drops an order code', async () => {
+    const { store, repo } = await seed();
+    await store.metaPut(MERCHANT_KEY_REKEY_MARKER, true);
+    const AMAZON = 'WWW.AMAZON.* HF12S4JW5';
+    const oldKey = merchantKeyBefore674(AMAZON);
+    expect(oldKey).not.toBe('www amazon');
+    await repo.upsert('transaction', SPACE, 't9', { accountId: 'a', currency: 'EUR', needsReview: 0, catId: 'shopping', date: '2026-11-15', amountCents: -4998, merchant: AMAZON });
+    await repo.upsert('recurring', SPACE, 'amz', { name: 'Amazon', amountCents: 4998, every: 'month', active: 1, merchantKey: oldKey });
+    await repo.upsert('recurring', SPACE, 'ah', { name: 'Groceries', amountCents: 1309, every: 'month', active: 1, merchantKey: 'albert heijn' });
+
+    expect(await rekeyMerchantKeys(store, repo)).toBe(1);
+    expect((await store.get('recurring', 'amz'))?.merchantKey).toBe('www amazon');
+    expect((await store.get('recurring', 'ah'))?.merchantKey).toBe('albert heijn');
+    expect((await store.metaGet(MERCHANT_KEY_REKEY_674_MARKER))?.value).toBe(true);
+    expect(await rekeyMerchantKeys(store, repo)).toBe(0);
   });
 });
