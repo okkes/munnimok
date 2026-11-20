@@ -121,10 +121,19 @@ jobs:
         env:
           PLIST_B64: ${{ vars.NATIVE_IOS_FIREBASE_PLIST_B64 }}
 
-      # the image's default Xcode is not its newest, and the SDK the build is made with is the selected Xcode's
-      - name: Select the newest Xcode
+      # the image's default Xcode is not its newest, and the SDK the build is made with is the selected Xcode's.
+      # Apple takes a build made with a beta Xcode for TestFlight but refuses it for App Store review: a beta is
+      # taken only when the image holds nothing else, and the run says so
+      - name: Select the newest released Xcode
         run: |
-          LATEST="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          # resolved first: the image links a plain version name to a beta's folder, and the link's name would hide it
+          INSTALLED="$(for app in /Applications/Xcode_*.app; do (cd "$app" && pwd -P); done | sort -u)"
+          LATEST="$(echo "$INSTALLED" | grep -vi beta | sort -V | tail -1 || true)"
+          if [ -z "$LATEST" ]; then
+            LATEST="$(echo "$INSTALLED" | sort -V | tail -1)"
+            echo "::warning::this image holds only beta Xcodes: the build is made with $LATEST and the App Store would refuse it for review"
+          fi
+          echo "selected $LATEST"
           sudo xcode-select -s "$LATEST/Contents/Developer"
           xcodebuild -version
 
