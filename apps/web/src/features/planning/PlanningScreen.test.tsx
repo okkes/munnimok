@@ -505,9 +505,16 @@ describe('Planning (demo identity)', () => {
     fireEvent.click(row);
     await screen.findByTestId('plan-oneoff');
     expect(screen.getByTestId('plan-oneoff-hint').textContent).toMatch(/does not carry it over/);
+    // what it holds and what it still lacks stand apart from the field, which is the total
+    expect(screen.getByTestId('plan-oneoff-funded').textContent).toMatch(/Funded€0[.,]00/);
+    expect(screen.getByTestId('plan-oneoff-needed').textContent).toMatch(/Still needed€[1-9]/);
     fireEvent.click(screen.getByTestId('plan-oneoff-chip-spent'));
     fireEvent.click(screen.getByTestId('plan-oneoff-save'));
     await screen.findByTestId(`plan-unplanned-oneoff-${mainId}`);
+    fireEvent.click(screen.getByTestId(`plan-unplanned-${mainId}`));
+    await waitFor(() => expect(screen.getByTestId('plan-oneoff-funded').textContent).toMatch(/Funded€[1-9]/));
+    expect(screen.getByTestId('plan-oneoff-needed').textContent).toMatch(/Still needed€0[.,]00/);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(screen.getByTestId(`plan-unplanned-${mainId}`).textContent).toMatch(/Funded/);
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
     expect(screen.getByTestId('plan-segment-empty-expenses')).toBeTruthy();
