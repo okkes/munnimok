@@ -696,8 +696,35 @@ public sealed class IngReaderTests
         Assert.DoesNotContain(page.Transactions, t => t.ExternalId.StartsWith("ing-d-", StringComparison.Ordinal));
     }
 
-    // a loan that was only offered stands among the agreements with no balance and nothing to open (#656): the app
-    // showed it as an account without a figure. A loan that states a balance, or anything to open, stays
+    // ING calls a loan it proposed and nobody signed OFFER (#656, read in a production run's notes): no account,
+    // whatever the entry states. An agreement with any other status is read as before
+    [Fact]
+    public void An_agreement_ING_calls_an_offer_is_not_listed_as_an_account()
+    {
+        const string Payload = """
+            {"agreements":[
+              {"type":"LOAN","group":"LOAN","status":"OFFER","identifierType":"LOCAL_ID","id":"D1",
+               "commercialId":{"type":"NL_CORBANK_ID","value":"D1"},"balance":{"currency":"EUR","value":"0.00"},
+               "_links":[{"rel":"self","href":"/v1/agreements/d1"}]},
+              {"type":"LOAN","group":"LOAN","status":"offer","identifierType":"LOCAL_ID","id":"D2","_links":[]},
+              {"type":"LOAN","group":"LOAN","status":"ACTIVE","identifierType":"LOCAL_ID","id":"R2",
+               "commercialId":{"type":"NL_CORBANK_ID","value":"R2"},"balance":{"currency":"EUR","value":"-2713.43"},
+               "_links":[{"rel":"transactions","href":"/v1/agreements/r2/transactions"}]}
+            ]}
+            """;
+        using var document = JsonDocument.Parse(Payload);
+        var notes = new List<string>();
+
+        var accounts = IngAccounts.ReadAgreements(document, SessionId, AsOf, notes.Add);
+
+        Assert.Equal(["R2"], accounts.Select(a => a.Record.ExternalId));
+        Assert.Equal(2, notes.Count);
+        Assert.All(notes, note => Assert.Contains("'OFFER'", note, StringComparison.Ordinal));
+        Assert.All(notes, note => Assert.DoesNotContain("D1", note, StringComparison.Ordinal));
+    }
+
+    // the same offer under a word this reader does not know: a loan with no balance and nothing to open is held back
+    // too. A loan that states a balance, or anything to open, stays
     [Fact]
     public void A_loan_that_was_only_offered_is_not_listed_as_an_account()
     {

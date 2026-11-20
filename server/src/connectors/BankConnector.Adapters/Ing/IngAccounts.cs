@@ -51,6 +51,17 @@ internal static class IngAccounts
 
             if (string.Equals(kind, "LOYALTY", StringComparison.OrdinalIgnoreCase)) continue;
 
+            // ING's own word for an agreement it proposed and the holder has not signed: it is no account yet,
+            // whatever else the entry states
+            if (string.Equals(entry.Text("status"), OfferedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                note?.Invoke(
+                    $"{IngAdapter.ProviderId}: ING lists an agreement of type '{Word(kind)}' with the status " +
+                    $"'{OfferedStatus}'. It was offered and not taken, so it is not listed as an account");
+
+                continue;
+            }
+
             var commercial = entry.Child("commercialId");
             var balance = entry.Child("balance");
 
@@ -69,8 +80,8 @@ internal static class IngAccounts
             var self = Link(entry, "self");
             var history = Link(entry, "transactions");
 
-            // a loan ING offered and the holder has not taken stands in this list too, with no balance and nothing to
-            // open: it is no account yet, and listing it shows an account without a figure
+            // the same offer under a word this reader does not know: a loan with no balance and nothing to open is
+            // no account either, and listing it shows an account without a figure. The note carries ING's word
             if (type == AccountType.Loan && balance.ValueKind != JsonValueKind.Object && self is null && history is null)
             {
                 note?.Invoke(
@@ -112,7 +123,9 @@ internal static class IngAccounts
         return accounts;
     }
 
-    /// a status is ING's own word (ACTIVE): only a short run of letters, digits and underscores is repeated in a note
+    private const string OfferedStatus = "OFFER";
+
+    /// a status or type is ING's own word (ACTIVE): only a short run of letters, digits and underscores is repeated in a note
     private static string Word(string? stated) =>
         stated is { Length: > 0 and <= 32 } && stated.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
             ? stated
