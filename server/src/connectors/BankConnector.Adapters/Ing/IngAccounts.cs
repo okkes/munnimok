@@ -66,6 +66,21 @@ internal static class IngAccounts
                     $"{IngAdapter.ProviderId}: an agreement of type '{kind}' states no identifier of any kind");
 
             var type = Kind(kind);
+            var self = Link(entry, "self");
+            var history = Link(entry, "transactions");
+
+            // a loan ING offered and the holder has not taken stands in this list too, with no balance and nothing to
+            // open: it is no account yet, and listing it shows an account without a figure
+            if (type == AccountType.Loan && balance.ValueKind != JsonValueKind.Object && self is null && history is null)
+            {
+                note?.Invoke(
+                    $"{IngAdapter.ProviderId}: a loan agreement states no balance and links to neither its own " +
+                    "resource nor a history. ING lists a loan it offered and nobody took like that, so it is not " +
+                    $"listed as an account. ING's status for it reads '{Word(entry.Text("status"))}'");
+
+                continue;
+            }
+
             var currency = balance.Currency("currency");
             var figure = Stated(balance, currency, asOf);
 
@@ -90,12 +105,18 @@ internal static class IngAccounts
                     Balance = figure,
                 }),
                 Agreement(entry),
-                Link(entry, "self"),
-                Link(entry, "transactions")));
+                self,
+                history));
         }
 
         return accounts;
     }
+
+    /// a status is ING's own word (ACTIVE): only a short run of letters, digits and underscores is repeated in a note
+    private static string Word(string? stated) =>
+        stated is { Length: > 0 and <= 32 } && stated.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
+            ? stated
+            : "(not a plain word)";
 
     /// a string or a JSON number: ING sends both for a field of this name (/accounts/current "-1730.01", savings 8.2);
     /// accepting only one reports an account with no balance; both go through MoneyParser so no cent is lost
