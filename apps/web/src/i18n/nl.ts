@@ -426,6 +426,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'login.signInFailedCaHint': 'meestal betekent dit dat het netwerkcertificaat nog niet volledig vertrouwd is — gebruik de knop hieronder (iPhone: schakel het na installatie ook in onder Certificaatvertrouwen).',
   'login.or': 'of',
   'login.continueAs': 'Doorgaan als {name}',
+  'login.continueWith': 'Doorgaan met {provider}',
   'login.anotherAccount': 'Ander account gebruiken',
   'sync.anotherAccount': 'Ander account',
   'invite.title': 'Je bent uitgenodigd voor munni',

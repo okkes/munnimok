@@ -424,6 +424,7 @@ export const en = {
   'login.signInFailedCaHint': 'this usually means the network certificate is not fully trusted yet — use the button below (iPhone: after installing, also enable it under Certificate Trust Settings).',
   'login.or': 'or',
   'login.continueAs': 'Continue as {name}',
+  'login.continueWith': 'Continue with {provider}',
   'login.anotherAccount': 'Use another account',
   'sync.anotherAccount': 'Another account',
   'invite.title': 'You’re invited to munni',

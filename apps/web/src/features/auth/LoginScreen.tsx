@@ -51,7 +51,8 @@ function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () 
     document.body,
   );
 }
-import { continueOptions, readLastAccount } from './lastAccount';
+import { continueLabel, continueOptions, readLastAccount } from './lastAccount';
+import type { ContinueLabel } from './lastAccount';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from a 2.2MB PNG: the login screen is precached
@@ -90,6 +91,12 @@ function useInviteOnly(): boolean {
 
 const PROVIDER_ICONS: Partial<Record<string, string>> = { google: 'google', apple: 'apple' };
 
+function signInText(t: ReturnType<typeof useLang>['t'], label: ContinueLabel | null): string {
+  if (label?.kind === 'name') return t('login.continueAs', { name: label.name });
+  if (label?.kind === 'provider') return t('login.continueWith', { provider: label.provider });
+  return t('login.signIn');
+}
+
 function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { t } = useLang();
   const { signIn } = useLogto();
@@ -99,8 +106,8 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   // #559: "Continue as" only where the way back in is known; otherwise the plain sign-in, never a name ending on an empty form
   const last = readLastAccount();
   const resume = continueOptions(last);
-  const continuing = resume ? last : null;
-  const providerIcon = continuing?.social ? PROVIDER_ICONS[continuing.social] : undefined;
+  const label = continueLabel(last);
+  const providerIcon = label && last?.social ? PROVIDER_ICONS[last.social] : undefined;
   const start = (fresh: boolean) => {
     setFailed(null);
     // a rejected signIn is named on screen AND reported: a native user has no devtools (discovery died on an untrusted cert)
@@ -119,9 +126,9 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
     <>
       <Button variant="primary" data-testid="login-signin-btn" disabled={!onLine} onClick={() => start(false)}>
         {providerIcon && <Icon name={providerIcon} size={17} />}
-        {continuing ? t('login.continueAs', { name: continuing.name }) : t('login.signIn')}
+        {signInText(t, label)}
       </Button>
-      {continuing && (
+      {label && (
         <Button variant="outline" data-testid="login-another-account" disabled={!onLine} onClick={() => start(true)}>
           {t('login.anotherAccount')}
         </Button>

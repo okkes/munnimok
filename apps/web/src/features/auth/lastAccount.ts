@@ -86,6 +86,22 @@ export function continueOptions(
   return null;
 }
 
+// Google lists its accounts whatever munni asks: Logto's connector cannot hand it a name (#657). A button that named
+// the person promised what it could not keep, so for such a provider the button names the provider
+const ASKS_WHICH_ACCOUNT: ReadonlySet<string> = new Set(['google']);
+const PROVIDER_NAMES: Record<string, string> = { google: 'Google', apple: 'Apple' };
+
+export type ContinueLabel = { kind: 'name'; name: string } | { kind: 'provider'; provider: string };
+
+/** how the way back in is offered: by the person's name, by the provider's, or not at all */
+export function continueLabel(last: LastAccount | null): ContinueLabel | null {
+  if (!last || !continueOptions(last)) return null;
+  if (last.social && ASKS_WHICH_ACCOUNT.has(last.social)) {
+    return { kind: 'provider', provider: PROVIDER_NAMES[last.social] ?? last.social };
+  }
+  return { kind: 'name', name: last.name };
+}
+
 export function forgetLastAccount(): void {
   try {
     localStorage.removeItem(KEY);

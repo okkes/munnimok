@@ -203,7 +203,9 @@ describe('the account step (user 2026-10-07)', () => {
     try {
       renderApp('/login', { signedIn: false });
       const continueAs = await screen.findByTestId('login-signin-btn');
-      expect(continueAs.textContent).toContain('Continue as Okkes');
+      // #657: Google asks which account whatever munni sends, so the button names Google, never the person
+      expect(continueAs.textContent).toContain('Continue with Google');
+      expect(continueAs.textContent).not.toContain('Okkes');
       fireEvent.click(continueAs);
       await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
       // Logto's own session answers at once; a signed-out one hands over to Google instead of its empty page
@@ -224,6 +226,8 @@ describe('the account step (user 2026-10-07)', () => {
     rememberLastAccount('Okkes', { username: 'okkes' });
     try {
       renderApp('/login', { signedIn: false });
+      // a username can be handed over, so here the name is a promise the button keeps
+      expect((await screen.findByTestId('login-signin-btn')).textContent).toContain('Continue as Okkes');
       fireEvent.click(await screen.findByTestId('login-signin-btn'));
       await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
       expect(mockSignIn.mock.calls[0][0]).toMatchObject({ loginHint: 'okkes' });

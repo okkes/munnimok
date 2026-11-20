@@ -426,6 +426,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'login.signInFailedCaHint': 'bu genellikle ağ sertifikasına henüz tam güvenilmediği anlamına gelir — aşağıdaki düğmeyi kullanın (iPhone: yükledikten sonra Sertifika Güveni Ayarları’ndan da etkinleştirin).',
   'login.or': 'veya',
   'login.continueAs': '{name} olarak devam et',
+  'login.continueWith': '{provider} ile devam et',
   'login.anotherAccount': 'Başka hesap kullan',
   'sync.anotherAccount': 'Başka hesap',
   'invite.title': 'munni’ye davet edildin',
