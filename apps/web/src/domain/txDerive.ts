@@ -14,8 +14,12 @@ export function deriveTxType(options: {
   counterFunding?: boolean;
   multiPart?: boolean;
   adjustment?: boolean;
+  /** the category is one of the Income family (the join knows the person's own subs too) */
+  incomeCat?: boolean;
 }): TxType {
   if (options.adjustment) return 'adjustment';
+  // a bonus or a gift paid into a savings account is income that landed there, not money set aside
+  if (options.stamp === 'saving' && options.incomeCat && options.amountCents >= 0) return 'income';
   if (options.stamp) return options.stamp;
   if (options.multiPart) return standardTypeFor(options.amountCents);
   if (options.counterFunding) return 'funding';

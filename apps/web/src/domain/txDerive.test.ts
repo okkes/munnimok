@@ -17,6 +17,16 @@ describe('deriveTxType — the compat txType, computed instead of asked (#133)',
   });
 });
 
+describe('deriveTxType — income that lands in a savings account (#664)', () => {
+  it('an income category on money coming in outranks the savings stamp, and only there', () => {
+    expect(deriveTxType({ amountCents: 2500, stamp: 'saving', catId: 'giftReceived', incomeCat: true })).toBe('income');
+    expect(deriveTxType({ amountCents: -2500, stamp: 'saving', catId: 'giftReceived', incomeCat: true })).toBe('saving');
+    expect(deriveTxType({ amountCents: 2500, stamp: 'saving', catId: 'savingInterest' })).toBe('saving');
+    expect(deriveTxType({ amountCents: 2500, stamp: 'investment', catId: 'giftReceived', incomeCat: true })).toBe('investment');
+    expect(deriveTxType({ amountCents: 2500, stamp: 'saving', catId: 'giftReceived', incomeCat: true, adjustment: true })).toBe('adjustment');
+  });
+});
+
 describe('deriveTxType — funding counterparty (#152)', () => {
   it('a funding pot beats the generic transfer', () => {
     expect(deriveTxType({ amountCents: -100, linkedAccountId: 'pot', counterFunding: true })).toBe('funding');

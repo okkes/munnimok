@@ -272,6 +272,11 @@ export const mainCatOf = (catId: string | undefined): string | undefined => {
   return cat ? (cat.parentId ?? cat.id) : undefined;
 };
 
+export const INCOME_MAIN_ID = 'income';
+/** the Income family, a person's own subs under it included; the placeholder and reimbursements are typed income too and stay out */
+export const isIncomeFamily = (cat: { id: string; parentId?: string }): boolean => (cat.parentId ?? cat.id) === INCOME_MAIN_ID;
+export const isIncomeBuiltin = (catId: string | undefined): boolean => mainCatOf(catId) === INCOME_MAIN_ID;
+
 // the type a special-category pick pulls onto a standard row; a transfer sub is the manual road into a transfer (#133)
 // funding asks WHICH funding account; walking away keeps the bare funding story (#152)
 export const specialCatType = (catId: string | undefined): TxType | undefined => {

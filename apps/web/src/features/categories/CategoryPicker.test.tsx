@@ -8,6 +8,7 @@ import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+import { visibleTransactions } from '@/db/joined';
 
 describe('CategoryPicker direction filtering (via add-transaction form)', () => {
   beforeEach(() => {
@@ -121,6 +122,63 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-investBuy');
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
     expect(screen.queryByTestId('catpicker-balanceAdjustment')).toBeNull();
+  }, 15_000);
+
+  it('#664: money coming into a savings account may be filed as income; money leaving it may not', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-664'), { trackOutbox: false });
+    await repo.upsert('account', DEMO_SPACE_ID, 'pot_664', { name: 'Piggy manual', type: 'savings', source: 'manual', balanceCents: 0, currency: 'EUR' });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-pot_664'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    // money out of the pot: its own family alone
+    await screen.findByTestId('catpicker-savingWithdraw');
+    expect(screen.queryByTestId('catpicker-giftReceived')).toBeNull();
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+  }, 15_000);
+
+  it('#664: the income side of a savings account offers the Income family next to its own', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-664b'), { trackOutbox: false });
+    await repo.upsert('account', DEMO_SPACE_ID, 'pot_664', { name: 'Piggy manual', type: 'savings', source: 'manual', balanceCents: 0, currency: 'EUR' });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-pot_664'));
+    fireEvent.click(screen.getByTestId('txform-income'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-giftReceived');
+    expect(screen.getByTestId('catpicker-savingInterest')).toBeTruthy();
+    expect(screen.getByTestId('catpicker-savingDeposit')).toBeTruthy();
+    // the person's own income sub rides along; spending stays out
+    expect(screen.getByTestId('catpicker-demo_cat_sidegig')).toBeTruthy();
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+    expect(screen.queryByTestId('catpicker-savingWithdraw')).toBeNull();
+
+    // filed and saved, the row keeps the income category and counts as income
+    fireEvent.click(screen.getByTestId('catpicker-giftReceived'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bank bonus' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    const store = new DexieBackend(new MunniDB('munni_demo'));
+    await waitFor(async () => {
+      const saved = (await visibleTransactions(store, DEMO_SPACE_ID)).find((t) => t.accountId === 'pot_664');
+      expect(saved).toMatchObject({ catId: 'giftReceived', amountCents: 2500, txType: 'income' });
+      expect(saved?.linkedAccountId).toBeUndefined();
+    });
   }, 15_000);
 
   it('#261: Adjustment never rides the standard-row escape into an expense picker', async () => {

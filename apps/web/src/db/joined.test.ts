@@ -185,6 +185,23 @@ describe('feature B join layer', () => {
     expect(adj?.txType).toBe('adjustment');
   });
 
+  it('#664: money paid into a savings account under an income category is income, a person’s own income sub included', async () => {
+    await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('category', SPACE, 'c_bonus', { name: 'Bank bonus', parentId: 'income', icon: 'gift', color: '#27AE60' });
+    const row = { accountId: 'pot', currency: 'EUR', merchant: 'Bank', needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'gift', { ...row, date: '2026-10-15', amountCents: 2500, catId: 'giftReceived' });
+    await repo.upsert('transaction', SPACE, 'bonus', { ...row, date: '2026-10-16', amountCents: 1000, catId: 'c_bonus' });
+    await repo.upsert('transaction', SPACE, 'interest', { ...row, date: '2026-10-17', amountCents: 12, catId: 'savingInterest' });
+    await repo.upsert('transaction', SPACE, 'open', { ...row, date: '2026-10-18', amountCents: 500, catId: 'uncategorized' });
+    await repo.upsert('transaction', SPACE, 'out', { ...row, date: '2026-10-19', amountCents: -500, catId: 'giftReceived' });
+    const typeOf = new Map((await visibleTransactions(new DexieBackend(db), SPACE)).map((t) => [t.id, t.txType]));
+    expect(typeOf.get('gift')).toBe('income');
+    expect(typeOf.get('bonus')).toBe('income');
+    expect(typeOf.get('interest')).toBe('saving');
+    expect(typeOf.get('open')).toBe('saving');
+    expect(typeOf.get('out')).toBe('saving');
+  });
+
   it('#228: spread entries derive with the ROW\'s one counterparty; the row link speaks for the whole', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
