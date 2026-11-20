@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.27.0](https://github.com/okkes/munnimok/compare/v5.26.0...v5.27.0) (2026-11-20)
+
+
+### ✨ Features
+
+* **native:** the app icon follows the phone's theme ([#659](https://github.com/okkes/munnimok/issues/659)) ([d24d72a](https://github.com/okkes/munnimok/commit/d24d72a2de803350a37f086b2891c46da0092e05))
+* **web:** Home in two columns is a set of cards that hold their own headers ([#665](https://github.com/okkes/munnimok/issues/665)) ([e567f09](https://github.com/okkes/munnimok/commit/e567f091d7642fec1ac2d0c5b39dc0ec9dfdea84))
+* **web:** money paid into a savings account can be filed as income ([#664](https://github.com/okkes/munnimok/issues/664)) ([48ac20c](https://github.com/okkes/munnimok/commit/48ac20c719730ce70a8ea0db9aedc7d098781218))
+* **web:** this space's accounts show their balance ([#660](https://github.com/okkes/munnimok/issues/660)) ([d94d56a](https://github.com/okkes/munnimok/commit/d94d56aa2ed102d9731bb04b2819c80af6686a23))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** ING's loan offer is not listed as an account ([#656](https://github.com/okkes/munnimok/issues/656)) ([869df5d](https://github.com/okkes/munnimok/commit/869df5d0df75c1090ce192cabfb580135fbf5933))
+* **web:** a desktop dialog comes out of the control that opened it and goes back into it ([#658](https://github.com/okkes/munnimok/issues/658)) ([a12238a](https://github.com/okkes/munnimok/commit/a12238ae2d7eadd416937199b0e35cce79235cee))
+* **web:** a savings account's own rows read from its own side ([#663](https://github.com/okkes/munnimok/issues/663)) ([464d7bc](https://github.com/okkes/munnimok/commit/464d7bcefd605264870530f99f69c108697547ec))
+* **web:** an account without a balance reads a dash, never NaN ([#656](https://github.com/okkes/munnimok/issues/656)) ([8fe39db](https://github.com/okkes/munnimok/commit/8fe39db51d7ab8a3af42898578942b20a6fd1547))
+
 ## [5.26.0](https://github.com/okkes/munnimok/compare/v5.25.0...v5.26.0) (2026-11-19)
 
 
