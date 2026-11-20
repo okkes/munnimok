@@ -1774,6 +1774,8 @@ export const en = {
   'events.peek': 'Preview event',
   'events.peekTotal': '{amount} · {n} payments',
   'events.addTxs': 'Add',
+  'events.linkedOne': 'Linked',
+  'events.linkedMany': '{n} linked',
   'events.addTitle': 'Add transactions',
   'events.inOther': 'Now in {name} — adding moves it here',
   'events.peekSelect': 'Select',

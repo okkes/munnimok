@@ -1776,6 +1776,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'events.peek': 'Evenement bekijken',
   'events.peekTotal': '{amount} · {n} betalingen',
   'events.addTxs': 'Toevoegen',
+  'events.linkedOne': 'Gekoppeld',
+  'events.linkedMany': '{n} gekoppeld',
   'events.addTitle': 'Transacties toevoegen',
   'events.inOther': 'Nu bij {name} — toevoegen verplaatst hem hierheen',
   'events.peekSelect': 'Selecteren',

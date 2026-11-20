@@ -13,7 +13,7 @@ import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { Chip, ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { EventFormSheet, eventPicture, eventPictureStyle } from './EventsScreen';
@@ -56,6 +56,9 @@ export function eventListUnits<T extends UnitTx>(list: readonly T[]): EventListU
   return list.filter((tx) => !member.has(tx.id)).map((tx) => ({ key: tx.id, date: tx.date, rows: [tx, ...(creditsOf.get(tx.id) ?? [])] }));
 }
 
+// the fold survives the detour into a transaction and back; a reload starts folded again
+const linkedApartByEvent = new Map<string, boolean>();
+
 /** the units under their day, in the order they came */
 export function unitsByDay<T>(units: readonly EventListUnit<T>[]): [string, EventListUnit<T>[]][] {
   const days = new Map<string, EventListUnit<T>[]>();
@@ -83,6 +86,7 @@ export function EventDetailScreen() {
   const canEdit = useCanEdit(); // #505
   const [drillMain, setDrillMain] = useState<string | null>(null);
   const [drillSub, setDrillSub] = useState<string | null>(null);
+  const [linkedApart, setLinkedApart] = useState(() => linkedApartByEvent.get(eventId) ?? false);
 
   const event = events?.find((e) => e.id === eventId);
   // deleted here or on another device: leave the orphaned detail
@@ -135,10 +139,17 @@ export function EventDetailScreen() {
 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
   const fmtDay = (iso: string) => new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
-  const days = unitsByDay(eventListUnits(filteredList));
+  const units = eventListUnits(filteredList);
+  const hasLinked = units.some((unit) => unit.rows.length > 1);
+  const days = unitsByDay(units);
+  const toggleLinkedApart = () => {
+    linkedApartByEvent.set(eventId, !linkedApart);
+    setLinkedApart(!linkedApart);
+  };
+  const linkedNoteOf = (n: number) => (n === 1 ? t('events.linkedOne') : t('events.linkedMany', { n }));
   const canFindMore = canEdit && view.suggestions.length > 0 && view.list.length > 0;
   // a row in a linked unit names its own day when that is not the day it stands under
-  const renderTx = (tx: (typeof filteredList)[number], showDate: boolean) => {
+  const renderTx = (tx: (typeof filteredList)[number], showDate: boolean, linkedNote?: string) => {
     const entries = partEntries(tx);
     if (entries.length > 1) {
       const sign = tx.amountCents < 0 ? -1 : 1;
@@ -162,6 +173,7 @@ export function EventDetailScreen() {
         key={tx.id}
         tx={tx}
         showDate={showDate}
+        linkedNote={linkedNote}
         givenCents={givenByCredit.get(tx.id) ?? 0}
         onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
       />
@@ -298,7 +310,7 @@ export function EventDetailScreen() {
 
         <div className="m-cap mt-5 mb-1 flex items-center gap-2 px-1">
           <span>
-            {t('overview.payments')} · {filteredList.length}
+            {t('overview.payments')} · {linkedApart ? filteredList.length : units.length}
           </span>
           {drillMain && (
             <button
@@ -338,6 +350,15 @@ export function EventDetailScreen() {
             <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
           </button>
         )}
+        {/* #493: an expense stands for the payments that paid it back — where the money went; this shows them all */}
+        {hasLinked && (
+          <div className="mb-1 flex px-1">
+            <Chip testId="eventdetail-filter-linked" selected={linkedApart} onClick={toggleLinkedApart}>
+              <Icon name="swap-horizontal" size={14} />
+              {t('tx.counterFilter')}
+            </Chip>
+          </div>
+        )}
         {filteredList.length > 0 ? (
           <div data-testid="eventdetail-txs">
             {days.map(([date, units]) => (
@@ -345,7 +366,7 @@ export function EventDetailScreen() {
                 <div className="m-cap sticky top-0 z-10 -mx-1 mt-3 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
                 <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1">
                   {units.map((unit) =>
-                    unit.rows.length > 1 ? (
+                    unit.rows.length > 1 && linkedApart ? (
                       <div key={unit.key} className="py-1.5" data-testid={`eventdetail-linked-${unit.key}`}>
                         <div className="mb-0.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
                           <Icon name="cash-refund" size={12} color="var(--m-accent-deep)" />
@@ -354,7 +375,7 @@ export function EventDetailScreen() {
                         <div className="rounded-card bg-bg px-2">{unit.rows.map((tx) => renderTx(tx, tx.date !== date))}</div>
                       </div>
                     ) : (
-                      renderTx(unit.rows[0], false)
+                      renderTx(unit.rows[0], false, unit.rows.length > 1 ? linkedNoteOf(unit.rows.length - 1) : undefined)
                     ),
                   )}
                 </div>

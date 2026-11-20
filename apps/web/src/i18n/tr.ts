@@ -1776,6 +1776,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'events.peek': 'Etkinliği önizle',
   'events.peekTotal': '{amount} · {n} ödeme',
   'events.addTxs': 'Ekle',
+  'events.linkedOne': 'Bağlantılı',
+  'events.linkedMany': '{n} bağlantılı',
   'events.addTitle': 'İşlem ekle',
   'events.inOther': 'Şu an {name} içinde — eklemek onu buraya taşır',
   'events.peekSelect': 'Seç',

@@ -391,12 +391,28 @@ describe('Events (demo identity)', () => {
     cleanup();
     renderApp('/events/ev493');
     const txs = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
+    // the expense alone stands for the pair — where the money went — and says something is linked to it
+    const expense = await waitFor(() => {
+      const el = txs.querySelector('[data-testid="tx-row-hotel493"]');
+      expect(el?.querySelector('.line-through')?.textContent).toMatch(/101[.,]00/);
+      return el!;
+    }, { timeout: 8000 });
+    expect(expense.textContent).toMatch(/€0[.,]00/);
+    expect(screen.getByTestId('tx-row-linked-hotel493').textContent).toContain('Linked');
+    expect(txs.querySelector('[data-testid="tx-row-back493"]')).toBeNull();
+    expect(screen.queryByTestId('eventdetail-linked-hotel493')).toBeNull();
+    expect(screen.getByTestId('screen-event-detail').textContent).toContain('Payments · 2');
+
+    // "Show linked separately" brings the paying credit out, as a unit with its expense
+    fireEvent.click(screen.getByTestId('eventdetail-filter-linked'));
     const credit = await waitFor(() => {
       const el = txs.querySelector('[data-testid="tx-row-back493"]');
       expect(el?.querySelector('.line-through')?.textContent).toMatch(/101[.,]00/);
       return el!;
-    }, { timeout: 8000 });
+    });
     expect(credit.textContent).toMatch(/€0[.,]00/);
+    expect(screen.queryByTestId('tx-row-linked-hotel493')).toBeNull();
+    expect(screen.getByTestId('screen-event-detail').textContent).toContain('Payments · 3');
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/9[.,]76/));
     await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-flows')).toBeNull();
