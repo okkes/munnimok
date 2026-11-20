@@ -146,7 +146,10 @@ export function EventDetailScreen() {
     linkedApartByEvent.set(eventId, !linkedApart);
     setLinkedApart(!linkedApart);
   };
-  const linkedNoteOf = (n: number) => (n === 1 ? t('events.linkedOne') : t('events.linkedMany', { n }));
+  const linkedNoteOf = (n: number): string | undefined => {
+    if (n === 0) return undefined;
+    return n === 1 ? t('events.linkedOne') : t('events.linkedMany', { n });
+  };
   const canFindMore = canEdit && view.suggestions.length > 0 && view.list.length > 0;
   // a row in a linked unit names its own day when that is not the day it stands under
   const renderTx = (tx: (typeof filteredList)[number], showDate: boolean, linkedNote?: string) => {
@@ -375,7 +378,7 @@ export function EventDetailScreen() {
                         <div className="rounded-card bg-bg px-2">{unit.rows.map((tx) => renderTx(tx, tx.date !== date))}</div>
                       </div>
                     ) : (
-                      renderTx(unit.rows[0], false, unit.rows.length > 1 ? linkedNoteOf(unit.rows.length - 1) : undefined)
+                      renderTx(unit.rows[0], false, linkedNoteOf(unit.rows.length - 1))
                     ),
                   )}
                 </div>
