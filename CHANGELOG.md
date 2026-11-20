@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.28.0](https://github.com/okkes/munnimok/compare/v5.27.0...v5.28.0) (2026-11-20)
+
+
+### ✨ Features
+
+* **web:** a funded subject offers its spending as an amount ([#670](https://github.com/okkes/munnimok/issues/670)) ([a6362d0](https://github.com/okkes/munnimok/commit/a6362d0b8070380114afd585862c2965a9eb8d09))
+* **web:** a tappable chart point answers the pointer, and the chart names its values ([#500](https://github.com/okkes/munnimok/issues/500)) ([a1fceb1](https://github.com/okkes/munnimok/commit/a1fceb10a4f0e5f06a3c7984f6a38a97c60929b6))
+* **web:** an event's payments stand by day, a reimbursement beside its expense ([#493](https://github.com/okkes/munnimok/issues/493)) ([b4a3f5d](https://github.com/okkes/munnimok/commit/b4a3f5d6e6574eba466b1e3d6ab8d258227a097e))
+* **web:** funding an unplanned row says what it holds and what it still lacks ([#494](https://github.com/okkes/munnimok/issues/494)) ([857311f](https://github.com/okkes/munnimok/commit/857311fa94f8f673ca100a6250a1f1f0e6cee3c5))
+* **web:** the pool can cover an overspend when nothing is left to give ([#669](https://github.com/okkes/munnimok/issues/669)) ([044001e](https://github.com/okkes/munnimok/commit/044001e379d6744fde7f2b30de49186b3716c8c0))
+
+
+### 🐞 Bug Fixes
+
+* **web:** a Google account is offered as "Continue with Google", not by name ([#657](https://github.com/okkes/munnimok/issues/657)) ([105752d](https://github.com/okkes/munnimok/commit/105752d0b8c6ab5e129ba6ff2f40fd6096f5d140))
+* **web:** the bulk rename offers only what it can change, and an order code is no part of a merchant ([#674](https://github.com/okkes/munnimok/issues/674)) ([6047ab8](https://github.com/okkes/munnimok/commit/6047ab8e7920d7750913a22c0fd97fc0ac985913))
+* **web:** the review's Skip and Confirm stand still from card to card ([#666](https://github.com/okkes/munnimok/issues/666)) ([3a76893](https://github.com/okkes/munnimok/commit/3a76893515126942aa13030c9973275faff4023a))
+
 ## [5.27.0](https://github.com/okkes/munnimok/compare/v5.26.0...v5.27.0) (2026-11-20)
 
 
