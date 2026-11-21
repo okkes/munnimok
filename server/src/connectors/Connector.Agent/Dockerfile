@@ -33,7 +33,7 @@ RUN dotnet publish src/connectors/Connector.Agent/Connector.Agent.csproj \
 
 # tag tracks Microsoft.Playwright in Directory.Packages.props: driver/browser drift fails at launch, not build;
 # renovate.json moves both in one PR (#562)
-FROM mcr.microsoft.com/playwright/dotnet:v1.64.1-noble
+FROM mcr.microsoft.com/playwright/dotnet:v1.65.1-noble
 
 # full property names: a shorter spelling binds to nothing and the agent silently uses a home-directory default
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
