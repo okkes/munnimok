@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.29.0](https://github.com/okkes/munnimok/compare/v5.28.0...v5.29.0) (2026-11-21)
+
+
+### ✨ Features
+
+* **web:** a supported shop is one merchant however the statement spells it ([#674](https://github.com/okkes/munnimok/issues/674)) ([d22e2ff](https://github.com/okkes/munnimok/commit/d22e2ffb51727ce9cc9860fd9f248900138a0b36))
+* **web:** in an event a paid-back expense stands for its pair ([#493](https://github.com/okkes/munnimok/issues/493)) ([eea21a3](https://github.com/okkes/munnimok/commit/eea21a3c13893b2ddbaaece923ca89021618ad27))
+* **web:** Portfolio reads "Coming soon" outside the demo ([#677](https://github.com/okkes/munnimok/issues/677)) ([3d90a78](https://github.com/okkes/munnimok/commit/3d90a78af61a49b3086ff94f07e5397a74ad7ce6))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** ING's offered loan is recognised by ING's own word ([#656](https://github.com/okkes/munnimok/issues/656)) ([bf6dde1](https://github.com/okkes/munnimok/commit/bf6dde116d7247d5855c0e5fa398fc17d4ea6977))
+* **web:** a Home block is one card on desktop, without a frame inside it ([#665](https://github.com/okkes/munnimok/issues/665)) ([2f20c83](https://github.com/okkes/munnimok/commit/2f20c83ac3f192777f98f5136bc9c9a956b71d24))
+
 ## [5.28.0](https://github.com/okkes/munnimok/compare/v5.27.0...v5.28.0) (2026-11-20)
 
 
