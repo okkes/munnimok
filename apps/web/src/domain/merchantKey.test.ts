@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isReferenceCode, merchantKey, merchantKeyBefore674 } from './merchantKey';
+import { isReferenceCode, merchantKey, merchantKeyBeforeBrands, merchantKeyBefore674 } from './merchantKey';
 
 describe('merchantKey', () => {
   it('#346: the legal form behind a name is noise — B.V., BV and N.V. spell the same merchant', () => {
@@ -14,7 +14,7 @@ describe('merchantKey', () => {
     expect(merchantKey("SEN MARKET >'S-GRAVEN 8.08.2026 10U53 KV")).toBe('sen market');
     expect(merchantKey("SEN MARKET >'S-GRAVEN11.09.2026 18U57 KV")).toBe('sen market');
     expect(merchantKey('Bakkerij Jansen 2026-09-11 18:57')).toBe('bakkerij jansen');
-    expect(merchantKey('AH1470 Delft')).toBe('ah');
+    expect(merchantKeyBeforeBrands('AH1470 Delft')).toBe('ah');
     expect(merchantKey('Radio 3FM shop')).toBe('radio 3fm shop');
   });
 
@@ -36,10 +36,10 @@ describe('merchantKey', () => {
   });
 
   it('#674 (user ss): an order code is no part of the name — every Amazon and bol.com charge is one merchant', () => {
-    expect(merchantKey('WWW.AMAZON.* HF12S4JW5')).toBe('www amazon');
-    expect(merchantKey('WWW.AMAZON.* H40FC73G5')).toBe('www amazon');
-    expect(merchantKey('WWW.AMAZON.* 5O5AC6Y85')).toBe('www amazon');
-    expect(merchantKey('AMZN Mktp NL*2A3B4C5D6')).toBe('amzn mktp nl');
+    expect(merchantKeyBeforeBrands('WWW.AMAZON.* HF12S4JW5')).toBe('www amazon');
+    expect(merchantKeyBeforeBrands('WWW.AMAZON.* H40FC73G5')).toBe('www amazon');
+    expect(merchantKeyBeforeBrands('WWW.AMAZON.* 5O5AC6Y85')).toBe('www amazon');
+    expect(merchantKeyBeforeBrands('AMZN Mktp NL*2A3B4C5D6')).toBe('amzn mktp nl');
     expect(merchantKey('bol.com C000KD5LPH')).toBe('bol com');
     // an IBAN in the line is a reference too
     expect(merchantKey('Incasso NL69INGB0123456789 Vattenfall')).toBe('incasso vattenfall');
@@ -55,6 +55,63 @@ describe('merchantKey', () => {
     }
     expect(merchantKey('car2go Deutschland')).toBe('car2go deutschland');
     expect(merchantKey('Fit4Free Rotterdam')).toBe('fit4free');
+  });
+
+  it('#674 (user): a supported shop is one merchant however the statement spells it', () => {
+    const spelled: Record<string, string[]> = {
+      amazon: [
+        'WWW.AMAZON.* HF12S4JW5',
+        'WWW.AMAZON.* HF12S4JW5 LUXEMBOURG LUX',
+        'Amzn Mktp NL*AB1CD2EF3 LUXEMBOURG LUX',
+        'Amzn Mktp NL*AB1CD2EF3 amazon.nl LUX',
+        'AMZN Mktp NL',
+        'AmazonRetail*AB1CD2EF3 www.amazon.nl LUX',
+        'Amazon EU SARL',
+        'Amazon Marketplace',
+        'Amazon Payments Europe SCA',
+        'Amazon.nl*AB1CD2EF3',
+        'Amazon',
+      ],
+      'amazon prime': ['AMZNPRIMENL*AB1CD2EF3 LUXEMBOURG LUX', 'AmznPrimeNL*AB1CD2EF3 LUXEMBOURG LUX', 'Amazon Prime*AB1CD2EF3', 'AMZN Prime NL'],
+      'albert heijn': [
+        'ALBERT HEIJN 1234 UTRECHT NLD',
+        'Albert Heijn 1576 S-GRAVENHAGE NLD',
+        'Albert Heijn 1576 SGRAVENHAGE',
+        'Albert Heijn B.V.',
+        'BCK*Albertheijn Markt NLD',
+        'AH to go 5823 Utrecht',
+        'AH XL 1234 Eindhoven',
+        'AH1470 Delft',
+        'AH 1470 DELFT NLD',
+      ],
+      'bol com': ['bol.com C000KD5LPH Utrecht NLD', 'bol.com', 'bol.com b.v.', 'BOL', 'bol Utrecht NLD'],
+      coolblue: ['Coolblue Rotterdam NLD', 'Coolblue B.V.'],
+      jumbo: ['Jumbo Utrecht Stationsstr Utrecht NLD', 'Jumbo Stationsstraat UTRECHT NLD', 'Jumbo Supermarkten B.V.', 'CCV*Jumbo Foodmarkt'],
+      lidl: ['Lidl 123 Delft NLD', 'LIDL NEDERLAND GMBH'],
+      mediamarkt: ['MEDIAMARKT NL ROTTERDAM NLD', 'Media Markt Den Haag'],
+    };
+    for (const [key, lines] of Object.entries(spelled)) {
+      for (const line of lines) expect(merchantKey(line), line).toBe(key);
+    }
+  });
+
+  it('#674: a line that only begins like a shop keeps its own key', () => {
+    // another business under the same name
+    expect(merchantKey('Amazon Web Services EMEA')).toBe('amazon web services emea');
+    expect(merchantKey('AMZN Digital*AB1CD2EF3')).toBe('amzn digital');
+    expect(merchantKey('Amazon Prime Video*AB1CD2EF3')).toBe('amazon prime video');
+    expect(merchantKey('Prime Video*AB1CD2EF3')).toBe('prime video');
+    expect(merchantKey('Jumbo Golf Houten')).toBe('jumbo golf houten');
+    // a short spelling needs to stand alone or before a place
+    expect(merchantKey('AH Bouw B.V.')).toBe('ah bouw');
+    expect(merchantKey('AH Vastgoed Delft')).toBe('ah vastgoed');
+    expect(merchantKey('Bol Accountants')).toBe('bol accountants');
+    // a longer word is another word
+    expect(merchantKey('Amazonia Restaurant')).toBe('amazonia restaurant');
+    expect(merchantKey('Lidlmaat Klusbedrijf')).toBe('lidlmaat klusbedrijf');
+    expect(merchantKey('Jumbotron Events')).toBe('jumbotron events');
+    // the shop's name further on in the line is a mention, not the merchant
+    expect(merchantKey('Tikkie voor Jumbo boodschappen')).toBe('tikkie voor jumbo boodschappen');
   });
 
   it('keeps a name that merely ends in a look-alike word', () => {

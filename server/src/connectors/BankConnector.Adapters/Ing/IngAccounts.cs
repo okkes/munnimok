@@ -49,7 +49,7 @@ internal static class IngAccounts
             // type leads, group is the fallback: they agreed on every observed agreement, so ING's preference is not established
             var kind = entry.Text("type") ?? entry.Text("group");
 
-            if (string.Equals(kind, "LOYALTY", StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsNoAccount(entry, kind, note)) continue;
 
             var commercial = entry.Child("commercialId");
             var balance = entry.Child("balance");
@@ -69,17 +69,7 @@ internal static class IngAccounts
             var self = Link(entry, "self");
             var history = Link(entry, "transactions");
 
-            // a loan ING offered and the holder has not taken stands in this list too, with no balance and nothing to
-            // open: it is no account yet, and listing it shows an account without a figure
-            if (type == AccountType.Loan && balance.ValueKind != JsonValueKind.Object && self is null && history is null)
-            {
-                note?.Invoke(
-                    $"{IngAdapter.ProviderId}: a loan agreement states no balance and links to neither its own " +
-                    "resource nor a history. ING lists a loan it offered and nobody took like that, so it is not " +
-                    $"listed as an account. ING's status for it reads '{Word(entry.Text("status"))}'");
-
-                continue;
-            }
+            if (IsLoanWithNothingToShow(entry, type, balance, self ?? history, note)) continue;
 
             var currency = balance.Currency("currency");
             var figure = Stated(balance, currency, asOf);
@@ -112,7 +102,39 @@ internal static class IngAccounts
         return accounts;
     }
 
-    /// a status is ING's own word (ACTIVE): only a short run of letters, digits and underscores is repeated in a note
+    private const string OfferedStatus = "OFFER";
+
+    /// what ING lists beside the holder's accounts: its points (LOYALTY), which are no money, and an agreement it
+    /// proposed and the holder has not signed, which is no account yet whatever else the entry states
+    private static bool IsNoAccount(JsonElement entry, string? kind, Action<string>? note)
+    {
+        if (string.Equals(kind, "LOYALTY", StringComparison.OrdinalIgnoreCase)) return true;
+
+        if (!string.Equals(entry.Text("status"), OfferedStatus, StringComparison.OrdinalIgnoreCase)) return false;
+
+        note?.Invoke(
+            $"{IngAdapter.ProviderId}: ING lists an agreement of type '{Word(kind)}' with the status " +
+            $"'{OfferedStatus}'. It was offered and not taken, so it is not listed as an account");
+
+        return true;
+    }
+
+    /// the same offer under a word this reader does not know: a loan with no balance and nothing to open is no
+    /// account either, and listing it shows an account without a figure. The note carries ING's word
+    private static bool IsLoanWithNothingToShow(
+        JsonElement entry, AccountType type, JsonElement balance, string? opens, Action<string>? note)
+    {
+        if (type != AccountType.Loan || balance.ValueKind == JsonValueKind.Object || opens is not null) return false;
+
+        note?.Invoke(
+            $"{IngAdapter.ProviderId}: a loan agreement states no balance and links to neither its own " +
+            "resource nor a history. ING lists a loan it offered and nobody took like that, so it is not " +
+            $"listed as an account. ING's status for it reads '{Word(entry.Text("status"))}'");
+
+        return true;
+    }
+
+    /// a status or type is ING's own word (ACTIVE): only a short run of letters, digits and underscores is repeated in a note
     private static string Word(string? stated) =>
         stated is { Length: > 0 and <= 32 } && stated.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
             ? stated

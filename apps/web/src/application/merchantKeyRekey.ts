@@ -3,17 +3,19 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { RecurringDismissRow } from '@/db/types';
 import { recurringDismissId } from '@/domain/feedIds';
-import { merchantKey, merchantKeyBefore578, merchantKeyBefore674 } from '@/domain/merchantKey';
+import { merchantKey, merchantKeyBefore578, merchantKeyBefore674, merchantKeyBeforeBrands } from '@/domain/merchantKey';
 import { LAST_SYNC_KEY } from '@/sync/engine';
 
 export const MERCHANT_KEY_REKEY_MARKER = 'merchantKeyRekey:578';
 export const MERCHANT_KEY_REKEY_674_MARKER = 'merchantKeyRekey:674';
+export const MERCHANT_KEY_REKEY_BRANDS_MARKER = 'merchantKeyRekey:674-brands';
 
 // one step per change of spelling, oldest first; each runs once per device and lands on TODAY's key, so a device
 // that missed an older step is brought up to date by it and finds nothing left to do in the next
 const STEPS: readonly { marker: string; before: (merchant: string) => string }[] = [
   { marker: MERCHANT_KEY_REKEY_MARKER, before: merchantKeyBefore578 },
   { marker: MERCHANT_KEY_REKEY_674_MARKER, before: merchantKeyBefore674 },
+  { marker: MERCHANT_KEY_REKEY_BRANDS_MARKER, before: merchantKeyBeforeBrands },
 ];
 
 type Votes = Map<string, Map<string, number>>;
@@ -73,7 +75,8 @@ async function rekeyDismissals(repo: Repo, dismissals: readonly RecurringDismiss
   return moved;
 }
 
-// #578: the key cuts a card line's place-and-time tail; #674: it drops an order code. Stored keys are rewritten once per
+// #578: the key cuts a card line's place-and-time tail; #674: it drops an order code, then reads a supported shop's
+// spellings as one. Stored keys are rewritten once per
 // change, each through its transactions (an old spelling lost what the new one reads, so the key alone cannot say what
 // it becomes). Deterministic: every device lands the same.
 export async function rekeyMerchantKeys(store: StorageBackend, repo: Repo): Promise<number> {

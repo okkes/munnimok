@@ -5,6 +5,7 @@ import { useData } from '@/app/data';
 import { isNativeApp } from '@/lib/platform';
 import { useHelp } from './HelpContext';
 import { TOURS } from './tours';
+import { usePortfolioOpen } from '@/features/portfolio/portfolioGate';
 import { WhatsNewSheet } from './WhatsNew';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -15,6 +16,7 @@ export function HelpIndexScreen() {
   const { store } = useData();
   const { openSlides } = useHelp();
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const portfolioOpen = usePortfolioOpen();
   const seen = useQuery(store, async () => {
     const keys = TOURS.map((tour) => `tutorialSeen_${tour.id}`);
     const rows = await Promise.all(keys.map((key) => store.metaGet(key)));
@@ -63,8 +65,8 @@ export function HelpIndexScreen() {
             title={t('mina.replay')}
             onClick={() => window.dispatchEvent(new Event('mina:start'))}
           />
-          {/* the install walkthrough is meaningless inside the native shell */}
-          {TOURS.filter((tour) => tour.id !== 'install' || !isNativeApp()).map((tour) => (
+          {/* the install walkthrough is meaningless inside the native shell, the portfolio's where the screen only says Coming soon */}
+          {TOURS.filter((tour) => (tour.id !== 'install' || !isNativeApp()) && (tour.id !== 'portfolio' || portfolioOpen)).map((tour) => (
             <Row
               key={tour.id}
               testId={`help-tour-${tour.id}`}

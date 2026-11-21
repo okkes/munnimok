@@ -80,6 +80,7 @@ export function TxRow({
   accountName,
   givenCents = 0,
   transferNote,
+  linkedNote,
 }: Readonly<{
   tx: TransactionRow;
   onClick?: () => void;
@@ -100,6 +101,8 @@ export function TxRow({
   givenCents?: number;
   /** collapsed transfer pair: "From → To" replaces the category line */
   transferNote?: string;
+  /** this row stands for a linked unit whose other rows are folded away: says so */
+  linkedNote?: string;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -153,6 +156,11 @@ export function TxRow({
             </span>
           ) : (
             !hideCategory && categoryLabel
+          )}
+          {linkedNote && (
+            <Pill tone="accent" className="ml-1.5" testId={`tx-row-linked-${tx.id}`}>
+              <Icon name="link-variant" size={10} /> {linkedNote}
+            </Pill>
           )}
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>

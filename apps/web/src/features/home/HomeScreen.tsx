@@ -97,7 +97,10 @@ const COLUMNS_LG = 'lg:columns-2 lg:gap-x-6';
 const ITEM_LG = 'lg:break-inside-avoid lg:pb-4';
 const NUDGES_LG = `${ITEM_LG} lg:empty:hidden lg:[&>*]:mt-0 lg:[&>*+*]:mt-4`;
 const BLOCK_LG = 'lg:[&>*:first-child]:mt-0';
-const BLOCK_CARD_LG = `${BLOCK_LG} lg:rounded-[18px] lg:border lg:border-line lg:bg-surface lg:p-3 lg:[&_.m-cap]:mb-2`;
+// a block draws a card of its own for the phone; inside the block's card that is a frame within a frame, so there
+// it loses its line, corners and ground and its rows stand in the outer card, level with the header
+const INNER_CARD_LG = 'lg:[&_.rounded-card]:rounded-none lg:[&_.rounded-card]:border-0 lg:[&_.rounded-card]:bg-transparent';
+const BLOCK_CARD_LG = `${BLOCK_LG} ${INNER_CARD_LG} lg:overflow-hidden lg:rounded-[18px] lg:border lg:border-line lg:bg-surface lg:pt-3 lg:pb-1 lg:[&_.m-cap]:mb-1.5 lg:[&_.m-cap]:px-4`;
 /** blocks that are one card already: a banner, the shortcut tiles */
 const BARE_BLOCKS: ReadonlySet<HomeBlockId> = new Set(['review', 'receipts', 'shortcuts']);
 const blockClassLg = (id: HomeBlockId): string => (BARE_BLOCKS.has(id) ? BLOCK_LG : BLOCK_CARD_LG);

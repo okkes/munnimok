@@ -15,6 +15,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { HoldingFormSheet } from './PortfolioScreen';
+import { usePortfolioOpen } from './portfolioGate';
 import { DecimalInput } from '@/ui/DecimalInput';
 
 const LOT_KINDS = ['buy', 'sell', 'dividend', 'fee'] as const;
@@ -47,10 +48,11 @@ export function HoldingDetailScreen() {
 
   const view = model?.views.find((v) => v.holding.id === holdingId);
   // deleted here or on another device: leave the orphaned detail
+  const open = usePortfolioOpen();
   useEffect(() => {
-    if (model && !view) void navigate({ to: '/portfolio', replace: true });
-  }, [model, view, navigate]);
-  if (!view)
+    if (!open || (model && !view)) void navigate({ to: '/portfolio', replace: true });
+  }, [open, model, view, navigate]);
+  if (!open || !view)
     return <div className="h-full" data-testid="screen-holding-detail" />;
 
   const money = (cents: number) => fmtCents(cents, 'EUR', lang);
