@@ -12,6 +12,32 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.29.0',
+    date: '2026-11-21',
+    items: [
+      {
+        en: 'Albert Heijn, Amazon, bol.com, Coolblue, Jumbo, Lidl and MediaMarkt each count as one shop, however your bank spells the payment: with a branch number, a town or a short name such as “AMZN Mktp”. Remembered titles and categories and your recurring costs follow by themselves. Amazon Prime stays a shop of its own.',
+        nl: 'Albert Heijn, Amazon, bol.com, Coolblue, Jumbo, Lidl en MediaMarkt tellen elk als één winkel, hoe je bank de betaling ook schrijft: met een filiaalnummer, een plaats of een korte naam zoals “AMZN Mktp”. Onthouden titels en categorieën en je terugkerende kosten gaan vanzelf mee. Amazon Prime blijft een eigen winkel.',
+        tr: 'Albert Heijn, Amazon, bol.com, Coolblue, Jumbo, Lidl ve MediaMarkt, bankan ödemeyi nasıl yazarsa yazsın tek bir mağaza sayılır: şube numarasıyla, şehir adıyla ya da “AMZN Mktp” gibi kısa bir adla. Hatırlanan başlıklar ve kategoriler ile düzenli ödemelerin kendiliğinden uyum sağlar. Amazon Prime ayrı bir mağaza olarak kalır.',
+      },
+      {
+        en: 'In an event an expense that was paid back is one row with a “Linked” mark. “Show linked separately” brings the payment that paid it back into the list again.',
+        nl: 'In een gebeurtenis is een uitgave die is terugbetaald één regel met het merkje “Gekoppeld”. “Gekoppelde apart tonen” zet de betaling waarmee ze is terugbetaald weer in de lijst.',
+        tr: 'Bir etkinlikte geri ödenmiş bir harcama, “Bağlantılı” işaretiyle tek satırda durur. “Bağlantılıları ayrı göster”, onu geri ödeyen ödemeyi yeniden listeye getirir.',
+      },
+      {
+        en: 'Home in a desktop window: a block is one card, without a second frame inside it.',
+        nl: 'Thuis in een desktopvenster: een blok is één kaart, zonder een tweede kader erin.',
+        tr: 'Masaüstü penceresinde Ana sayfa: her blok tek bir karttır, içinde ikinci bir çerçeve yoktur.',
+      },
+      {
+        en: 'Portfolio reads “Coming soon” until it is finished. The demo still shows it.',
+        nl: 'Portefeuille toont “Binnenkort beschikbaar” tot het af is. De demo laat het nog wel zien.',
+        tr: 'Portföy, tamamlanana kadar “Yakında” yazısını gösterir. Demo onu göstermeye devam eder.',
+      },
+    ],
+  },
+  {
     version: '5.28.0',
     date: '2026-11-20',
     items: [
