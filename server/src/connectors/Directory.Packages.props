@@ -10,7 +10,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.15" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.4" />
   </ItemGroup>
 
   <ItemGroup Label="Hosting">
@@ -25,7 +25,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
     <!-- Microsoft.OpenApi 2.0.0 (transitive) has GHSA-v5pm-xwqc-g5wc: pinned forward, not NoWarn'd; transitive pinning above makes it reach it -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.1" />
   </ItemGroup>
 
   <ItemGroup Label="Automation">
