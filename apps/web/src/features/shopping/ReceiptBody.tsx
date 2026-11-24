@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useReceiptFile } from '@/application/receiptFiles';
+import { linesDisagree } from '@/domain/receiptCats';
 import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
@@ -145,7 +146,7 @@ export function ReceiptBody({
           <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid={id('items')}>
             <ReceiptItems items={receipt.items} currency={currency} testIdPrefix={testIdPrefix} />
           </div>
-          {receipt.reconciled === false && (
+          {linesDisagree(receipt) && (
             <p className="mt-1 px-1 text-[11px] text-ink-4" data-testid={id('unreconciled')}>
               {t('receipt.unreconciled')}
             </p>

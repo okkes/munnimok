@@ -141,6 +141,12 @@ describe('reading a receipt photo', () => {
     expect(screen.queryByTestId(/item-cat-1$/)).toBeNull();
     expect(screen.getAllByText('Lavazza')).toHaveLength(2);
     expect(screen.getByTestId(/unreconciled$/)).toBeTruthy();
+
+    // #642: a total that is the lines' own sum carries the same mark from the party and says nothing
+    cleanup();
+    renderWithData(<ReceiptBody receipt={{ ...row, totalCents: 398 }} currency="EUR" />);
+    await screen.findByTestId(/item-cat-0$/);
+    expect(screen.queryByTestId(/unreconciled$/)).toBeNull();
   });
 
   it('#648: the standing order reads a photo taken a moment ago without the button, once; a no to the reader ends the order', async () => {
