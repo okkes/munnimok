@@ -11,6 +11,13 @@ public static class LogoEndpoints
 {
     public const string HttpClientName = "logodev";
 
+    private const string SecretPrefix = "sk_";
+
+    /// both keys are set and the publishable slot holds no secret key: what sits in that slot travels to every
+    /// client inside an image address, so a secret there is never served (#678)
+    public static bool Usable(string? secretKey, string? publicToken) =>
+        !string.IsNullOrEmpty(secretKey) && !string.IsNullOrEmpty(publicToken) && !publicToken.StartsWith(SecretPrefix, StringComparison.Ordinal);
+
     private sealed record SearchHit(
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("domain")] string? Domain);
@@ -31,8 +38,11 @@ public static class LogoEndpoints
         var log = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Logos");
         if (secretKey.StartsWith("pk_", StringComparison.Ordinal))
             log.LogError("LOGODEV_SECRET_KEY looks like a publishable key (pk_…) — use the SECRET key (sk_…) from logo.dev's Manage Keys; searches will return nothing");
-        if (publicToken.StartsWith("sk_", StringComparison.Ordinal))
-            log.LogError("LOGODEV_PUBLIC_TOKEN looks like a secret key (sk_…) — use the publishable key (pk_…); it is embedded in image URLs sent to clients");
+        if (!Usable(secretKey, publicToken))
+        {
+            log.LogError("LOGODEV_PUBLIC_TOKEN looks like a secret key (sk_…) — use the publishable key (pk_…); it would be embedded in image URLs sent to clients, so the logo search stays off");
+            return;
+        }
 
         app.MapGet("/logos/search", async (string q, IHttpClientFactory http, CancellationToken ct) =>
         {
@@ -62,11 +72,16 @@ public static class LogoEndpoints
     {
         var configured = !string.IsNullOrEmpty(secretKey) && !string.IsNullOrEmpty(publicToken);
         var secretLooksSwapped = secretKey?.StartsWith("pk_", StringComparison.Ordinal) == true;
-        var publicLooksSwapped = publicToken?.StartsWith("sk_", StringComparison.Ordinal) == true;
-        var search = configured
-            ? await CanarySearchAsync(http, ct)
-            : "unconfigured — set LOGODEV_SECRET_KEY (sk_…) and LOGODEV_PUBLIC_TOKEN (pk_…)";
-        return Results.Ok(new { configured, search, secretLooksSwapped, publicLooksSwapped });
+        var publicLooksSwapped = publicToken?.StartsWith(SecretPrefix, StringComparison.Ordinal) == true;
+        return Results.Ok(new { configured, search = await VerdictAsync(http, secretKey, publicToken, ct), secretLooksSwapped, publicLooksSwapped });
+    }
+
+    private static async Task<string> VerdictAsync(IHttpClientFactory http, string? secretKey, string? publicToken, CancellationToken ct)
+    {
+        if (Usable(secretKey, publicToken)) return await CanarySearchAsync(http, ct);
+        return string.IsNullOrEmpty(secretKey) || string.IsNullOrEmpty(publicToken)
+            ? "unconfigured — set LOGODEV_SECRET_KEY (sk_…) and LOGODEV_PUBLIC_TOKEN (pk_…)"
+            : "refused — LOGODEV_PUBLIC_TOKEN holds a secret key (sk_…); the logo search stays off until it holds the publishable one (pk_…)";
     }
 
     private static async Task<string> CanarySearchAsync(IHttpClientFactory http, CancellationToken ct)

@@ -86,8 +86,7 @@ builder.Services.AddHttpClient(RatesEndpoints.EcbClientName, client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
-                   && !string.IsNullOrEmpty(builder.Configuration["Logos:PublicToken"]);
+var logosEnabled = LogoEndpoints.Usable(builder.Configuration["Logos:SecretKey"], builder.Configuration["Logos:PublicToken"]);
 if (logosEnabled)
 {
     builder.Services.AddHttpClient(LogoEndpoints.HttpClientName, client =>
