@@ -34,7 +34,8 @@ export function TxPartRow({
     <button
       data-testid={`tx-part-solo-${tx.id}-${index}`}
       onClick={onClick}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-2 py-2 text-left"
+      // #506: as TxRow, a long title wraps and the icon and amount keep to the first band
+      className="m-tap flex w-full items-start gap-3 border-none bg-transparent px-2 py-2 text-left"
     >
       <span
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -42,12 +43,10 @@ export function TxPartRow({
       >
         <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
-          <span className="min-w-0 truncate">
-            <Highlight text={label} query={highlight} />
-          </span>
-          <Icon name="call-split" size={12} color="var(--m-accent-deep)" />
+      <span className="flex min-h-9 min-w-0 flex-1 flex-col justify-center">
+        <span className="block text-[14px] font-medium wrap-anywhere text-ink" data-testid={`tx-part-solo-title-${tx.id}-${index}`}>
+          <Highlight text={label} query={highlight} />
+          <Icon name="call-split" size={12} color="var(--m-accent-deep)" style={{ marginLeft: 6, verticalAlign: 'middle' }} />
         </span>
         <span className="block truncate text-[12px] text-ink-3">
           {showDate && (
@@ -60,8 +59,10 @@ export function TxPartRow({
         </span>
       </span>
       {/* #139: the amount wears exactly TxRow's face */}
-      <span className={`m-num text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-        <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />
+      <span className={`m-num flex min-h-9 shrink-0 items-center text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
+        <span>
+          <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />
+        </span>
       </span>
     </button>
   );

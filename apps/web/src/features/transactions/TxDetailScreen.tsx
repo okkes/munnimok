@@ -2176,7 +2176,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
-        title={<SearchableTitle text={screenTitle} query={txTitle(tx)} testId="tx-detail-search-web" />}
+        title={<SearchableTitle text={screenTitle} query={txTitle(tx)} testId="tx-detail-search-web" titleTestId="tx-detail-title" />}
+        wrapTitle
         leading={
           <DetailBackButton panes={panes} onClose={() => void navigate({ to: backTo, replace: true })} t={t} />
         }

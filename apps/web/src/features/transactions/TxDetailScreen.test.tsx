@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { OFFLINE_TEST_SPACE, USER_TEST_DB, renderApp, renderAppAsUser, seedOfflineProfile } from '@/test/harness';
 import { DEMO_SPACE_ID, isoDaysAgo } from '@/db/seed';
 import { accountLinkId, mirrorTxId, partMirrorSourceId, txMetaId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
@@ -1809,6 +1809,60 @@ describe('bulk apply from the detail (user request)', () => {
     expect((await db.transactions.get('sel-b'))?.catId).toBe('groceries');
     db.close();
   }, 15_000);
+});
+
+describe('#506: the title in the bar', () => {
+  beforeEach(async () => {
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  const long = 'OPENAI *CHATGPT SUBSCRIPTION HTTPSOPENAI.COMBILLINGREFERENCE1234567890';
+
+  it('a long title is read in full — it wraps beside the back arrow and the pencil — and the demo keeps its web search', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    await new Repo(new DexieBackend(db), new HlcClock('seed-long'), { trackOutbox: false }).upsert('transaction', DEMO_SPACE_ID, 'long-1', {
+      accountId: 'demo_main', date: '2026-06-01', amountCents: -2300, currency: 'EUR', merchant: long, catId: 'groceries', needsReview: 0,
+    });
+    db.close();
+    cleanup();
+    renderApp('/transactions/long-1');
+    const title = await screen.findByTestId('tx-detail-title');
+    expect(title.textContent).toContain(long);
+    expect(title.className).toContain('wrap-anywhere');
+    const bar = screen.getByTestId('appbar-title');
+    expect(bar.className).toContain('wrap-anywhere');
+    expect(bar.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap/);
+    expect(within(title).getByTestId('tx-detail-search-web')).toBeTruthy();
+  }, 20_000);
+
+  it('an offline profile is offered no web search — nothing of its data leaves the app', async () => {
+    const identity = await seedOfflineProfile(async (repo) => {
+      await repo.upsert('account', OFFLINE_TEST_SPACE, 'off-acct', { name: 'Main', type: 'checking', source: 'manual', currency: 'EUR' });
+      await repo.upsert('transaction', OFFLINE_TEST_SPACE, 'off-1', {
+        accountId: 'off-acct', date: '2026-06-01', amountCents: -2300, currency: 'EUR', merchant: long, catId: 'groceries', needsReview: 0,
+      });
+    });
+    renderApp('/transactions/off-1', { identity });
+    expect((await screen.findByTestId('tx-detail-title', {}, { timeout: 8000 })).textContent).toContain(long);
+    expect(screen.queryByTestId('tx-detail-search-web')).toBeNull();
+  }, 20_000);
+
+  it('an account keeps the web search', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const db = new MunniDB(USER_TEST_DB);
+    await new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false }).upsert('transaction', 's-user', 'user-1', {
+      accountId: 'a1', date: '2026-06-01', amountCents: -2300, currency: 'EUR', merchant: long, catId: 'groceries', needsReview: 0,
+    });
+    db.close();
+    renderAppAsUser('/transactions/user-1');
+    expect((await screen.findByTestId('tx-detail-title', {}, { timeout: 8000 })).textContent).toContain(long);
+    expect(screen.getByTestId('tx-detail-search-web')).toBeTruthy();
+  }, 20_000);
 });
 
 describe('title rename (user request)', () => {

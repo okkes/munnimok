@@ -4,6 +4,7 @@ import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TransactionRow } from '@/db/types';
 import { renderWithData } from '@/test/harness';
+import { TxPartRow } from './TxPartRow';
 import { TxRow } from './TxRow';
 
 const tx = (partial: Partial<TransactionRow>): TransactionRow =>
@@ -98,5 +99,28 @@ describe('TxRow', () => {
     );
     expect((await screen.findByTestId('tx-row-open')).getAttribute('aria-current')).toBe('true');
     expect(screen.getByTestId('tx-row-other').getAttribute('aria-current')).toBeNull();
+  });
+
+  const long = 'OPENAI *CHATGPT SUBSCRIPTION HTTPSOPENAI.COMBILLINGREFERENCE1234567890';
+
+  it('#506: a long title is never cut short — it wraps, a code without spaces included, and the amount keeps to the first line', async () => {
+    renderWithData(<TxRow tx={tx({ merchant: long })} accountName="ING creditcard" />);
+    const title = await screen.findByTestId('txrow-title-t1');
+    expect(title.textContent).toBe(long);
+    expect(title.className).toContain('wrap-anywhere');
+    expect(title.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap|line-clamp/);
+    // the row grows from its top: icon and amount stay beside the first line
+    const row = screen.getByTestId('tx-row-t1');
+    expect(row.className).toContain('items-start');
+    expect(row.lastElementChild!.className).toContain('min-h-10');
+  });
+
+  it('#506: a split part standing alone wraps its long label the same way', async () => {
+    renderWithData(<TxPartRow tx={tx({ merchant: long })} part={{ id: 'p1', catId: 'groceries', amountCents: 500 }} index={0} amountText="€5.00" />);
+    const title = await screen.findByTestId('tx-part-solo-title-t1-0');
+    expect(title.textContent).toContain(long);
+    expect(title.className).toContain('wrap-anywhere');
+    expect(title.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap/);
+    expect(screen.getByTestId('tx-part-solo-t1-0').className).toContain('items-start');
   });
 });

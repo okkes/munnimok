@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { OFFLINE_TEST_SPACE, USER_TEST_DB, renderApp, renderAppAsUser, seedOfflineProfile } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
@@ -215,6 +215,42 @@ describe('the review card: prepared suggestions and every row standing', () => {
     await openReview('PM *Z2U HongKong');
     fireEvent.click(screen.getByTestId('review-search-web'));
     expect(open).toHaveBeenCalledWith('https://www.google.com/search?q=PM%20*Z2U%20HongKong', '_blank', 'noopener');
+  }, 30_000);
+
+  it('#506: a long title is read in full on the card — it wraps, a code without spaces included', async () => {
+    const long = 'OPENAI *CHATGPT SUBSCRIPTION HTTPSOPENAI.COMBILLINGREFERENCE1234567890';
+    await land(async (repo) => {
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'long-1', { ...flagged, date: '2026-01-01', amountCents: -2300, merchant: long, catId: 'uncategorized' });
+    });
+    await openReview('OPENAI');
+    const title = screen.getByTestId('review-card-title');
+    expect(title.textContent).toContain(long);
+    expect(title.className).toMatch(/break-words|wrap-anywhere/);
+    expect(title.className).not.toMatch(/truncate|line-clamp|whitespace-nowrap|text-ellipsis/);
+  }, 30_000);
+
+  it('#506: an offline profile is offered no web search — nothing of its data leaves the app', async () => {
+    const identity = await seedOfflineProfile(async (repo) => {
+      await repo.upsert('account', OFFLINE_TEST_SPACE, 'off-acct', { name: 'Main', type: 'checking', source: 'manual', currency: 'EUR' });
+      await repo.upsert('transaction', OFFLINE_TEST_SPACE, 'off-1', {
+        accountId: 'off-acct', date: '2026-01-01', amountCents: -447, currency: 'EUR', merchant: 'PM *Z2U HongKong', catId: 'uncategorized', needsReview: 1,
+      });
+    });
+    renderApp('/review', { identity });
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('PM *Z2U HongKong'), { timeout: 8000 });
+    expect(screen.queryByTestId('review-search-web')).toBeNull();
+  }, 30_000);
+
+  it('#506: an account keeps the web search on the card', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const db = new MunniDB(USER_TEST_DB);
+    await new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false }).upsert('transaction', 's-user', 'user-1', {
+      accountId: 'a1', date: '2026-01-01', amountCents: -447, currency: 'EUR', merchant: 'PM *Z2U HongKong', needsReview: 1,
+    });
+    db.close();
+    renderAppAsUser('/review');
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('PM *Z2U HongKong'), { timeout: 8000 });
+    expect(screen.getByTestId('review-search-web')).toBeTruthy();
   }, 30_000);
 
   it('#537: a split part’s event picker lists an archived event too, labelled — and files the part under it', async () => {

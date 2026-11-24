@@ -12,6 +12,11 @@ import { DataProvider } from '@/app/data';
 import { clearQueryCache } from '@/db/useQuery';
 import { useSession } from '@/app/session';
 import type { Identity } from '@/app/session';
+import { addOfflineProfile } from '@/features/auth/offlineProfiles';
+import { DexieBackend } from '@/db/backend';
+import { Repo } from '@/db/repo';
+import { MunniDB, identityDbName } from '@/db/schema';
+import { HlcClock } from '@/sync/hlc';
 
 // vitest runs without globals, so RTL cannot self-register its cleanup
 afterEach(() => {
@@ -68,6 +73,19 @@ export function renderApp(path: string, { signedIn = true, identity }: { signedI
       </ThemeProvider>
     </LogtoAppProvider>,
   );
+}
+
+export const OFFLINE_TEST_SPACE = 's-offline';
+
+/** an offline profile whose store already holds a space, so it boots past onboarding; pass the identity to renderApp */
+export async function seedOfflineProfile(write: (repo: Repo) => Promise<void>): Promise<Identity> {
+  const profile = addOfflineProfile('Offline tester');
+  const db = new MunniDB(identityDbName(`offline_${profile.id}`));
+  const repo = new Repo(new DexieBackend(db), new HlcClock('offline-seed'), { trackOutbox: false });
+  await repo.upsert('space', OFFLINE_TEST_SPACE, OFFLINE_TEST_SPACE, { name: 'Personal', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+  await write(repo);
+  db.close();
+  return { kind: 'offline', profileId: profile.id };
 }
 
 export const USER_TEST_SUB = 'test-user';
