@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { MunniDB } from '@/db/schema';
@@ -15,6 +15,9 @@ import { renderApp, renderWithData } from '@/test/harness';
 import { MASK, useHideSensitive } from './sensitive';
 
 const state = () => screen.getByTestId('settings-hide-sensitive-state').textContent;
+const tap = (...keys: string[]) => {
+  for (const k of keys) fireEvent.click(screen.getByTestId(`lock-key-${k}`));
+};
 
 /** rows the lean demo lacks, written once the boot chain has settled (the db.close trap) */
 async function seed(write: (repo: Repo) => Promise<void>) {
@@ -77,19 +80,59 @@ describe('hide sensitive figures (#530)', () => {
     expect(screen.getByTestId('home-overview-income').textContent).not.toContain(MASK);
   }, 20_000);
 
-  it('switching it off asks for the app lock first where one is set', async () => {
+  it('switching it off asks the app-start unlock where a PIN lock is set: a wrong PIN is refused, the right one switches it off', async () => {
     useHideSensitive.getState().set(true);
     renderApp('/settings/global');
     await screen.findByTestId('settings-hide-sensitive');
     writeLockConfig({ enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 60 });
     fireEvent.click(screen.getByTestId('settings-hide-sensitive'));
-    const pin = await screen.findByTestId('pin-challenge-pin');
-    fireEvent.change(pin, { target: { value: '87654321' } });
-    expect(await screen.findByTestId('pin-challenge-error')).toBeTruthy();
+    await screen.findByTestId('pin-challenge-sheet');
+    // a browser lock with no biometric: the pad alone, no fingerprint key
+    expect(screen.queryByTestId('lock-unlock')).toBeNull();
+    tap('8', '7', '6', '5', '4', '3', '2', '1');
+    expect(await screen.findByTestId('lock-pin-error')).toBeTruthy();
     expect(state()).toBe('ON');
-    fireEvent.change(pin, { target: { value: '1234' } });
+    tap('1', '2', '3', '4');
     await waitFor(() => expect(state()).toBe('OFF'));
   }, 20_000);
+
+  describe('with the phone’s biometric', () => {
+    const verifyIdentity = vi.fn();
+    beforeEach(() => {
+      verifyIdentity.mockReset();
+      vi.stubGlobal('Capacitor', { Plugins: { NativeBiometric: { verifyIdentity } } });
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const openChallenge = async () => {
+      useHideSensitive.getState().set(true);
+      renderApp('/settings/global');
+      await screen.findByTestId('settings-hide-sensitive');
+      writeLockConfig({ enabled: true, biometricKind: 'native', pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 60 });
+      fireEvent.click(screen.getByTestId('settings-hide-sensitive'));
+      await screen.findByTestId('pin-challenge-sheet');
+    };
+
+    it('the face or fingerprint prompt comes up by itself and a pass switches it off with no PIN typed', async () => {
+      verifyIdentity.mockResolvedValue(undefined);
+      await openChallenge();
+      await waitFor(() => expect(state()).toBe('OFF'));
+      expect(verifyIdentity).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('lock-dots').dataset.length).toBe('0');
+    }, 20_000);
+
+    it('a cancelled scan switches nothing off and leaves the PIN pad, with the key to scan again', async () => {
+      verifyIdentity.mockRejectedValue(new Error('cancelled'));
+      await openChallenge();
+      await waitFor(() => expect(verifyIdentity).toHaveBeenCalledTimes(1));
+      expect(state()).toBe('ON');
+      fireEvent.click(screen.getByTestId('lock-unlock'));
+      await waitFor(() => expect(verifyIdentity).toHaveBeenCalledTimes(2));
+      expect(state()).toBe('ON');
+      tap('1', '2', '3', '4');
+      await waitFor(() => expect(state()).toBe('OFF'));
+    }, 20_000);
+  });
 
   it('without an app lock one tap switches it off', async () => {
     useHideSensitive.getState().set(true);
