@@ -290,6 +290,13 @@ describe('Payoff planner (#413)', () => {
     await screen.findByTestId('debtplan-hero');
     await screen.findByTestId('debtplan-order-loan-card');
     expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/Pick a month/);
+    // #513: the month field keeps to its card on a phone: no native look, free to shrink, as wide as the fields beside it
+    for (const id of ['debtplan-debt-by-loan-card', 'debtplan-free-by']) {
+      const field = screen.getByTestId(id);
+      expect(field.className).toContain('appearance-none');
+      expect(field.className).toContain('min-w-0');
+      expect(field.className).toContain('w-full');
+    }
     // the card (€6,000 at 12%, €150 a month) paid off in about two years
     const now = new Date();
     const inMonths = (n: number) => {

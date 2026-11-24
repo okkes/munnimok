@@ -298,6 +298,10 @@ interface ByDate {
 
 const MONTH_INPUT = /^\d{4}-\d{2}$/;
 
+// a month field on iOS keeps a width of its own and runs out of its card unless its native look is off and it may shrink;
+// its value sits centred there, the other fields' at the left (#513)
+const MONTH_FIELD_CLASS = `${INPUT_CLASS} block min-w-0 max-w-full appearance-none text-left [&::-webkit-date-and-time-value]:text-left`;
+
 function byDateNote(t: Translate, byDate: ByDate | null, money: Money, date: MonthName, today: string): string {
   if (!byDate) return t('debtplan.byDateHint');
   if (byDate.extra === null) return t('debtplan.byDateTooSoon');
@@ -311,7 +315,7 @@ function EndMonthRow({ label, value, today, note, onPick, testId }: Readonly<{ l
     <div className="mt-3">
       <label className="block text-[12px] text-ink-3">
         {label}
-        <input data-testid={testId} type="month" min={monthAfter(today, 1)} value={value} onChange={(e) => onPick(e.target.value)} placeholder="yyyy-mm" className={INPUT_CLASS} />
+        <input data-testid={testId} type="month" min={monthAfter(today, 1)} value={value} onChange={(e) => onPick(e.target.value)} placeholder="yyyy-mm" className={MONTH_FIELD_CLASS} />
       </label>
       <p className="mt-1 min-h-[30px] text-[11px] leading-snug text-ink-4" data-testid={`${testId}-note`}>
         {note}
