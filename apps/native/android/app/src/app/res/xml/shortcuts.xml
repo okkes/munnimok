@@ -2,6 +2,16 @@
 <!-- rebranded per build: CI replaces the placeholder package + scheme -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="munni-placeholder://scan"
+            android:targetPackage="app.munni.placeholder"
+            android:targetClass="app.munni.MainActivity" />
+    </shortcut>
+    <shortcut
         android:shortcutId="review"
         android:enabled="true"
         android:shortcutShortLabel="@string/shortcut_review">
