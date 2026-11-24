@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AXIS_W, MultiLine, hitRadius, scaleTicks } from './MultiLine';
 import { monotonePath, monotonePointAt, monotoneTangents } from './monotone';
+import { SCRUB_HOLD_MS } from './scrub';
 import type { ChartPt } from './monotone';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
@@ -263,6 +264,114 @@ describe('MultiLine', () => {
     expect(onScrub).toHaveBeenLastCalledWith(0);
     fireEvent.pointerUp(svg, { pointerId: 1 });
     expect(onScrub).toHaveBeenLastCalledWith(null);
+  });
+
+  describe('#510 (user: "a slider below the graph … touch hold the graph")', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function renderScrub() {
+      const onScrub = vi.fn();
+      render(
+        <MultiLine
+          series={[
+            { values: [0, 10, 25, null], color: 'teal' },
+            { values: [0, 5, 30, 40], color: 'grey', dashed: true },
+          ]}
+          height={120}
+          testId="scr"
+          scrub={{
+            origin: 2,
+            onScrub,
+            ariaLabel: 'compare',
+            sliderLabel: 'Pick a day',
+            tip: (i) => ({ title: `Day ${i + 1}`, rows: [{ color: 'teal', text: `now ${i}` }] }),
+          }}
+        />,
+      );
+      const svg = screen.getByTestId('scr');
+      vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 320, top: 0, height: 136, right: 320, bottom: 136, x: 0, y: 0, toJSON: () => ({}) });
+      return { svg, onScrub, slider: screen.getByTestId('scr-slider') as HTMLInputElement };
+    }
+
+    const touch = (pointerId = 1, clientX = 0, clientY = 50) => ({ pointerId, pointerType: 'touch', clientX, clientY });
+
+    it('the slider under the chart moves the same cursor: it rests on the origin, sliding shows the tip and reports the day, lifting lets go', () => {
+      const { onScrub, slider } = renderScrub();
+      expect(slider.type).toBe('range');
+      expect(slider.getAttribute('aria-label')).toBe('Pick a day');
+      expect(slider.max).toBe('3');
+      expect(slider.value).toBe('2');
+      expect(slider.getAttribute('aria-valuetext')).toBe('Day 3, now 2');
+      fireEvent.change(slider, { target: { value: '0' } });
+      expect(onScrub).toHaveBeenLastCalledWith(0);
+      expect(screen.getByTestId('scr-tip').textContent).toBe('Day 1now 0');
+      expect(slider.getAttribute('aria-valuetext')).toBe('Day 1, now 0');
+      fireEvent.change(slider, { target: { value: '3' } });
+      expect(screen.getByTestId('scr-tip').textContent).toMatch(/^Day 4/);
+      fireEvent.pointerUp(slider);
+      expect(onScrub).toHaveBeenLastCalledWith(null);
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+      expect(slider.value).toBe('2');
+      fireEvent.change(slider, { target: { value: '1' } });
+      fireEvent.keyDown(slider, { key: 'Escape' });
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+    });
+
+    it('a finger that moves at once scrolls the page and reads nothing; one held still reads the chart, keeps the page still and drags the day until it lifts', () => {
+      vi.useFakeTimers();
+      const { svg, onScrub } = renderScrub();
+      const touchMove = () => {
+        const event = new Event('touchmove', { bubbles: true, cancelable: true });
+        svg.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      expect(svg.style.touchAction).toBe('pan-y');
+
+      fireEvent.pointerDown(svg, touch(1, 100));
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+      fireEvent.pointerMove(svg, touch(1, 100, 80));
+      expect(touchMove()).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(SCRUB_HOLD_MS);
+      });
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+      fireEvent.pointerCancel(svg, touch(1));
+      expect(onScrub).not.toHaveBeenCalledWith(expect.any(Number));
+
+      fireEvent.pointerDown(svg, touch(2, 110));
+      act(() => {
+        vi.advanceTimersByTime(SCRUB_HOLD_MS - 1);
+      });
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(onScrub).toHaveBeenLastCalledWith(1);
+      expect(screen.getByTestId('scr-tip').textContent).toMatch(/^Day 2/);
+      expect(touchMove()).toBe(true);
+      fireEvent.pointerMove(svg, touch(2, 320, 140));
+      expect(onScrub).toHaveBeenLastCalledWith(3);
+      expect(screen.getByTestId('scr-tip').textContent).toMatch(/^Day 4/);
+      fireEvent.pointerUp(svg, touch(2, 320));
+      expect(onScrub).toHaveBeenLastCalledWith(null);
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+      expect(touchMove()).toBe(false);
+    });
+
+    it('a mouse still reads the chart on hover, without a hold', () => {
+      const { svg, onScrub } = renderScrub();
+      fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'mouse', clientX: 320 });
+      expect(onScrub).toHaveBeenLastCalledWith(3);
+      fireEvent.pointerLeave(svg, { pointerId: 1, pointerType: 'mouse' });
+      expect(screen.queryByTestId('scr-tip')).toBeNull();
+    });
+
+    it('a chart without a scrub has no slider', () => {
+      render(<MultiLine series={[{ values: [1, 2, 3], color: 'teal' }]} testId="still" />);
+      expect(screen.queryByTestId('still-slider')).toBeNull();
+    });
   });
 
   it('skipDotAt suppresses exactly that series-point dot; the path still passes through it', () => {

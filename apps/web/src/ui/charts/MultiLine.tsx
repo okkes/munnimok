@@ -1,10 +1,11 @@
 /** null values are gaps (segments span consecutive non-null runs); without `onPointClick` the chart is decorative:
  *  aria-hidden, one end dot per series; `markerIndex` pins the tracking start (#168) */
 import { useMemo, useState } from 'react';
-import type { KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent } from 'react';
 import { monotonePath, monotonePointAt } from './monotone';
 import type { ChartPt } from './monotone';
-import { pointerFraction, scrubKeyTarget } from './scrub';
+import { scrubKeyTarget, useScrubPointer } from './scrub';
+import { ScrubSlider } from './ScrubSlider';
 import { useGlide } from './useGlide';
 import { useUserInk } from '@/ui/userInk';
 
@@ -48,6 +49,8 @@ export interface ChartScrub {
   tip: (index: number) => ChartScrubTip;
   onScrub?: (index: number | null) => void;
   ariaLabel?: string;
+  /** names the slider under the chart for a screen reader */
+  sliderLabel?: string;
 }
 
 interface Run {
@@ -265,41 +268,34 @@ export function MultiLine({
   // #500: the selection is a marker that travels along the line to the tapped point
   const markerAt = useGlide(selected ? selected.pointIndex : null);
   const n = Math.max(0, ...series.map((s) => s.values.length));
-  const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  if (n === 0 || all.length === 0) return null;
   const width = WIDTH;
-  const labelZone = labels ? 16 : 0;
-  const min = Math.min(...all, 0);
-  const max = Math.max(...all, 0);
-  const span = max - min || 1;
   const axisZone = scale ? AXIS_W : 0;
   const plotWidth = width - axisZone;
-  const x = (i: number) => axisZone + (n === 1 ? plotWidth / 2 : (i / (n - 1)) * plotWidth);
-  const y = (value: number) => height - PAD - ((value - min) / span) * (height - 2 * PAD);
-  const hit = hitRadius(plotWidth, n);
-  const marker = selected && markerAt !== null ? trackPoint(series, selected.seriesIndex, markerAt, x, y) : null;
-
   const pickScrub = (index: number | null, follow: boolean) => {
     setDragging(follow);
     setScrubbed(index);
     scrub?.onScrub?.(index);
   };
   // the pointer is read across the whole picture; the points stand right of the scale's gutter
-  const scrubIndexOf = (e: PointerEvent<SVGSVGElement>) =>
-    Math.min(n - 1, Math.max(0, Math.round(((pointerFraction(e) * width - axisZone) / plotWidth) * (n - 1))));
+  const scrubIndexAt = (fraction: number) => Math.min(n - 1, Math.max(0, Math.round(((fraction * width - axisZone) / plotWidth) * (n - 1))));
+  const gesture = useScrubPointer({ indexAt: scrubIndexAt, pick: pickScrub, scrubbing: scrubbed !== null });
+  const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
+  if (n === 0 || all.length === 0) return null;
+  const labelZone = labels ? 16 : 0;
+  const min = Math.min(...all, 0);
+  const max = Math.max(...all, 0);
+  const span = max - min || 1;
+  const x = (i: number) => axisZone + (n === 1 ? plotWidth / 2 : (i / (n - 1)) * plotWidth);
+  const y = (value: number) => height - PAD - ((value - min) / span) * (height - 2 * PAD);
+  const hit = hitRadius(plotWidth, n);
+  const marker = selected && markerAt !== null ? trackPoint(series, selected.seriesIndex, markerAt, x, y) : null;
+
   const scrubHandlers = scrub
     ? {
+        ref: gesture.ref,
         tabIndex: 0,
         'aria-label': scrub.ariaLabel,
-        style: { touchAction: 'none', cursor: 'crosshair' } as const,
-        onPointerDown: (e: PointerEvent<SVGSVGElement>) => {
-          e.currentTarget.setPointerCapture?.(e.pointerId);
-          pickScrub(scrubIndexOf(e), false);
-        },
-        onPointerMove: (e: PointerEvent<SVGSVGElement>) => pickScrub(scrubIndexOf(e), scrubbed !== null),
-        onPointerUp: () => pickScrub(null, false),
-        onPointerCancel: () => pickScrub(null, false),
-        onPointerLeave: () => pickScrub(null, false),
+        ...gesture.handlers,
         onBlur: () => pickScrub(null, false),
         onKeyDown: (e: KeyboardEvent<SVGSVGElement>) => {
           const target = scrubKeyTarget(e.key, scrubbed ?? scrub.origin, n);
@@ -343,7 +339,7 @@ export function MultiLine({
       ? bandPath(series[bandBetween[0]].values, series[bandBetween[1]].values, x, y)
       : '';
 
-  return (
+  const picture = (
     <svg
       viewBox={`0 0 ${width} ${height + labelZone}`}
       // a dot on the first or the last point stands on the picture's edge: it must not be cut there, least of all grown
@@ -436,5 +432,23 @@ export function MultiLine({
         );
       })}
     </svg>
+  );
+  if (!scrub) return picture;
+  const sliderAt = scrubbed ?? Math.min(n - 1, Math.max(0, scrub.origin));
+  const sliderTip = scrub.tip(sliderAt);
+  return (
+    <div>
+      {picture}
+      <ScrubSlider
+        count={n}
+        value={sliderAt}
+        onPick={(index) => pickScrub(index, index !== null)}
+        label={scrub.sliderLabel ?? scrub.ariaLabel}
+        valueText={[sliderTip.title, ...sliderTip.rows.map((row) => row.text)].join(', ')}
+        color={series[0]?.color ?? 'var(--m-accent)'}
+        plotFrom={axisZone / width}
+        testId={testId ? `${testId}-slider` : undefined}
+      />
+    </div>
   );
 }

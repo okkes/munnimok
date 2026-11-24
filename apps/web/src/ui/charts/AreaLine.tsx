@@ -1,9 +1,10 @@
 /** Balance line: record solid, expectation dashed after Today; below zero it turns red (#501) and the wash fills to zero. */
 import { useId, useState } from 'react';
-import type { KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent } from 'react';
 import { monotonePath, monotonePointAt } from './monotone';
 import type { ChartPt } from './monotone';
-import { pointerFraction, scrubKeyTarget } from './scrub';
+import { scrubKeyTarget, useScrubPointer } from './scrub';
+import { ScrubSlider } from './ScrubSlider';
 import { useGlide } from './useGlide';
 import { useUserInk } from '@/ui/userInk';
 
@@ -158,6 +159,7 @@ export function AreaLine({
   formatDate,
   onScrub,
   ariaLabel,
+  sliderLabel,
   testId,
 }: Readonly<{
   /** the record: one point per day, oldest first */
@@ -174,6 +176,8 @@ export function AreaLine({
   formatDate: (date: string) => string;
   onScrub?: (scrub: AreaScrub | null) => void;
   ariaLabel?: string;
+  /** names the slider under the chart for a screen reader */
+  sliderLabel?: string;
   testId?: string;
 }>) {
   const color = useUserInk()(picked);
@@ -183,16 +187,24 @@ export function AreaLine({
   const gradientId = `al-${useId().replace(/[^\w-]/g, '')}`;
   const n = points.length;
   const scrubAt = useGlide(scrub, Math.max(0, n - 1), dragging);
-  if (n === 0) return null;
-  const lastActual = points[n - 1];
-  const future = projection.filter((point) => point.date > lastActual.date);
+  const lastDate = points.at(-1)?.date ?? '';
+  const future = projection.filter((point) => point.date > lastDate);
   const all: AreaScrub[] = [
     ...points.map((point) => ({ ...point, projected: false })),
     ...future.map((point) => ({ ...point, projected: true })),
   ];
-  const first = points[0].date;
+  const first = points[0]?.date ?? '';
   const totalDays = Math.max(1, dayDiff(first, all.at(-1)?.date ?? first));
   const offsets = all.map((point) => dayDiff(first, point.date));
+  const pick = (index: number | null, follow = false) => {
+    setDragging(follow);
+    setScrub(index);
+    onScrub?.(index === null ? null : all[index]);
+  };
+  const nearestTo = (day: number) => nearestIndex(offsets, day);
+  const gesture = useScrubPointer({ indexAt: (fraction) => nearestTo(Math.round(fraction * totalDays)), pick, scrubbing: scrub !== null });
+  if (n === 0) return null;
+  const lastActual = points[n - 1];
   const x = (date: string) => (dayDiff(first, date) / totalDays) * WIDTH;
   const values = all.map((point) => point.cents);
   const min = Math.min(...values);
@@ -218,91 +230,90 @@ export function AreaLine({
   const todayX = x(lastActual.date);
   const curveAt = (t: number): ChartPt => (t <= n - 1 ? monotonePointAt(recordPts, t) : monotonePointAt(projPts, t - (n - 1)));
 
-  const pick = (index: number | null, follow = false) => {
-    setDragging(follow);
-    setScrub(index);
-    onScrub?.(index === null ? null : all[index]);
-  };
-  const fromPointer = (e: PointerEvent<SVGSVGElement>, follow: boolean) =>
-    pick(nearestIndex(offsets, Math.round(pointerFraction(e) * totalDays)), follow);
   const onKeyDown = (e: KeyboardEvent<SVGSVGElement>) => {
     const target = scrubKeyTarget(e.key, scrub ?? n - 1, all.length);
     if (target === undefined) return;
     e.preventDefault();
     pick(target);
   };
+  const dayText = (point: AreaScrub) => (point.projected ? `${formatDate(point.date)} · ${projectedLabel}` : formatDate(point.date));
   const scrubbed = scrub === null ? null : all[scrub];
-  const scrubDate = scrubbed?.projected ? `${formatDate(scrubbed.date)} · ${projectedLabel}` : formatDate(scrubbed?.date ?? '');
   const bead = scrubbed && scrubAt !== null ? curveAt(scrubAt) : null;
+  const sliderPoint = all[scrub ?? n - 1];
 
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${height + labelZone}`}
-      className="w-full outline-none"
-      style={{ touchAction: 'none', cursor: 'crosshair' }}
-      tabIndex={0}
-      aria-label={ariaLabel}
-      data-testid={testId}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-        fromPointer(e, false);
-      }}
-      onPointerMove={(e) => fromPointer(e, scrub !== null)}
-      onPointerUp={() => pick(null)}
-      onPointerCancel={() => pick(null)}
-      onPointerLeave={() => pick(null)}
-      onKeyDown={onKeyDown}
-      onBlur={() => pick(null)}
-    >
-      {paint.startsWith('url(') && (
-        <defs>
-          <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2={height}>
-            <stop offset={split} style={{ stopColor: color }} />
-            <stop offset={split} style={{ stopColor: NEGATIVE }} />
-          </linearGradient>
-        </defs>
-      )}
-      {crossesZero && (
-        <line x1={0} x2={WIDTH} y1={zeroY} y2={zeroY} stroke="var(--m-ink-4)" strokeWidth={0.75} strokeDasharray="2 3" data-testid={suffixed(testId, 'zero')} />
-      )}
-      {areaPath && <path d={areaPath} fill={paint} fillOpacity={0.12} stroke="none" data-testid={suffixed(testId, 'area')} />}
-      {linePath && (
-        <path d={linePath} fill="none" stroke={paint} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" data-testid={suffixed(testId, 'line')} />
-      )}
-      {projPath && (
-        <path
-          d={projPath}
-          fill="none"
-          stroke={paint}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeDasharray="4 3"
-          opacity={0.85}
-          data-testid={suffixed(testId, 'projection')}
-        />
-      )}
-      <line x1={todayX} x2={todayX} y1={TOP - 4} y2={height} stroke="var(--m-line)" strokeWidth={1} strokeDasharray="2 3" data-testid={suffixed(testId, 'today')} />
-      <text x={todayX} y={10} textAnchor={edgeAnchor(todayX)} fontSize={8.5} fill="var(--m-ink-4)">
-        {todayLabel}
-      </text>
-      <circle cx={todayX} cy={y(lastActual.cents)} r={3.5} fill={colorOf(lastActual.cents)} data-testid={suffixed(testId, 'now')} />
-      <Markers markers={markers} points={points} x={x} y={y} colorOf={colorOf} testId={testId} />
-      {labels.map((label) => (
-        <text key={label.date} x={x(label.date)} y={height + labelZone - 4} textAnchor={edgeAnchor(x(label.date))} fontSize={8.5} fill="var(--m-ink-4)">
-          {label.text}
+    <div>
+      <svg
+        ref={gesture.ref}
+        viewBox={`0 0 ${WIDTH} ${height + labelZone}`}
+        className="w-full outline-none"
+        tabIndex={0}
+        aria-label={ariaLabel}
+        data-testid={testId}
+        {...gesture.handlers}
+        onKeyDown={onKeyDown}
+        onBlur={() => pick(null)}
+      >
+        {paint.startsWith('url(') && (
+          <defs>
+            <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2={height}>
+              <stop offset={split} style={{ stopColor: color }} />
+              <stop offset={split} style={{ stopColor: NEGATIVE }} />
+            </linearGradient>
+          </defs>
+        )}
+        {crossesZero && (
+          <line x1={0} x2={WIDTH} y1={zeroY} y2={zeroY} stroke="var(--m-ink-4)" strokeWidth={0.75} strokeDasharray="2 3" data-testid={suffixed(testId, 'zero')} />
+        )}
+        {areaPath && <path d={areaPath} fill={paint} fillOpacity={0.12} stroke="none" data-testid={suffixed(testId, 'area')} />}
+        {linePath && (
+          <path d={linePath} fill="none" stroke={paint} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" data-testid={suffixed(testId, 'line')} />
+        )}
+        {projPath && (
+          <path
+            d={projPath}
+            fill="none"
+            stroke={paint}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeDasharray="4 3"
+            opacity={0.85}
+            data-testid={suffixed(testId, 'projection')}
+          />
+        )}
+        <line x1={todayX} x2={todayX} y1={TOP - 4} y2={height} stroke="var(--m-line)" strokeWidth={1} strokeDasharray="2 3" data-testid={suffixed(testId, 'today')} />
+        <text x={todayX} y={10} textAnchor={edgeAnchor(todayX)} fontSize={8.5} fill="var(--m-ink-4)">
+          {todayLabel}
         </text>
-      ))}
-      {scrubbed && bead && (
-        <ScrubLayer
-          sx={bead.x}
-          sy={bead.y}
-          height={height}
-          color={bead.y > zeroY ? NEGATIVE : color}
-          dateText={scrubDate}
-          valueText={formatValue(scrubbed.cents)}
-          testId={testId}
-        />
-      )}
-    </svg>
+        <circle cx={todayX} cy={y(lastActual.cents)} r={3.5} fill={colorOf(lastActual.cents)} data-testid={suffixed(testId, 'now')} />
+        <Markers markers={markers} points={points} x={x} y={y} colorOf={colorOf} testId={testId} />
+        {labels.map((label) => (
+          <text key={label.date} x={x(label.date)} y={height + labelZone - 4} textAnchor={edgeAnchor(x(label.date))} fontSize={8.5} fill="var(--m-ink-4)">
+            {label.text}
+          </text>
+        ))}
+        {scrubbed && bead && (
+          <ScrubLayer
+            sx={bead.x}
+            sy={bead.y}
+            height={height}
+            color={bead.y > zeroY ? NEGATIVE : color}
+            dateText={dayText(scrubbed)}
+            valueText={formatValue(scrubbed.cents)}
+            testId={testId}
+          />
+        )}
+      </svg>
+      {/* the slider walks days, not points: the expectation's points stand days apart, and the thumb keeps under the bead */}
+      <ScrubSlider
+        count={all.length > 1 ? totalDays + 1 : 1}
+        value={dayDiff(first, sliderPoint.date)}
+        onPick={(day) => pick(day === null ? null : nearestTo(day), day !== null)}
+        label={sliderLabel ?? ariaLabel}
+        valueText={`${dayText(sliderPoint)}: ${formatValue(sliderPoint.cents)}`}
+        color={color}
+        testId={suffixed(testId, 'slider')}
+      />
+    </div>
   );
 }

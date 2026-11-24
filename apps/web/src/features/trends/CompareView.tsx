@@ -108,7 +108,7 @@ export function CompareView({
         ]}
         labels={dayLabels(model.days)}
         height={130}
-        scrub={{ origin: model.at, tip, onScrub: setScrubDay, ariaLabel: t('trends.viewCompare') }}
+        scrub={{ origin: model.at, tip, onScrub: setScrubDay, ariaLabel: t('trends.viewCompare'), sliderLabel: t('trends.scrubSlider') }}
       />
       <div className="mt-1 flex items-center gap-4 text-[11px] text-ink-4">
         <span className="flex items-center gap-1.5">
