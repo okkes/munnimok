@@ -332,6 +332,10 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
 
 public class FeedsApiFactory : WebApplicationFactory<Program>
 {
+    // a database per test class: several classes take this factory, and a repair that reads the WHOLE database
+    // counted the rows another class had just written (TxMetaOverlayRepairTests failed with one repair too many)
+    private readonly string _databaseName = $"feeds-tests-{Guid.NewGuid():N}";
+
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
         builder.UseSetting("Auth:TestMode", "true");
@@ -348,7 +352,7 @@ public class FeedsApiFactory : WebApplicationFactory<Program>
             {
                 services.Remove(d);
             }
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("feeds-tests"));
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_databaseName));
         });
     }
 }
