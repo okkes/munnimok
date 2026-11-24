@@ -21,6 +21,10 @@ public interface IReceiptReader
 
     /// <param name="model">the operator's choice in the admin portal; null = the provider's default</param>
     Task<ReadReceipt?> ReadAsync(IReadOnlyList<ReceiptPhoto> photos, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct);
+
+    /// #648: the lines of receipts a shop handed over carry no category — a category id per name, in the order given
+    /// (null where none fits); null when the provider gave no usable answer
+    Task<IReadOnlyList<string?>?> CategoriseAsync(string? merchant, IReadOnlyList<string> names, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct);
 }
 
 public sealed record ReceiptLine(string Name, decimal Quantity, int UnitCents, int TotalCents, string Kind, string? CategoryId);
@@ -34,6 +38,14 @@ public static class ReceiptReadCheck
     public const int MaxLines = 200;
     public const int MaxNameLength = 120;
     private static readonly string[] Kinds = ["item", "discount", "deposit", "fee"];
+
+    /// <summary>A category per name the app asked about: an id the app does not know, or an answer of another length, counts for nothing.</summary>
+    public static IReadOnlyList<string?>? Categories(IReadOnlyList<string?>? answer, int asked, IReadOnlyList<ReadCategory> categories)
+    {
+        if (answer is null || answer.Count != asked) return null;
+        var known = categories.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        return answer.Select(id => id is not null && known.Contains(id) ? id : null).ToList();
+    }
 
     public static ReceiptReadResult? Normalize(ReadReceipt? read, IReadOnlyList<ReadCategory> categories)
     {

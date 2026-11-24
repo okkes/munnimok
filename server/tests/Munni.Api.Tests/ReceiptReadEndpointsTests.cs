@@ -19,6 +19,9 @@ internal sealed class ScriptedReceiptReader : IReceiptReader
         [new ReadLine("Melk", 1, 129, 129, "item", "groceries"), new ReadLine("Brood", 1, 871, 871, "item", null)]);
 
     public string? LastModel;
+    public string? LastMerchant;
+    public IReadOnlyList<string>? LastNames;
+    public Func<IReadOnlyList<string>, IReadOnlyList<string?>?> Categorised = names => names.Select(name => name == "Melk" ? "groceries" : name == "Mystery" ? "not-a-category" : (string?)null).ToList();
 
     public string Provider => "scripted";
 
@@ -31,6 +34,16 @@ internal sealed class ScriptedReceiptReader : IReceiptReader
         LastPhotos = photos;
         LastCategories = categories;
         return Task.FromResult(Answer());
+    }
+
+    public Task<IReadOnlyList<string?>?> CategoriseAsync(string? merchant, IReadOnlyList<string> names, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct)
+    {
+        Reads++;
+        LastModel = model;
+        LastMerchant = merchant;
+        LastNames = names;
+        LastCategories = categories;
+        return Task.FromResult(Categorised(names));
     }
 }
 
@@ -71,6 +84,10 @@ public class ReceiptReadApiFactory : WebApplicationFactory<Program>
 public class ReceiptReadEndpointsTests
 {
     private const string Jpeg = "data:image/jpeg;base64,/9j/4AAQ";
+    private static readonly string[] Milk = ["Melk"];
+    private static readonly string[] MilkAndBread = ["Melk", "Brood"];
+    private static readonly string[] ThreeLines = ["Melk", " Mystery ", "Zegels"];
+    private static readonly string[] OneBlank = ["Melk", " "];
     private static readonly object[] Categories = [new { id = "groceries", name = "Groceries" }, new { id = "household", name = "Household" }];
 
     private static HttpClient ClientFor(ReceiptReadApiFactory factory, string sub, string? scope = null)
@@ -264,6 +281,75 @@ public class ReceiptReadEndpointsTests
         Assert.Equal((300, true, "2026-11-12", "EUR"), (summed.TotalCents, summed.Reconciled, summed.Date, summed.Currency));
         Assert.Null(ReceiptReadCheck.Normalize(null, categories));
         Assert.Null(ReceiptReadCheck.Normalize(new ReadReceipt("Shop", null, null, 100, []), categories));
+    }
+
+    /// <summary>#648: a shop's own receipts carry no categories; their line names are categorised without any photo.</summary>
+    [Fact]
+    public async Task Line_names_are_categorised_in_the_order_asked_and_only_with_categories_the_app_knows()
+    {
+        await using var factory = new ReceiptReadApiFactory();
+        var client = ClientFor(factory, "shopper");
+
+        var response = await client.PostAsJsonAsync("/receipts/categorise", new { merchant = "  Corner Shop ", names = ThreeLines, categories = Categories });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var reply = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("ok", reply.GetProperty("state").GetString());
+        // an id the app did not offer counts for nothing
+        Assert.Equal(["groceries", null, null], reply.GetProperty("categories").EnumerateArray().Select(id => id.GetString()).ToList());
+        Assert.Equal("Corner Shop", factory.Reader.LastMerchant);
+        Assert.Equal(["Melk", "Mystery", "Zegels"], factory.Reader.LastNames);
+        Assert.Equal(["groceries", "household"], factory.Reader.LastCategories!.Select(c => c.Id));
+
+        // an answer for another number of lines than was asked is no answer; the provider was still paid
+        factory.Reader.Categorised = _ => ["groceries"];
+        var tooShort = await (await client.PostAsJsonAsync("/receipts/categorise", new { names = MilkAndBread, categories = Categories })).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("unavailable", tooShort.GetProperty("state").GetString());
+        Assert.Equal(2, factory.Reader.Reads);
+    }
+
+    [Fact]
+    public async Task Categorising_spends_from_the_same_reads_and_refuses_what_it_cannot_ask()
+    {
+        await using var factory = new ReceiptReadApiFactory();
+        var client = ClientFor(factory, "shopper");
+        async Task<HttpStatusCode> Post(object body) => (await client.PostAsJsonAsync("/receipts/categorise", body)).StatusCode;
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsJsonAsync("/receipts/categorise", new { names = Milk, categories = Categories })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { names = Array.Empty<string>(), categories = Categories }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { names = OneBlank, categories = Categories }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { names = Enumerable.Repeat("Melk", ReceiptReadCheck.MaxLines + 1), categories = Categories }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { names = new[] { new string('x', ReceiptReadCheck.MaxNameLength + 1) }, categories = Categories }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { names = Milk, categories = Array.Empty<object>() }));
+        Assert.Equal(0, factory.Reader.Reads);
+
+        // a failing provider costs nobody a read
+        factory.Reader.Categorised = _ => throw new HttpRequestException("away");
+        var failed = await (await client.PostAsJsonAsync("/receipts/categorise", new { names = Milk, categories = Categories })).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("unavailable", failed.GetProperty("state").GetString());
+
+        // the day's reads are one purse: twenty calls, photos or names alike
+        factory.Reader.Categorised = names => names.Select(_ => (string?)null).ToList();
+        for (var call = 0; call < ReceiptReadEndpoints.DefaultDailyPerUser; call++)
+        {
+            Assert.Equal(HttpStatusCode.OK, await Post(new { names = Milk, categories = Categories }));
+        }
+        var over = await (await client.PostAsJsonAsync("/receipts/categorise", new { names = Milk, categories = Categories })).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("limited", over.GetProperty("state").GetString());
+        Assert.Equal("limited", (await ReadAsync(client, Jpeg)).GetProperty("state").GetString());
+    }
+
+    [Fact]
+    public void The_model_gets_the_lines_numbered_and_its_answer_is_laid_out_by_those_numbers()
+    {
+        Assert.Equal("Shop: Corner Shop\nLines (number — name):\n0 — Melk\n1 — Brood\n", ClaudeReceiptReader.LineList("Corner Shop", ["Melk", "Brood"]));
+        Assert.StartsWith("Shop: unknown\n", ClaudeReceiptReader.LineList(null, ["Melk"]));
+
+        // a line it skipped stays without a category, a number it invented is ignored
+        Assert.Equal(["groceries", null, "household"], ClaudeReceiptReader.ParseCategories(
+            """{"lines":[{"index":2,"category_id":"household"},{"index":0,"category_id":"groceries"},{"index":7,"category_id":"groceries"}]}""", 3));
+        Assert.Null(ClaudeReceiptReader.ParseCategories("no json", 3));
+        Assert.Null(ClaudeReceiptReader.ParseCategories("{}", 3));
     }
 
     [Fact]
