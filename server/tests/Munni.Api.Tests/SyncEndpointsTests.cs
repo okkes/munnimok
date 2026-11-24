@@ -184,6 +184,62 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.Null(second.Next);
     }
 
+    /// <summary>#648: a photo deleted after a reading its owner trusts is not kept anywhere on the server.</summary>
+    [Fact]
+    public async Task A_removed_receipt_photo_leaves_the_row_and_the_log_and_a_replay_still_ends_at_a_removed_file()
+    {
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor("alice");
+        SyncOpDto File(string id, Dictionary<string, JsonElement> fields, string hlc, bool removed = false) =>
+            new(Guid.NewGuid().ToString(), spaceId, ReceiptFileSplit.FileEntity, id, fields, hlc, removed);
+        Dictionary<string, JsonElement> Picture(string content) => new()
+        {
+            ["ownerId"] = JsonSerializer.SerializeToElement("receipt-1"),
+            ["dataUrl"] = JsonSerializer.SerializeToElement(content),
+        };
+        const string photo = "data:image/jpeg;base64,ZmFrZQ==";
+        Assert.True((await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+            [File("gone", Picture(photo), "000000100-0000-devA"), File("kept", Picture(photo), "000000100-0000-devA")]))).IsSuccessStatusCode);
+
+        Assert.True((await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+            [File("gone", new(), "000000200-0000-devA", removed: true)]))).IsSuccessStatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rows = db.EntityRows.AsNoTracking().Where(r => r.SpaceId == spaceId).ToDictionary(r => r.EntityId);
+        Assert.True(rows["gone"].Deleted);
+        Assert.DoesNotContain("base64", rows["gone"].DataJson);
+        Assert.Contains("receipt-1", rows["gone"].DataJson);
+        Assert.Contains(photo, rows["kept"].DataJson);
+        var log = db.SyncOps.AsNoTracking().Where(o => o.SpaceId == spaceId && o.EntityId == "gone").OrderBy(o => o.Seq).ToList();
+        Assert.Equal([false, true], log.Select(o => o.Deleted));
+        Assert.DoesNotContain("base64", log[0].PayloadJson);
+
+        // a device that never held the photo replays the log: every change is still there, the picture is not
+        var pull = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
+        Assert.Equal(3, pull!.Ops.Count);
+        Assert.Equal(string.Empty, pull.Ops.First(o => o.EntityId == "gone" && !o.Deleted).Fields["dataUrl"].GetString());
+        Assert.Equal(photo, pull.Ops.Single(o => o.EntityId == "kept").Fields["dataUrl"].GetString());
+    }
+
+    [Fact]
+    public async Task A_photo_written_again_after_its_removal_keeps_what_it_holds()
+    {
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor("alice");
+        SyncOpDto File(Dictionary<string, JsonElement> fields, string hlc, bool removed = false) =>
+            new(Guid.NewGuid().ToString(), spaceId, ReceiptFileSplit.FileEntity, "photo", fields, hlc, removed);
+        var later = new Dictionary<string, JsonElement> { ["dataUrl"] = JsonSerializer.SerializeToElement("data:image/jpeg;base64,bmlldXc=") };
+        // the removal reaches the server after a newer picture did: the newer write wins and the file lives
+        Assert.True((await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [File(later, "000000300-0000-devB")]))).IsSuccessStatusCode);
+        Assert.True((await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [File(new(), "000000200-0000-devA", removed: true)]))).IsSuccessStatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var row = scope.ServiceProvider.GetRequiredService<AppDbContext>().EntityRows.AsNoTracking().Single(r => r.SpaceId == spaceId);
+        Assert.False(row.Deleted);
+        Assert.Contains("bmlldXc=", row.DataJson);
+    }
+
     /// <summary>#630: a photo or an invoice is one op, and a thousand of them were one answer.</summary>
     [Fact]
     public async Task A_pull_ends_its_page_before_it_outgrows_one_download_and_goes_on_from_there()
