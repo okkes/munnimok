@@ -14,6 +14,11 @@ const otherDevice = {
   revoked: false,
 };
 
+const revokeInto = (revoked: Set<string>, id: string) => () => {
+  revoked.add(id);
+  return {};
+};
+
 describe('DevicesScreen (logged-in devices)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -77,5 +82,125 @@ describe('DevicesScreen (logged-in devices)', () => {
     // only this device knows its own browser (server keeps no UA)
     expect(screen.getByTestId('device-browser').textContent).toContain('Chrome');
     expect(screen.getByTestId('device-browser').closest(`[data-testid="device-row-${getDeviceId()}"]`)).toBeTruthy();
+  }, 20_000);
+
+  it('fetches the list again on Refresh and when the app returns to the foreground (#685)', async () => {
+    let calls = 0;
+    const later = [
+      { ...otherDevice, id: 'new-browser', platform: 'web' },
+      { ...otherDevice, id: 'newer-browser', platform: 'web' },
+    ];
+    renderAppAsUser('/devices', {
+      api: {
+        'GET /me/devices': () => {
+          calls += 1;
+          return [{ ...otherDevice, id: getDeviceId(), platform: 'web' }, otherDevice, ...later.slice(0, calls - 1)];
+        },
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId(`device-row-${otherDevice.id}`)).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('devices-refreshing')).toBeNull(), { timeout: 5000 });
+    expect(screen.queryByTestId('device-row-new-browser')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('devices-refresh'));
+    await waitFor(() => expect(screen.getByTestId('device-row-new-browser')).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('devices-refreshing')).toBeNull(), { timeout: 5000 });
+
+    globalThis.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(screen.getByTestId('device-row-newer-browser')).toBeTruthy(), { timeout: 5000 });
+    expect(calls).toBe(3);
+  }, 20_000);
+
+  it('keeps the last list when a refresh fails and says so (#685)', async () => {
+    let offline = false;
+    renderAppAsUser('/devices', {
+      api: {
+        'GET /me/devices': () => {
+          if (offline) throw new TypeError('Failed to fetch');
+          return [{ ...otherDevice, id: getDeviceId(), platform: 'web' }, otherDevice];
+        },
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId(`device-row-${otherDevice.id}`)).toBeTruthy(), { timeout: 5000 });
+    expect(screen.queryByTestId('devices-refresh-failed')).toBeNull();
+
+    offline = true;
+    fireEvent.click(screen.getByTestId('devices-refresh'));
+    const note = await screen.findByTestId('devices-refresh-failed', {}, { timeout: 5000 });
+    expect(note.textContent).toContain('Couldn’t fetch the latest list');
+    expect(screen.getByTestId(`device-row-${otherDevice.id}`)).toBeTruthy();
+  }, 20_000);
+
+  it('selects every other device but never this one, and the confirmation names the count (#685)', async () => {
+    const revoked = new Set<string>();
+    renderAppAsUser('/devices', {
+      api: {
+        'GET /me/devices': () =>
+          [
+            { ...otherDevice, id: getDeviceId(), platform: 'web' },
+            { ...otherDevice, id: 'phone-a' },
+            { ...otherDevice, id: 'phone-b' },
+            { ...otherDevice, id: 'gone-c', revoked: true },
+          ].map((d) => ({ ...d, revoked: d.revoked || revoked.has(d.id) })),
+        'POST /me/devices/phone-a/revoke': revokeInto(revoked, 'phone-a'),
+        'POST /me/devices/phone-b/revoke': revokeInto(revoked, 'phone-b'),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('devices-select', {}, { timeout: 5000 }));
+    await screen.findByTestId('devices-selected-count', {}, { timeout: 5000 });
+    expect(screen.queryByTestId(`device-tick-${getDeviceId()}`)).toBeNull();
+    expect(screen.queryByTestId('device-tick-gone-c')).toBeNull();
+    expect(screen.getByTestId(`device-row-${getDeviceId()}`).getAttribute('role')).toBeNull();
+    expect(screen.queryByTestId('device-revoke-phone-a')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('devices-select-all'));
+    expect(screen.getByTestId('devices-selected-count').textContent).toBe('2 selected');
+    expect(screen.getByTestId('device-row-phone-a').getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByTestId('devices-bulk-disconnect'));
+    const body = await screen.findByTestId('devices-bulk-confirm-body', {}, { timeout: 5000 });
+    expect(body.textContent).toContain('2 devices will be signed out');
+    expect(body.textContent).toContain('erased the next time it connects');
+
+    fireEvent.click(screen.getByTestId('devices-bulk-confirm-confirm'));
+    // every one went: select mode ends and the rows read as disconnected
+    await waitFor(() => expect(screen.queryByTestId('devices-bulk-disconnect')).toBeNull(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('device-row-phone-b').textContent).toContain('Disconnected'), { timeout: 5000 });
+    expect([...revoked].sort()).toEqual(['phone-a', 'phone-b']);
+  }, 20_000);
+
+  it('keeps the devices that failed to disconnect selected and says how many went (#685)', async () => {
+    const revoked = new Set<string>();
+    renderAppAsUser('/devices', {
+      api: {
+        'GET /me/devices': () =>
+          [
+            { ...otherDevice, id: getDeviceId(), platform: 'web' },
+            { ...otherDevice, id: 'phone-a' },
+            { ...otherDevice, id: 'phone-b' },
+            { ...otherDevice, id: 'phone-c' },
+          ].map((d) => ({ ...d, revoked: revoked.has(d.id) })),
+        'POST /me/devices/phone-a/revoke': revokeInto(revoked, 'phone-a'),
+        'POST /me/devices/phone-b/revoke': () => new Response(null, { status: 503 }),
+        'POST /me/devices/phone-c/revoke': revokeInto(revoked, 'phone-c'),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('devices-select', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('devices-select-all', {}, { timeout: 5000 }));
+    fireEvent.click(screen.getByTestId('devices-bulk-disconnect'));
+    const body = await screen.findByTestId('devices-bulk-confirm-body', {}, { timeout: 5000 });
+    expect(body.textContent).toContain('3 devices');
+    fireEvent.click(screen.getByTestId('devices-bulk-confirm-confirm'));
+
+    const result = await screen.findByTestId('devices-bulk-result', {}, { timeout: 5000 });
+    expect(result.textContent).toContain('Disconnected 2 of 3');
+    await waitFor(() => expect(screen.getByTestId('device-row-phone-a').textContent).toContain('Disconnected'), { timeout: 5000 });
+    expect(screen.getByTestId('devices-selected-count').textContent).toBe('1 selected');
+    expect(screen.getByTestId('device-row-phone-b').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('devices-bulk-disconnect').textContent).toContain('(1)');
   }, 20_000);
 });

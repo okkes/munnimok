@@ -271,7 +271,14 @@ const splitJoinRoute = createRoute({ getParentRoute: () => appRoute, path: '/spl
 const splitDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits/$splitId', component: SplitDetailScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
-const devicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/devices', component: DevicesScreen });
+// ?select=true is the bulk-select mode: a history entry, so back leaves it like its Cancel
+const devicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/devices',
+  component: DevicesScreen,
+  validateSearch: (search: Record<string, unknown>): { select?: boolean } =>
+    search.select === true || search.select === 'true' ? { select: true } : {},
+});
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
 const budgetsRoute = createRoute({
   getParentRoute: () => appRoute,
