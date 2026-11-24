@@ -11,7 +11,7 @@
 #
 # amd64 only in CI: Chromium under Playwright on arm64 is unverified.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # restore from project files alone; every project in the reference chain (all adapter libraries) must be listed
