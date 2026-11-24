@@ -57,10 +57,10 @@ function ListStatusNote({ status, hasList, fetchedAt }: Readonly<{ status: Devic
   const text =
     hasList && fetchedAt ? t('devices.refreshFailed', { when: fmtTimeAgo(fetchedAt, lang) }) : t('devices.loadFailed');
   return (
-    <p className="mb-3 flex items-start gap-2 text-[12px] text-negative" data-testid="devices-refresh-failed" role="status">
+    <output className="mb-3 flex items-start gap-2 text-[12px] text-negative" data-testid="devices-refresh-failed">
       <Icon name="cloud-off-outline" size={15} />
       <span>{text}</span>
-    </p>
+    </output>
   );
 }
 
@@ -187,8 +187,7 @@ function DeviceRow(props: Readonly<RowProps>) {
   if (selecting && !mine && !device.revoked) {
     return (
       <button
-        role="checkbox"
-        aria-checked={selected}
+        aria-pressed={selected}
         data-testid={`device-row-${device.id}`}
         onClick={onToggle}
         className={`m-tap ${rowClass}`}
@@ -346,9 +345,9 @@ export function DevicesScreen() {
           onCancel={select.stop}
         />
         {bulkNote && (
-          <p className="mb-2 text-[12px] text-negative" data-testid="devices-bulk-result" role="status">
+          <output className="mb-2 block text-[12px] text-negative" data-testid="devices-bulk-result">
             {t('devices.bulkPartial', { done: bulkNote.done, total: bulkNote.total })}
-          </p>
+          </output>
         )}
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="devices-list">
           {(devices ?? []).map((device) => (

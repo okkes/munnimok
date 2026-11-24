@@ -118,7 +118,7 @@ describe('hide sensitive figures (#530)', () => {
       await openChallenge();
       await waitFor(() => expect(state()).toBe('OFF'));
       expect(verifyIdentity).toHaveBeenCalledTimes(1);
-      expect(screen.getByTestId('lock-dots').dataset.length).toBe('0');
+      expect(screen.getByTestId('lock-dots').getAttribute('data-length')).toBe('0');
     }, 20_000);
 
     it('a cancelled scan switches nothing off and leaves the PIN pad, with the key to scan again', async () => {

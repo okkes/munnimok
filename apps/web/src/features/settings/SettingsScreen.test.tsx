@@ -209,7 +209,7 @@ describe('GlobalSettingsScreen (demo identity)', () => {
       verifyIdentity.mockResolvedValue(undefined);
       fireEvent.click(screen.getByTestId('lock-unlock'));
       await waitFor(() => expect(readLockConfig()).toBeNull());
-      expect(screen.getByTestId('lock-dots').dataset.length).toBe('0');
+      expect(screen.getByTestId('lock-dots').getAttribute('data-length')).toBe('0');
     } finally {
       vi.unstubAllGlobals();
     }

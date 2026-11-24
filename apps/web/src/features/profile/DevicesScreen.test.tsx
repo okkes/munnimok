@@ -158,7 +158,7 @@ describe('DevicesScreen (logged-in devices)', () => {
 
     fireEvent.click(screen.getByTestId('devices-select-all'));
     expect(screen.getByTestId('devices-selected-count').textContent).toBe('2 selected');
-    expect(screen.getByTestId('device-row-phone-a').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('device-row-phone-a').getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(screen.getByTestId('devices-bulk-disconnect'));
     const body = await screen.findByTestId('devices-bulk-confirm-body', {}, { timeout: 5000 });
@@ -200,7 +200,7 @@ describe('DevicesScreen (logged-in devices)', () => {
     expect(result.textContent).toContain('Disconnected 2 of 3');
     await waitFor(() => expect(screen.getByTestId('device-row-phone-a').textContent).toContain('Disconnected'), { timeout: 5000 });
     expect(screen.getByTestId('devices-selected-count').textContent).toBe('1 selected');
-    expect(screen.getByTestId('device-row-phone-b').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('device-row-phone-b').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('devices-bulk-disconnect').textContent).toContain('(1)');
   }, 20_000);
 });
