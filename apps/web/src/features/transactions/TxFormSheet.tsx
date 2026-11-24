@@ -221,6 +221,12 @@ function FormCategoryRow({
 
 // #309: adjustments carry no counterparty, and the debt family keeps its bare story:
 // the unassigned-payments bucket collects loan rows until a real loan claims them
+/** #684: the category a counterparty and the sign mean; null while the counterparty's row is not there yet */
+function counterCat(linked: Pick<AccountRow, 'type'> | undefined, isExpense: boolean): string | null {
+  if (!linked) return null;
+  return movementCatFor(linked.type, isExpense ? -1 : 1);
+}
+
 const movementCounterMissing = (adjustment: boolean, catId: string | null, linkedAccountId: string | null): boolean =>
   !adjustment && !!catId && isMovementCat(catId) && specialCatType(catId) !== 'debtPayment' && !linkedAccountId;
 
@@ -858,7 +864,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
   // the counterparty's row may load after the seed: the category is derived, never stored ahead of it
-  const catId = catFromCounter && linkedAccount ? movementCatFor(linkedAccount.type, isExpense ? -1 : 1) : pickedCatId;
+  const followed = catFromCounter ? counterCat(linkedAccount, isExpense) : null;
+  const catId = followed ?? pickedCatId;
   const cat = cats.byId(catId);
   // R1: a stamped account types its rows; R3: a special category pulls its type onto a standard row;
   // R2: a tracked counterparty = plain transfer
@@ -955,10 +962,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const dirty =
     open &&
     baselineRef.current !== '' &&
-    formFingerprint({
-      amount, isExpense, merchant, date, accountId, catId: catFromCounter ? pickedCatId : catId,
-      adjustment, linkedAccountId, recurringId, cats: stagedCats, notes, eventId,
-    }) !==
+    // the picked category, not the shown one: a category that only follows the counterparty is no change of the person's
+    formFingerprint({ amount, isExpense, merchant, date, accountId, catId: pickedCatId, adjustment, linkedAccountId, recurringId, cats: stagedCats, notes, eventId }) !==
       baselineRef.current;
   // #348: the counterparty opens once the category makes the row a movement (or one is set)
   const counterRelevant = !!linkedAccountId || !!specialCatType(catId) || !!stagedCats?.some((e) => specialCatType(e.catId));

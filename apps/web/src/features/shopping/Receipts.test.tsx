@@ -418,7 +418,7 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
     await waitFor(() => expect(screen.getByTestId(jumbo)).toBeTruthy());
     fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
-    await waitFor(() => expect(rows().length).toBe(everything));
+    await waitFor(() => expect(rows()).toHaveLength(everything));
 
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
     await waitFor(() => expect(rows().length).toBeLessThan(everything));

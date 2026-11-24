@@ -735,7 +735,7 @@ describe('Connections hub (signed-in user)', () => {
     const list = await screen.findByTestId('screen-connection-receipts');
     const row = await screen.findByTestId('receipt-row-rcpt:mock:c-seeded:2', {}, { timeout: 5000 });
     expect(row.textContent).toContain('Invoice');
-    expect(list.querySelectorAll('[data-testid^="receipt-row-"]').length).toBe(2);
+    expect(list.querySelectorAll('[data-testid^="receipt-row-"]')).toHaveLength(2);
     expect(list.querySelector('[data-testid^="receipts-day-"]')).toBeTruthy();
     expect(list.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
     expect(screen.queryByTestId('receipts-filter-unlinked')).toBeNull();

@@ -230,6 +230,42 @@ function ChartDot({
   );
 }
 
+/** the day slider under a scrubbable chart: it rests on the scrub's origin and reads the tip of the day it stands on */
+function ChartSlider({
+  scrub,
+  count,
+  scrubbed,
+  onPick,
+  color,
+  plotFrom,
+  testId,
+}: Readonly<{
+  scrub: ChartScrub;
+  count: number;
+  scrubbed: number | null;
+  onPick: (index: number | null, follow: boolean) => void;
+  color: string;
+  plotFrom: number;
+  testId?: string;
+}>) {
+  const rest = Math.min(count - 1, Math.max(0, scrub.origin));
+  const at = scrubbed ?? rest;
+  const tip = scrub.tip(at);
+  return (
+    <ScrubSlider
+      count={count}
+      value={at}
+      rest={rest}
+      onPick={(index) => onPick(index, index !== null)}
+      label={scrub.sliderLabel ?? scrub.ariaLabel}
+      valueText={[tip.title, ...tip.rows.map((row) => row.text)].join(', ')}
+      color={color}
+      plotFrom={plotFrom}
+      testId={testId ? `${testId}-slider` : undefined}
+    />
+  );
+}
+
 export function MultiLine({
   series: given,
   labels,
@@ -434,23 +470,10 @@ export function MultiLine({
     </svg>
   );
   if (!scrub) return picture;
-  const sliderRest = Math.min(n - 1, Math.max(0, scrub.origin));
-  const sliderAt = scrubbed ?? sliderRest;
-  const sliderTip = scrub.tip(sliderAt);
   return (
     <div>
       {picture}
-      <ScrubSlider
-        count={n}
-        value={sliderAt}
-        rest={sliderRest}
-        onPick={(index) => pickScrub(index, index !== null)}
-        label={scrub.sliderLabel ?? scrub.ariaLabel}
-        valueText={[sliderTip.title, ...sliderTip.rows.map((row) => row.text)].join(', ')}
-        color={series[0]?.color ?? 'var(--m-accent)'}
-        plotFrom={axisZone / width}
-        testId={testId ? `${testId}-slider` : undefined}
-      />
+      <ChartSlider scrub={scrub} count={n} scrubbed={scrubbed} onPick={pickScrub} color={series[0]?.color ?? 'var(--m-accent)'} plotFrom={axisZone / width} testId={testId} />
     </div>
   );
 }

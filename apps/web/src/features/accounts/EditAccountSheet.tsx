@@ -32,6 +32,20 @@ import { DecimalInput } from '@/ui/DecimalInput';
 /** an emptied field must clear the row (null): undefined would drop from the op and leave the stale value */
 const orClear = <T,>(value: T | undefined): T | null => value ?? null;
 
+/** what the form says about paying: "whenever" is a payment of 0 with no rhythm (hasNoFixedPayment reads it) */
+function paymentPlanChanges(plan: { whenever: boolean; payment: string; every: RecurringEvery; everyN: number; day: string }): Partial<AccountRow> {
+  const paymentCents = parseCents(plan.payment);
+  const hasPayment = !plan.whenever && !!paymentCents && paymentCents > 0;
+  const amount = orClear(hasPayment ? paymentCents : undefined);
+  return {
+    paymentCents: (plan.whenever ? 0 : amount) as never,
+    paymentEvery: orClear(hasPayment ? plan.every : undefined) as never,
+    paymentEveryN: orClear(hasPayment && plan.everyN > 1 ? plan.everyN : undefined) as never,
+    // #190: the due day rides the plan; weekly plans carry none
+    paymentDay: orClear(hasPayment && plan.every !== 'week' ? parsedDueDay(plan.day) : undefined) as never,
+  };
+}
+
 /** #269: the signed cents a save would add to the stored balance; null while unparseable or unchanged */
 const balanceDelta = (account: AccountRow, balance: string, negative: boolean): number | null => {
   const cents = parseCents(balance || '');
@@ -188,19 +202,13 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const storyChanges = (): Partial<AccountRow> => {
     const originalCents = parseCents(original);
-    const paymentCents = parseCents(payment);
     const aprNumber = Number.parseFloat(apr.replace(',', '.'));
-    const hasPayment = !whenever && !!paymentCents && paymentCents > 0;
     return {
       ...(manual ? { iban: orClear(iban.trim() || undefined) as never } : {}),
       originalCents: orClear(originalCents && originalCents > 0 ? originalCents : undefined) as never,
       // 0% is a real answer; only the EMPTY field means "remind me"
       interestPctYear: orClear(Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined) as never,
-      paymentCents: (whenever ? 0 : orClear(hasPayment ? paymentCents : undefined)) as never,
-      paymentEvery: orClear(hasPayment ? payEvery : undefined) as never,
-      paymentEveryN: orClear(hasPayment && payEveryN > 1 ? payEveryN : undefined) as never,
-      // #190: the due day rides the plan; weekly plans carry none
-      paymentDay: orClear(hasPayment && payEvery !== 'week' ? parsedDueDay(payDay) : undefined) as never,
+      ...paymentPlanChanges({ whenever, payment, every: payEvery, everyN: payEveryN, day: payDay }),
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
       debtStress: orClear(stress >= 1 && stress <= 5 ? (stress as 1 | 2 | 3 | 4 | 5) : undefined) as never,
