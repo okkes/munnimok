@@ -20,6 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
     public DbSet<FeedOwner> FeedOwners => Set<FeedOwner>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
+    public DbSet<SpaceStoreLink> SpaceStoreLinks => Set<SpaceStoreLink>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<ConnectionSyncDevice> ConnectionSyncDevices => Set<ConnectionSyncDevice>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
@@ -121,6 +122,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId, x.AccountId }).IsUnique();
+            e.HasIndex(x => x.FeedSpaceId);
+        });
+        modelBuilder.Entity<SpaceStoreLink>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId }).IsUnique();
             e.HasIndex(x => x.FeedSpaceId);
         });
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));

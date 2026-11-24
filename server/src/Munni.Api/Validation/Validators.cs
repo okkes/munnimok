@@ -30,6 +30,15 @@ public sealed class RegisterFeedRequestValidator : AbstractValidator<RegisterFee
     }
 }
 
+public sealed class AttachStoreRequestValidator : AbstractValidator<AttachStoreRequest>
+{
+    public AttachStoreRequestValidator()
+    {
+        RuleFor(r => r.FeedSpaceId).NotEmpty().MaximumLength(64)
+            .Must(FeedAccess.IsFeedShaped).WithMessage("feed ids are deterministic uuidv5 values");
+    }
+}
+
 public sealed class AttachAccountRequestValidator : AbstractValidator<AttachAccountRequest>
 {
     public AttachAccountRequestValidator()

@@ -38,6 +38,7 @@ public static class SpaceErasure
     {
         db.SpaceMembers.RemoveRange(await db.SpaceMembers.Where(m => m.SpaceId == spaceId).ToListAsync(ct));
         db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.SpaceId == spaceId).ToListAsync(ct));
+        await Accounts.StoreLinkEndpoints.RemoveForSpaceAsync(db, spaceId, ct);
         db.SpaceInvites.RemoveRange(await db.SpaceInvites.Where(i => i.SpaceId == spaceId).ToListAsync(ct));
         // a friend request that carried an invitation to the space stays a friend request
         foreach (var request in await db.Friendships.Where(f => f.SpaceId == spaceId).ToListAsync(ct))

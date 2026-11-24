@@ -278,6 +278,7 @@ if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapRates();
 app.MapAccounts();
+app.MapStoreLinks();
 app.MapAdmin();
 app.MapControl();
 app.MapLab();

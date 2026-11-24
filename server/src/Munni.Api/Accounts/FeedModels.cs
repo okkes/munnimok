@@ -41,6 +41,19 @@ public class SpaceAccountLink
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// #648: a space includes a receipt feed (a shop connection's, or a person's own scans): its members read that feed.
+/// No history gate and no archive: the receipts are there while the attachment is, and gone with it
+public class SpaceStoreLink
+{
+    public Guid Id { get; set; }
+    public required string SpaceId { get; set; }
+    public required string FeedSpaceId { get; set; }
+
+    public Guid AttachedBy { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// mirrors apps/web/src/db/types.ts AccountType
 public static class AccountTypes
 {

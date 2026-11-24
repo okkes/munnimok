@@ -390,6 +390,7 @@ public static class SocialEndpoints
         db.SpaceMembers.Remove(member);
         // the leaver's attached bank accounts freeze in this space: history stays readable, new data stops flowing
         await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, spaceId, userId);
+        await Accounts.StoreLinkEndpoints.RemoveOnLeaveAsync(db, spaceId, userId);
         // never leave a space ownerless: the lowest user id among the rest is promoted when the last owner goes
         if (SpaceRoles.IsOwner(member.Role) && !await HasAnotherOwner(db, spaceId, userId))
         {
