@@ -8,7 +8,7 @@
 #
 # No browser binaries on purpose: without Chromium it cannot start a provider session on the wrong egress.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-alpine AS build
 WORKDIR /src
 
 # restore from project files alone; every project in the reference chain must be listed
@@ -25,7 +25,7 @@ COPY src/connectors/ src/connectors/
 RUN dotnet publish src/connectors/Connector.Api/Connector.Api.csproj \
     -c Release -o /app --no-restore -p:ContinuousIntegrationBuild=true
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine
 
 # icu-libs: invariant mode silently changes money/date formatting and parsing
 # tzdata: without the Europe/Amsterdam offset a late purchase lands on the wrong day and matches the wrong bank transaction
