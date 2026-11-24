@@ -225,10 +225,24 @@ function Switch({ on, label, testId, onToggle }: Readonly<{ on: boolean; label: 
 
 const INPUT_CLASS = 'mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4';
 
-function aloneEnd(t: Translate, r: AloneResult, date: MonthName): string {
+function aloneEnd(t: Translate, debt: PlanDebt, r: AloneResult, date: MonthName): string {
   if (r.stuck) return t('debtplan.neverPaid');
-  if (r.months === null) return t('debtplan.freeNever');
+  if (r.months === null) return debt.noFixedPayment ? t('debts.noFixedPayment') : t('debtplan.freeNever');
   return t('debtplan.paidOff', { date: date(r.months) });
+}
+
+/** a plan that never ends: a payment losing to its interest, or (#683) a loan nothing is paid into */
+const neverHintKey = (plan: PlanResult, debts: readonly PlanDebt[]): 'debtplan.stuckHint' | 'debtplan.noFixedHint' =>
+  !plan.debts.some((d) => d.stuck) && debts.some((d) => d.noFixedPayment) ? 'debtplan.noFixedHint' : 'debtplan.stuckHint';
+
+function perMonthSubOf(t: Translate, debt: PlanDebt, extraCents: number, money: Money): string | undefined {
+  if (extraCents <= 0) return undefined;
+  return debt.noFixedPayment ? t('debts.noFixedPayment') : `${money(debt.minMonthlyCents)} + ${money(extraCents)}`;
+}
+
+function minimumLegendOf(t: Translate, debt: PlanDebt, minimum: AloneResult, date: MonthName): string {
+  if (debt.noFixedPayment) return t('debts.noFixedPayment');
+  return minimum.months === null ? t('debtplan.minAloneNever') : t('debtplan.minAloneFree', { date: date(minimum.months) });
 }
 
 function vsMinimum(t: Translate, alone: AloneResult, minimum: AloneResult, extraCents: number, money: Money, date: MonthName): { value: string; sub?: string } {
@@ -255,8 +269,12 @@ function DebtNumbers({ debt, alone, minimum, extraCents, money, date, testId }: 
   const { t } = useLang();
   // #530: what is owed hides with the sensitive figures; payments and interest stay
   const owed = useDisplayMoney().sensitive(money);
-  const perMonthSub = extraCents > 0 ? `${money(debt.minMonthlyCents)} + ${money(extraCents)}` : undefined;
-  const paidOff = alone.months === null ? t('debtplan.numbers.never') : date(alone.months);
+  // #683: with nothing fixed and nothing added, when it is paid off is the person's to say
+  const whenever = debt.noFixedPayment && extraCents <= 0;
+  const perMonthSub = perMonthSubOf(t, debt, extraCents, money);
+  const perMonth = whenever ? t('debts.noFixedPayment') : money(alone.monthlyCents);
+  const never = whenever ? t('debts.upToYou') : t('debtplan.numbers.never');
+  const paidOff = alone.months === null ? never : date(alone.months);
   const paidOffSub = alone.months === null ? undefined : t('debtplan.numbers.months', { months: alone.months });
   const gain = vsMinimum(t, alone, minimum, extraCents, money, date);
   // #539: two columns — a phone's third of a card wrapped "45 months earlier · €596 less interest" over three lines
@@ -264,7 +282,7 @@ function DebtNumbers({ debt, alone, minimum, extraCents, money, date, testId }: 
     <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2" data-testid={testId}>
       <Fact label={t('debtplan.numbers.owed')} value={owed(debt.balanceCents)} />
       <Fact label={t('debtplan.numbers.rate')} value={debt.aprKnown ? `${debt.aprPct}%` : t('debtplan.numbers.noRate')} />
-      <Fact label={t('debtplan.numbers.perMonth')} value={money(alone.monthlyCents)} sub={perMonthSub} />
+      <Fact label={t('debtplan.numbers.perMonth')} value={perMonth} sub={perMonthSub} />
       <Fact label={t('debtplan.numbers.interest')} value={money(alone.interestCents)} />
       <Fact label={t('debtplan.numbers.paidOff')} value={paidOff} sub={paidOffSub} />
       <Fact label={t('debtplan.numbers.vsMin')} value={gain.value} sub={gain.sub} />
@@ -367,7 +385,7 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
     pick(0);
   };
   const rate = debt.aprKnown ? `${debt.aprPct}% ${t('debts.aprShort')}` : t('debtplan.noRate');
-  const minimumLegend = minimum.months === null ? t('debtplan.minAloneNever') : t('debtplan.minAloneFree', { date: date(minimum.months) });
+  const minimumLegend = minimumLegendOf(t, debt, minimum, date);
   return (
     <div className="rounded-card border border-line bg-surface p-3" data-testid={`debtplan-order-${outcome.id}`}>
       <div className="flex items-center gap-3">
@@ -380,7 +398,7 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
           </span>
           {/* one line whatever it says (#539) */}
           <span className="block truncate text-[11px] text-ink-4" data-testid={`debtplan-debt-end-${outcome.id}`}>
-            {rate} · {aloneEnd(t, alone, date)}
+            {rate} · {aloneEnd(t, debt, alone, date)}
           </span>
         </span>
       </div>
@@ -727,7 +745,7 @@ export function DebtPlanScreen() {
               number={<span data-testid="debtplan-free">{freeLabel(plan)}</span>}
               sub={
                 plan.months === null
-                  ? t('debtplan.stuckHint')
+                  ? t(neverHintKey(plan, debts))
                   : t('debtplan.monthsInterest', { months: plan.months, interest: money(plan.totalInterestCents) })
               }
               meta={

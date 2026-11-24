@@ -12,7 +12,7 @@ import { useMyFeedIds } from '@/application/connections';
 import { ownsFeed } from '@/domain/accountCoverage';
 import { useReconnectReader } from '@/features/connectors/useReconnect';
 import { ReconnectNote } from './ReconnectNote';
-import { isDebtTracked } from '@/domain/debts';
+import { hasNoFixedPayment, isDebtTracked } from '@/domain/debts';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { AccountRow, RecurringEvery } from '@/db/types';
@@ -26,7 +26,7 @@ import { Sheet } from '@/ui/Sheet';
 import { sourceKeyFor, sourceParamsFor } from './AttachSheet';
 import { AccountTypeRow } from './AccountTypeRow';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
-import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, NoFixedPaymentToggle, offersNoPlan, parsedDueDay } from './LoanCadenceControl';
 import { DecimalInput } from '@/ui/DecimalInput';
 
 /** an emptied field must clear the row (null): undefined would drop from the op and leave the stale value */
@@ -51,6 +51,7 @@ const seedFrom = (account: AccountRow) => ({
   // #413: weight the payoff planner's tsunami order reads (0 = unranked)
   stress: account.debtStress ?? 0,
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
+  noPlan: offersNoPlan(account.type) && hasNoFixedPayment(account),
   payDay: account.paymentDay ? String(account.paymentDay) : '',
   payEvery: account.paymentEvery ?? ('month' as RecurringEvery),
   payEveryN: Math.max(1, account.paymentEveryN ?? 1),
@@ -67,6 +68,7 @@ function editedVsSeed(
   now: {
     name: string; balance: string; negative: boolean; iban: string; original: string; apr: string;
     payment: string; payDay: string; payEvery: RecurringEvery; payEveryN: number; note: string; track: boolean; stress: number;
+    noPlan: boolean;
   },
   manual: boolean,
   liability: boolean,
@@ -77,7 +79,8 @@ function editedVsSeed(
   return (
     now.iban !== seed.iban || now.original !== seed.original || now.apr !== seed.apr ||
     now.payment !== seed.payment || now.payDay !== seed.payDay || now.payEvery !== seed.payEvery ||
-    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track || now.stress !== seed.stress
+    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track || now.stress !== seed.stress ||
+    now.noPlan !== seed.noPlan
   );
 }
 
@@ -136,6 +139,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [payEvery, setPayEvery] = useState<RecurringEvery>('month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(false);
+  const [noPlan, setNoPlan] = useState(false);
   const [note, setNote] = useState('');
   const [track, setTrack] = useState(false);
   const [stress, setStress] = useState(0);
@@ -156,6 +160,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setPayEvery(seed.payEvery);
     setPayEveryN(seed.payEveryN);
     setPayCustom(seed.payCustom);
+    setNoPlan(seed.noPlan);
     setNote(seed.note);
     setTrack(seed.track);
     setStress(seed.stress);
@@ -164,6 +169,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
+  const noPlanOffered = !!account && offersNoPlan(account.type);
+  const whenever = noPlanOffered && noPlan;
   // #269: the note below the field names the adjustment side effect before saving
   const adjustDelta = account && manual ? balanceDelta(account, balance, negative) : null;
   const newest = useQuery(store, async () => (account ? newestTxDate(store, account.id) : undefined), [account?.id]);
@@ -172,19 +179,24 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const seedNow = account ? seedFrom(account) : null;
   const dirty =
     !!seedNow &&
-    editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track, stress }, manual, liability);
+    editedVsSeed(
+      seedNow,
+      { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track, stress, noPlan: whenever },
+      manual,
+      liability,
+    );
 
   const storyChanges = (): Partial<AccountRow> => {
     const originalCents = parseCents(original);
     const paymentCents = parseCents(payment);
     const aprNumber = Number.parseFloat(apr.replace(',', '.'));
-    const hasPayment = !!paymentCents && paymentCents > 0;
+    const hasPayment = !whenever && !!paymentCents && paymentCents > 0;
     return {
       ...(manual ? { iban: orClear(iban.trim() || undefined) as never } : {}),
       originalCents: orClear(originalCents && originalCents > 0 ? originalCents : undefined) as never,
       // 0% is a real answer; only the EMPTY field means "remind me"
       interestPctYear: orClear(Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined) as never,
-      paymentCents: orClear(hasPayment ? paymentCents : undefined) as never,
+      paymentCents: (whenever ? 0 : orClear(hasPayment ? paymentCents : undefined)) as never,
       paymentEvery: orClear(hasPayment ? payEvery : undefined) as never,
       paymentEveryN: orClear(hasPayment && payEveryN > 1 ? payEveryN : undefined) as never,
       // #190: the due day rides the plan; weekly plans carry none
@@ -349,18 +361,21 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   />
                 </label>
               </div>
-              <div className="flex gap-2">
-                <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
-                  {t('debts.payment')}
-                  <DecimalInput
-                    data-testid="acctedit-payment"
-                    value={payment}
-                    onValue={setPayment}
-                    placeholder="0.00"
-                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                  />
-                </label>
-              </div>
+              {noPlanOffered && <NoFixedPaymentToggle checked={noPlan} onChange={setNoPlan} testId="acctedit-no-plan" />}
+              {!whenever && (
+                <div className="flex gap-2">
+                  <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                    {t('debts.payment')}
+                    <DecimalInput
+                      data-testid="acctedit-payment"
+                      value={payment}
+                      onValue={setPayment}
+                      placeholder="0.00"
+                      className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    />
+                  </label>
+                </div>
+              )}
               {/* #413: how much the debt weighs on the person — the planner's tsunami order pays the heaviest first */}
               <div className="text-[12px] text-ink-3">
                 {t('debtplan.stress')}
@@ -373,18 +388,20 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                 </div>
               </div>
               {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
-              <LoanCadenceControl
-                value={{ every: payEvery, everyN: payEveryN }}
-                custom={payCustom}
-                onChange={(next, isCustom) => {
-                  setPayEvery(next.every);
-                  setPayEveryN(next.everyN);
-                  setPayCustom(isCustom);
-                }}
-                dueDay={payDay}
-                onDueDay={setPayDay}
-                testIdPrefix="acctedit"
-              />
+              {!whenever && (
+                <LoanCadenceControl
+                  value={{ every: payEvery, everyN: payEveryN }}
+                  custom={payCustom}
+                  onChange={(next, isCustom) => {
+                    setPayEvery(next.every);
+                    setPayEveryN(next.everyN);
+                    setPayCustom(isCustom);
+                  }}
+                  dueDay={payDay}
+                  onDueDay={setPayDay}
+                  testIdPrefix="acctedit"
+                />
+              )}
               <textarea
                 data-testid="acctedit-note"
                 value={note}

@@ -254,6 +254,87 @@ describe('Debts (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#683: a loan paid back whenever stores no plan, says so on the card and the detail, and never estimates one from its payments', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    fireEvent.click(await screen.findByTestId('debts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Loan from family' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '3000' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-no-plan'));
+    // no payment, no rhythm to ask
+    expect(screen.queryByTestId('chooser-acctform-payment')).toBeNull();
+    expect(screen.queryByTestId('chooser-acctform-every-custom')).toBeNull();
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    const db = new MunniDB('munni_demo');
+    const account = await waitFor(async () => {
+      const row = (await db.accounts.toArray()).find((a) => a.name === 'Loan from family');
+      expect(row?.paymentCents).toBe(0);
+      return row!;
+    }, { timeout: 5000 });
+    expect(account.paymentEvery).toBeUndefined();
+    expect(account.paymentDay).toBeUndefined();
+    const card = await screen.findByTestId(`debt-card-${account.id}`);
+    expect(card.textContent).toContain('No fixed payment');
+    expect(card.textContent).not.toMatch(/free by/);
+
+    const repo = demoRepo(db);
+    const base = { accountId: 'demo_main', currency: 'EUR', needsReview: 0 as const, txType: 'debtPayment' as const, catId: 'loanRepayment', linkedAccountId: account.id };
+    await repo.upsert('transaction', 'demo_space', 'fam1', { ...base, date: '2026-04-01', amountCents: -25_000, merchant: 'Terug' });
+    await repo.upsert('transaction', 'demo_space', 'fam2', { ...base, date: '2026-05-01', amountCents: -25_000, merchant: 'Terug' });
+    await repo.upsert('transaction', 'demo_space', 'fam3', { ...base, date: '2026-06-01', amountCents: -25_000, merchant: 'Terug' });
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    await waitFor(() => expect(screen.getByTestId('debtdetail-payments').textContent).toMatch(/Terug/));
+    const noPlan = screen.getByTestId('debtdetail-no-plan');
+    expect(noPlan.textContent).toBe('No fixed payment · paid back whenever');
+    expect(screen.queryByTestId('debtdetail-estimate')).toBeNull();
+    expect(screen.queryByTestId('debtdetail-projection')).toBeNull();
+    // the stored 0 never renders as a stray number beside it
+    expect([...noPlan.parentElement!.childNodes].map((node) => node.textContent)).not.toContain('0');
+    db.close();
+  }, 20_000);
+
+  it('#683: the loan editor turns a fixed payment into "paid back whenever" and back', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const card = await createLoan('Car loan', '5000', undefined, '250');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+
+    fireEvent.click(screen.getByTestId('debtdetail-edit'));
+    const toggle = (await screen.findByTestId('acctedit-no-plan')) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.change(screen.getByTestId('acctedit-payday'), { target: { value: '15' } });
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('acctedit-payment')).toBeNull();
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.accounts.get(accountId);
+      expect(row?.paymentCents).toBe(0);
+      expect(row?.paymentEvery ?? undefined).toBeUndefined();
+      expect(row?.paymentDay ?? undefined).toBeUndefined();
+    }, { timeout: 5000 });
+    await screen.findByTestId('debtdetail-no-plan');
+
+    fireEvent.click(screen.getByTestId('debtdetail-edit'));
+    await waitFor(() => expect((screen.getByTestId('acctedit-no-plan') as HTMLInputElement).checked).toBe(true));
+    fireEvent.click(screen.getByTestId('acctedit-no-plan'));
+    fireEvent.change(await screen.findByTestId('acctedit-payment'), { target: { value: '300' } });
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+    await waitFor(async () => {
+      const row = await db.accounts.get(accountId);
+      expect(row).toMatchObject({ paymentCents: 30_000, paymentEvery: 'month' });
+    }, { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('debtdetail-no-plan')).toBeNull());
+    db.close();
+  }, 20_000);
+
   it('found-payments links history to the loan; pre-anchor rows count only on request', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');

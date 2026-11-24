@@ -102,6 +102,24 @@ describe('Payoff planner (#413)', () => {
     await waitFor(() => expect(screen.getByTestId('debtplan-free').textContent).toMatch(/Debt-free/));
   });
 
+  it('#683: a loan paid back whenever is no payment losing to its interest — it says so, and an extra pays it off', async () => {
+    renderApp('/debts/plan');
+    await screen.findByTestId('screen-debtplan');
+    const db = new MunniDB('munni_demo');
+    await demoRepo(db).upsert('account', 'demo_space', 'loan-family', {
+      name: 'Family loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -300_000, paymentCents: 0,
+    });
+    db.close();
+    await screen.findByTestId('debtplan-hero');
+    await waitFor(() => expect(screen.getByTestId('debtplan-hero').textContent).toMatch(/no fixed payment is paid off by what you add/));
+    const card = () => screen.getByTestId('debtplan-order-loan-family').textContent;
+    expect(screen.getByTestId('debtplan-debt-end-loan-family').textContent).toMatch(/No fixed payment/);
+    expect(card()).not.toMatch(/never/);
+    expect(screen.getByTestId('debtplan-debt-numbers-loan-family').textContent).toMatch(/Up to you/);
+    fireEvent.click(screen.getByTestId('debtplan-debt-extra-chip-loan-family-5000'));
+    await waitFor(() => expect(screen.getByTestId('debtplan-debt-end-loan-family').textContent).toMatch(/paid off/));
+  }, 15_000);
+
   it('one chart for all debts, one per debt: an extra aimed at one debt moves its end, the hero and the budget, and survives a reopen (user 2026-10-08)', async () => {
     renderApp('/debts/plan');
     await screen.findByTestId('screen-debtplan');

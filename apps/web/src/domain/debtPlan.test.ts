@@ -395,4 +395,14 @@ describe('from the accounts', () => {
     expect(debts[0]).toMatchObject({ balanceCents: 500_000, aprPct: 4.5, aprKnown: true, minMonthlyCents: 43_333, stress: 2 });
     expect(debts[1]).toMatchObject({ aprPct: 0, aprKnown: false, minMonthlyCents: 0, stress: undefined });
   });
+
+  it('#683: a loan paid back whenever has no minimum to fall short of — never flagged stuck, paid off by an extra', () => {
+    const [family] = toPlanDebts([{ account: account({ id: 'f', name: 'Family', paymentCents: 0, interestPctYear: 2 }), remainingCents: 120_000 }]);
+    expect(family).toMatchObject({ minMonthlyCents: 0, noFixedPayment: true });
+    expect(simulateDebtAlone(family, 0)).toMatchObject({ months: null, stuck: false });
+    expect(simulateDebtAlone(family, 20_000).months).not.toBeNull();
+    const [unanswered] = toPlanDebts([{ account: account({ id: 'u', name: 'Unanswered', interestPctYear: 2 }), remainingCents: 120_000 }]);
+    expect(unanswered.noFixedPayment).toBeUndefined();
+    expect(simulateDebtAlone(unanswered, 0).stuck).toBe(true);
+  });
 });

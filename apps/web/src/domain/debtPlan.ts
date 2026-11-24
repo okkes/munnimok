@@ -1,5 +1,5 @@
 import type { AccountRow } from '@/db/types';
-import { monthlyPaymentCents, paymentsPerYear } from './debts';
+import { hasNoFixedPayment, monthlyPaymentCents, paymentsPerYear } from './debts';
 
 // payoff engine (#413): pure, cents, monthly; the pool (extra, one-off, freed minimums) feeds the first debt still owing
 // baseline = minimums only, no rollover; with the rollover switch off and no extras the plan IS the baseline
@@ -25,6 +25,8 @@ export interface PlanDebt {
   /** the loan's own payment, normalized to a month; 0 when it has none */
   minMonthlyCents: number;
   stress?: DebtStress;
+  /** #683: paid back whenever — no minimum to fall short of, so never flagged as stuck */
+  noFixedPayment?: true;
 }
 
 export interface PlanOptions {
@@ -134,7 +136,10 @@ const outcomeOf = (l: Live, index: number): DebtOutcome => ({
   interestCents: l.interest,
   paidCents: l.paid,
   order: index + 1,
-  stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) + l.extra <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
+  stuck:
+    !l.debt.noFixedPayment &&
+    l.paidOffMonth === null &&
+    Math.max(0, l.debt.minMonthlyCents) + l.extra <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
 });
 
 const ownExtra = (extras: Record<string, number> | undefined, id: string): number => Math.max(0, Math.round(extras?.[id] ?? 0));
@@ -406,5 +411,6 @@ export function toPlanDebts(loans: readonly { account: AccountRow; remainingCent
       aprKnown: account.interestPctYear !== undefined,
       minMonthlyCents: monthlyPaymentCents(account),
       stress: account.debtStress,
+      ...(hasNoFixedPayment(account) ? { noFixedPayment: true as const } : {}),
     }));
 }

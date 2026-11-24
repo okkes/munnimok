@@ -19,7 +19,7 @@ import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accoun
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
-import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, NoFixedPaymentToggle, offersNoPlan, parsedDueDay } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
 import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
@@ -117,6 +117,7 @@ export function AddAccountChooser({
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
+  const [noPlan, setNoPlan] = useState(false);
   const [note, setNote] = useState('');
   const [attempted, setAttempted] = useState(false);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
@@ -137,6 +138,7 @@ export function AddAccountChooser({
       setPayEvery('month');
       setPayEveryN(1);
       setPayCustom(false);
+      setNoPlan(false);
       setNote('');
       setAttempted(false);
     }
@@ -164,25 +166,30 @@ export function AddAccountChooser({
   const saveDisabled = nameMissing || balanceMissing;
   const { nameBad, balanceBad } = chooserRings(attempted, nameMissing, balanceMissing);
 
+  const noPlanOffered = offersNoPlan(newType);
+  const paymentPlanFields = (): Partial<AccountRow> => {
+    if (noPlanOffered && noPlan) return { paymentCents: 0 };
+    const paymentCents = parseCents(payment);
+    if (!paymentCents || paymentCents <= 0) return {};
+    return {
+      paymentCents,
+      paymentEvery: payEvery,
+      ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}),
+      // #190: weekly plans have no day-of-month
+      ...(payEvery !== 'week' && parsedDueDay(payDay) ? { paymentDay: parsedDueDay(payDay) } : {}),
+    };
+  };
+
   /** the debt story a liability account carries; blank fields stay off the row */
   const liabilityFields = (): Partial<AccountRow> => {
     const originalCents = parseCents(original);
-    const paymentCents = parseCents(payment);
     const aprNumber = Number.parseFloat(apr.replace(',', '.'));
     return {
       ...(iban.trim() ? { iban: iban.trim() } : {}),
       ...(originalCents && originalCents > 0 ? { originalCents } : {}),
       // 0% is a real answer; only the EMPTY field means "remind me"
       ...(Number.isFinite(aprNumber) && aprNumber >= 0 ? { interestPctYear: aprNumber } : {}),
-      ...(paymentCents && paymentCents > 0
-        ? {
-            paymentCents,
-            paymentEvery: payEvery,
-            ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}),
-            // #190: weekly plans have no day-of-month
-            ...(payEvery !== 'week' && parsedDueDay(payDay) ? { paymentDay: parsedDueDay(payDay) } : {}),
-          }
-        : {}),
+      ...paymentPlanFields(),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(prefill?.merchantKey ? { merchantKey: prefill.merchantKey } : {}),
     };
@@ -211,7 +218,7 @@ export function AddAccountChooser({
   };
 
   // a filled manual form asks "discard?" before a stray backdrop tap drops it; the intent step never asks
-  const manualDirty = step === 'manual' && newType !== null && anyManualFieldFilled([name.trim(), balance, iban, original, apr, payment, note]);
+  const manualDirty = step === 'manual' && newType !== null && anyManualFieldFilled([name.trim(), balance, iban, original, apr, payment, note, noPlan ? 'on' : '']);
 
   return (
     <>
@@ -383,33 +390,38 @@ export function AddAccountChooser({
                       />
                     </label>
                   </div>
-                  <div className="flex gap-2">
-                    <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
-                      {t('debts.payment')}
-                      <input
-                        data-testid="chooser-acctform-payment"
-                        inputMode="decimal"
-                        value={payment}
-                        onChange={(e) => setPayment(e.target.value)}
-                        onBlur={() => evalField(payment, setPayment)}
-                        placeholder="0.00"
-                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  {noPlanOffered && <NoFixedPaymentToggle checked={noPlan} onChange={setNoPlan} testId="chooser-acctform-no-plan" />}
+                  {!(noPlanOffered && noPlan) && (
+                    <>
+                      <div className="flex gap-2">
+                        <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                          {t('debts.payment')}
+                          <input
+                            data-testid="chooser-acctform-payment"
+                            inputMode="decimal"
+                            value={payment}
+                            onChange={(e) => setPayment(e.target.value)}
+                            onBlur={() => evalField(payment, setPayment)}
+                            placeholder="0.00"
+                            className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                          />
+                        </label>
+                      </div>
+                      {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
+                      <LoanCadenceControl
+                        value={{ every: payEvery, everyN: payEveryN }}
+                        custom={payCustom}
+                        onChange={(next, isCustom) => {
+                          setPayEvery(next.every);
+                          setPayEveryN(next.everyN);
+                          setPayCustom(isCustom);
+                        }}
+                        dueDay={payDay}
+                        onDueDay={setPayDay}
+                        testIdPrefix="chooser-acctform"
                       />
-                    </label>
-                  </div>
-                  {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
-                  <LoanCadenceControl
-                    value={{ every: payEvery, everyN: payEveryN }}
-                    custom={payCustom}
-                    onChange={(next, isCustom) => {
-                      setPayEvery(next.every);
-                      setPayEveryN(next.everyN);
-                      setPayCustom(isCustom);
-                    }}
-                    dueDay={payDay}
-                    onDueDay={setPayDay}
-                    testIdPrefix="chooser-acctform"
-                  />
+                    </>
+                  )}
                   <textarea
                     data-testid="chooser-acctform-note"
                     value={note}

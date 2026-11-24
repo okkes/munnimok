@@ -16,7 +16,7 @@ import { knownCents } from '@/lib/money';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
 import { LOCKED_MAIN_IDS, REIMBURSED_ID } from './categories';
-import { isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
+import { hasNoFixedPayment, isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
 import { isEventMoney } from './events';
 import { nextDueDate, occurrencesBetween } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
@@ -690,8 +690,10 @@ const MEASURE: Record<PlanSegmentKind, Measure> = {
     const loan = source(ctx.loansById, subject);
     if (!loan) return null;
     const inPool = ctx.poolIds.has(loan.id);
-    const share = inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, 0);
     const realized = ctx.ledger.byDebt.get(loan.id) ?? 0;
+    // #683: paid back whenever asks for nothing; the plan funds it by hand, with no target to read as €0
+    if (!inPool && hasNoFixedPayment(loan)) return { target: null, realized, inPool };
+    const share = inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, 0);
     if (!ctx.ahead || !ctx.debtFundedBefore || share === 0) return { target: share, realized, inPool };
     // ahead (#557): what the periods before this one hold already pays part of the loan, or all of it
     const open = Math.max(0, loanRemainingCents(loan) - ctx.debtFundedBefore(loan.id));
