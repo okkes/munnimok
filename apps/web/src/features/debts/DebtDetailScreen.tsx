@@ -9,7 +9,7 @@ import { logActivity } from '@/application/activity';
 import { useLoanStatuses } from '@/application/debts';
 import { useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { estimatePaymentPlan, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import { estimatePaymentPlan, hasNoFixedPayment, paymentsPerYear, projectPayoff } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
 import type { AccountRow } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -70,7 +70,9 @@ export function DebtDetailScreen() {
   // #530: what is owed and the loan's size hide with the sensitive figures; payments stay
   const owed = (cents: number) => fmtSensitive(cents, currency);
   // the explicit plan wins; with empty fields, 3+ payments give an estimate that is never stored
-  const estimate = account.paymentCents ? null : estimatePaymentPlan(payments);
+  // #683: a loan paid back whenever has no plan to estimate: its payments are whatever came
+  const whenever = hasNoFixedPayment(account);
+  const estimate = account.paymentCents || whenever ? null : estimatePaymentPlan(payments);
   const projection = account.paymentCents
     ? projectPayoff(remainingCents, account.paymentCents, account.interestPctYear, today, paymentsPerYear(account.paymentEvery, account.paymentEveryN))
     : projectPayoff(remainingCents, estimate?.paymentCents, account.interestPctYear, today, estimate?.perYear ?? 12);
@@ -120,13 +122,14 @@ export function DebtDetailScreen() {
           progress={account.originalCents ? <ProgressBar value={progress} /> : undefined}
           meta={
             <>
-              {account.paymentCents && (
+              {!!account.paymentCents && (
                 <span>
                   {t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}
                   {/* #190: the plan's due day says which period a payment belongs to */}
                   {account.paymentDay ? ` · ${t('recurring.dueDay2', { day: account.paymentDay })}` : ''}
                 </span>
               )}
+              {whenever && <span data-testid="debtdetail-no-plan">{t('debts.noFixedPaymentDetail')}</span>}
               {estimate && (
                 <span data-testid="debtdetail-estimate">
                   {t('debts.estimatedPlan', { amount: money(estimate.paymentCents), days: estimate.everyDays })}

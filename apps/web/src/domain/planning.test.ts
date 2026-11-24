@@ -455,6 +455,12 @@ describe('the subject view', () => {
     expect(view).toMatchObject({ inPool: true, targetCents: 0, realizedCents: 0, orphaned: false });
   });
 
+  it('#683: a loan paid back whenever has no target — not a €0 one — and what is put in it still counts', () => {
+    const family = account({ id: 'fam', type: 'loan', paymentCents: 0, balanceCents: -1000_00 });
+    const view = subjectView(subject({ segment: 'debts', sourceId: 'fam', fundedCents: 50_00 }), ctx({ loansById: new Map([['fam', family]]) }));
+    expect(view).toMatchObject({ targetCents: null, fundedCents: 50_00, status: 'funded', inPool: false });
+  });
+
   it('dueThisPeriod: a yearly cost spread over months and a goal far off may be skipped; a monthly cost and a goal due now may not', () => {
     const yearly = { id: 'ins', name: 'Insurance', kind: 'fixed', amountCents: 1200_00, every: 'year', dueDay: 15, dueMonth: 2, active: 1, ...envelope } as RecurringRow;
     const monthly = { id: 'rent', name: 'Rent', kind: 'fixed', amountCents: 900_00, every: 'month', dueDay: 25, active: 1, ...envelope } as RecurringRow;

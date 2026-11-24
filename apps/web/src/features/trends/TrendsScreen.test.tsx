@@ -259,6 +259,22 @@ describe('TrendsScreen (demo identity)', () => {
     fireEvent.keyDown(chart, { key: 'Escape' });
     expect(screen.queryByTestId('trends-compare-chart-all-tip')).toBeNull();
     expect(screen.getByTestId('trends-compare-callout-all').textContent).toBe(today);
+
+    // the slider under the graph reads the same day as a drag over it, the same-day list included
+    const slider = screen.getByTestId('trends-compare-chart-all-slider') as HTMLInputElement;
+    expect(slider.getAttribute('aria-label')).toBe('Pick a day on the chart');
+    const restsOn = slider.value;
+    const rowsToday = screen.getByTestId('trends-compare-rows-all').textContent;
+    fireEvent.change(slider, { target: { value: '0' } });
+    expect(screen.getByTestId('trends-compare-chart-all-tip').textContent).toMatch(/^Day 1/);
+    expect(screen.getByTestId('trends-compare-callout-all').textContent).toMatch(/day 1$/);
+    expect(screen.getByTestId('trends-compare-rows-all').textContent).not.toBe(rowsToday);
+    // the thumb stays where it is left, so the list below can be read; back on today lets the day go
+    fireEvent.pointerUp(slider);
+    expect(screen.getByTestId('trends-compare-callout-all').textContent).toMatch(/day 1$/);
+    fireEvent.change(slider, { target: { value: restsOn } });
+    expect(screen.getByTestId('trends-compare-callout-all').textContent).toBe(today);
+    expect(screen.getByTestId('trends-compare-rows-all').textContent).toBe(rowsToday);
   }, 15_000);
 
   it('cash flow: the balance line scrubs into the footer; Range draws the band with the typical peak and low', async () => {
@@ -272,6 +288,16 @@ describe('TrendsScreen (demo identity)', () => {
     expect(screen.getByTestId('trends-flow-scrub').textContent).not.toMatch(/^Now/);
     expect(screen.getByTestId('trends-flow-scrub').textContent).toMatch(/€/);
     fireEvent.keyDown(chart, { key: 'Escape' });
+    expect(screen.getByTestId('trends-flow-scrub').textContent).toMatch(/^Now €/);
+    // #510: the slider under the balance line reads a day the same way; back on today it lets go
+    const slider = screen.getByTestId('trends-flow-chart-slider') as HTMLInputElement;
+    const restsOn = slider.value;
+    fireEvent.change(slider, { target: { value: '0' } });
+    expect(screen.getByTestId('trends-flow-scrub').textContent).not.toMatch(/^Now/);
+    expect(screen.getByTestId('trends-flow-chart-tip')).toBeTruthy();
+    fireEvent.pointerUp(slider);
+    expect(screen.getByTestId('trends-flow-scrub').textContent).not.toMatch(/^Now/);
+    fireEvent.change(slider, { target: { value: restsOn } });
     expect(screen.getByTestId('trends-flow-scrub').textContent).toMatch(/^Now €/);
 
     fireEvent.click(screen.getByTestId('trends-flow-mode-range'));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReceiptItem } from '@/db/types';
-import { itemKey, itemMemoryOf, picksSpread, picksStand, receiptFiling, receiptLines, suggestedCat, suggestedPicks, txMoneyOf } from './receiptCats';
+import { itemKey, itemMemoryOf, linesDisagree, picksSpread, picksStand, receiptFiling, receiptLines, suggestedCat, suggestedPicks, txMoneyOf } from './receiptCats';
 
 // the ticket's own receipt: four lines of 110 together, 10 off, 100 paid
 const ITEMS: ReceiptItem[] = [
@@ -159,5 +159,24 @@ describe('receipt lines as categories', () => {
     expect(picksStand([{ line: 4, catId: 'groceries', amountCents: 1 }], ITEMS, new Map([['groceries', 10_000]]))).toBe(false);
     expect(picksStand([], ITEMS, new Map())).toBe(false);
     expect(picksStand(undefined, ITEMS, new Map())).toBe(false);
+  });
+
+  it('#642: only lines that miss the total disagree with it — a total that IS their sum (the party stated none) has nothing to tell', () => {
+    const lines: ReceiptItem[] = [
+      { name: 'Boek', totalCents: 1999 },
+      { name: 'Kabel', totalCents: 1200, discountCents: -200, discountLabel: 'Actie' },
+      { name: 'Verzending', totalCents: 299, kind: 'fee' },
+    ];
+    // unchecked, yet the lines with their discounts make the total to the cent: munni summed it itself
+    expect(linesDisagree({ reconciled: false, totalCents: 3298, items: lines })).toBe(false);
+    // a cent of the shop's own rounding is no disagreement
+    expect(linesDisagree({ reconciled: false, totalCents: 3299, items: lines })).toBe(false);
+    // the party stated a total its lines do not reach
+    expect(linesDisagree({ reconciled: false, totalCents: 3500, items: lines })).toBe(true);
+    // checked, or never judged, or nothing to add up
+    expect(linesDisagree({ reconciled: true, totalCents: 3500, items: lines })).toBe(false);
+    expect(linesDisagree({ totalCents: 3500, items: lines })).toBe(false);
+    expect(linesDisagree({ reconciled: false, totalCents: 3500, items: [] })).toBe(false);
+    expect(linesDisagree({ reconciled: false, totalCents: 3500 })).toBe(false);
   });
 });

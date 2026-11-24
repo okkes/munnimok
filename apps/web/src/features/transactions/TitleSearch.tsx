@@ -1,11 +1,19 @@
+import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
 import { openExternal, webSearchUrl } from '@/lib/platform';
 import { Icon } from '@/ui/Icon';
 
+/** an offline profile's promise is that nothing of its data leaves the device, a search the person starts included;
+ *  the demo's titles are made-up sample data, so it keeps the search */
+export function useTitleSearchOffered(): boolean {
+  return useSession((s) => s.identity?.kind === 'user' || s.identity?.kind === 'demo');
+}
+
 /** #506: a vague bank title is one tap from a web search; the in-app browser on the shells, a tab on the web */
 export function TitleSearchButton({ query, testId }: Readonly<{ query: string; testId: string }>) {
   const { t } = useLang();
-  if (!query.trim()) return null;
+  const offered = useTitleSearchOffered();
+  if (!offered || !query.trim()) return null;
   return (
     <button
       type="button"
@@ -23,10 +31,16 @@ export function TitleSearchButton({ query, testId }: Readonly<{ query: string; t
   );
 }
 
-export function SearchableTitle({ text, query, testId }: Readonly<{ text: string; query: string; testId: string }>) {
+/** #506: the whole title is read, never cut short: it wraps, codes without spaces included, the search icon at its end */
+export function SearchableTitle({
+  text,
+  query,
+  testId,
+  titleTestId,
+}: Readonly<{ text: string; query: string; testId: string; titleTestId?: string }>) {
   return (
-    <span className="inline-flex max-w-full items-center gap-0.5 align-middle">
-      <span className="min-w-0 truncate">{text}</span>
+    <span className="wrap-anywhere" data-testid={titleTestId}>
+      {text}
       <TitleSearchButton query={query} testId={testId} />
     </span>
   );

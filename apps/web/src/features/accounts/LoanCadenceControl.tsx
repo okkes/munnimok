@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
-import type { RecurringEvery } from '@/db/types';
+import type { AccountType, RecurringEvery } from '@/db/types';
 import { Chip } from '@/ui/primitives';
 
 export interface LoanCadence {
@@ -103,5 +103,25 @@ export function LoanCadenceControl({
         </label>
       )}
     </div>
+  );
+}
+
+/** #683: a card has a minimum by nature; a loan or mortgage may be paid back whenever */
+export const offersNoPlan = (type: AccountType | null | undefined): boolean => type === 'loan' || type === 'mortgage';
+
+/** #683: "paid back whenever" stands in for the payment and its rhythm */
+export function NoFixedPaymentToggle({ checked, onChange, testId }: Readonly<{ checked: boolean; onChange: (next: boolean) => void; testId: string }>) {
+  const { t } = useLang();
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-input border border-line bg-surface px-4 py-3 text-[14px] text-ink">
+      <span className="min-w-0">{t('debts.noFixedPaymentOption')}</span>
+      <input
+        data-testid={testId}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-5 w-5 shrink-0 accent-[var(--m-accent)]"
+      />
+    </label>
   );
 }

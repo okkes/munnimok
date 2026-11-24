@@ -3,10 +3,12 @@ import type { AccountRow } from '@/db/types';
 import {
   debtsOverview,
   estimatePaymentPlan,
+  hasNoFixedPayment,
   isDebtTracked,
   loanProgress,
   loanRemainingCents,
   monthlyPaymentCents,
+  nextDebtPaymentDate,
   paymentsPerYear,
   projectPayoff,
 } from './debts';
@@ -30,6 +32,17 @@ describe('loan math (v2: the account IS the debt)', () => {
     expect(loanRemainingCents(account({ balanceCents: -35_000 }))).toBe(35_000);
     expect(loanRemainingCents(account({ balanceCents: 12_000 }))).toBe(0);
     expect(loanProgress(account({ originalCents: 100_000 }), 35_000)).toBeCloseTo(0.65);
+  });
+
+  it('#683: a payment of 0 is a loan paid back whenever — nothing due, nothing per month; an empty payment is no such answer', () => {
+    const whenever = account({ paymentCents: 0, balanceCents: -100_000 });
+    expect(hasNoFixedPayment(whenever)).toBe(true);
+    expect(hasNoFixedPayment(account({}))).toBe(false);
+    expect(hasNoFixedPayment(account({ paymentCents: null as never }))).toBe(false);
+    expect(hasNoFixedPayment(account({ paymentCents: 5_000 }))).toBe(false);
+    expect(nextDebtPaymentDate({ ...whenever, paymentDay: 10 }, '2026-11-24')).toBeNull();
+    expect(monthlyPaymentCents(whenever)).toBe(0);
+    expect(projectPayoff(100_000, whenever.paymentCents, 0, '2026-11-24')).toBeNull();
   });
 
   it('an original-less loan still answers: progress unknown reads 0', () => {

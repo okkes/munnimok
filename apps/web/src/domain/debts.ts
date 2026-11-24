@@ -21,6 +21,10 @@ export function isDebtTracked(
   return account.interestPctYear !== undefined || account.originalCents !== undefined || !!account.paymentCents;
 }
 
+// #683: 0 is the answer "paid back whenever"; an absent payment is an unanswered field that payments may estimate.
+// Builds before #683 read 0 as absent, so the row's shape never changed.
+export const hasNoFixedPayment = (loan: Pick<AccountRow, 'paymentCents'>): boolean => loan.paymentCents === 0;
+
 /** remaining owed: the account's balance is the truth (stored negative →
  *  owed is its magnitude); an overpaid card sits at 0 owed */
 export function loanRemainingCents(account: Pick<AccountRow, 'balanceCents'>): number {

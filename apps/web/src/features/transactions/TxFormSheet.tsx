@@ -221,6 +221,12 @@ function FormCategoryRow({
 
 // #309: adjustments carry no counterparty, and the debt family keeps its bare story:
 // the unassigned-payments bucket collects loan rows until a real loan claims them
+/** #684: the category a counterparty and the sign mean; null while the counterparty's row is not there yet */
+function counterCat(linked: Pick<AccountRow, 'type'> | undefined, isExpense: boolean): string | null {
+  if (!linked) return null;
+  return movementCatFor(linked.type, isExpense ? -1 : 1);
+}
+
 const movementCounterMissing = (adjustment: boolean, catId: string | null, linkedAccountId: string | null): boolean =>
   !adjustment && !!catId && isMovementCat(catId) && specialCatType(catId) !== 'debtPayment' && !linkedAccountId;
 
@@ -783,7 +789,13 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const [merchant, setMerchant] = useState('');
   const [date, setDate] = useState(localToday());
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
+  const [pickedCatId, setPickedCatId] = useState<string>(UNCATEGORIZED_ID);
+  // #684: a category the form filled from the counterparty follows the −/+ sign; one the person picked is theirs
+  const [catFromCounter, setCatFromCounter] = useState(false);
+  const setCatId = (next: string) => {
+    setCatFromCounter(false);
+    setPickedCatId(next);
+  };
   // #211: a spread stays ONE transaction; real splits are the detail's flow
   const [catsSheetOpen, setCatsSheetOpen] = useState(false);
   const [stagedCats, setStagedCats] = useState<TxSplitCat[] | null>(null);
@@ -824,7 +836,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     setMerchant(initial.merchant);
     setDate(initial.date);
     setAccountId(initial.accountId);
-    setCatId(initial.catId);
+    setPickedCatId(initial.catId);
+    setCatFromCounter(!tx && !!initial.linkedAccountId && initial.catId === UNCATEGORIZED_ID);
     setAdjustment(initial.adjustment);
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
@@ -844,13 +857,16 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
 
-  const cat = cats.byId(catId);
   // the account that picks itself is a hand-kept one: a bank account is a choice, never a default
   const effectiveAccount = accountId ?? soleAccountId(writable.filter((a) => a.source === 'manual'));
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const { onBank, futureOnBank, canCount } = bankEntryFacts(selectedAccount, date);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
+  // the counterparty's row may load after the seed: the category is derived, never stored ahead of it
+  const followed = catFromCounter ? counterCat(linkedAccount, isExpense) : null;
+  const catId = followed ?? pickedCatId;
+  const cat = cats.byId(catId);
   // R1: a stamped account types its rows; R3: a special category pulls its type onto a standard row;
   // R2: a tracked counterparty = plain transfer
   const ownStamp = accountStamp(selectedAccount?.type);
@@ -946,7 +962,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const dirty =
     open &&
     baselineRef.current !== '' &&
-    formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats, notes, eventId }) !==
+    // the picked category, not the shown one: a category that only follows the counterparty is no change of the person's
+    formFingerprint({ amount, isExpense, merchant, date, accountId, catId: pickedCatId, adjustment, linkedAccountId, recurringId, cats: stagedCats, notes, eventId }) !==
       baselineRef.current;
   // #348: the counterparty opens once the category makes the row a movement (or one is set)
   const counterRelevant = !!linkedAccountId || !!specialCatType(catId) || !!stagedCats?.some((e) => specialCatType(e.catId));
@@ -1156,7 +1173,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
           // #133/#228: a movement category follows the picked counter's kind; an uncategorized row fills
           // its special category, a deliberate plain one is left alone
           if (specialCatType(catId) || catId === UNCATEGORIZED_ID) {
-            setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+            setPickedCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+            setCatFromCounter(true);
           }
         }}
         onDetach={() => {

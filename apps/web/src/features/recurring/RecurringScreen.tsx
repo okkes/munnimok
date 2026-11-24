@@ -12,7 +12,7 @@ import type { SpaceTx } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { computeRange, monthlyRecurringSeries, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
-import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
+import { detectPriceChange, priceUpdateWaits, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringRow } from '@/db/types';
 import { looksLikeDebtCreditor } from '@/domain/detectDebts';
@@ -194,8 +194,9 @@ export function RecurringScreen() {
             </Pill>
           )}
           {(() => {
+            // the list marks what waits for the person; a price they already took over is no news here
             const change = detectPriceChange(linkedByRec.get(c.rec.id) ?? []);
-            if (!change) return null;
+            if (!change || !priceUpdateWaits(c.rec, change)) return null;
             const up = change.toCents > change.fromCents;
             return (
               <Pill tone={up ? 'warning' : 'accent'} testId={`recurring-pricechange-${c.rec.id}`}>

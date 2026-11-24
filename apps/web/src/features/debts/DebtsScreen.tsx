@@ -11,7 +11,7 @@ import type { LoanStatus } from '@/application/debts';
 import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
-import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import { hasNoFixedPayment, monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
 import { monthAfter, simulateBaseline, toPlanDebts } from '@/domain/debtPlan';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
@@ -195,6 +195,7 @@ export function DebtsScreen() {
     const subParts = [
       account.originalCents ? t('budgets.of', { amount: owed(account.originalCents) }) : null,
       account.paymentCents ? t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) }) : null,
+      hasNoFixedPayment(account) ? t('debts.noFixedPayment') : null,
       freeLabel ? t('debts.freeBy', { date: freeLabel }) : null,
     ].filter(Boolean);
     return (

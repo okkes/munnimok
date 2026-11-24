@@ -190,6 +190,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
             onQuery={setIconQuery}
             testIdPrefix="brandpicker-icon"
             sleeping={icons.face === 'logo'}
+            fill
           />
         ) : (
         <>

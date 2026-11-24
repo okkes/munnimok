@@ -157,7 +157,7 @@ describe('Receipts (demo identity)', () => {
       fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
       await screen.findByText('Halfvolle melk');
       expect(screen.getByText('Volkoren brood')).toBeTruthy();
-      expect(screen.getByText(/^Suggested: .*Other/)).toBeTruthy();
+      expect(screen.getByTestId('receipt-item-cat-0').textContent).toBe('Groceries');
       expect(read.mock.calls[0][0]).toEqual([FAKE_PHOTO]);
       await waitFor(() => expect(screen.getByTestId('receipt-ai-read').textContent).toBe('Read again'));
     } finally {
@@ -166,7 +166,51 @@ describe('Receipts (demo identity)', () => {
     }
   }, 15_000);
 
-  it('a photo read to the payment’s own amount files the payment by its lines at once (#567); the receipt carries its own total from then on', async () => {
+  it('#648: a photo taken on a transaction is read where it was taken — by the card’s own door, or without one when the standing order is on', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 328,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 129, totalCents: 129, kind: 'item', categoryId: 'groceries' },
+          { name: 'Volkoren brood', quantity: 1, unitCents: 199, totalCents: 199, kind: 'item', categoryId: null },
+        ],
+      },
+    });
+    receiptAi.setReceiptAiChoice('yes');
+    try {
+      await openFirstTx();
+      await attachPhoto();
+      const door = await screen.findByTestId('receipt-card-ai-read');
+      expect(door.textContent).toBe('Read this receipt');
+      expect(read).not.toHaveBeenCalled();
+      fireEvent.click(door);
+      const lines = await screen.findByTestId('receipt-card-items', {}, { timeout: 5000 });
+      expect(lines.textContent).toContain('Halfvolle melk');
+      expect(screen.getByTestId('receipt-card-item-cat-0').textContent).toBe('Groceries');
+      await waitFor(() => expect(screen.getByTestId('receipt-card-ai-read').textContent).toBe('Read again'));
+      expect(read).toHaveBeenCalledTimes(1);
+
+      receiptAi.setReceiptAutoRead(true);
+      fireEvent.click(screen.getByTestId('receipt-change'));
+      const file = new File(['y'], 'bon2.jpg', { type: 'image/jpeg' });
+      fireEvent.change(await screen.findByTestId('receipt-file'), { target: { files: [file] } });
+      await waitFor(() => expect(read).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 20_000);
+
+  it('#648: a photo read on a payment the person verified leaves its category alone; the lines stand in the transaction with “Apply categories” under them', async () => {
     const api = await import('@/lib/api');
     const receiptAi = await import('./receiptAi');
     const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
@@ -198,16 +242,31 @@ describe('Receipts (demo identity)', () => {
 
       const { db, repo } = await demoRepo();
       await waitFor(async () => {
-        const tx = await repo.store.get('transaction', 'dm101');
+        const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0);
+        expect(link?.totalCents).toBe(2310);
+        expect(link?.picks ?? {}).toEqual({});
+      });
+      const before = await repo.store.get('transaction', 'dm101');
+      expect(before?.cats ?? []).toEqual([]);
+      db.close();
+
+      cleanup();
+      renderApp('/transactions/dm101');
+      const lines = await screen.findByTestId('receipt-card-items', {}, { timeout: 5000 });
+      expect(lines.textContent).toContain('Chocolade');
+      expect(screen.getByTestId('receipt-card-item-cat-1').textContent).toBe('Eating out › Treats');
+      fireEvent.click(screen.getByTestId('receipt-categorise'));
+      fireEvent.click(await screen.findByTestId('receiptcats-suggest-all'));
+      fireEvent.click(screen.getByTestId('receiptcats-apply'));
+      const after = await demoRepo();
+      await waitFor(async () => {
+        const tx = await after.repo.store.get('transaction', 'dm101');
         expect(tx?.cats?.map(({ catId, amountCents }) => ({ catId, amountCents }))).toEqual([
           { catId: 'sweets', amountCents: 722 },
           { catId: 'groceries', amountCents: 1588 },
         ]);
       });
-      const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0);
-      expect(link?.totalCents).toBe(2310);
-      expect(link?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
-      db.close();
+      after.db.close();
     } finally {
       caps.mockRestore();
       read.mockRestore();
@@ -239,7 +298,7 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
     fireEvent.click(screen.getByTestId('receiptcats-categorise'));
     fireEvent.click(await screen.findByTestId('catpicker-sweets'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Eating out › Treats');
     expect(screen.getByTestId('receiptcats-left').textContent).toContain('15.88');
     expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Other');
     fireEvent.click(screen.getByTestId('receiptcats-apply'));
@@ -253,7 +312,7 @@ describe('Receipts (demo identity)', () => {
     db.close();
 
     fireEvent.click(screen.getByTestId('receipt-categorise'));
-    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Treats');
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Eating out › Treats');
     expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
   }, 20_000);
 
@@ -327,7 +386,7 @@ describe('Receipts (demo identity)', () => {
     expect(await screen.findByTestId('screen-connections')).toBeTruthy();
   }, 15_000);
 
-  it('the receipts browser groups by party and searches names and amounts', async () => {
+  it('#648: the receipts browser lists by day, filters by shop or scanned, and searches names and amounts', async () => {
     await openFirstTx();
     await attachPhoto();
 
@@ -345,20 +404,34 @@ describe('Receipts (demo identity)', () => {
 
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
-    await screen.findByTestId('receipts-group-jumbo');
-    await screen.findByTestId('receipts-group-photo');
+    const jumbo = 'receipt-row-rcpt:jumbo:demo_conn_jumbo:x1';
+    const rows = () => [...document.querySelectorAll('[data-testid^="receipt-row-"]')].map((row) => row.getAttribute('data-testid'));
+    const day = await screen.findByTestId('receipts-day-2026-07-01');
+    expect(day.textContent).toMatch(/Jul/);
+    expect(day.querySelector(`[data-testid="${jumbo}"]`)).toBeTruthy();
+    const everything = rows().length;
+    expect(everything).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByTestId('receipts-filter-scanned'));
+    await waitFor(() => expect(screen.queryByTestId(jumbo)).toBeNull());
+    expect(rows().length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
+    await waitFor(() => expect(screen.getByTestId(jumbo)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
+    await waitFor(() => expect(rows()).toHaveLength(everything));
 
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
-    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
+    await waitFor(() => expect(rows().length).toBeLessThan(everything));
+    expect(screen.getByTestId(jumbo)).toBeTruthy();
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '21,99' } });
-    await waitFor(() => expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy());
-    expect(screen.queryByTestId('receipts-group-photo')).toBeNull();
+    await waitFor(() => expect(rows()).toEqual([jumbo]));
+    fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'nothing reads like this' } });
+    expect(await screen.findByTestId('receipts-none-found')).toBeTruthy();
 
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '' } });
     fireEvent.click(await screen.findByTestId('receipts-filter-unlinked'));
-    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
+    await waitFor(() => expect(rows().length).toBeLessThan(everything));
+    expect(screen.getByTestId(jumbo)).toBeTruthy();
   }, 20_000);
 
   it('a fetched receipt carries its invoice, opened in place (#367)', async () => {

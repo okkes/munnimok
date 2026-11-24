@@ -67,8 +67,8 @@ describe('categorise by receipt', () => {
     fireEvent.click(screen.getByTestId('receiptcats-categorise'));
     fireEvent.click(screen.getByTestId('picker-pick'));
 
-    expect(text('receiptcats-cat-0')).toBe('Other');
-    expect(text('receiptcats-cat-1')).toBe('Other');
+    expect(text('receiptcats-cat-0')).toBe('Groceries');
+    expect(text('receiptcats-cat-1')).toBe('Groceries');
     expect(text('receiptcats-placed')).toContain('50.00');
     expect(text('receiptcats-left')).toContain('50.00');
     expect(text('receiptcats-rest')).toContain('Uncategorized');
@@ -114,17 +114,27 @@ describe('categorise by receipt', () => {
   it('a suggestion is one tap, all of them one more; a category comes off again; every open line can be selected at once', async () => {
     const onApply = open({ suggestions: new Map([[0, 'groceries'], [2, 'sweets']]) });
     await screen.findByTestId('receiptcats-sheet');
-    expect(text('receiptcats-suggest-0')).toBe('Suggested: Other');
+    expect(text('receiptcats-suggest-0')).toBe('Suggested: Groceries');
     fireEvent.click(screen.getByTestId('receiptcats-suggest-0'));
-    expect(text('receiptcats-cat-0')).toBe('Other');
+    expect(text('receiptcats-cat-0')).toBe('Groceries');
     expect(text('receiptcats-suggest-all')).toBe('Use the suggestions (1)');
     fireEvent.click(screen.getByTestId('receiptcats-suggest-all'));
-    expect(text('receiptcats-cat-2')).toBe('Treats');
+    expect(text('receiptcats-cat-2')).toBe('Eating out › Treats');
     expect(screen.queryByTestId('receiptcats-suggest-all')).toBeNull();
 
     fireEvent.click(screen.getByTestId('receiptcats-clear-0'));
     expect(screen.queryByTestId('receiptcats-cat-0')).toBeNull();
     expect(screen.getByTestId('receiptcats-suggest-0')).toBeTruthy();
+
+    // #648: with lines ticked, the suggestions are taken for those alone
+    fireEvent.click(screen.getByTestId('receiptcats-clear-2'));
+    expect(text('receiptcats-suggest-all')).toBe('Use the suggestions (2)');
+    fireEvent.click(screen.getByTestId('receiptcats-tick-2'));
+    expect(text('receiptcats-suggest-all')).toBe('Use the suggestions for the ticked lines (1)');
+    fireEvent.click(screen.getByTestId('receiptcats-suggest-all'));
+    expect(text('receiptcats-cat-2')).toBe('Eating out › Treats');
+    expect(screen.queryByTestId('receiptcats-cat-0')).toBeNull();
+    expect((screen.getByTestId('receiptcats-tick-2') as HTMLInputElement).checked).toBe(false);
 
     fireEvent.click(screen.getByTestId('receiptcats-select-open'));
     expect(text('receiptcats-categorise')).toBe('Category · 3 selected');
@@ -150,7 +160,7 @@ describe('categorise by receipt', () => {
     });
     await screen.findByTestId('receiptcats-sheet');
     expect(text('receiptcats-amount-0')).toContain('10.00');
-    expect(text('receiptcats-cat-3')).toBe('Treats');
+    expect(text('receiptcats-cat-3')).toBe('Eating out › Treats');
     expect(text('receiptcats-placed')).toContain('19.09');
     fireEvent.click(screen.getByTestId('receiptcats-amount-3'));
     fireEvent.change(screen.getByTestId('receiptcats-typed-3'), { target: { value: '0' } });

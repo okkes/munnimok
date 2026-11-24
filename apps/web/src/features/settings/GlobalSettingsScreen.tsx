@@ -27,9 +27,9 @@ import {
   readLockConfig,
   registerBiometric,
   validPin,
-  verifyBiometric,
   writeLockConfig,
 } from '@/features/lock/lock';
+import { PinChallengeSheet } from '@/features/lock/PinChallengeSheet';
 
 const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: string }[] = [
   { code: 'en', labelKey: 'lang.en', badge: 'EN' },
@@ -158,38 +158,17 @@ export function GlobalSettingsScreen() {
   const [lockError, setLockError] = useState<string | null>(null);
   const [lockAttempted, setLockAttempted] = useState(false);
 
-  // turning the lock off is guarded: the current PIN (or the registered biometric) must answer first (#282)
+  // turning the lock off is guarded by the app-start unlock itself (#282, #530)
   const [disarmOpen, setDisarmOpen] = useState(false);
-  const [disarmPin, setDisarmPin] = useState('');
-  const [disarmError, setDisarmError] = useState(false);
   const disarm = () => {
     writeLockConfig(null);
     setLockOn(false);
-    setDisarmOpen(false);
-  };
-  const tryDisarmBiometric = async () => {
-    const config = readLockConfig();
-    if (config && (await verifyBiometric(config, t('lock.disarmTitle')))) disarm();
-  };
-  const onDisarmDigit = async (next: string) => {
-    setDisarmPin(next);
-    setDisarmError(false);
-    const config = readLockConfig();
-    if (!config || next.length < 4) return;
-    if ((await hashPin(next, config.pinSalt)) === config.pinHash) {
-      disarm();
-    } else if (next.length >= 8) {
-      setDisarmError(true);
-    }
   };
 
   const toggleLock = async () => {
     if (lockOn) {
-      setDisarmPin('');
-      setDisarmError(false);
-      setDisarmOpen(true);
-      const config = readLockConfig();
-      if (config?.credentialId) void tryDisarmBiometric();
+      if (readLockConfig()) setDisarmOpen(true);
+      else disarm();
       return;
     }
     setLockPin('');
@@ -264,6 +243,16 @@ export function GlobalSettingsScreen() {
           <WeekStartRow />
           {/* receipts are a space view; the global door is the hub of every connected party (#367) */}
           <Row testId="settings-hub-row" icon="link-variant" title={t('conn.title')} onClick={() => void navigate({ to: '/connections' })} />
+          {/* #648: the person's own receipts (fetched and scanned) and how photos are read; a space's Receipts does the linking */}
+          {identity?.kind !== 'offline' && (
+            <Row
+              testId="settings-own-receipts-row"
+              icon="receipt-text-outline"
+              title={t('receipts.globalTitle')}
+              sub={t('receipts.globalSub')}
+              onClick={() => void navigate({ to: '/connections/receipts' })}
+            />
+          )}
           {/* trust feature: munni reads your banks, so it also lets you leave */}
           <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />
@@ -310,31 +299,13 @@ export function GlobalSettingsScreen() {
         {/* go-offline and account deletion live on the Profile screen: they are about identity */}
       </div>
 
-      <Sheet open={disarmOpen} onOpenChange={setDisarmOpen} title={t('lock.disarmTitle')} size="compact">
-        <div className="flex flex-col gap-3 pt-1" data-testid="lock-disarm-sheet">
-          <p className="text-[13px] leading-relaxed text-ink-2">{t('lock.disarmBody')}</p>
-          <input
-            data-testid="lock-disarm-pin"
-            value={disarmPin}
-            onChange={(e) => void onDisarmDigit(e.target.value.replaceAll(/\D/g, '').slice(0, 8))}
-            inputMode="numeric"
-            type="password"
-            autoComplete="off"
-            placeholder={t('lock.pinPlaceholder')}
-            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-center font-mono text-[18px] tracking-[0.4em] text-ink outline-none${disarmError ? ' ring-1 ring-negative' : ''}`}
-          />
-          {disarmError && (
-            <p className="text-center text-[12px] text-negative" data-testid="lock-disarm-error">
-              {t('lock.wrongPin')}
-            </p>
-          )}
-          {readLockConfig()?.credentialId && (
-            <Button variant="outline" data-testid="lock-disarm-bio" onClick={() => void tryDisarmBiometric()}>
-              {t('lock.disarmBiometric')}
-            </Button>
-          )}
-        </div>
-      </Sheet>
+      <PinChallengeSheet
+        open={disarmOpen}
+        onOpenChange={setDisarmOpen}
+        title={t('lock.disarmTitle')}
+        body={t('lock.disarmBody')}
+        onPass={disarm}
+      />
       <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           {!lockBioAvailable && <p className="text-[12px] text-ink-3">{t('lock.notSupported')}</p>}

@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { useQuery } from '@/db/useQuery';
 import { useReceiptFile } from '@/application/receiptFiles';
 import { useReceiptOps } from '@/application/receipts';
 import { useItemMemory, useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
@@ -12,10 +15,16 @@ import { useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
 import type { ReceiptPick, ReceiptRow, TxSplitCat } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
+import { getApiCapabilities } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
+import { ReceiptAiRead } from './ReceiptAiRead';
+import type { ReceiptReadOutcome } from './ReceiptAiRead';
 import { ReceiptCaptureRungs } from './ReceiptCapture';
 import { ReceiptCatsSheet } from './ReceiptCatsSheet';
+import { ReceiptItems } from './ReceiptItems';
+import { keepRead } from './keepRead';
+import { markFreshPhoto } from './receiptAi';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
 import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from './receiptPick';
 import { useFileByReceipt } from './useFileByReceipt';
@@ -23,13 +32,27 @@ import { useFileByReceipt } from './useFileByReceipt';
 // the ranking lives in receiptPick.ts so the review's helpers share it without importing this component
 export { rankForTx } from './receiptPick';
 
+/** more lines than this fold away: a long receipt must not bury the rest of the transaction */
+const CARD_LINES = 8;
+
 function AttachedReceiptCard({
   receipt,
   currency,
   onOpen,
   onChange,
   onCategorise,
-}: Readonly<{ receipt: ReceiptRow; currency: string; onOpen: () => void; onChange: () => void; onCategorise?: () => void }>) {
+  onRead,
+  freshId,
+}: Readonly<{
+  receipt: ReceiptRow;
+  currency: string;
+  onOpen: () => void;
+  onChange: () => void;
+  onCategorise?: () => void;
+  /** #648: a photo can be read where it was taken — absent where there is no reader or the receipt is not the person's to change */
+  onRead?: (outcome: ReceiptReadOutcome) => Promise<void>;
+  freshId?: string;
+}>) {
   const { t, lang } = useLang();
   const photo = receipt.source === 'photo';
   const who = photo ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source));
@@ -45,14 +68,11 @@ function AttachedReceiptCard({
           <span className="m-num text-[12px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
         </span>
       </button>
-      <button
-        data-testid="receipt-change"
-        onClick={onChange}
-        className="m-tap flex w-full items-center justify-center gap-1.5 border-0 border-t border-line-2 bg-transparent py-2 text-[12px] font-medium text-accent-deep"
-      >
-        <Icon name="swap-horizontal" size={14} />
-        {t('receipt.change')}
-      </button>
+      {!!receipt.items?.length && (
+        <div className="border-t border-line-2 px-4" data-testid="receipt-card-items">
+          <ReceiptItems items={receipt.items} currency={currency} testIdPrefix="receipt-card" limit={CARD_LINES} />
+        </div>
+      )}
       {onCategorise && (
         <button
           data-testid="receipt-categorise"
@@ -63,6 +83,15 @@ function AttachedReceiptCard({
           {t('receiptcats.door')}
         </button>
       )}
+      <button
+        data-testid="receipt-change"
+        onClick={onChange}
+        className="m-tap flex w-full items-center justify-center gap-1.5 border-0 border-t border-line-2 bg-transparent py-2 text-[12px] font-medium text-accent-deep"
+      >
+        <Icon name="swap-horizontal" size={14} />
+        {t('receipt.change')}
+      </button>
+      {photo && picture && onRead && <ReceiptAiRead variant="row" testIdPrefix="receipt-card-ai" images={[picture]} hasItems={!!receipt.items?.length} freshId={freshId} onRead={onRead} />}
     </div>
   );
 }
@@ -78,6 +107,9 @@ export function ReceiptSection({
 }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
+  const { store } = useData();
+  const canEdit = useCanEdit();
+  const aiReader = useQuery(store, async () => (await getApiCapabilities()).receiptAi === true, []) === true;
   const entry = useTxReceiptEntry(tx.id);
   const attachable = useAttachableReceipts();
   const txs = useSpaceTransactions();
@@ -121,7 +153,7 @@ export function ReceiptSection({
   const onFile = async (file: File) => {
     setBusy(true);
     try {
-      await receiptOps.attachPhoto(tx, file);
+      markFreshPhoto(await receiptOps.attachPhoto(tx, file));
       // taken from Change, the photo replaces the attached receipt — its link is in before the old one goes
       if (entry) await dropAttached(receiptOps, entry, tx.id);
       setAttachOpen(false);
@@ -169,6 +201,8 @@ export function ReceiptSection({
           onOpen={() => openReceipt(receipt.id)}
           onChange={() => setAttachOpen(true)}
           onCategorise={categorisable ? () => setCatsOpen(true) : undefined}
+          onRead={aiReader && canEdit && entry ? (outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome) : undefined}
+          freshId={entry?.linkId}
         />
       )}
       <ReceiptCatsSheet

@@ -1,8 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
+import { LogtoProvider } from '@logto/react';
 import * as Sentry from '@sentry/react';
 import { ControlApp } from './ControlApp';
+import { LogtoGate } from './auth';
 import { config, glitchtipDsn } from './config';
 import './styles.css';
 
@@ -25,51 +26,9 @@ function Root() {
         scopes: ['admin'],
       }}
     >
-      <LogtoGate />
+      <LogtoGate config={config} />
     </LogtoProvider>
   );
-}
-
-// single-flight: reload() fires parallel /control/* calls and Logto rotates refresh tokens; concurrent refreshes race
-// and the loser's consumed token revokes the whole grant ("invalid token, sign in again" loop)
-let tokenInflight: Promise<string | undefined> | null = null;
-function singleFlight(fetchToken: () => Promise<string | undefined>): Promise<string | undefined> {
-  tokenInflight ??= fetchToken().finally(() => {
-    tokenInflight = null;
-  });
-  return tokenInflight;
-}
-
-function LogtoGate() {
-  const { isAuthenticated, isLoading, signIn, signOut, getAccessToken } = useLogto();
-  const isCallback = window.location.pathname.endsWith('/auth-callback');
-  if (isCallback) return <Callback />;
-  if (isLoading) return <p className="center">…</p>;
-  if (!isAuthenticated) {
-    return (
-      <div className="center">
-        <button className="btn" onClick={() => void signIn(`${window.location.origin}/auth-callback`)}>
-          Sign in
-        </button>
-        <p className="hint">
-          Same account as the munni app — there is no admin password. An operator grants admin per account in the setup wizard (the
-          environment&apos;s Access tab).
-        </p>
-      </div>
-    );
-  }
-  return (
-    <ControlApp
-      config={config}
-      getToken={() => singleFlight(() => getAccessToken(config.logtoResource || undefined))}
-      signOut={() => void signOut(window.location.origin)}
-    />
-  );
-}
-
-function Callback() {
-  useHandleSignInCallback(() => window.location.replace(window.location.origin));
-  return <p className="center">…</p>;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

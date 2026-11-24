@@ -2041,7 +2041,7 @@ export function ReviewScreen() {
                 </div>
                 {/* the title wraps instead of truncating; the amount stays aligned to the first line (#339) */}
                 <div className="mt-0.5 flex items-start justify-between gap-3">
-                  <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink">
+                  <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink" data-testid="review-card-title">
                     {txTitle(tx)}
                     <TitleSearchButton query={txTitle(tx)} testId="review-search-web" />
                   </span>

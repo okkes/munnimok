@@ -1,26 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
-import { LOCALES, useLang } from '@/i18n';
+import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { globalAsEntry, linkAsEntry, useProposedMatches, useSpaceReceipts } from '@/application/receiptLinks';
-import type { ReceiptEntry } from '@/application/receiptLinks';
-import { useSpaceStoreConnLinks, useUnmatchedReceipts } from '@/application/connections';
+import { useUnmatchedReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
 import { useSpaceTransactions } from '@/application/transactions';
-import { partyName } from '@/features/connectors/logos';
-import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
-import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
-import { SearchField } from '@/ui/SearchField';
 import type { ReactNode } from 'react';
+import { ReceiptList } from './ReceiptList';
+import type { ReceiptListItem } from './ReceiptList';
 import { ReceiptProposalCard } from './ReceiptPickSheet';
 import { useLeavingRows } from './leavingRows';
 import { useFileByReceipt } from './useFileByReceipt';
-
-const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
 export const PROPOSAL_EXIT_MS = 260;
 
@@ -37,26 +32,13 @@ function ExitRow({ leaving, children }: Readonly<{ leaving: boolean; children: R
   );
 }
 
-function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): boolean {
-  const receipt = entry.data;
-  const haystack = [receipt.merchant ?? '', receipt.source, ...(receipt.items?.map((i) => i.name) ?? [])]
-    .join(' ')
-    .toLowerCase();
-  if (haystack.includes(q)) return true;
-  return !!amountQ && String(Math.abs(receipt.totalCents)).includes(amountQ);
-}
-
 export function ReceiptsScreen() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
-  const [query, setQuery] = useState('');
-  const [unlinkedOnly, setUnlinkedOnly] = useState(false);
-  const [instanceFilter, setInstanceFilter] = useState<string | null>(null);
 
   const links = useSpaceReceipts();
   const unmatched = useUnmatchedReceipts();
-  const connLinks = useSpaceStoreConnLinks();
   const proposals = useProposedMatches();
   const txs = useSpaceTransactions();
   const receiptOps = useReceiptOps();
@@ -67,81 +49,14 @@ export function ReceiptsScreen() {
   // an answered match folds away before it leaves the data
   const { rows: toCheck, leave } = useLeavingRows(proposals, PROPOSAL_EXIT_MS);
 
-  const entries = useMemo(() => {
-    const linked = (links ?? []).map(linkAsEntry);
+  const items = useMemo((): ReceiptListItem[] | undefined => {
+    if (!links) return undefined;
+    const linked = links.map(linkAsEntry);
     // a link that holds no transaction (a proposal, one taken off — #496) and its global row are one receipt
     const inSpace = new Set(linked.map((entry) => entry.data.id));
     const open = (unmatched ?? []).filter((row) => !inSpace.has(row.id)).map(globalAsEntry);
-    const all = [...linked, ...open];
-    all.sort((a, b) => b.data.date.localeCompare(a.data.date));
-    return all;
+    return [...linked, ...open].map((entry) => ({ receipt: entry.data, txIds: entry.txIds ?? [] }));
   }, [links, unmatched]);
-
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const digits = q.replaceAll(/[\s.,€-]/g, '');
-    const amountQ = /^\d+$/.test(digits) && digits.length > 0 ? digits : null;
-    const visible = entries.filter(
-      (entry) =>
-        (!unlinkedOnly || !entry.txId) &&
-        (!instanceFilter || entry.data.instanceId === instanceFilter) &&
-        (!q || entryMatches(entry, q, amountQ)),
-    );
-    const bySource = new Map<string, ReceiptEntry[]>();
-    for (const entry of visible) {
-      const list = bySource.get(entry.data.source) ?? [];
-      list.push(entry);
-      bySource.set(entry.data.source, list);
-    }
-    return [...bySource.entries()].sort(([a], [b]) => {
-      if (a === 'photo') return 1;
-      if (b === 'photo') return -1;
-      return a.localeCompare(b);
-    });
-  }, [entries, query, unlinkedOnly, instanceFilter]);
-
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
-  const unlinkedCount = entries.filter((e) => !e.txId).length;
-
-  const renderRow = (entry: ReceiptEntry) => {
-    const receipt = entry.data;
-    // one receipt can prove several payments — the row counts them
-    const holders = entry.txIds?.length ?? 0;
-    return (
-      <button
-        key={receipt.id}
-        data-testid={`receipt-row-${receipt.id}`}
-        onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: receipt.id } })}
-        className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-      >
-        <Icon name={sourceIcon(receipt.source)} size={18} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-ink">{receipt.merchant ?? t('receipt.sourcePhoto')}</span>
-          <span className="block text-[11px] text-ink-4">
-            {fmtDate(receipt.date)}
-            {receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : ''}
-            {receipt.documents?.length ? ` · ${t('receipts.invoice')}` : ''}
-          </span>
-        </span>
-        {!!receipt.documents?.length && <Icon name="file-pdf-box" size={16} color="var(--m-ink-4)" data-testid={`receipt-invoice-${receipt.id}`} />}
-        {!entry.txId && (
-          <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-semibold text-warning" data-testid={`receipt-unmatched-${receipt.id}`}>
-            {t('receipts.unmatched')}
-          </span>
-        )}
-        {holders > 1 && (
-          <span
-            className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-deep"
-            data-testid={`receipt-multi-${receipt.id}`}
-            title={t('receipt.attachedToN', { n: holders })}
-          >
-            {`× ${holders}`}
-          </span>
-        )}
-        <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
-      </button>
-    );
-  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-receipts">
@@ -159,89 +74,54 @@ export function ReceiptsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <SearchField
-          testId="receipts-search"
-          value={query}
-          onChange={setQuery}
-          placeholder={t('receipts.searchPlaceholder')}
-          className="mb-2"
-        />
-        {(unlinkedCount > 0 || (connLinks ?? []).length > 0) && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {unlinkedCount > 0 && (
-              <Chip testId="receipts-filter-unlinked" selected={unlinkedOnly} onClick={() => setUnlinkedOnly((v) => !v)}>
-                {t('receipts.unlinkedOnly', { n: unlinkedCount })}
-              </Chip>
-            )}
-            {(connLinks ?? []).map((link) => (
-              <Chip
-                key={link.instanceId}
-                testId={`receipts-filter-${link.instanceId}`}
-                selected={instanceFilter === link.instanceId}
-                onClick={() => setInstanceFilter((v) => (v === link.instanceId ? null : link.instanceId))}
-              >
-                {link.displayName}
-              </Chip>
-            ))}
-          </div>
-        )}
-
-        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first; the answer folds the card away */}
-        {/* #505: answering is the space's members' work — a reader sees the receipts, not the questions */}
-        {canEdit && toCheck.length > 0 && (
-          <div className="mt-3" data-testid="receipts-to-check">
-            <div className="m-cap mb-1 px-1">{t('receipts.toCheckTitle')}</div>
-            <p className="mb-2 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>
-            {toCheck.map(({ item: link, leaving }, index) => (
-              <ExitRow key={link.id} leaving={leaving}>
-                <ReceiptProposalCard
-                  link={link}
-                  tx={txs?.find((tx) => tx.id === link.proposedTxId)}
-                  currency={currency}
-                  ids={{
-                    card: `receipt-proposal-${link.id}`,
-                    open: `receipt-proposal-open-${link.id}`,
-                    tx: `receipt-proposal-tx-${link.id}`,
-                    accept: `receipt-proposal-accept-${link.id}`,
-                    reject: `receipt-proposal-reject-${link.id}`,
-                  }}
-                  busy={leaving}
-                  onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
-                  onOpenTx={(txId) => void navigate({ to: '/transactions/$txId', params: { txId } })}
-                  onAccept={(answered) =>
-                    leave(answered, index, async () => {
-                      await receiptOps.acceptMatch(answered);
-                      if (answered.proposedTxId) await fileByReceipt(answered.proposedTxId);
-                    })
-                  }
-                  onReject={(answered) => leave(answered, index, () => receiptOps.rejectMatch(answered))}
-                />
-              </ExitRow>
-            ))}
-          </div>
-        )}
-
-        {groups.length > 0 ? (
-          groups.map(([source, rows]) => (
-            <div key={source}>
-              <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1">
-                <Icon name={sourceIcon(source)} size={13} />
-                {source === 'photo' ? t('receipt.sourcePhoto') : (rows.find((r) => r.data.merchant)?.data.merchant ?? partyName(source))} · {rows.length}
-              </div>
-              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`receipts-group-${source}`}>
-                {rows.map(renderRow)}
-              </div>
-            </div>
-          ))
-        ) : (
-          links && (
+        <ReceiptList
+          items={items}
+          linkState
+          fallbackCurrency={currency}
+          onOpen={(receipt) => void navigate({ to: '/receipts/$receiptId', params: { receiptId: receipt.id } })}
+          empty={
             <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="receipts-empty">
               <Icon name="receipt-text-outline" size={34} color="var(--m-ink-4)" />
               <p className="text-[14px] font-medium text-ink-2">{t('receipts.emptyTitle')}</p>
               <p className="text-[12px] text-ink-4">{t('receipts.emptyBody')}</p>
             </div>
-          )
-        )}
+          }
+        >
+          {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first; the answer folds the card away */}
+          {/* #505: answering is the space's members' work — a reader sees the receipts, not the questions */}
+          {canEdit && toCheck.length > 0 && (
+            <div className="mt-3" data-testid="receipts-to-check">
+              <div className="m-cap mb-1 px-1">{t('receipts.toCheckTitle')}</div>
+              <p className="mb-2 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>
+              {toCheck.map(({ item: link, leaving }, index) => (
+                <ExitRow key={link.id} leaving={leaving}>
+                  <ReceiptProposalCard
+                    link={link}
+                    tx={txs?.find((tx) => tx.id === link.proposedTxId)}
+                    currency={currency}
+                    ids={{
+                      card: `receipt-proposal-${link.id}`,
+                      open: `receipt-proposal-open-${link.id}`,
+                      tx: `receipt-proposal-tx-${link.id}`,
+                      accept: `receipt-proposal-accept-${link.id}`,
+                      reject: `receipt-proposal-reject-${link.id}`,
+                    }}
+                    busy={leaving}
+                    onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
+                    onOpenTx={(txId) => void navigate({ to: '/transactions/$txId', params: { txId } })}
+                    onAccept={(answered) =>
+                      leave(answered, index, async () => {
+                        await receiptOps.acceptMatch(answered);
+                        if (answered.proposedTxId) await fileByReceipt(answered.proposedTxId);
+                      })
+                    }
+                    onReject={(answered) => leave(answered, index, () => receiptOps.rejectMatch(answered))}
+                  />
+                </ExitRow>
+              ))}
+            </div>
+          )}
+        </ReceiptList>
       </div>
     </div>
   );

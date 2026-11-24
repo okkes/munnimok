@@ -99,11 +99,12 @@ function TxPartGroupRows({
   const headColor = headCat.color ?? cats.byId(headCat.parentId ?? '').color ?? 'var(--m-ink-3)';
   return (
     <div className="py-0.5" data-testid={`tx-parts-${tx.id}`}>
-      <div className="flex items-center">
+      {/* #506: a long title wraps like TxRow's; icon, amount and the toggle keep to the first band */}
+      <div className="flex items-start">
         <button
           data-testid={`tx-parts-head-${tx.id}`}
           onClick={() => onOpen(undefined)}
-          className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
+          className="m-tap flex min-w-0 flex-1 items-start gap-3 border-none bg-transparent px-1 py-2.5 text-left"
         >
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
@@ -111,9 +112,15 @@ function TxPartGroupRows({
           >
             <Icon name={headCat.icon} size={20} color={headColor} />
           </span>
-          <span className="min-w-0 truncate text-[14px] font-medium text-ink">{txTitle(tx)}</span>
-          <Pill tone="accent">{t('tx.linkedParts', { n: parts.length })}</Pill>
-          <span className={`m-num ml-auto shrink-0 pl-2 text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
+          <span className="flex min-h-10 min-w-0 flex-1 items-center">
+            <span className="text-[14px] font-medium wrap-anywhere text-ink" data-testid={`tx-parts-title-${tx.id}`}>
+              {txTitle(tx)}
+              <Pill tone="accent" className="ml-1.5 align-middle">
+                {t('tx.linkedParts', { n: parts.length })}
+              </Pill>
+            </span>
+          </span>
+          <span className={`m-num flex min-h-10 shrink-0 items-center pl-2 text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
             {fmt(totalCents, tx.currency, { date: tx.date })}
           </span>
         </button>
@@ -121,7 +128,7 @@ function TxPartGroupRows({
           aria-label={t('split.title')}
           data-testid={`tx-parts-toggle-${tx.id}`}
           onClick={() => setCollapsed((v) => !v)}
-          className="m-tap shrink-0 border-none bg-transparent py-2 pr-1 pl-1 text-ink-3"
+          className="m-tap flex h-15 shrink-0 items-center border-none bg-transparent pr-1 pl-1 text-ink-3"
         >
           <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={15} />
         </button>
@@ -137,17 +144,19 @@ function TxPartGroupRows({
                 key={part.id ?? i}
                 data-testid={`tx-part-row-${tx.id}-${i}`}
                 onClick={() => onOpen(part.id)}
-                className="m-tap flex w-full min-w-0 items-center gap-2.5 border-none bg-transparent px-1 py-2 text-left"
+                className="m-tap flex w-full min-w-0 items-start gap-2.5 border-none bg-transparent px-1 py-2 text-left"
               >
-                <Icon name="subdirectory-arrow-right" size={15} color="var(--m-ink-4)" />
+                <span className="flex h-10 shrink-0 items-center">
+                  <Icon name="subdirectory-arrow-right" size={15} color="var(--m-ink-4)" />
+                </span>
                 <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  className="my-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
                   style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
                 >
                   <Icon name={partCat.icon} size={15} color={partColor ?? 'var(--m-ink-3)'} />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium text-ink">
+                <span className="flex min-h-10 min-w-0 flex-1 flex-col justify-center">
+                  <span className="block text-[14px] font-medium wrap-anywhere text-ink" data-testid={`tx-part-row-title-${tx.id}-${i}`}>
                     {orDefaultLabel(part.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`)}
                   </span>
                   <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
@@ -160,7 +169,7 @@ function TxPartGroupRows({
                   </span>
                 </span>
                 {/* #139: the amount wears exactly TxRow's face (#228: net) */}
-                <span className={`m-num text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
+                <span className={`m-num flex min-h-10 shrink-0 items-center text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
                   {fmt(sign * partNetCents(part), tx.currency, { date: tx.date })}
                 </span>
               </button>

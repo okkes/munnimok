@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AreaLine } from './AreaLine';
+import { SCRUB_HOLD_MS } from './scrub';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
@@ -103,6 +104,53 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     fireEvent.keyDown(svg, { key: 'Escape' });
     expect(screen.queryByTestId('al-tip')).toBeNull();
     expect(onScrub).toHaveBeenLastCalledWith(null);
+  });
+
+  it('#510: the slider under the chart walks the days from Today — into the expectation, to its nearest point — keeps its day when lifted and lets go back on Today', () => {
+    const { onScrub } = renderChart();
+    const slider = screen.getByTestId('al-slider') as HTMLInputElement;
+    expect(slider.max).toBe('9');
+    expect(slider.value).toBe('4');
+    expect(slider.getAttribute('aria-valuetext')).toBe('2026-06-05: €2900');
+    fireEvent.change(slider, { target: { value: '6' } });
+    expect(onScrub).toHaveBeenLastCalledWith({ date: '2026-06-08', cents: 250_000, projected: true });
+    expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-08 · expected');
+    expect(slider.value).toBe('7');
+    fireEvent.change(slider, { target: { value: '0' } });
+    expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-01');
+    fireEvent.touchEnd(slider);
+    expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-01');
+    expect(slider.value).toBe('0');
+    fireEvent.change(slider, { target: { value: '4' } });
+    expect(onScrub).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByTestId('al-tip')).toBeNull();
+    expect(slider.value).toBe('4');
+  });
+
+  it('#510: a finger reads the balance only after resting on it; a move before that is a scroll', () => {
+    vi.useFakeTimers();
+    try {
+      const { svg, onScrub } = renderChart();
+      fireEvent.pointerDown(svg, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 40 });
+      fireEvent.pointerMove(svg, { pointerId: 1, pointerType: 'touch', clientX: 40, clientY: 40 });
+      act(() => {
+        vi.advanceTimersByTime(SCRUB_HOLD_MS);
+      });
+      expect(screen.queryByTestId('al-tip')).toBeNull();
+      fireEvent.pointerUp(svg, { pointerId: 1, pointerType: 'touch' });
+
+      fireEvent.pointerDown(svg, { pointerId: 2, pointerType: 'touch', clientX: 0, clientY: 40 });
+      act(() => {
+        vi.advanceTimersByTime(SCRUB_HOLD_MS);
+      });
+      expect(onScrub).toHaveBeenLastCalledWith({ date: '2026-06-01', cents: 100_000, projected: false });
+      fireEvent.pointerMove(svg, { pointerId: 2, pointerType: 'touch', clientX: 320, clientY: 90 });
+      expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-10 · expected');
+      fireEvent.pointerUp(svg, { pointerId: 2, pointerType: 'touch' });
+      expect(screen.queryByTestId('al-tip')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('#501: below zero the balance turns red — one hard stop at the zero line paints the line, the wash and the expectation; the wash fills to zero', () => {

@@ -6,7 +6,6 @@ import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
 import { useReceiptFile } from '@/application/receiptFiles';
 import { useReceiptOps } from '@/application/receipts';
-import type { ReceiptOps } from '@/application/receipts';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { connectorsAvailable, useStoreConnMetas } from '@/application/connections';
 import { globalAsEntry, linkAsEntry, spaceReceipts } from '@/application/receiptLinks';
@@ -21,8 +20,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { ReceiptAiRead } from './ReceiptAiRead';
-import type { ReceiptReadOutcome } from './ReceiptAiRead';
 import { ReceiptFacts } from './ReceiptFacts';
+import { keepRead } from './keepRead';
 import { useFileByReceipt } from './useFileByReceipt';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
 import type { ReceiptRow } from '@/db/types';
@@ -35,18 +34,6 @@ const photoKind = (entry: ReceiptEntry | null | undefined): 'born' | 'own' | 'li
   if (entry.kind === 'global') return 'own';
   return entry.data.id === entry.linkId ? 'born' : 'linked';
 };
-
-async function keepRead(ops: ReceiptOps, fileByReceipt: (txId: string) => Promise<boolean>, entry: ReceiptEntry, outcome: ReceiptReadOutcome): Promise<void> {
-  if (!entry.linkId) {
-    const { totalCents, ...found } = outcome;
-    // a reading that found no total leaves a typed one alone
-    await ops.setOwnFacts(entry.data.id, totalCents > 0 ? { ...found, totalCents } : found);
-    return;
-  }
-  await ops.setRead(entry.linkId, outcome);
-  // now that the lines are known, a payment of the same amount is filed by them
-  for (const txId of entry.txIds ?? []) await fileByReceipt(txId);
-}
 
 /** where a receipt is looked at from: a space (links, matching) or the connections hub (the party's own list) */
 export type ReceiptScope = 'space' | 'global';
@@ -198,35 +185,35 @@ export function ReceiptScreen({
             {/* shared with the picker's peek; keyed so another receipt starts with its invoice sheet closed */}
             <ReceiptBody key={receipt.id} receipt={receipt} currency={currency} connectionName={connection?.displayName} />
 
-            {scope === 'space' ? (
-              <>
-                {linkedTxs.length > 0 && (
-                  <div>
-                    <div className="m-cap mb-1 px-1">{t(linkedTxs.length > 1 ? 'receipt.linkedTitleN' : 'receipt.linkedTitle')}</div>
-                    <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
-                      {linkedTxs.map((tx) => (
-                        <div key={tx.id} data-testid={`receipt-linked-${tx.id}`}>
-                          <TxRow tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
-                        </div>
-                      ))}
+            {scope === 'space' && linkedTxs.length > 0 && (
+              <div>
+                <div className="m-cap mb-1 px-1">{t(linkedTxs.length > 1 ? 'receipt.linkedTitleN' : 'receipt.linkedTitle')}</div>
+                <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
+                  {linkedTxs.map((tx) => (
+                    <div key={tx.id} data-testid={`receipt-linked-${tx.id}`}>
+                      <TxRow tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* #567: a receipt kept without a transaction: facts typed here or read below, it waits for the payment it fits */}
+            {photo === 'own' && (
+              <>
+                <ReceiptFacts
+                  key={`${receipt.date}:${receipt.totalCents}:${receipt.merchant ?? ''}`}
+                  receipt={receipt}
+                  onSave={(facts) => receiptOps.setOwnFacts(receipt.id, facts)}
+                />
+                {receipt.totalCents > 0 && (
+                  <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-waiting">
+                    {t('receipt.waiting')}
+                  </p>
                 )}
-                {/* #567: a receipt kept without a transaction: facts typed here or read below, it waits for the payment it fits */}
-                {photo === 'own' && (
-                  <>
-                    <ReceiptFacts
-                      key={`${receipt.date}:${receipt.totalCents}:${receipt.merchant ?? ''}`}
-                      receipt={receipt}
-                      onSave={(facts) => receiptOps.setOwnFacts(receipt.id, facts)}
-                    />
-                    {receipt.totalCents > 0 && (
-                      <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-waiting">
-                        {t('receipt.waiting')}
-                      </p>
-                    )}
-                  </>
-                )}
+              </>
+            )}
+            {scope === 'space' && (
+              <>
                 <ReadOnlyNote testId="receipt-readonly-note" />
                 {!linkedTxId && !spaceLocked && (
                   <>
@@ -260,23 +247,29 @@ export function ReceiptScreen({
                     )}
                   </>
                 )}
-                {readable && aiReader && picture && (
-                  <ReceiptAiRead images={[picture]} hasItems={!!receipt.items?.length} onRead={(outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome)} />
-                )}
-                {photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (
-                  <>
-                    <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
-                      {t('receipt.readItems')}
-                    </Button>
-                    {ocrState === 'failed' && (
-                      <p className="text-center text-[12px] text-ink-4" data-testid="receipt-read-failed">
-                        {t('receipt.readFailed')}
-                      </p>
-                    )}
-                  </>
+              </>
+            )}
+            {readable && aiReader && picture && (
+              <ReceiptAiRead
+                images={[picture]}
+                hasItems={!!receipt.items?.length}
+                freshId={entry.linkId ?? receipt.id}
+                onRead={(outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome)}
+              />
+            )}
+            {scope === 'space' && photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (
+              <>
+                <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
+                  {t('receipt.readItems')}
+                </Button>
+                {ocrState === 'failed' && (
+                  <p className="text-center text-[12px] text-ink-4" data-testid="receipt-read-failed">
+                    {t('receipt.readFailed')}
+                  </p>
                 )}
               </>
-            ) : (
+            )}
+            {scope === 'global' && (
               <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-space-hint">
                 {t('receipt.spaceHint')}
               </p>

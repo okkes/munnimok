@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.30.0',
+    date: '2026-11-24',
+    items: [
+      {
+        en: 'Receipts are listed by day like your transactions, with a chip per shop and one for “Scanned”. Global settings → “All your receipts” holds everything your shops handed over and what you scanned, and “Read new photos automatically” reads a receipt photo the moment you take it. A transaction shows its receipt’s lines, each with main and sub category, and “Apply categories” files it by the lines you tick; a transaction you already verified keeps its category until you do.',
+        nl: 'Bonnetjes staan per dag zoals je transacties, met een chip per winkel en een voor “Gescand”. Algemene instellingen → “Al je bonnetjes” bevat alles wat je winkels hebben aangeleverd en wat je hebt gescand, en “Nieuwe foto’s automatisch lezen” leest een foto van een bonnetje zodra je hem maakt. Een transactie toont de regels van haar bonnetje, elk met hoofd- en subcategorie, en “Categorieën toepassen” boekt haar op de regels die je aanvinkt; een transactie die je al hebt gecontroleerd houdt haar categorie tot je dat doet.',
+        tr: 'Fişler, işlemlerin gibi güne göre listeleniyor; her mağaza için bir etiket ve bir de “Taranan” etiketi var. Genel ayarlar → “Tüm fişlerin”, mağazalarının verdiği her şeyi ve taradıklarını bir arada tutar; “Yeni fotoğrafları otomatik oku” ise fiş fotoğrafını çektiğin anda okur. Bir işlem, fişinin satırlarını ana ve alt kategorisiyle gösterir; “Kategorileri uygula” işlemi işaretlediğin satırlara göre işler. Zaten incelediğin bir işlem, sen bunu yapana kadar kategorisini korur.',
+      },
+      {
+        en: 'Trends: a slider under the line charts reads any day, and stays where you leave it. On the graph itself a swipe scrolls the page; rest your finger for a moment to read the day under it.',
+        nl: 'Trends: een schuif onder de lijngrafieken leest elke dag af en blijft staan waar je hem laat. Op de grafiek zelf scrolt een veeg de pagina; laat je vinger even rusten om de dag eronder af te lezen.',
+        tr: 'Eğilimler: çizgi grafiklerin altındaki sürgü her günü okur ve bıraktığın yerde kalır. Grafiğin üzerinde kaydırmak sayfayı kaydırır; altındaki günü okumak için parmağını bir an beklet.',
+      },
+      {
+        en: 'Loans: a loan can have “No fixed payment” for money you pay back whenever, and “Add payment” on a loan fills in Repaid or Borrowed from the sign of the amount.',
+        nl: 'Leningen: een lening kan “Geen vaste aflossing” hebben voor geld dat je terugbetaalt wanneer het uitkomt, en “Betaling toevoegen” bij een lening vult Afgelost of Geleend in aan de hand van het teken van het bedrag.',
+        tr: 'Krediler: istediğin zaman geri ödediğin para için bir kredide “Sabit ödeme yok” seçilebilir; bir kredideki “Ödeme ekle”, tutarın işaretine göre Ödenen ya da Borç alınan kategorisini doldurur.',
+      },
+      {
+        en: 'A transaction’s title is shown in full, in lists and on its own screen. A recurring cost charged a different amount once no longer reads as a price change, and a real change stops being flagged after three payments at the new price.',
+        nl: 'De titel van een transactie staat er volledig, in lijsten en op haar eigen scherm. Terugkerende kosten die één keer een ander bedrag hadden gelden niet meer als prijswijziging, en een echte wijziging wordt na drie betalingen tegen de nieuwe prijs niet meer gemeld.',
+        tr: 'Bir işlemin başlığı listelerde ve kendi ekranında tam olarak gösteriliyor. Bir kez farklı tutarda tahsil edilen düzenli bir ödeme artık fiyat değişikliği sayılmıyor; gerçek bir değişiklik de yeni fiyattan üç ödemeden sonra işaretlenmiyor.',
+      },
+      {
+        en: 'Devices: the list refreshes, and several devices can be disconnected in one go. A device you disconnected can sign in again; it used to be refused every time. Switching the app lock or “Hide sensitive figures” off now asks for your face or fingerprint first, with the PIN beside it.',
+        nl: 'Apparaten: de lijst ververst, en je kunt meerdere apparaten in één keer ontkoppelen. Een apparaat dat je hebt ontkoppeld kan weer inloggen; dat werd eerder elke keer geweigerd. De app-vergrendeling of “Gevoelige bedragen verbergen” uitzetten vraagt nu eerst om je gezicht of vingerafdruk, met de pincode ernaast.',
+        tr: 'Cihazlar: liste yenileniyor ve birden çok cihazın bağlantısı tek seferde kesilebiliyor. Bağlantısını kestiğin bir cihaz yeniden oturum açabilir; önceden her seferinde reddediliyordu. Uygulama kilidini ya da “Hassas tutarları gizle”yi kapatmak artık önce yüzünü ya da parmak izini soruyor, PIN de yanında duruyor.',
+      },
+    ],
+  },
+  {
     version: '5.29.0',
     date: '2026-11-21',
     items: [

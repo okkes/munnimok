@@ -125,7 +125,9 @@ export function TxRow({
       aria-current={selected ? 'true' : undefined}
       // styles.css skips the outline ring for this button: the focus-visible background is the one focus signal
       data-quiet-focus=""
-      className={`m-tap flex items-center gap-3 border-none py-2.5 text-left md:py-2 ${
+      // #506: a long title wraps and the row grows; icon, account and amount keep to the first 40px band, where a
+      // one-line row has them
+      className={`m-tap flex items-start gap-3 border-none py-2.5 text-left md:py-2 ${
         selected
           ? `${SELECTED_BLEED} ${EDGE_SELECTED[edge]}`
           : // #198: no base radius: divide-y's hairline is this element's border-bottom, which curves on a rounded element
@@ -139,8 +141,8 @@ export function TxRow({
       >
         <Icon name={iconName} size={20} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">
+      <span className="flex min-h-10 min-w-0 flex-1 flex-col justify-center">
+        <span className="block text-[14px] font-medium wrap-anywhere text-ink" data-testid={`txrow-title-${tx.id}`}>
           <Highlight text={txTitle(tx)} query={highlight} />
         </span>
         <span className="block truncate text-xs text-ink-3">
@@ -184,11 +186,11 @@ export function TxRow({
         </span>
       </span>
       {accountName && (
-        <span className="hidden max-w-[180px] shrink-0 truncate text-right text-[12px] text-ink-4 md:block">
+        <span className="hidden max-w-[180px] shrink-0 truncate text-right text-[12px] leading-10 text-ink-4 md:block">
           {accountName}
         </span>
       )}
-      <span className="shrink-0 text-right">
+      <span className="flex min-h-10 shrink-0 flex-col justify-center text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
           {(() => {
             const amountText = fmt(display, tx.currency, { sign: true, date: tx.date });

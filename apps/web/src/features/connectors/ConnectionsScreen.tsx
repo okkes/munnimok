@@ -661,19 +661,6 @@ export function ConnectionHub({
 
         {!banks && (
           <>
-            <button
-              data-testid="conn-view-receipts"
-              onClick={() => void navigate({ to: '/connections/receipts' })}
-              className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
-            >
-              <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] text-ink">{t('receipts.globalTitle')}</span>
-                <span className="block text-[12px] text-ink-4">{t('receipts.globalSub')}</span>
-              </span>
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-
             <p className="mt-3 px-1 text-[12px] text-ink-4" data-testid="conn-photo-note">
               {t('conn.photoNote')}
             </p>

@@ -29,6 +29,17 @@ function readHlcState(): HlcState | undefined {
 
 let clock: HlcClock | null = null;
 
+// a disconnect erases this copy; the SERVER keeps refusing the id it disconnected, for good. Without a new id the same
+// browser or phone signed in, was refused and wiped again, every time (#685) — a disconnect is a wipe, not a ban
+export function forgetDeviceId(): void {
+  try {
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    // storage unavailable: nothing was remembered
+  }
+  clock = null;
+}
+
 /** The one clock for this device. Persisted so restarts never reissue stamps. */
 export function getClock(): HlcClock {
   clock ??= new HlcClock(getDeviceId(), readHlcState(), Date.now, (state) => {

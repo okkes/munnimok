@@ -65,6 +65,27 @@ describe('TransactionsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#506: a split with a long title wraps it in full, in its head and in its parts', async () => {
+    const long = 'OPENAI *CHATGPT SUBSCRIPTION HTTPSOPENAI.COMBILLINGREFERENCE1234567890';
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const db = new MunniDB('munni_demo');
+    await new Repo(new DexieBackend(db), new HlcClock('seed-longsplit'), { trackOutbox: false }).upsert('transaction', DEMO_SPACE_ID, 'ls1', {
+      accountId: 'demo_main', date: '2020-03-01', amountCents: -3000, currency: 'EUR', merchant: long, catId: 'groceries', needsReview: 0,
+      splits: [
+        { id: 'lsa', catId: 'groceries', amountCents: 2000 },
+        { id: 'lsb', catId: 'restaurants', amountCents: 1000 },
+      ],
+    });
+    db.close();
+    const head = await screen.findByTestId('tx-parts-title-ls1', {}, { timeout: 5000 });
+    for (const title of [head, screen.getByTestId('tx-part-row-title-ls1-0')]) {
+      expect(title.textContent).toContain(long);
+      expect(title.className).toContain('wrap-anywhere');
+      expect(title.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap/);
+    }
+  }, 15_000);
+
   it('#492: the whole history is listed — a page at a time, as deep again after the detour', async () => {
     const first = renderApp('/transactions');
     await screen.findByTestId('tx-list');

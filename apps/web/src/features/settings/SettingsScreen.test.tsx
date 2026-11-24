@@ -4,9 +4,13 @@ import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
-import { readLockConfig } from '@/features/lock/lock';
+import { hashPin, readLockConfig, writeLockConfig } from '@/features/lock/lock';
 import { resetApiCapabilitiesCache } from '@/lib/api';
 import { useSession } from '@/app/session';
+
+const tapKeys = (...keys: string[]) => {
+  for (const k of keys) fireEvent.click(screen.getByTestId(`lock-key-${k}`));
+};
 
 describe('SettingsScreen (demo identity)', () => {
   beforeEach(() => {
@@ -178,13 +182,50 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     });
 
     fireEvent.click(screen.getByTestId('settings-lock-toggle'));
-    await screen.findByTestId('lock-disarm-sheet');
+    await screen.findByTestId('pin-challenge-sheet');
     expect(readLockConfig()).not.toBeNull();
-    fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '99999999' } });
-    expect(await screen.findByTestId('lock-disarm-error')).toBeTruthy();
+    tapKeys('9', '9', '9', '9', '9', '9', '9', '9');
+    expect(await screen.findByTestId('lock-pin-error')).toBeTruthy();
     expect(readLockConfig()).not.toBeNull();
-    fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '1234' } });
+    tapKeys('1', '2', '3', '4');
     await waitFor(() => expect(readLockConfig()).toBeNull());
+    expect(screen.getByTestId('settings-lock-state').textContent).toBe('OFF');
+  }, 15_000);
+
+  it('#530: switching the app lock off asks the phone’s biometric first, as opening the app does; a cancel keeps the lock', async () => {
+    const verifyIdentity = vi.fn().mockRejectedValue(new Error('cancelled'));
+    vi.stubGlobal('Capacitor', { Plugins: { NativeBiometric: { verifyIdentity } } });
+    try {
+      renderApp('/settings/global');
+      await screen.findByTestId('screen-settings-global');
+      writeLockConfig({ enabled: true, biometricKind: 'native', pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 60 });
+      cleanup();
+      renderApp('/settings/global');
+      fireEvent.click(await screen.findByTestId('settings-lock-toggle'));
+      await screen.findByTestId('pin-challenge-sheet');
+      await waitFor(() => expect(verifyIdentity).toHaveBeenCalledTimes(1));
+      expect(readLockConfig()).not.toBeNull();
+
+      verifyIdentity.mockResolvedValue(undefined);
+      fireEvent.click(screen.getByTestId('lock-unlock'));
+      await waitFor(() => expect(readLockConfig()).toBeNull());
+      expect(screen.getByTestId('lock-dots').getAttribute('data-length')).toBe('0');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 15_000);
+
+  it('#530: a lock shown on whose PIN is already gone turns off at once, no sheet', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    writeLockConfig({ enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 60 });
+    cleanup();
+    renderApp('/settings/global');
+    await waitFor(() => expect(screen.getByTestId('settings-lock-state').textContent).toBe('ON'));
+    writeLockConfig(null);
+    fireEvent.click(screen.getByTestId('settings-lock-toggle'));
+    expect(screen.getByTestId('settings-lock-state').textContent).toBe('OFF');
+    expect(screen.queryByTestId('pin-challenge-sheet')).toBeNull();
   }, 15_000);
 });
 

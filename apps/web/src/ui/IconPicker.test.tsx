@@ -118,4 +118,39 @@ describe('#563 / #389: the icon picker', () => {
     expect(tent.disabled).toBe(true);
     expect((tent.querySelector('i') as HTMLElement).style.color).toBe('var(--m-ink-4)');
   });
+
+  it('#520: with a sheet to itself the grid runs down to the sheet’s foot; elsewhere, or with no room to speak of, it keeps its box', () => {
+    const rects = (bodyBottom: number, gridTop: number) =>
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+        const edge = this.hasAttribute('data-sheet-body') ? { top: 100, bottom: bodyBottom } : { top: gridTop, bottom: gridTop };
+        return { ...edge, left: 0, right: 0, width: 0, height: 0, x: 0, y: edge.top, toJSON: () => ({}) } as DOMRect;
+      });
+    const inSheet = (fill: boolean) => {
+      localStorage.setItem('munni_lang', 'en');
+      return render(
+        <LangProvider>
+          <div data-sheet-body="">
+            <IconPicker value="bike" onChange={() => undefined} featured={['bike']} query="" onQuery={() => undefined} testIdPrefix="fit" fill={fill} />
+          </div>
+        </LangProvider>,
+      );
+    };
+
+    const roomy = rects(700, 300);
+    const filled = inSheet(true);
+    expect(screen.getByTestId('fits').style.height).toBe('376px');
+    expect(screen.getByTestId('fits').className).not.toContain('max-h-56');
+    filled.unmount();
+
+    const boxed = inSheet(false);
+    expect(screen.getByTestId('fits').style.height).toBe('');
+    expect(screen.getByTestId('fits').className).toContain('max-h-56');
+    boxed.unmount();
+    roomy.mockRestore();
+
+    const cramped = rects(400, 300);
+    inSheet(true);
+    expect(screen.getByTestId('fits').className).toContain('max-h-56');
+    cramped.mockRestore();
+  });
 });

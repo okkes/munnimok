@@ -14,6 +14,31 @@ const PITCH = TILE + GAP;
 const OVERSCAN = 3;
 /** rows drawn before the box is measured — and where nothing lays out (tests) */
 const UNMEASURED_ROWS = 12;
+/** what a sheet keeps free under its last element */
+const SHEET_FOOT = 24;
+/** below this the fixed box is the better picker */
+const MIN_FILL = 160;
+
+// #520: in a sheet of its own the grid runs down to the sheet's foot — its fixed box left half the sheet empty.
+// Measured, because the sheet's scroller sizes to its content and gives a child no height to fill
+function useFillHeight(fill: boolean, scrollerRef: { current: HTMLDivElement | null }): number | null {
+  const [height, setHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    const body = el?.closest('[data-sheet-body]');
+    if (!fill || !el || !body) return;
+    const fit = () => {
+      const room = Math.floor(body.getBoundingClientRect().bottom - el.getBoundingClientRect().top - SHEET_FOOT);
+      setHeight(room >= MIN_FILL ? room : null);
+    };
+    fit();
+    if (typeof ResizeObserver !== 'function') return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [fill, scrollerRef]);
+  return height;
+}
 
 type GridRow = { kind: 'icons'; names: readonly string[] } | { kind: 'caption' };
 
@@ -57,10 +82,12 @@ interface IconPickerProps {
   disabled?: boolean;
   /** nothing reads as selected (a picture rules) */
   sleeping?: boolean;
+  /** the picker has a sheet to itself: the grid takes the room down to the sheet's foot */
+  fill?: boolean;
 }
 
 /** #563: every picker browses the WHOLE font (7k+ glyphs) under the screen's suggestions; only rows in view render */
-export function IconPicker({ value, onChange, featured, query, onQuery, testIdPrefix, color, taken, disabled = false, sleeping = false }: Readonly<IconPickerProps>) {
+export function IconPicker({ value, onChange, featured, query, onQuery, testIdPrefix, color, taken, disabled = false, sleeping = false, fill = false }: Readonly<IconPickerProps>) {
   const { t } = useLang();
   const needle = iconNeedle(query);
   // the current pick leads the browse view — fixed while browsing, so a tap never reshuffles the grid under the finger
@@ -87,6 +114,7 @@ export function IconPicker({ value, onChange, featured, query, onQuery, testIdPr
   }, [needle, lead]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const fillHeight = useFillHeight(fill, scrollerRef);
   const [view, setView] = useState({ top: 0, height: 0 });
   useLayoutEffect(() => {
     const el = scrollerRef.current;
@@ -125,7 +153,8 @@ export function IconPicker({ value, onChange, featured, query, onQuery, testIdPr
         data-sleeping={sleeping ? 'true' : undefined}
         // a list scroller of its own: the sheet never takes this gesture for a drag
         data-sheet-no-drag=""
-        className="max-h-56 overflow-y-auto overscroll-contain"
+        className={`overflow-y-auto overscroll-contain ${fillHeight === null ? 'max-h-56' : ''}`}
+        style={fillHeight === null ? undefined : { height: fillHeight }}
       >
         {rows.length === 0 ? (
           <p className="py-2 text-center text-[12px] text-ink-4" data-testid={`${testIdPrefix}-none`}>

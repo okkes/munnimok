@@ -42,7 +42,7 @@ describe('a payment filed by its receipt', () => {
   afterEach(() => db.close());
 
   it('the same amount: the line the reader named takes its paid share, the rest stays where the payment was — and the picks are kept with the receipt', async () => {
-    await payment('t1', -2310);
+    await payment('t1', -2310, { needsReview: 1 });
     await receipt('r1', 't1', 2310);
     expect(await fileByReceipt(store, repo, SPACE, 't1', known)).toBe(true);
 
@@ -52,7 +52,7 @@ describe('a payment filed by its receipt', () => {
       { catId: 'groceries', amountCents: 1588 },
     ]);
     expect(tx.catId).toBe('groceries');
-    expect(tx.needsReview).toBe(0);
+    expect(tx.needsReview).toBe(1);
     expect((await store.get('receiptLink', 'r1'))?.picks).toEqual({ t1: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
     expect(await fileByReceipt(store, repo, SPACE, 't1', known)).toBe(false);
   });
@@ -74,7 +74,7 @@ describe('a payment filed by its receipt', () => {
   });
 
   it('every line under one category is a plain category, no spread', async () => {
-    await payment('t3', -500, { catId: 'groceries' });
+    await payment('t3', -500, { catId: 'groceries', needsReview: 1 });
     await receipt('r3', 't3', 500, { items: [{ name: 'Reep', totalCents: 500, catId: 'sweets' }] });
     expect(await fileByReceipt(store, repo, SPACE, 't3', known)).toBe(true);
     const tx = await viewed('t3');
@@ -82,13 +82,29 @@ describe('a payment filed by its receipt', () => {
     expect(tx.cats ?? []).toEqual([]);
   });
 
+  it('#648: a payment the person verified and categorised keeps its category — the receipt only offers its own', async () => {
+    await payment('t6', -2310);
+    await receipt('r6', 't6', 2310);
+    expect(await fileByReceipt(store, repo, SPACE, 't6', known)).toBe(false);
+    const tx = await viewed('t6');
+    expect(tx.catId).toBe('groceries');
+    expect(tx.cats ?? []).toEqual([]);
+    expect((await store.get('receiptLink', 'r6'))?.picks).toBeUndefined();
+
+    // verified but never categorised: there is nothing of the person's to override
+    await payment('t7', -500, { catId: undefined });
+    await receipt('r7', 't7', 500, { items: [{ name: 'Reep', totalCents: 500, catId: 'sweets' }] });
+    expect(await fileByReceipt(store, repo, SPACE, 't7', known)).toBe(true);
+    expect((await viewed('t7')).catId).toBe('sweets');
+  });
+
   it('a different amount, no receipt, or a category that is gone: nothing is filed', async () => {
-    await payment('t4', -2500);
+    await payment('t4', -2500, { needsReview: 1 });
     await receipt('r4', 't4', 2310);
     expect(await fileByReceipt(store, repo, SPACE, 't4', known)).toBe(false);
     expect((await viewed('t4')).cats ?? []).toEqual([]);
 
-    await payment('t5', -2310);
+    await payment('t5', -2310, { needsReview: 1 });
     expect(await fileByReceipt(store, repo, SPACE, 't5', known)).toBe(false);
     expect(await fileByReceipt(store, repo, SPACE, 'nobody', known)).toBe(false);
 

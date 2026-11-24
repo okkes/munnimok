@@ -283,6 +283,62 @@
   }
 }
 
+/* #510: a chart's day slider — a thin track and a thumb wide enough for a thumb; it wears the line's colour */
+.m-scrub-range {
+  --m-scrub-thumb: 24px;
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  height: 36px;
+  margin-top: 2px;
+  margin-bottom: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.m-scrub-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--m-track);
+}
+.m-scrub-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--m-track);
+}
+.m-scrub-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--m-scrub-thumb);
+  height: var(--m-scrub-thumb);
+  margin-top: calc((4px - var(--m-scrub-thumb)) / 2);
+  border-radius: 50%;
+  border: 3px solid var(--m-surface);
+  background: var(--m-scrub-ink, var(--m-accent));
+  box-shadow: 0 0 0 1px var(--m-line), 0 1px 3px rgb(0 0 0 / 0.2);
+}
+.m-scrub-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--m-scrub-thumb);
+  height: var(--m-scrub-thumb);
+  border-radius: 50%;
+  border: 3px solid var(--m-surface);
+  background: var(--m-scrub-ink, var(--m-accent));
+  box-shadow: 0 0 0 1px var(--m-line), 0 1px 3px rgb(0 0 0 / 0.2);
+}
+/* the ring goes round the thumb: the app's inset ring would frame the whole strip */
+.m-scrub-range:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.m-scrub-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--m-line), 0 0 0 4px color-mix(in srgb, var(--m-accent) 45%, transparent);
+}
+.m-scrub-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 1px var(--m-line), 0 0 0 4px color-mix(in srgb, var(--m-accent) 45%, transparent);
+}
+
 /* the ring goes on the card, not its quiet-focus header button: the header's own ring is a rectangle with chipped corners */
 .m-focus-card:has(> [data-quiet-focus]:focus-visible) {
   box-shadow: inset 0 0 0 2px var(--m-accent);

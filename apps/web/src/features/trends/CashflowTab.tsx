@@ -146,6 +146,7 @@ function CashflowCard({
             formatDate={(date) => fmtDay(date, lang)}
             onScrub={setScrub}
             ariaLabel={t('trends.flowBalance')}
+            sliderLabel={t('trends.scrubSlider')}
           />
           <div className="mt-2 flex items-baseline justify-between gap-3 text-[11px] text-ink-4">
             <span data-testid={tid('trends-flow-net')}>{t('trends.netThisPeriod', { amount: fmt(net, { sign: true }) })}</span>

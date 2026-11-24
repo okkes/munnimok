@@ -28,6 +28,17 @@ export function receiptLines(items: readonly ReceiptItem[] | undefined): Receipt
   return costs.map(({ item, index }, at) => ({ index, name: item.name, printedCents: item.totalCents, paidCents: paid[at] }));
 }
 
+/** a cent, for a shop's own rounding */
+const ADD_UP_TOLERANCE_CENTS = 1;
+
+// #642: "not checked" reaches the app as reconciled false in two cases — the party's lines miss its stated total, or it
+// stated no total and the sum of the lines stands in for it. Only the first is something to tell: the lines themselves say which
+export function linesDisagree(receipt: { reconciled?: boolean; totalCents: number; items?: readonly ReceiptItem[] }): boolean {
+  if (receipt.reconciled !== false || !receipt.items?.length) return false;
+  const sum = receipt.items.reduce((total, item) => total + item.totalCents + (item.discountCents ?? 0), 0);
+  return Math.abs(sum - receipt.totalCents) > ADD_UP_TOLERANCE_CENTS;
+}
+
 /** the same product under one key, however the shop spaces or capitalises its name */
 export const itemKey = (name: string): string => name.toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 

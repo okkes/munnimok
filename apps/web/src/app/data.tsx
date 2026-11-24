@@ -8,7 +8,7 @@ import type { StorageBackend } from '@/db/backend';
 import { destroyStorage, openStorageBackend } from '@/db/openStore';
 import { Repo } from '@/db/repo';
 import { setPredictionCountry } from '@/domain/predictCategory';
-import { getClock, getDeviceId } from '@/db/device';
+import { forgetDeviceId, getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
@@ -633,6 +633,8 @@ async function wipeRevokedDevice(identity: Identity): Promise<void> {
   void disablePush({ server: false }).catch(() => undefined);
   useSession.getState().logout();
   await destroyIdentityData(identity);
+  // the next sign-in here is a new device to the server: the old id stays refused
+  forgetDeviceId();
   globalThis.location.assign('/#/login');
 }
 
