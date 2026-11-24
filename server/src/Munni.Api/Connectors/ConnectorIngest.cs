@@ -47,7 +47,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 {
     public const string Source = "connector";
 
-    public const string StoreFeedRef = "STORES";
     public const string RegistryFeedRef = "REG";
 
     private const string AccountEntity = "account";
@@ -134,7 +133,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     private async Task<ConnectorIngestCounts> ReceiptsAsync(
         User user, string provider, string connectionId, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
     {
-        var feed = await EnsurePersonalFeedAsync(user, StoreFeedRef, ct);
+        // #648: a connection's receipts are a feed of their own — a space is given this shop to read, not every shop
+        var feed = await EnsurePersonalFeedAsync(user, ImportIds.ReceiptFeedRef(connectionId), ct);
         var ops = new List<SyncOpDto>();
         var dropped = 0;
 
@@ -160,7 +160,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var total = Money(receipt["total"]);
         if (externalId is null || purchasedAt is null || total is null) return null;
 
-        var entityId = Fit($"rcpt:{provider}:{connectionId}:", externalId);
+        var entityId = Fit($"{ImportIds.FetchedReceiptPrefix}{provider}:{connectionId}:", externalId);
         var fields = new Dictionary<string, JsonElement>
         {
             [SourceField] = Json(provider),

@@ -27,6 +27,21 @@ public static class ImportIds
     public static string ReceiptFileId(string ownerId, string slot) => V5($"rfile:{ownerId}:{slot}").ToString();
     public const string ReceiptImageSlot = "image";
     public static string ReceiptDocumentSlot(int index) => $"doc:{index}";
+
+    /// #648: a connection's receipts live in a feed of their own (the reference of its personal feed), a person's own
+    /// scans in another: a space is given one or the other to read, never everything the person holds
+    public static string ReceiptFeedRef(string connectionId) => $"STORE:{connectionId}";
+    public const string ScansFeedRef = "SCANS";
+    /// <summary>the personal feed that lists a person's connections (and held every receipt before #648)</summary>
+    public const string ConnectionsFeedRef = "STORES";
+    /// <summary>a receipt a connection fetched (the ingest names it so), one a person scanned, one a space made itself</summary>
+    public const string FetchedReceiptPrefix = "rcp2:";
+    public const string ScannedReceiptPrefix = "scan:";
+    public const string SpaceReceiptPrefix = "srcp:";
+    /// <summary>a space's link to a receipt, one per receipt per space (matches client feedIds.ts)</summary>
+    public static string ReceiptLinkId(string spaceId, string receiptId) => V5($"rlink:{spaceId}:{receiptId}").ToString();
+    /// <summary>the row a space keeps for a receipt feed it includes (matches client feedIds.ts)</summary>
+    public static string StoreConnLinkId(string spaceId, string instanceId) => $"sclink:{spaceId}:{instanceId}";
     /// <summary>deterministic op ids so server-side ingests are idempotent</summary>
     public static string OpId(string seed) => V5($"op:{seed}").ToString();
 

@@ -224,8 +224,8 @@ public class ReceiptFileIngestTests(Connectors.ConnectorApiFactory factory) : IC
 
         // counted by receipt: the invoice is part of it
         Assert.Equal(1, first.Counts.Receipts);
-        var feedId = ImportIds.PersonalFeedSpaceId(ConnectorIngest.StoreFeedRef, sub);
-        const string receiptId = "rcpt:bol:conn-1:o-1";
+        var feedId = ImportIds.PersonalFeedSpaceId(ImportIds.ReceiptFeedRef("conn-1"), sub);
+        const string receiptId = "rcp2:bol:conn-1:o-1";
         var fileId = ImportIds.ReceiptFileId(receiptId, ImportIds.ReceiptDocumentSlot(0));
         var receipt = JsonDocument.Parse(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == feedId && r.Entity == "receipt").DataJson)).RootElement;
         var document = Assert.Single(receipt.GetProperty("documents").EnumerateArray());

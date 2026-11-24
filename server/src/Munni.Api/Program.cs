@@ -215,6 +215,8 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     await ReceiptFileSplit.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // #653: the catalog's groceries main — a merged sub is replaced, and what listed the old main keeps what it counted
     await CategoryMoves.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
+    // #648: receipts leave the one feed that held them all, and a space's link to a receipt stops being a copy of it
+    await ReceiptFeeds.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // #615: the spaces deleted before the server erased anything, and an erase a restart cut short — every start
     await SpaceErasure.SweepAsync(migrated, app.Logger, CancellationToken.None);
 }

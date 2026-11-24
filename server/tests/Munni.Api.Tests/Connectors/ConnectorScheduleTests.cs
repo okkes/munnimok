@@ -42,7 +42,7 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         Assert.Null(row.LastScheduleError);
         Assert.Equal("active", row.State);
         Assert.NotNull(row.KeptBundle);
-        var feedId = ImportIds.PersonalFeedSpaceId(ConnectorIngest.StoreFeedRef, sub);
+        var feedId = ImportIds.PersonalFeedSpaceId(ImportIds.ReceiptFeedRef("conn-scheduled"), sub);
         Assert.True(factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "receipt")) > 0);
 
         Assert.Equal(0, await service.RunOnceAsync(CancellationToken.None));

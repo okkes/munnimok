@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Social;
+using Munni.Api.Sync;
 using Munni.Api.Validation;
 
 namespace Munni.Api.Accounts;
@@ -52,7 +53,7 @@ public static class StoreLinkEndpoints
         catch (DbUpdateException)
         {
             // two attaches raced the check-then-insert: the winner's row is the answer
-            db.Entry(link).State = EntityState.Detached;
+            db.Entry(link).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
             link = await db.SpaceStoreLinks.FirstAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId);
         }
         return Results.Ok(ToDto(link));
@@ -67,7 +68,7 @@ public static class StoreLinkEndpoints
         var link = await db.SpaceStoreLinks.FirstOrDefaultAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedSpaceId);
         if (link is not null)
         {
-            db.SpaceStoreLinks.Remove(link);
+            await ForgetAsync(db, [link]);
             await db.SaveChangesAsync();
         }
         return Results.Ok();
@@ -75,13 +76,39 @@ public static class StoreLinkEndpoints
 
     /// a member who leaves takes the feeds they shared along: the space no longer reads their receipts
     public static async Task RemoveOnLeaveAsync(AppDbContext db, string spaceId, Guid leavingUserId) =>
-        db.SpaceStoreLinks.RemoveRange(await db.SpaceStoreLinks.Where(l => l.SpaceId == spaceId && l.AttachedBy == leavingUserId).ToListAsync());
+        await ForgetAsync(db, await db.SpaceStoreLinks.Where(l => l.SpaceId == spaceId && l.AttachedBy == leavingUserId).ToListAsync());
 
+    /// the space itself goes: nothing in it is left to tell
     public static async Task RemoveForSpaceAsync(AppDbContext db, string spaceId, CancellationToken ct = default) =>
         db.SpaceStoreLinks.RemoveRange(await db.SpaceStoreLinks.Where(l => l.SpaceId == spaceId).ToListAsync(ct));
 
     public static async Task RemoveForFeedAsync(AppDbContext db, string feedSpaceId) =>
-        db.SpaceStoreLinks.RemoveRange(await db.SpaceStoreLinks.Where(l => l.FeedSpaceId == feedSpaceId).ToListAsync());
+        await ForgetAsync(db, await db.SpaceStoreLinks.Where(l => l.FeedSpaceId == feedSpaceId).ToListAsync());
+
+    /// A space that stops reading a feed loses its row for the feed and its links to the feed's receipts — nothing of a
+    /// receipt is kept in a space. Through the oplog, so every member's device follows; the caller saves
+    private static async Task ForgetAsync(AppDbContext db, IReadOnlyList<SpaceStoreLink> links)
+    {
+        var counter = 0;
+        foreach (var link in links)
+        {
+            var space = await db.Spaces.FindAsync(link.SpaceId);
+            if (space is null) continue;
+            var feedId = link.FeedSpaceId;
+            // a feed id is a uuid: only a row that names this feed holds it
+            var named = await db.EntityRows.AsNoTracking()
+                .Where(r => r.SpaceId == link.SpaceId && !r.Deleted && Holders.Contains(r.Entity) && r.DataJson.Contains(feedId))
+                .Select(r => new { r.Entity, r.EntityId })
+                .ToListAsync();
+            var ops = named
+                .Select(r => new SyncOpDto(Guid.NewGuid().ToString(), link.SpaceId, r.Entity, r.EntityId, new(), ServerHlc.Now(counter++), true))
+                .ToList();
+            if (ops.Count > 0) await new SyncWriter(db).ApplyAsync(space, null, ops);
+        }
+        db.SpaceStoreLinks.RemoveRange(links);
+    }
+
+    private static readonly string[] Holders = [ReceiptFeeds.StoreConnLinkEntity, ReceiptFeeds.LinkEntity];
 
     private static StoreLinkDto ToDto(SpaceStoreLink link) => new(link.SpaceId, link.FeedSpaceId, link.AttachedBy);
 }
