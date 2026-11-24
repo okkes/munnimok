@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.31.0](https://github.com/okkes/munnimok/compare/v5.30.0...v5.31.0) (2026-11-24)
+
+
+### ✨ Features
+
+* **api:** a deleted receipt photo leaves the log too ([#648](https://github.com/okkes/munnimok/issues/648)) ([65ce953](https://github.com/okkes/munnimok/commit/65ce9531e2e9376b8874c9ee7363261554733673))
+* **api:** a receipt lives in its connection's feed, and the stored copies move there once ([#648](https://github.com/okkes/munnimok/issues/648)) ([d610f6d](https://github.com/okkes/munnimok/commit/d610f6dd6e99e491abb606efb1a33b2f15e880de))
+* **api:** a space can include a receipt feed, and its members read it ([#648](https://github.com/okkes/munnimok/issues/648)) ([0449a01](https://github.com/okkes/munnimok/commit/0449a01ecd002a306c661cd30dbf855758504fea))
+* **api:** the line names of fetched receipts get categories ([#648](https://github.com/okkes/munnimok/issues/648)) ([f7eed76](https://github.com/okkes/munnimok/commit/f7eed76a45fb6b1377844d06a5200a91a5d56a57))
+* **native:** scan a receipt from the app icon ([#648](https://github.com/okkes/munnimok/issues/648)) ([9dc52e9](https://github.com/okkes/munnimok/commit/9dc52e98a25aae0b748b16038dca5232851ffd22))
+* **web:** a space's link names a receipt instead of copying it ([#648](https://github.com/okkes/munnimok/issues/648)) ([cbb10fe](https://github.com/okkes/munnimok/commit/cbb10fe2471a64075399c21101ec785a01ebe42b))
+
 ## [5.30.0](https://github.com/okkes/munnimok/compare/v5.29.0...v5.30.0) (2026-11-24)
 
 
