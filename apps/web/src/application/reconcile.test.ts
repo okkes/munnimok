@@ -33,8 +33,8 @@ describe('applyReconcile (linked is the truth)', () => {
     await repo.upsert('transaction', FEED, 'I3', { ...raw, date: '2023-01-05', amountCents: -700, merchant: 'OLD', importRef: 'ing:x:3' });
 
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'I1'), { txId: 'I1', catId: 'transport', needsReview: 0, notes: 'tank beurt' });
-    await repo.upsert('receiptLink', SPACE, 'rcpt-1', { txId: 'I1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
-    await repo.upsert('receiptLink', SPACE, 'rcpt-2', { txId: 'L1', alsoTxIds: ['I1'], source: 'photo', date: '2026-06-10', totalCents: 6200, merchant: 'Shell' });
+    await repo.upsert('receiptLink', SPACE, 'rcpt-1', { receiptId: 'photo-1', feedSpaceId: SPACE, txId: 'I1' });
+    await repo.upsert('receiptLink', SPACE, 'rcpt-2', { receiptId: 'photo-2', feedSpaceId: SPACE, txId: 'L1', alsoTxIds: ['I1'] });
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'L3'), { txId: 'L3', catId: 'salary', needsReview: 0, reimbursements: [{ txId: 'I2', amountCents: 500 }, { txId: 'I1', amountCents: 100 }] });
     return { store, repo };
   }
@@ -149,7 +149,7 @@ describe('applyReconcile (linked is the truth)', () => {
       await seed.upsert('txMeta', space, txMetaId(space, 'MI1'), { txId: 'MI1', catId: 'transport', needsReview: 0 });
       await seed.upsert('accountLink', space, `link-${space}`, { feedSpaceId: FEED, accountId: 'IA', historyFrom: '2020-01-01' });
     }
-    await seed.upsert('receiptLink', READ, 'rcpt-read', { txId: 'MI1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
+    await seed.upsert('receiptLink', READ, 'rcpt-read', { receiptId: 'photo-read', feedSpaceId: READ, txId: 'MI1' });
     await seed.upsert('txMeta', READ, txMetaId(READ, 'ML9'), { txId: 'ML9', catId: 'salary', needsReview: 0, reimbursements: [{ txId: 'MI2', amountCents: 500 }] });
 
     // the app's repo: writes into a space this identity only reads are refused

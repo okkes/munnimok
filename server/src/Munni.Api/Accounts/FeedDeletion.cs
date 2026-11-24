@@ -86,6 +86,7 @@ public static class FeedDeletion
             .ToListAsync();
         await WriteDeletionOpsAsync(db, viewingSpaceIds, feedSpaceId, txIds);
         db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feedSpaceId).ToListAsync());
+        await StoreLinkEndpoints.RemoveForFeedAsync(db, feedSpaceId);
         db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feedSpaceId).ToListAsync());
 
         db.EntityRows.RemoveRange(await db.EntityRows.Where(r => r.SpaceId == feedSpaceId).ToListAsync());

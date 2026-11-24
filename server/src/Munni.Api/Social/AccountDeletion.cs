@@ -75,6 +75,7 @@ public sealed class AccountDeletion(
             survivingSpaceIds.Add(membership.SpaceId);
             db.SpaceMembers.Remove(membership);
             await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, membership.SpaceId, userId);
+            await Accounts.StoreLinkEndpoints.RemoveOnLeaveAsync(db, membership.SpaceId, userId);
             // never leave a space ownerless (same rule as a manual leave)
             if (SpaceRoles.IsOwner(membership.Role) && !others.Any(m => m.Role == SpaceRoles.Owner))
             {
@@ -109,6 +110,7 @@ public sealed class AccountDeletion(
     private static async Task EraseFeedAsync(AppDbContext db, Accounts.FeedSpace feed)
     {
         db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
+        await Accounts.StoreLinkEndpoints.RemoveForFeedAsync(db, feed.Id);
         await DeleteSpaceDataAsync(db, feed.Id);
         db.FeedSpaces.Remove(feed);
     }
@@ -129,6 +131,7 @@ public sealed class AccountDeletion(
         db.SyncOps.RemoveRange(await db.SyncOps.Where(o => o.SpaceId == spaceId).ToListAsync());
         db.SpaceInvites.RemoveRange(await db.SpaceInvites.Where(i => i.SpaceId == spaceId).ToListAsync());
         db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.SpaceId == spaceId).ToListAsync());
+        await Accounts.StoreLinkEndpoints.RemoveForSpaceAsync(db, spaceId);
         db.SpaceMembers.RemoveRange(await db.SpaceMembers.Where(m => m.SpaceId == spaceId).ToListAsync());
         var space = await db.Spaces.FindAsync(spaceId);
         if (space is not null) db.Spaces.Remove(space);

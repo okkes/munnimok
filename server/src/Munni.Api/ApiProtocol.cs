@@ -11,9 +11,10 @@ public static class ApiProtocol
     // v4 (#557): a plan subject's row holds the period's own funding, what rolled over is derived on the client
     // v5 (#606): GET /sync/{space}/bootstrap answers in pages — a v5 client takes them for a space it does not hold yet
     // v6 (#630): a receipt's photo and invoices are receiptFile rows, the receipt names them
-    public const int Version = 6;
-    /// <summary>oldest client protocol this server still speaks — v6: a v5
-    /// client finds no photo and no invoice on a receipt any more, and
-    /// writes new ones back inside the receipt</summary>
-    public const int MinClient = 6;
+    // v7 (#648): a receipt lives in its connection's feed (or the scans feed) and a space's link only names it
+    public const int Version = 7;
+    /// <summary>oldest client protocol this server still speaks — v7: a v6
+    /// client looks for receipts in the one feed they left, reads a link as
+    /// a copy it no longer is, and writes new copies back</summary>
+    public const int MinClient = 7;
 }

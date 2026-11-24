@@ -60,6 +60,17 @@ export function itemsFromRead(receipt: ReadReceipt): ReceiptItem[] {
   }));
 }
 
+/** #648: the line names of receipts a shop handed over go to munni's API for a category each — names only, no photo */
+export async function categoriseLines(
+  merchant: string,
+  names: readonly string[],
+  categories: readonly ReadCategory[],
+): Promise<{ state: 'ok' | 'limited' | 'capped' | 'unavailable'; categories: (string | null)[] | null; until: string | null }> {
+  const res = await apiFetch('/receipts/categorise', { method: 'POST', body: JSON.stringify({ merchant, names, categories }) }).catch(() => null);
+  if (!res?.ok) return { state: 'unavailable', categories: null, until: null };
+  return (await res.json()) as { state: 'ok' | 'limited' | 'capped' | 'unavailable'; categories: (string | null)[] | null; until: string | null };
+}
+
 const CONSENT_KEY = 'munni_receipt_ai';
 
 /** 'yes' once agreed, 'no' once switched off, null before either; a one-time notice names the provider */
@@ -75,8 +86,11 @@ export function receiptAiChoice(): 'yes' | 'no' | null {
 export function setReceiptAiChoice(choice: 'yes' | 'no'): void {
   try {
     localStorage.setItem(CONSENT_KEY, choice);
-    // "no" ends the standing order too: nothing is sent on its own after it
-    if (choice === 'no') localStorage.removeItem(AUTO_READ_KEY);
+    // "no" ends the standing orders too: nothing is sent on its own after it
+    if (choice === 'no') {
+      localStorage.removeItem(AUTO_READ_KEY);
+      localStorage.removeItem(AUTO_CATEGORISE_KEY);
+    }
   } catch {
     // a private window keeps nothing: the notice simply comes again
   }
@@ -101,6 +115,56 @@ export function setReceiptAutoRead(on: boolean): void {
     // a private window keeps nothing: the photo then waits for the button
   }
 }
+
+const AUTO_CATEGORISE_KEY = 'munni_receipt_auto_categorise';
+
+/** #648: the day (yyyy-mm-dd) from which a shop's new receipts have their lines categorised by themselves; null = off.
+ *  Receipts from before that day wait for the button: a first switch-on must not send a whole history */
+export function receiptAutoCategoriseFrom(): string | null {
+  try {
+    const since = localStorage.getItem(AUTO_CATEGORISE_KEY);
+    return since && receiptAiChoice() === 'yes' ? since : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setReceiptAutoCategorise(on: boolean, today: string): void {
+  try {
+    if (on) localStorage.setItem(AUTO_CATEGORISE_KEY, today);
+    else localStorage.removeItem(AUTO_CATEGORISE_KEY);
+  } catch {
+    // a private window keeps nothing: the receipts then wait for the button
+  }
+}
+
+const PHOTO_CLEANUP_KEY = 'munni_receipt_photo_cleanup';
+
+/** #648: what happens to a photo once it was read — kept, deleted when the person uses the reading, or deleted by
+ *  itself when the reading adds up (the API checked that its lines make the printed total) */
+export type PhotoCleanup = 'off' | 'verified' | 'certain';
+
+export function receiptPhotoCleanup(): PhotoCleanup {
+  try {
+    const value = localStorage.getItem(PHOTO_CLEANUP_KEY);
+    return value === 'verified' || value === 'certain' ? value : 'off';
+  } catch {
+    return 'off';
+  }
+}
+
+export function setReceiptPhotoCleanup(mode: PhotoCleanup): void {
+  try {
+    if (mode === 'off') localStorage.removeItem(PHOTO_CLEANUP_KEY);
+    else localStorage.setItem(PHOTO_CLEANUP_KEY, mode);
+  } catch {
+    // a private window keeps nothing: the photos then stay
+  }
+}
+
+/** a reading the photo may go on by itself: every line counted, and they make the total the receipt prints */
+export const readingAddsUp = (read: { reconciled: boolean; totalCents: number; items: readonly unknown[] }): boolean =>
+  read.reconciled && read.totalCents > 0 && read.items.length > 0;
 
 // the photos just taken on this device; the read door that shows one of them starts by itself, once
 const fresh = new Set<string>();

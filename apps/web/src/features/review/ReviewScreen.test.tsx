@@ -298,9 +298,14 @@ describe('ReviewScreen (demo identity)', () => {
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rr1', {
       accountId: 'demo_main', date: '2026-01-01', amountCents: -1316, currency: 'EUR', merchant: 'Albert Heijn 1842', needsReview: 1,
     });
-    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'rlink-review', {
-      receiptId: 'rcpt:ah:demo_conn_ah:rv', source: 'ah', instanceId: 'demo_conn_ah', date: '2026-01-01', totalCents: 1316, merchant: 'Albert Heijn', auto: 0, proposedTxId: 'rr1',
-    });
+    // the receipt lives in the shop's own feed, which the demo space reads
+    const { demoReceiptFeedId } = await import('@/application/storeFeed');
+    const { receiptLinkId, storeConnLinkId } = await import('@/domain/feedIds');
+    const feed = demoReceiptFeedId('demo_conn_ah');
+    const RV = 'rcp2:ah:demo_conn_ah:rv';
+    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn', feedSpaceId: feed });
+    await seedRepo.upsert('receipt', feed, RV, { source: 'ah', instanceId: 'demo_conn_ah', date: '2026-01-01', totalCents: 1316, merchant: 'Albert Heijn' });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, RV), { receiptId: RV, feedSpaceId: feed, auto: 0, proposedTxId: 'rr1' });
     seed.close();
     cleanup();
     renderApp('/review');
@@ -318,7 +323,7 @@ describe('ReviewScreen (demo identity)', () => {
     });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      const link = await db.receiptLinks.get('rlink-review');
+      const link = await db.receiptLinks.get(receiptLinkId(DEMO_SPACE_ID, RV));
       expect(link?.txId).toBe('rr1');
       expect(link?.proposedTxId ?? null).toBeNull();
     });
@@ -1514,8 +1519,11 @@ describe('ReviewScreen (own-account transfers)', () => {
 });
 
 describe('the receipt on the review card (user 2026-10-06)', () => {
-  const AMAZON = 'rcpt:amazon-nl:demo_conn_amz:a1';
-  const COOLBLUE = 'rcpt:coolblue:demo_conn_cb:c1';
+  const AMAZON = 'rcp2:amazon-nl:demo_conn_amz:a1';
+  const COOLBLUE = 'rcp2:coolblue:demo_conn_cb:c1';
+  // each shop's receipts live in that connection's own feed
+  const AMZ_FEED = 'demo_store_feed:demo_conn_amz';
+  const CB_FEED = 'demo_store_feed:demo_conn_cb';
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -1528,12 +1536,11 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revauto'), { trackOutbox: false });
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
     const { storeConnLinkId } = await import('@/domain/feedIds');
-    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon' });
-    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue' });
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, 'rcpt:amazon-nl:demo_conn_amz:a1', { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl' });
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, 'rcpt:coolblue:demo_conn_cb:c1', { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
+    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon', feedSpaceId: AMZ_FEED });
+    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue', feedSpaceId: CB_FEED });
+    await seedRepo.upsert('receipt', AMZ_FEED, AMAZON, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl' });
+    await seedRepo.upsert('receipt', CB_FEED, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'ra1', {
       accountId: 'demo_main', date: '2026-01-10', amountCents: -5956, currency: 'EUR', merchant: 'Amzn Mktp NL', catId: 'groceries', needsReview: 1,
     });
@@ -1551,12 +1558,12 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
 
     fireEvent.click(screen.getByTestId('review-receipt-row'));
     await screen.findByTestId('review-receipt-sheet');
-    expect(screen.getByTestId('review-receipt-pick-rcpt:amazon-nl:demo_conn_amz:a1').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId(`review-receipt-pick-${AMAZON}`).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('review-receipt-all-list').textContent).toContain('Coolblue');
     fireEvent.click(screen.getByTestId('review-receipt-party-coolblue'));
-    expect(screen.queryByTestId('review-receipt-all-rcpt:amazon-nl:demo_conn_amz:a1')).toBeNull();
+    expect(screen.queryByTestId(`review-receipt-all-${AMAZON}`)).toBeNull();
     fireEvent.change(screen.getByTestId('review-receipt-search'), { target: { value: '57,98' } });
-    fireEvent.click(screen.getByTestId('review-receipt-all-rcpt:coolblue:demo_conn_cb:c1'));
+    fireEvent.click(screen.getByTestId(`review-receipt-all-${COOLBLUE}`));
     fireEvent.click(await screen.findByTestId('review-receipt-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Coolblue'));
     expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('suggested');
@@ -1565,7 +1572,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const links = await db.receiptLinks.toArray();
-      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe('rcpt:coolblue:demo_conn_cb:c1');
+      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe(COOLBLUE);
     }, { timeout: 8000 });
     db.close();
   }, 25_000);
@@ -1579,7 +1586,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const links = await db.receiptLinks.toArray();
-      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe('rcpt:amazon-nl:demo_conn_amz:a1');
+      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe(AMAZON);
     }, { timeout: 8000 });
     db.close();
   }, 25_000);
@@ -1588,18 +1595,17 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await seedShopsAndCard();
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile'), { trackOutbox: false });
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
     const { receiptLinkId } = await import('@/domain/feedIds');
-    // the Amazon receipt's lines — and an older receipt whose coffee beans the person filed under Coffee
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, {
+    // the Amazon receipt's lines — and an older photo whose coffee beans the person filed under Coffee
+    await seedRepo.upsert('receipt', AMZ_FEED, AMAZON, {
       items: [
         { name: 'Koffiebonen 1 kg', totalCents: 4000 },
         { name: 'USB-C kabel', totalCents: 1956 },
       ],
     });
-    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'older_receipt', {
-      source: 'photo', date: '2025-12-01', totalCents: 4000, txId: 'dm101', auto: 0,
-      items: [{ name: 'koffiebonen 1 KG', totalCents: 4000 }],
+    await seedRepo.upsert('receipt', DEMO_SPACE_ID, 'older_photo', { source: 'photo', date: '2025-12-01', totalCents: 4000, items: [{ name: 'koffiebonen 1 KG', totalCents: 4000 }] });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, 'older_photo'), {
+      receiptId: 'older_photo', feedSpaceId: DEMO_SPACE_ID, txId: 'dm101', auto: 0,
       picks: { dm101: [{ line: 0, catId: 'coffee', amountCents: 4000 }] },
     });
     seed.close();
@@ -1631,8 +1637,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await seedShopsAndCard();
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile2'), { trackOutbox: false });
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, { items: [{ name: 'Koffiebonen 1 kg', totalCents: 5956, catId: 'coffee' }] });
+    await seedRepo.upsert('receipt', AMZ_FEED, AMAZON, { items: [{ name: 'Koffiebonen 1 kg', totalCents: 5956, catId: 'coffee' }] });
     seed.close();
 
     renderApp('/review');
@@ -1648,9 +1653,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revatt'), { trackOutbox: false });
     const { receiptLinkId } = await import('@/domain/feedIds');
-    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, AMAZON), {
-      receiptId: AMAZON, source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl', txId: 'ra1', auto: 0,
-    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, AMAZON), { receiptId: AMAZON, feedSpaceId: AMZ_FEED, txId: 'ra1', auto: 0 });
     seed.close();
   }
 
@@ -1714,13 +1717,12 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await seedShopsAndCard();
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revwalk'), { trackOutbox: false });
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
     // a newer payment of the same shop, with a receipt of that shop that fits it to the cent (#650: another shop's would not be asked about)
-    const SECOND = 'rcpt:amazon-nl:demo_conn_amz:a2';
+    const SECOND = 'rcp2:amazon-nl:demo_conn_amz:a2';
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'ra2', {
       accountId: 'demo_main', date: '2026-01-11', amountCents: -5798, currency: 'EUR', merchant: 'Amzn Mktp NL', catId: 'groceries', needsReview: 1,
     });
-    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, SECOND, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-11', totalCents: 5798, merchant: 'Amazon.nl' });
+    await seedRepo.upsert('receipt', AMZ_FEED, SECOND, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-11', totalCents: 5798, merchant: 'Amazon.nl' });
     seed.close();
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -1750,9 +1752,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     const { receiptLinkId } = await import('@/domain/feedIds');
     // a reviewed payment already holds the Coolblue receipt
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rx0', { accountId: 'demo_main', date: '2026-01-06', amountCents: -5798, currency: 'EUR', merchant: 'Coolblue', catId: 'groceries', needsReview: 0 });
-    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, COOLBLUE), {
-      receiptId: COOLBLUE, source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue', txId: 'rx0', auto: 0,
-    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, COOLBLUE), { receiptId: COOLBLUE, feedSpaceId: CB_FEED, txId: 'rx0', auto: 0 });
     seed.close();
 
     renderApp('/review');
@@ -1773,7 +1773,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
   it('the confirm’s receipt rules (#496): with one attached a pick swaps it, None lets it go, untouched it stays; with none attached a proposal is accepted (its own receipt picked too) or turned down', async () => {
     const { AUTO_STAGE, markedReceiptId, receiptSettlement } = await import('./reviewReceipt');
     const r = (id: string) => ({ id, spaceId: 's', source: 'ah', date: '2026-01-01', totalCents: 100, deleted: 0 }) as import('@/db/types').ReceiptRow;
-    const proposal = { id: 'link-p', receiptId: 'p', proposedTxId: 't' } as import('@/db/types').ReceiptLinkRow;
+    const proposal = { id: 'link-p', receiptId: 'p', proposedTxId: 't' } as import('@/db/types').LinkedReceipt;
     const picked = (id: string) => ({ kind: 'picked' as const, receipt: r(id) });
     expect(receiptSettlement(AUTO_STAGE, r('a'), undefined, null)).toEqual({ kind: 'keep' });
     expect(receiptSettlement(picked('b'), r('a'), undefined, null)).toEqual({ kind: 'pick', receipt: r('b') });

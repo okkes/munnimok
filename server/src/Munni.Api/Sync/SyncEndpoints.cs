@@ -110,6 +110,8 @@ public static class SyncEndpoints
         var ops = SpaceErasure.Admitted(request.Ops, spaceId, owner);
         var writer = new SyncWriter(db);
         var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, ops);
+        // #648: a removed photo takes what it held out of the log too
+        await ReceiptFilePurge.DropContentAsync(db, spaceId, ops);
         // #615: out of reach in the same save as the delete itself; the rows go right after it
         var erase = await SpaceErasure.DeletedByAsync(db, spaceId, ops);
         if (erase) await SpaceErasure.SealAsync(db, spaceId);

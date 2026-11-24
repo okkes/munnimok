@@ -16,6 +16,8 @@ export interface ReceiptListItem {
   receipt: ReceiptRow;
   /** a space's list: the transactions holding the receipt — absent where linking is not this list's business */
   txIds?: readonly string[];
+  /** #648: a space's list says where each receipt lives — in the space itself, or in a feed shared with it */
+  scope?: 'space' | 'global';
 }
 
 const byDay = (items: readonly ReceiptListItem[]): [string, ReceiptListItem[]][] => {
@@ -69,7 +71,7 @@ export function ReceiptList({
     new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso));
   const pick = (next: string) => setSource((current) => (current === next ? null : next));
 
-  const renderRow = ({ receipt, txIds }: ReceiptListItem) => {
+  const renderRow = ({ receipt, txIds, scope }: ReceiptListItem) => {
     const photo = receipt.source === PHOTO_SOURCE;
     const holders = txIds?.length ?? 0;
     const facts = [
@@ -90,6 +92,11 @@ export function ReceiptList({
           {facts.length > 0 && <span className="block text-[11px] text-ink-4">{facts.join(' · ')}</span>}
         </span>
         {!!receipt.documents?.length && <Icon name="file-pdf-box" size={16} color="var(--m-ink-4)" data-testid={`receipt-invoice-${receipt.id}`} />}
+        {scope && (
+          <span className="rounded-full bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3" data-testid={`receipt-scope-${receipt.id}`} data-scope={scope}>
+            {t(scope === 'space' ? 'receipts.markSpace' : 'receipts.markGlobal')}
+          </span>
+        )}
         {linkState && holders === 0 && (
           <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-semibold text-warning" data-testid={`receipt-unmatched-${receipt.id}`}>
             {t('receipts.unmatched')}

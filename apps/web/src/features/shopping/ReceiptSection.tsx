@@ -24,7 +24,7 @@ import { ReceiptCaptureRungs } from './ReceiptCapture';
 import { ReceiptCatsSheet } from './ReceiptCatsSheet';
 import { ReceiptItems } from './ReceiptItems';
 import { keepRead } from './keepRead';
-import { markFreshPhoto } from './receiptAi';
+import { markFreshPhoto, receiptPhotoCleanup } from './receiptAi';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
 import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from './receiptPick';
 import { useFileByReceipt } from './useFileByReceipt';
@@ -138,6 +138,8 @@ export function ReceiptSection({
     if (!entry?.linkId || !onCategorise) return;
     void receiptOps.setPicks(entry.linkId, tx.id, picks);
     onCategorise(picksSpread(picks, money.netCents, money.restCatId));
+    // #648: using a photo's lines is the person saying the reading is right — with that standing order the photo goes
+    if (entry.data.source === 'photo' && receiptPhotoCleanup() !== 'off' && receiptOps.canEdit(entry.data)) void receiptOps.removePhoto(entry.data);
   };
   // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
   const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
@@ -201,7 +203,7 @@ export function ReceiptSection({
           onOpen={() => openReceipt(receipt.id)}
           onChange={() => setAttachOpen(true)}
           onCategorise={categorisable ? () => setCatsOpen(true) : undefined}
-          onRead={aiReader && canEdit && entry ? (outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome) : undefined}
+          onRead={aiReader && canEdit && entry && receiptOps.canEdit(entry.data) ? (outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome) : undefined}
           freshId={entry?.linkId}
         />
       )}

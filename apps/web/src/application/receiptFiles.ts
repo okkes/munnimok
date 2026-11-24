@@ -5,47 +5,18 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { ReceiptDocument, ReceiptLinkRow, ReceiptRow } from '@/db/types';
 
-// #630: a receipt's photo and invoices are receiptFile rows of the receipt's own space, named by the slot they fill.
-// A link keeps its own copies in its space: members open them without the owner's feed, and they outlive the receipt.
+// #630: a receipt's photo and invoices are receiptFile rows of the receipt's own space (the feed it lives in), named by
+// the slot they fill; whoever reads the receipt reads them there (#648: a space keeps no copies).
 // A file is never removed with its row: an edit made elsewhere can bring a removed row back, and it finds its picture
 
 export const IMAGE_SLOT = 'image';
 export const documentSlot = (index: number): string => `doc:${index}`;
-
-/** what a receipt or a link says about its files */
-export type FileRefs = Pick<ReceiptRow, 'imageId' | 'documents'>;
 
 /** the photo of a receipt or link that is about to be written; answers the id the row names */
 export async function writeReceiptPhoto(repo: Repo, spaceId: string, ownerId: string, dataUrl: string): Promise<string> {
   const id = receiptFileId(ownerId, IMAGE_SLOT);
   await repo.upsert('receiptFile', spaceId, id, { ownerId, dataUrl });
   return id;
-}
-
-// the link's own copies, written before the link names them; a copy that already holds the same content is left alone:
-// a rewritten snapshot must not send every invoice again
-export async function copyReceiptFiles(repo: Repo, receipt: ReceiptRow, spaceId: string, linkId: string): Promise<FileRefs> {
-  // a receipt this build has not split yet (the start-up pass comes after the first sync) is split here, now
-  const source: FileRefs = (await splitRow(repo, 'receipt', receipt)) > 0 ? ((await repo.store.get('receipt', receipt.id)) ?? receipt) : receipt;
-  const pairs: { from: string; to: string }[] = [];
-  const imageId = source.imageId ? receiptFileId(linkId, IMAGE_SLOT) : undefined;
-  if (source.imageId && imageId) pairs.push({ from: source.imageId, to: imageId });
-  const documents = source.documents?.map((document, index): ReceiptDocument => {
-    const fileId = receiptFileId(linkId, documentSlot(index));
-    pairs.push({ from: document.fileId, to: fileId });
-    return { ...document, fileId };
-  });
-  if (pairs.length > 0) {
-    const held = new Map((await repo.store.getMany('receiptFile', pairs.flatMap((p) => [p.from, p.to]))).map((file) => [file.id, file]));
-    const copies = pairs.flatMap(({ from, to }) => {
-      const origin = held.get(from);
-      const copy = held.get(to);
-      if (origin?.deleted !== 0 || (copy?.deleted === 0 && copy.dataUrl === origin.dataUrl)) return [];
-      return [{ spaceId, entityId: to, fields: { ownerId: linkId, dataUrl: origin.dataUrl } }];
-    });
-    await repo.upsertMany('receiptFile', copies);
-  }
-  return { imageId, documents };
 }
 
 /** what a file holds; null when it is not (yet) on this device */
@@ -74,7 +45,7 @@ type Stamped = Parameters<Repo['upsertStamped']>[1][number];
 const behind = (stamp: string): string => `${stamp}~`;
 
 /** the server spells a file's change the same way (ReceiptFileSplit.FileOp): same file, same content, one change */
-async function fileWrite(ownerId: string, fileId: string, dataUrl: string, hlc: string): Promise<Stamped> {
+export async function fileWrite(ownerId: string, fileId: string, dataUrl: string, hlc: string): Promise<Stamped> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(dataUrl)));
   const hash = Array.from(digest.subarray(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return { entity: 'receiptFile', entityId: fileId, fields: { ownerId, dataUrl }, hlc, opId: importOpId(`rfile:${fileId}:${hash}`) };

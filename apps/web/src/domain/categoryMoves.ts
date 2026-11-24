@@ -81,6 +81,12 @@ export function movedItems(items: readonly ReceiptItem[] | undefined, moves: Cat
   return items!.map((item) => (item.catId && moves.has(item.catId) ? { ...item, catId: moves.get(item.catId) } : item));
 }
 
+/** #648: the categories a reader suggested per line name, with the moved ones replaced; null when none moved */
+export function movedItemCats(itemCats: Readonly<Record<string, string>> | undefined, moves: CatMoves): Record<string, string> | null {
+  if (!Object.values(itemCats ?? {}).some((catId) => moves.has(catId))) return null;
+  return Object.fromEntries(Object.entries(itemCats ?? {}).map(([name, catId]) => [name, moves.get(catId) ?? catId]));
+}
+
 /** what a receipt's lines were filed as, per transaction, with the moved categories replaced; null when none moved */
 export function movedPicks(picks: Readonly<Record<string, ReceiptPick[]>> | undefined, moves: CatMoves): Record<string, ReceiptPick[]> | null {
   if (!Object.values(picks ?? {}).some((list) => mentions(list, moves))) return null;

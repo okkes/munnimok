@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReceiptItem } from '@/db/types';
-import { itemKey, itemMemoryOf, linesDisagree, picksSpread, picksStand, receiptFiling, receiptLines, suggestedCat, suggestedPicks, txMoneyOf } from './receiptCats';
+import { categorisedItems, itemKey, itemMemoryOf, linesDisagree, picksSpread, picksStand, receiptFiling, receiptLines, suggestedCat, suggestedPicks, txMoneyOf, uncategorisedNames } from './receiptCats';
 
 // the ticket's own receipt: four lines of 110 together, 10 off, 100 paid
 const ITEMS: ReceiptItem[] = [
@@ -178,5 +178,33 @@ describe('receipt lines as categories', () => {
     expect(linesDisagree({ totalCents: 3500, items: lines })).toBe(false);
     expect(linesDisagree({ reconciled: false, totalCents: 3500, items: [] })).toBe(false);
     expect(linesDisagree({ reconciled: false, totalCents: 3500 })).toBe(false);
+  });
+
+  it('#648: a fetched receipt’s lines show the category kept for their name, however the shop spells it; a line with its own category or kind keeps it', () => {
+    const items: ReceiptItem[] = [
+      { name: 'HALFVOLLE  Melk ', totalCents: 129 },
+      { name: 'Chocolade', totalCents: 250, catId: 'sweets' },
+      { name: 'Statiegeld', totalCents: 25, kind: 'deposit' },
+      { name: 'Cadeaukaart', totalCents: 1000 },
+      { name: 'Brood', totalCents: 199 },
+    ];
+    const itemCats = { 'halfvolle melk': 'groceryDairy', chocolade: 'groceries', statiegeld: 'groceries', cadeaukaart: '' };
+    expect(categorisedItems({ items, itemCats })?.map((item) => item.catId)).toEqual(['groceryDairy', 'sweets', undefined, undefined, undefined]);
+    // nothing kept: the lines are the shop's as they came
+    expect(categorisedItems({ items })).toBe(items);
+    expect(categorisedItems({ itemCats })).toBeUndefined();
+  });
+
+  it('#648: the lines still to ask about are the products nobody asked for — not a discount, a deposit, a line with a category or a name already answered', () => {
+    const items: ReceiptItem[] = [
+      { name: 'Melk', totalCents: 129 },
+      { name: 'Chocolade', totalCents: 250, catId: 'sweets' },
+      { name: 'Statiegeld', totalCents: 25, kind: 'deposit' },
+      { name: 'Bonus', totalCents: -50, kind: 'discount' },
+      { name: 'Cadeau  kaart', totalCents: 1000 },
+      { name: 'Brood', totalCents: 199 },
+    ];
+    expect(uncategorisedNames({ items, itemCats: { 'cadeau kaart': '' } })).toEqual(['Melk', 'Brood']);
+    expect(uncategorisedNames({})).toEqual([]);
   });
 });

@@ -78,6 +78,44 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
         [property: JsonPropertyName("total_cents")] int? TotalCents,
         [property: JsonPropertyName("lines")] List<AnswerLine>? Lines);
 
+    private const string CategoriseInstructions =
+        """
+        You are given the names of the lines of shop receipts, numbered from 0, with the shop they come from, and a list of categories. For every line return the id of the category that fits it best.
+
+        - Use only ids from the category list. null when no category fits, or when the line is not a product (a discount, a deposit, a fee, a subtotal).
+        - Return exactly one entry per line, in the order given, with the line's number as index.
+        - The kind of shop decides between categories that fit the same product. What a supermarket, a market, a bakery, a butcher, a liquor shop or any other shop sells to take home belongs to the groceries group (ids that start with "grocery", and "groceries" for what fits none of them). What a café, a bar, a restaurant, a canteen or a takeaway serves belongs to the eating-out group ("breakfast", "sweets", "restaurants", "takeout", "lunchWork", "coffee", "alcohol", "consumptionOther").
+        """;
+
+    private static readonly Dictionary<string, JsonElement> CategoriseSchema = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lines"],
+          "properties": {
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["index", "category_id"],
+                "properties": {
+                  "index": { "type": "integer" },
+                  "category_id": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        }
+        """)!;
+
+    private sealed record CategorisedLine(
+        [property: JsonPropertyName("index")] int? Index,
+        [property: JsonPropertyName("category_id")] string? CategoryId);
+
+    private sealed record Categorised([property: JsonPropertyName("lines")] List<CategorisedLine>? Lines);
+
     public string Provider => "anthropic";
 
     public string DefaultModel => Model;
@@ -118,6 +156,69 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
             if (block.TryPickText(out var text)) json.Append(text.Text);
         }
         return Parse(json.ToString());
+    }
+
+    public async Task<IReadOnlyList<string?>?> CategoriseAsync(string? merchant, IReadOnlyList<string> names, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct)
+    {
+        var chosen = string.IsNullOrWhiteSpace(model) ? Model : model;
+        var fallback = FallbackModels.Contains(chosen);
+        var response = await client.Beta.Messages.Create(
+            new MessageCreateParams
+            {
+                Model = chosen,
+                MaxTokens = 16000,
+                System = CategoriseInstructions,
+                Betas = fallback ? [FallbackBeta] : null,
+                Fallbacks = fallback ? (BetaFallbacksParam)new Default() : null,
+                OutputConfig = new BetaOutputConfig { Effort = Effort.Low, Format = new BetaJsonOutputFormat { Schema = CategoriseSchema } },
+                Messages =
+                [
+                    new BetaUserMessageParam
+                    {
+                        Content = new List<BetaContentBlockParam>
+                        {
+                            new BetaTextBlockParam { Text = LineList(merchant, names) },
+                            new BetaTextBlockParam { Text = CategoryList(categories) },
+                        },
+                    },
+                ],
+            },
+            cancellationToken: ct);
+
+        if (response.StopReason == "refusal" || response.StopReason == "max_tokens") return null;
+        var json = new StringBuilder();
+        foreach (var block in response.Content)
+        {
+            if (block.TryPickText(out var text)) json.Append(text.Text);
+        }
+        return ParseCategories(json.ToString(), names.Count);
+    }
+
+    internal static string LineList(string? merchant, IReadOnlyList<string> names)
+    {
+        var list = new StringBuilder("Shop: ").Append(string.IsNullOrWhiteSpace(merchant) ? "unknown" : merchant).Append("\nLines (number — name):\n");
+        for (var index = 0; index < names.Count; index++) list.Append(index).Append(" — ").Append(names[index]).Append('\n');
+        return list.ToString();
+    }
+
+    /// <summary>The answer laid out by line number: a number it does not name stays null, one out of range is ignored.</summary>
+    internal static IReadOnlyList<string?>? ParseCategories(string json, int asked)
+    {
+        try
+        {
+            var answer = JsonSerializer.Deserialize<Categorised>(json);
+            if (answer?.Lines is null) return null;
+            var byLine = new string?[asked];
+            foreach (var line in answer.Lines)
+            {
+                if (line.Index is { } index and >= 0 && index < asked) byLine[index] = line.CategoryId;
+            }
+            return byLine;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     internal static string CategoryList(IReadOnlyList<ReadCategory> categories)

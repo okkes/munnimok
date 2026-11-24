@@ -18,7 +18,7 @@ export interface ReceiptReadOutcome {
   date?: string;
 }
 
-function useReadCategories(): ReadCategory[] {
+export function useReadCategories(): ReadCategory[] {
   const { t } = useLang();
   const cats = useCategories();
   return useMemo(() => {

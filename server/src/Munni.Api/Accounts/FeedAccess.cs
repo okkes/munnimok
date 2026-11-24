@@ -25,6 +25,8 @@ public static class FeedAccess
         if (await IsFeedOwner(db, userId, feedSpaceId)) return long.MaxValue;
 
         var mySpaceIds = db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId);
+        // a receipt feed a space of mine includes: read whole, for as long as it is included
+        if (await db.SpaceStoreLinks.AnyAsync(l => l.FeedSpaceId == feedSpaceId && mySpaceIds.Contains(l.SpaceId))) return long.MaxValue;
         var links = await db.SpaceAccountLinks
             .Where(l => l.FeedSpaceId == feedSpaceId && mySpaceIds.Contains(l.SpaceId))
             .ToListAsync();
@@ -52,6 +54,8 @@ public static class FeedAccess
             if (caps.ContainsKey(feed.Key)) continue;
             caps[feed.Key] = feed.Any(l => !l.Archived) ? long.MaxValue : feed.Max(l => l.ArchivedAtSeq ?? 0);
         }
+        foreach (var included in await db.SpaceStoreLinks.Where(l => mySpaceIds.Contains(l.SpaceId)).Select(l => l.FeedSpaceId).Distinct().ToListAsync())
+            caps[included] = long.MaxValue;
         return caps;
     }
 
@@ -65,6 +69,11 @@ public static class FeedAccess
             .Select(l => l.FeedSpaceId)
             .Distinct()
             .ToListAsync();
-        return owned.Union(coOwned).Union(attached).ToList();
+        var included = await db.SpaceStoreLinks
+            .Where(l => mySpaceIds.Contains(l.SpaceId))
+            .Select(l => l.FeedSpaceId)
+            .Distinct()
+            .ToListAsync();
+        return owned.Union(coOwned).Union(attached).Union(included).ToList();
     }
 }

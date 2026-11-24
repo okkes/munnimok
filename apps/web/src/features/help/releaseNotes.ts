@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.31.0',
+    date: '2026-11-24',
+    items: [
+      {
+        en: 'A receipt now lives in one place. A shop you pick for a space is shared with it: everyone in that space sees the shop’s receipts and can put them on transactions, and Receipts marks each one “Global” or “This space”. Your scanned receipts are shared the same way, under Global settings → All your receipts. Every transaction that had a receipt still has it.',
+        nl: 'Een bonnetje staat nu op één plek. Een winkel die je voor een space kiest wordt ermee gedeeld: iedereen in die space ziet de bonnetjes van de winkel en kan ze aan transacties hangen, en Bonnetjes markeert elk bonnetje als “Algemeen” of “Deze space”. Je gescande bonnetjes deel je op dezelfde manier, onder Algemene instellingen → Al je bonnetjes. Elke transactie die een bonnetje had, heeft het nog.',
+        tr: 'Bir fiş artık tek bir yerde duruyor. Bir alan için seçtiğin mağaza o alanla paylaşılır: alandaki herkes mağazanın fişlerini görür ve işlemlere bağlayabilir; Fişler ekranı her fişi “Genel” ya da “Bu alan” olarak işaretler. Taradığın fişler de aynı şekilde, Genel ayarlar → Tüm fişlerin altından paylaşılır. Fişi olan her işlemin fişi yerinde.',
+      },
+      {
+        en: 'Before receipts go, munni says what it costs: deleting a receipt, removing a shop or no longer sharing it with a space tells you how many transactions lose their receipt.',
+        nl: 'Voordat bonnetjes verdwijnen zegt munni wat het kost: bij het verwijderen van een bonnetje, het verwijderen van een winkel of het stoppen met delen lees je hoeveel transacties hun bonnetje verliezen.',
+        tr: 'Fişler gitmeden önce munni bunun neye mal olacağını söyler: bir fişi silerken, bir mağazayı kaldırırken ya da bir alanla paylaşımı durdururken kaç işlemin fişini kaybedeceğini görürsün.',
+      },
+      {
+        en: 'Global settings → All your receipts → “Photo after a reading”: keep the photo, delete it once you use its lines, or have it deleted by itself when the lines add up to the printed total. A read photo also has “Delete the photo” on its receipt; the lines stay.',
+        nl: 'Algemene instellingen → Al je bonnetjes → “Foto na het lezen”: bewaar de foto, verwijder hem zodra je de regels gebruikt, of laat hem vanzelf verwijderen als de regels optellen tot het geprinte totaal. Een gelezen foto heeft ook “Foto verwijderen” bij het bonnetje; de regels blijven.',
+        tr: 'Genel ayarlar → Tüm fişlerin → “Okumadan sonra fotoğraf”: fotoğrafı sakla, satırlarını kullandığında sil ya da satırlar yazılı toplama eşit çıktığında kendiliğinden silinsin. Okunmuş bir fotoğrafın fişinde “Fotoğrafı sil” de var; satırlar kalır.',
+      },
+      {
+        en: 'Receipts from your shops can get categories too: “Suggest categories for the lines” on a receipt, “Categorise the receipts you have” for all of them, or “Categorise new fetched receipts” to have it done as they arrive. Only line names are sent, and a name that was answered once is not sent again.',
+        nl: 'Bonnetjes van je winkels kunnen nu ook categorieën krijgen: “Categorieën voorstellen voor de regels” bij een bonnetje, “De bonnetjes die je hebt categoriseren” voor allemaal, of “Nieuwe opgehaalde bonnetjes categoriseren” om het te laten doen zodra ze binnenkomen. Alleen regelnamen worden verstuurd, en een naam die al eens is beantwoord gaat niet opnieuw.',
+        tr: 'Mağazalarından gelen fişler de kategori alabilir: bir fişte “Satırlar için kategori öner”, hepsi için “Elindeki fişleri kategorile”, ya da geldikçe yapılması için “Yeni alınan fişleri kategorile”. Yalnızca satır adları gönderilir; bir kez yanıtlanan ad yeniden gönderilmez.',
+      },
+      {
+        en: 'Scan a receipt from the app icon: hold the icon and pick “Scan a receipt”. The camera opens at once and the photo joins your scanned receipts.',
+        nl: 'Scan een bonnetje vanaf het app-icoon: houd het icoon ingedrukt en kies “Scan a receipt”. De camera opent direct en de foto komt bij je gescande bonnetjes.',
+        tr: 'Uygulama simgesinden fiş tara: simgeye basılı tut ve “Scan a receipt” seçeneğini seç. Kamera hemen açılır ve fotoğraf taradığın fişlere eklenir.',
+      },
+    ],
+  },
+  {
     version: '5.30.0',
     date: '2026-11-24',
     items: [

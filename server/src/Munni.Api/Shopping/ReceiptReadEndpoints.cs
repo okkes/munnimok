@@ -12,6 +12,11 @@ public sealed record ReceiptReadReply(string State, ReceiptReadResult? Receipt, 
 
 public sealed record ReceiptReadSettings(int? DailyPerUser, int? MonthlyCap, string? Model);
 
+public sealed record ReceiptCategoriseRequest(string? Merchant, IReadOnlyList<string>? Names, IReadOnlyList<ReadCategory>? Categories);
+
+/// ok: a category id per name asked about, in that order (null = none fits). limited / capped / unavailable as for a read
+public sealed record ReceiptCategoriseReply(string State, IReadOnlyList<string?>? Categories, DateTimeOffset? Until);
+
 /// #567: the provider's key never leaves the server, every read is counted, nothing of the photo is kept here
 public static class ReceiptReadEndpoints
 {
@@ -46,6 +51,7 @@ public static class ReceiptReadEndpoints
 
         if (!enabled) return;
         app.MapPost("/receipts/read", ReadAsync).RequireAuthorization();
+        app.MapPost("/receipts/categorise", CategoriseAsync).RequireAuthorization();
     }
 
     /// <summary>A stored limit; "0" is "no limit" and nothing stored is the default.</summary>
@@ -128,6 +134,43 @@ public static class ReceiptReadEndpoints
         await CountMonthAsync(db, month, ct);
         var receipt = ReceiptReadCheck.Normalize(read, categories);
         return Results.Ok(receipt is null ? new ReceiptReadReply("unreadable", null, null) : new ReceiptReadReply("ok", receipt, null));
+    }
+
+    /// #648: names only — no photo, no amounts — and one call counts as one read against the same limits
+    private static async Task<IResult> CategoriseAsync(
+        ReceiptCategoriseRequest request, HttpContext http, IReceiptReader reader, ReceiptReadCounts counts, AppDbContext db, ILoggerFactory logs, CancellationToken ct)
+    {
+        var names = (request.Names ?? []).Select(name => name?.Trim() ?? string.Empty).ToList();
+        if (names.Count is 0 or > ReceiptReadCheck.MaxLines || names.Any(name => name.Length is 0 or > ReceiptReadCheck.MaxNameLength)) return Results.BadRequest();
+        var categories = (request.Categories ?? []).Where(c => !string.IsNullOrWhiteSpace(c.Id) && !string.IsNullOrWhiteSpace(c.Name)).Take(MaxCategories).ToList();
+        if (categories.Count == 0) return Results.BadRequest();
+        var merchant = request.Merchant?.Trim() is { Length: > 0 } said ? said[..Math.Min(said.Length, 80)] : null;
+
+        var cap = await LimitAsync(db, MonthlyCapKey, DefaultMonthlyCap, ct);
+        var month = counts.MonthKey;
+        if (cap is { } most && await MonthCountAsync(db, month, ct) >= most)
+            return Results.Ok(new ReceiptCategoriseReply("capped", null, counts.NextMonth));
+        var user = http.GetUserId();
+        if (!counts.TrySpend(user, await LimitAsync(db, DailyLimitKey, DefaultDailyPerUser, ct)))
+            return Results.Ok(new ReceiptCategoriseReply("limited", null, counts.Tomorrow));
+
+        IReadOnlyList<string?>? answer;
+        try
+        {
+            answer = await reader.CategoriseAsync(merchant, names, categories, await ModelAsync(db, ct), ct);
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested)
+        {
+#pragma warning disable S6667 // deliberate: the provider's error text may quote the request, only its type is logged
+            logs.CreateLogger("ReceiptReading").LogWarning("receipt categorising failed at {Provider}: {Kind}", reader.Provider, e.GetType().Name);
+#pragma warning restore S6667
+            counts.Refund(user);
+            return Results.Ok(new ReceiptCategoriseReply("unavailable", null, null));
+        }
+
+        await CountMonthAsync(db, month, ct);
+        var checkedIds = ReceiptReadCheck.Categories(answer, names.Count, categories);
+        return Results.Ok(checkedIds is null ? new ReceiptCategoriseReply("unavailable", null, null) : new ReceiptCategoriseReply("ok", checkedIds, null));
     }
 
     private static async Task CountMonthAsync(AppDbContext db, string month, CancellationToken ct)

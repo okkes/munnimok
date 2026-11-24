@@ -43,6 +43,12 @@ export default defineConfig(({ mode }) => {
           start_url: './',
           scope: './',
           id: './',
+          // the installed app's icon menu, as the shells have it (shortcuts.xml, Info.plist)
+          shortcuts: [
+            { name: 'Scan a receipt', short_name: 'Scan', url: './#/scan' },
+            { name: 'Review', url: './#/review' },
+            { name: 'Transactions', url: './#/transactions' },
+          ],
           icons: [
             { src: icon(192), sizes: '192x192', type: 'image/png', purpose: 'any' },
             { src: icon(192), sizes: '192x192', type: 'image/png', purpose: 'maskable' },

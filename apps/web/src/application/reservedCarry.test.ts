@@ -59,7 +59,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
     await repo.upsert('transaction', SPACE, 'leg', {
       accountId: 'wallet', date: '2026-10-06', amountCents: -1300, currency: 'EUR', merchant: 'TU Delft', needsReview: 0, transferPeerId: 'hold',
     });
-    await repo.upsert('receiptLink', SPACE, 'rl', { receiptId: 'r1', txId: 'hold', source: 'photo', date: '2026-10-06', totalCents: 1300 });
+    await repo.upsert('receiptLink', SPACE, 'rl', { receiptId: 'r1', feedSpaceId: SPACE, txId: 'hold' });
     await feedRow('booked', '2026-10-07', -1300, 'PAY.nl*X TU DELFT');
     await repo.remove('transaction', FEED, 'hold');
 
@@ -71,7 +71,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
 
   it('a receipt alone is a story: the photo taken on the reserved payment shows on its booking', async () => {
     await feedRow('hold', '2026-10-06', -1300, 'Albert Heijn 1842', true);
-    await repo.upsert('receiptLink', SPACE, 'photo', { txId: 'hold', source: 'photo', date: '2026-10-06', totalCents: 1300 });
+    await repo.upsert('receiptLink', SPACE, 'photo', { receiptId: 'photo-r', feedSpaceId: SPACE, txId: 'hold' });
     await feedRow('booked', '2026-10-07', -1300, 'Albert Heijn 1842');
     await repo.remove('transaction', FEED, 'hold');
 
@@ -81,7 +81,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
 
   it('a receipt the matcher asked about on the reserved payment asks on its booking', async () => {
     await feedRow('hold', '2026-10-06', -1300, 'Albert Heijn 1842', true);
-    await repo.upsert('receiptLink', SPACE, 'asked', { receiptId: 'rcpt:ah:c:1', proposedTxId: 'hold', source: 'ah', date: '2026-10-06', totalCents: 1300, auto: 0 });
+    await repo.upsert('receiptLink', SPACE, 'asked', { receiptId: 'rcp2:ah:c:1', feedSpaceId: 'feed-ah', proposedTxId: 'hold', auto: 0 });
     await feedRow('booked', '2026-10-07', -1300, 'Albert Heijn 1842');
     await repo.remove('transaction', FEED, 'hold');
 
@@ -91,7 +91,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
 
   it('a receipt asked about on a reservation that never books is free to be asked about again', async () => {
     await feedRow('hold', '2026-10-06', -2500, 'Hotel', true);
-    await repo.upsert('receiptLink', SPACE, 'asked', { receiptId: 'rcpt:ah:c:2', proposedTxId: 'hold', source: 'ah', date: '2026-10-06', totalCents: 2500, auto: 0 });
+    await repo.upsert('receiptLink', SPACE, 'asked', { receiptId: 'rcp2:ah:c:2', feedSpaceId: 'feed-ah', proposedTxId: 'hold', auto: 0 });
     await repo.remove('transaction', FEED, 'hold');
 
     await carryReservedOpinions(store, repo);
@@ -102,7 +102,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
 
   it('a photo on a reservation whose booking was already filed moves to that booking, which keeps its filing', async () => {
     await feedRow('hold', '2026-10-06', -1300, 'Albert Heijn 1842', true);
-    await repo.upsert('receiptLink', SPACE, 'photo', { txId: 'hold', source: 'photo', date: '2026-10-06', totalCents: 1300 });
+    await repo.upsert('receiptLink', SPACE, 'photo', { receiptId: 'photo-r', feedSpaceId: SPACE, txId: 'hold' });
     await feedRow('booked', '2026-10-07', -1300, 'Albert Heijn 1842');
     await opinion('booked', { catId: 'restaurants', needsReview: 0 });
     await repo.remove('transaction', FEED, 'hold');
@@ -179,7 +179,7 @@ describe('a reserved charge hands its story to the booked row (#533)', () => {
   it('a reservation the bank released hands nothing to a stranger of the same amount', async () => {
     await feedRow('hold', '2026-10-06', -10_000, 'Hotel Les Sorbiers', true);
     await opinion('hold', { catId: 'hotel', notes: 'Deposit', needsReview: 0 });
-    await repo.upsert('receiptLink', SPACE, 'photo', { txId: 'hold', source: 'photo', date: '2026-10-06', totalCents: 10_000 });
+    await repo.upsert('receiptLink', SPACE, 'photo', { receiptId: 'photo-r', feedSpaceId: SPACE, txId: 'hold' });
     await feedRow('other', '2026-10-12', -10_000, 'Coolblue BV');
     await repo.remove('transaction', FEED, 'hold');
 

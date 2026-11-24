@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useConnectionOps } from '@/application/connections';
 import type { ConnectionView } from '@/application/connections';
+import { myReceiptFeedId } from '@/application/storeFeed';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Picture } from '@/ui/Picture';
 import { Sheet } from '@/ui/Sheet';
+import { impactLine, useFeedSharing } from './FeedSharing';
 import { kindIcon } from './logos';
-import { SpacePicker } from './SpacePicker';
 import type { ProviderKind } from './types';
 
 export function ConnectionSheet({
@@ -33,19 +34,22 @@ export function ConnectionSheet({
   const [name, setName] = useState(view.meta.displayName);
   const [iconOpen, setIconOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // #648: the connection's receipts go with it, off every transaction they are on — said before it happens
+  const [impact, setImpact] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  const toggleSpace = async (spaceId: string) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const next = includedSpaceIds.includes(spaceId)
-        ? includedSpaceIds.filter((id) => id !== spaceId)
-        : [...includedSpaceIds, spaceId];
-      await ops.setIncludedSpaces(view.meta.id, next);
-    } finally {
-      setBusy(false);
-    }
+  const sharing = useFeedSharing({
+    spaces: allSpaces,
+    selected: includedSpaceIds,
+    feedId: myReceiptFeedId(view.meta.id),
+    disabled: busy,
+    apply: (next) => ops.setIncludedSpaces(view.meta.id, next),
+    testId: 'conn-manage-spaces',
+  });
+
+  const askRemove = async () => {
+    setImpact(await ops.paymentsOn(view.meta.id));
+    setConfirmRemove(true);
   };
 
   const remove = async () => {
@@ -108,7 +112,7 @@ export function ConnectionSheet({
           <>
             <div className="m-cap px-1">{t('conn.sharedSpaces')}</div>
             <p className="px-1 text-[11px] leading-snug text-ink-4">{t('conn.sharedSpacesSub')}</p>
-            <SpacePicker spaces={allSpaces} selected={includedSpaceIds} disabled={busy} onToggle={(id) => void toggleSpace(id)} testId="conn-manage-spaces" />
+            {sharing.picker}
           </>
         )}
 
@@ -136,17 +140,18 @@ export function ConnectionSheet({
           </div>
         )}
 
-        <Button variant="danger" data-testid="conn-remove" disabled={busy} onClick={() => setConfirmRemove(true)}>
+        <Button variant="danger" data-testid="conn-remove" disabled={busy} onClick={() => void askRemove()}>
           {t('conn.remove')}
         </Button>
       </div>
     </Sheet>
-    {/* sibling of the sheet, not inside it: mounted inside, the confirm came up behind the sheet, dimmed */}
+    {/* siblings of the sheet, not inside it: mounted inside, a confirm came up behind the sheet, dimmed */}
+    {sharing.confirm}
     <DangerConfirmSheet
       open={confirmRemove}
       onOpenChange={setConfirmRemove}
       title={t('conn.remove')}
-      body={t('conn.removeNote')}
+      body={`${t('conn.removeNote')} ${impactLine(impact, t)}`.trim()}
       onConfirm={() => void remove()}
       testId="conn-remove"
     />

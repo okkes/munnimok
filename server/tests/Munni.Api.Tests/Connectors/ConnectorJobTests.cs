@@ -41,7 +41,7 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.Equal("succeeded", collected["state"]!.GetValue<string>());
         Assert.True(collected["ingested"]!["receipts"]!.GetValue<int>() > 0, collected.ToJsonString());
 
-        var feedId = ImportIds.PersonalFeedSpaceId("STORES", sub);
+        var feedId = ImportIds.PersonalFeedSpaceId(ImportIds.ReceiptFeedRef("conn-slow"), sub);
         Assert.Equal(
             collected["ingested"]!["receipts"]!.GetValue<int>(),
             factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "receipt")));

@@ -570,23 +570,24 @@ export class SyncEngine {
   // feed spaces have no space row, so they skip the 403 purge and their accounts linger as ghosts: local data of any space
   // the server no longer grants is purged here (owned feeds stay). DATA-LOSS trap: re-read everything at sweep time
   // (an import finishing mid-cycle was purged with its un-pushed ops) and protect feeds a live accountLink points at
+  // #648: a receipt feed is read only while the server grants it (a space stopped including it, its owner removed it) —
+  // its rows are not a member's to keep, so the row a space holds for the feed protects nothing
   private async purgeOrphanFeeds(serverSpaces: string[]): Promise<void> {
     const [spaces, queued, links] = await Promise.all([
       this.store.allRows('space'),
       this.store.outboxSpaceIds(),
       this.store.allRows('accountLink'),
     ]);
-    const known = new Set([
-      ...spaces.filter((s) => s.deleted === 0).map((s) => s.id),
-      ...queued,
-      ...links.filter((l) => l.deleted === 0).map((l) => l.feedSpaceId),
-      ...serverSpaces,
-    ]);
+    const held = new Set([...spaces.filter((s) => s.deleted === 0).map((s) => s.id), ...queued, ...serverSpaces]);
+    const known = new Set([...held, ...links.filter((l) => l.deleted === 0).map((l) => l.feedSpaceId)]);
     const orphans = new Set(
       (await this.store.allRows('account'))
         .map((a) => a.spaceId)
         .filter((id) => !known.has(id)),
     );
+    for (const receipt of await this.store.allRows('receipt')) {
+      if (!held.has(receipt.spaceId)) orphans.add(receipt.spaceId);
+    }
     for (const id of orphans) await this.purgeSpace(id);
   }
 

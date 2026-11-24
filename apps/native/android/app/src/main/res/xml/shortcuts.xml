@@ -2,6 +2,16 @@
 <!-- the dev flavor overrides this file with its own package/scheme -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="munni://scan"
+            android:targetPackage="app.munni"
+            android:targetClass="app.munni.MainActivity" />
+    </shortcut>
+    <shortcut
         android:shortcutId="review"
         android:enabled="true"
         android:shortcutShortLabel="@string/shortcut_review">

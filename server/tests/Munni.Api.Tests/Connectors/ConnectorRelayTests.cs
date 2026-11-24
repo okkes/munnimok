@@ -150,7 +150,7 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         // a provider that does not rotate re-issues nothing
         Assert.Null(body["session"]);
 
-        var feedId = ImportIds.PersonalFeedSpaceId(ConnectorIngest.StoreFeedRef, sub);
+        var feedId = ImportIds.PersonalFeedSpaceId(ImportIds.ReceiptFeedRef("conn-receipts"), sub);
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
         var feed = factory.Read(db => db.FeedSpaces.Single(f => f.Id == feedId));
         Assert.Equal(user.Id, feed.OwnerUserId);
@@ -159,7 +159,7 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         var receipts = factory.Read(db => db.EntityRows.Where(r => r.SpaceId == feedId && r.Entity == "receipt").ToList());
         Assert.Equal(ingested["receipts"]!.GetValue<int>(), receipts.Count);
         var first = JsonDocument.Parse(receipts[0].DataJson).RootElement;
-        Assert.StartsWith($"rcpt:{MockStore}:conn-receipts:", receipts[0].EntityId, StringComparison.Ordinal);
+        Assert.StartsWith($"rcp2:{MockStore}:conn-receipts:", receipts[0].EntityId, StringComparison.Ordinal);
         Assert.Equal(MockStore, first.GetProperty("source").GetString());
         Assert.Equal("conn-receipts", first.GetProperty("instanceId").GetString());
         Assert.Matches(@"^\d{4}-\d{2}-\d{2}$", first.GetProperty("date").GetString());

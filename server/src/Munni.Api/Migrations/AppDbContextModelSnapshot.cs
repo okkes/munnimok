@@ -110,6 +110,36 @@ namespace Munni.Api.Migrations
                     b.ToTable("SpaceAccountLinks");
                 });
 
+            modelBuilder.Entity("Munni.Api.Accounts.SpaceStoreLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AttachedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FeedSpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeedSpaceId");
+
+                    b.HasIndex("SpaceId", "FeedSpaceId")
+                        .IsUnique();
+
+                    b.ToTable("SpaceStoreLinks");
+                });
+
             modelBuilder.Entity("Munni.Api.Connectors.ConnectorAccountRef", b =>
                 {
                     b.Property<string>("Id")

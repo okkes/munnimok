@@ -36,7 +36,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, EventRow, ReceiptLinkRow, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, EventRow, LinkedReceipt, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { cardRowGates } from './cardRows';
@@ -422,7 +422,7 @@ function ReviewReceiptRow({ row, onLook, onAsk }: Readonly<{ row: ReturnType<typ
 function receiptRowFor(
   state: {
     attached: ReceiptRow | null | undefined;
-    proposal: ReceiptLinkRow | undefined;
+    proposal: LinkedReceipt | undefined;
     stage: ReceiptStage;
     auto: ReceiptRow | null;
   },

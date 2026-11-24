@@ -3,9 +3,9 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { readSessionIdentity } from '@/app/session';
 import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './connectionSync';
-import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
+import { deleteFeed, ensureReceiptFeed, ensureScansFeed, ensureStoreFeed, myReceiptFeedId, myReceiptFeeds, myScansFeedId, SCANS_STORE, shareFeed, unshareFeed } from './storeFeed';
 import { reevaluateSpace, useReceiptMatchTriggers } from './receiptMatching';
-import { linkedTxIds } from './receiptLinks';
+import { linkedTxIds, paymentsHolding, receiptsInSpace, removeLinksTo } from './receiptLinks';
 import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
 import { ConnectorError, connectorApi } from '@/features/connectors/api';
@@ -20,6 +20,7 @@ import type { AccountRow, ConnectorConnRow, ReceiptRow, StoreConnLinkRow, StoreC
 
 // storeConn (synced, secret-free) + per-space storeConnLink + a DEVICE-ONLY connectorConn row holding the bundle;
 // the relay keys receipts by connection id, so the id outlives re-logins (#367)
+// #648: a connection's receipts are a feed of their own, a person's scans another; a space that includes a feed reads it
 
 /** connections are a signed-in-user feature: demo/offline make zero network calls */
 export const connectorsAvailable = (): boolean => readSessionIdentity()?.kind === 'user';
@@ -120,19 +121,6 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
   );
 }
 
-const includedConnections = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
-  new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
-
-/** #567: photos kept without a transaction belong to all the person's spaces; newest first */
-async function attachableRows(store: StorageBackend, spaceId: string, feedId: string): Promise<ReceiptRow[]> {
-  const included = await includedConnections(store, spaceId);
-  const rows = (await store.bySpace('receipt', feedId)).filter(
-    (r) => r.deleted === 0 && (r.source === 'photo' || (r.instanceId != null && included.has(r.instanceId))),
-  );
-  rows.sort((a, b) => b.date.localeCompare(a.date));
-  return rows;
-}
-
 async function linkFacts(
   store: StorageBackend,
   spaceId: string,
@@ -144,7 +132,6 @@ async function linkFacts(
     if (link.deleted !== 0) continue;
     const held = linkedTxIds(link);
     for (const txId of held) heldTxIds.add(txId);
-    if (!link.receiptId) continue;
     if (held.length > 0) attachedTo.set(link.receiptId, held);
     if (link.rejectedTxIds?.length) rejectedFor.set(link.receiptId, link.rejectedTxIds);
   }
@@ -158,10 +145,8 @@ export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
   return useQuery(
     store,
     async () => {
-      const feedId = myStoreFeedId();
-      if (!feedId) return [];
       const linked = await attachedTxIds(store, spaceId);
-      return (await attachableRows(store, spaceId, feedId)).filter((r) => !linked.has(r.id));
+      return (await receiptsInSpace(store, spaceId)).filter((r) => !linked.has(r.id));
     },
     [spaceId],
   );
@@ -182,20 +167,28 @@ export function useAttachableReceipts(): AttachableReceipts | undefined {
   const { store, spaceId } = useData();
   return useQuery(
     store,
-    async () => {
-      const facts = await linkFacts(store, spaceId);
-      const feedId = myStoreFeedId();
-      return { rows: feedId ? await attachableRows(store, spaceId, feedId) : [], ...facts };
-    },
+    async () => attachableReceiptsOf(store, spaceId),
     [spaceId],
   );
 }
 
 /** #565: the same inventory outside a screen — the review's suggestion pass reads it when rows land */
 export async function attachableReceiptsOf(store: StorageBackend, spaceId: string): Promise<AttachableReceipts> {
-  const facts = await linkFacts(store, spaceId);
-  const feedId = myStoreFeedId();
-  return { rows: feedId ? await attachableRows(store, spaceId, feedId) : [], ...facts };
+  return { rows: await receiptsInSpace(store, spaceId), ...(await linkFacts(store, spaceId)) };
+}
+
+/** #648: the spaces that read this identity's own scans */
+export function useScansSpaces(): string[] | undefined {
+  const { store } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const feedId = myScansFeedId();
+      if (!feedId) return [];
+      return (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0 && l.feedSpaceId === feedId).map((l) => l.spaceId);
+    },
+    [],
+  );
 }
 
 export function useGlobalReceipts(): ReceiptRow[] | undefined {
@@ -203,10 +196,9 @@ export function useGlobalReceipts(): ReceiptRow[] | undefined {
   return useQuery(
     store,
     async () => {
-      const feedId = myStoreFeedId();
-      if (!feedId) return [];
       // #648: what the shops handed over and what the person scanned are one list
-      const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0);
+      const rows: ReceiptRow[] = [];
+      for (const feedId of await myReceiptFeeds(store)) rows.push(...(await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0));
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },
@@ -236,10 +228,10 @@ const widen = (ranges: Record<string, FetchedRange>, connectionId: string, date:
 
 // derived from the rows themselves, so a card's "from … to …" is never a claim
 async function receiptRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
-  const feedId = myStoreFeedId();
-  if (!feedId) return;
-  for (const receipt of await store.bySpace('receipt', feedId)) {
-    if (receipt.deleted === 0 && receipt.instanceId) widen(ranges, receipt.instanceId, receipt.date);
+  for (const feedId of await myReceiptFeeds(store)) {
+    for (const receipt of await store.bySpace('receipt', feedId)) {
+      if (receipt.deleted === 0 && receipt.instanceId) widen(ranges, receipt.instanceId, receipt.date);
+    }
   }
 }
 
@@ -302,10 +294,15 @@ export interface ConnectionOps {
   adopt: (args: AdoptArgs) => Promise<AdoptResult>;
   rename: (connectionId: string, displayName: string) => Promise<void>;
   setIcon: (connectionId: string, icon: string | null) => Promise<void>;
-  /** ruling 2: unmatched receipts die with the connection; links survive */
+  /** #648: its receipts go with it, from every payment they were on (the user's ruling: nothing is copied to survive) */
   remove: (connectionId: string) => Promise<void>;
   syncNow: (connectionId: string, options?: Pick<SyncOptions, 'onChallenge' | 'onProgress'>) => Promise<SyncReport>;
+  /** server first: its grant is what lets a space's members read the connection's receipts — so it needs a network */
   setIncludedSpaces: (connectionId: string, spaceIds: string[]) => Promise<void>;
+  /** #648: the spaces that read this person's own scans, picked the way a connection's are */
+  setScansSpaces: (spaceIds: string[]) => Promise<void>;
+  /** #648: how many payments lose their receipt when the connection goes, or (with spaces) when those spaces stop reading it */
+  paymentsOn: (connectionId: string, spaceIds?: readonly string[]) => Promise<number>;
   /** #441 L1: yes keeps the failure picture for the people who run munni, no deletes it */
   answerReport: (connectionId: string, jobId: string, share: boolean) => Promise<void>;
   setReportFailures: (connectionId: string, always: boolean) => Promise<void>;
@@ -373,6 +370,26 @@ export function useConnectionOps(): ConnectionOps {
 
   const allLinksOf = async (connectionId: string) =>
     (await storage.allRows('storeConnLink')).filter((l) => l.deleted === 0 && l.instanceId === connectionId);
+
+  /** the spaces that read a feed become exactly these; a space this identity only reads keeps what it has (#505) */
+  const setFeedSpaces = async (feedId: string, instanceId: string, spaceIds: readonly string[], shown: Pick<StoreConnLinkRow, 'store' | 'displayName' | 'icon'>) => {
+    const current = await allLinksOf(instanceId);
+    const currentIds = new Set(current.map((l) => l.spaceId));
+    for (const id of spaceIds.filter((id) => !currentIds.has(id))) {
+      await shareFeed(id, feedId);
+      await repo.upsert('storeConnLink', id, storeConnLinkId(id, instanceId), { instanceId, ...shown, feedSpaceId: feedId });
+      await reevaluateSpace(storage, repo, id, feedId);
+      void logActivity(storage, repo, id, 'storeAttach', shown.displayName);
+    }
+    for (const link of current.filter((l) => !spaceIds.includes(l.spaceId))) {
+      if (!repo.canWrite(link.spaceId)) continue;
+      await unshareFeed(link.spaceId, feedId);
+      // nothing of a receipt stays in a space that no longer reads it (#648); the server writes the same removals
+      await removeLinksTo(repo, (held) => held.spaceId === link.spaceId && held.feedSpaceId === feedId);
+      await repo.remove('storeConnLink', link.spaceId, link.id);
+      void logActivity(storage, repo, link.spaceId, 'storeDetach', shown.displayName);
+    }
+  };
 
   const firstSync = (connectionId: string) => {
     void syncConnection(storage, repo, connectionId, { engine }).catch(() => undefined);
@@ -447,19 +464,22 @@ export function useConnectionOps(): ConnectionOps {
         const binding = (await connectorApi.sessions().catch(() => [] as BindingView[])).find((row) => row.connectionId === connectionId);
         if (binding) await connectorApi.disconnect(binding.provider, binding.sessionId).catch(() => undefined);
       }
-      // ruling 2: global receipts die with the connection; space snapshots (linked receipts) stay
+      // #648: the receipts live in the connection's own feed and go with it — off every payment they were on, in
+      // every space; the server erases the feed and tells the other members' devices
       const meta = await metaOf(storage, connectionId);
-      if (meta) {
-        for (const receipt of await storage.bySpace('receipt', meta.spaceId)) {
-          if (receipt.deleted === 0 && receipt.instanceId === connectionId) {
-            await repo.remove('receipt', meta.spaceId, receipt.id);
-          }
+      const feedId = myReceiptFeedId(connectionId);
+      if (feedId) {
+        await removeLinksTo(repo, (link) => link.feedSpaceId === feedId);
+        for (const receipt of await storage.bySpace('receipt', feedId)) {
+          if (receipt.deleted === 0) await repo.remove('receipt', feedId, receipt.id);
         }
-        await repo.remove('storeConn', meta.spaceId, connectionId);
       }
+      if (meta) await repo.remove('storeConn', meta.spaceId, connectionId);
       for (const link of await allLinksOf(connectionId)) {
         await repo.upkeep().remove('storeConnLink', link.spaceId, link.id);
       }
+      // the queued removals reach the server before the feed they are for is erased there
+      if (feedId) void (engine?.syncAll() ?? Promise.resolve()).catch(() => undefined).then(() => deleteFeed(feedId)).catch(() => undefined);
       await forgetConnection(storage, connectionId);
       void removeConnectionCipher(storage, connectionId).catch(() => undefined);
       void logActivity(storage, repo, spaceId, 'storeRemove', meta?.displayName);
@@ -479,24 +499,18 @@ export function useConnectionOps(): ConnectionOps {
     },
     setIncludedSpaces: async (connectionId, spaceIds) => {
       const meta = await metaOf(storage, connectionId);
-      if (!meta) return;
-      const current = await allLinksOf(connectionId);
-      const currentIds = new Set(current.map((l) => l.spaceId));
-      for (const id of spaceIds.filter((id) => !currentIds.has(id))) {
-        await repo.upsert('storeConnLink', id, storeConnLinkId(id, connectionId), {
-          instanceId: connectionId,
-          store: meta.store,
-          displayName: meta.displayName,
-          icon: meta.icon,
-        });
-        await reevaluateSpace(storage, repo, id, connectionId);
-        void logActivity(storage, repo, id, 'storeAttach', meta.displayName);
-      }
-      for (const link of current.filter((l) => !spaceIds.includes(l.spaceId))) {
-        if (!repo.canWrite(link.spaceId)) continue; // #505: a space they only read keeps its link
-        await repo.remove('storeConnLink', link.spaceId, link.id);
-        void logActivity(storage, repo, link.spaceId, 'storeDetach', meta.displayName);
-      }
+      const feedId = meta ? await ensureReceiptFeed(storage, connectionId) : null;
+      if (!meta || !feedId) return;
+      await setFeedSpaces(feedId, connectionId, spaceIds, { store: meta.store, displayName: meta.displayName, icon: meta.icon });
+    },
+    setScansSpaces: async (spaceIds) => {
+      const feedId = await ensureScansFeed(storage);
+      if (feedId) await setFeedSpaces(feedId, feedId, spaceIds, { store: SCANS_STORE, displayName: '' });
+    },
+    paymentsOn: async (connectionId, spaceIds) => {
+      const feedId = myReceiptFeedId(connectionId);
+      if (!feedId) return 0;
+      return paymentsHolding(storage, (link) => link.feedSpaceId === feedId && (!spaceIds || spaceIds.includes(link.spaceId)));
     },
   };
 }

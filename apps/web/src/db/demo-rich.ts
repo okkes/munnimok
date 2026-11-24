@@ -35,7 +35,7 @@ export async function seedRichDemo(repo: Repo): Promise<void> {
 }
 
 async function seedConnections(repo: Repo): Promise<void> {
-  const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+  const { DEMO_STORE_FEED_ID, demoReceiptFeedId } = await import('@/application/storeFeed');
   const { storeConnLinkId } = await import('@/domain/feedIds');
   const feed = DEMO_STORE_FEED_ID;
   const ah = 'demo_conn_ah';
@@ -43,8 +43,8 @@ async function seedConnections(repo: Repo): Promise<void> {
 
   await repo.upsert('storeConn', feed, ah, { store: 'ah', displayName: 'Albert Heijn', connectedAt: daysAgo(40), status: 'ok' });
   await repo.upsert('storeConn', feed, jumbo, { store: 'jumbo', displayName: 'Jumbo', connectedAt: daysAgo(12), status: 'expired' });
-  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, ah), { instanceId: ah, store: 'ah', displayName: 'Albert Heijn' });
-  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, jumbo), { instanceId: jumbo, store: 'jumbo', displayName: 'Jumbo' });
+  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, ah), { instanceId: ah, store: 'ah', displayName: 'Albert Heijn', feedSpaceId: demoReceiptFeedId(ah) });
+  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, jumbo), { instanceId: jumbo, store: 'jumbo', displayName: 'Jumbo', feedSpaceId: demoReceiptFeedId(jumbo) });
 
   await repo.store.connectorConnPut({
     id: ah,
@@ -56,7 +56,8 @@ async function seedConnections(repo: Repo): Promise<void> {
   });
   await repo.store.connectorConnPut({ id: jumbo, provider: 'jumbo', state: 'needs_reauth', refreshedAt: daysAgo(2) });
 
-  const receipt = (id: string, fields: Record<string, unknown>) => repo.upsert('receipt', feed, `rcpt:ah:${ah}:${id}`, fields as never);
+  // #648: a connection's receipts live in a feed of their own, which the demo space reads
+  const receipt = (id: string, fields: Record<string, unknown>) => repo.upsert('receipt', demoReceiptFeedId(ah), `rcp2:ah:${ah}:${id}`, fields as never);
   await receipt('r1', {
     source: 'ah',
     date: daysAgo(2),

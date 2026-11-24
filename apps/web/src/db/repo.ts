@@ -93,16 +93,17 @@ export class Repo {
 
   /** stamps the caller derives from the content, not the clock: every device writes the same op, and one that
    *  changes nothing queues nothing — all in one storage transaction, so a run cut short leaves no half.
-   *  `opId`: derived as well where the server writes the same op itself, so it keeps one of them */
+   *  `opId`: derived as well where the server writes the same op itself, so it keeps one of them;
+   *  `deleted`: the row is removed at that stamp (#648: the row a move left behind) */
   async upsertStamped(
     spaceId: string,
-    writes: readonly { entity: EntityName; entityId: string; fields: Record<string, unknown>; hlc: string; opId?: string }[],
+    writes: readonly { entity: EntityName; entityId: string; fields: Record<string, unknown>; hlc: string; opId?: string; deleted?: boolean }[],
   ): Promise<number> {
     if (writes.length === 0 || !this.admits(spaceId)) return 0;
-    const ops = writes.map((w) => ({ ...this.opFor(w.entity, spaceId, w.entityId, w.fields, false, w.hlc), ...(w.opId ? { opId: w.opId } : {}) }));
+    const ops = writes.map((w) => ({ ...this.opFor(w.entity, spaceId, w.entityId, w.fields, w.deleted === true, w.hlc), ...(w.opId ? { opId: w.opId } : {}) }));
     let changed = 0;
     await this.store.transact([...new Set(writes.map((w) => w.entity)), 'outbox'], async () => {
-      for (const op of ops) if (await this.mergeLocal(op, false)) changed += 1;
+      for (const op of ops) if (await this.mergeLocal(op, op.deleted === true)) changed += 1;
     });
     if (changed > 0) this.options.onWrite?.();
     return changed;

@@ -2,9 +2,11 @@
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { USER_TEST_DB, renderApp } from '@/test/harness';
+import { USER_TEST_DB, USER_TEST_SUB, renderApp, renderAppAsUser } from '@/test/harness';
 import type { SpaceTx } from '@/db/joined';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { ReceiptEntry } from '@/application/receiptLinks';
+import type { ReceiptOps } from '@/application/receipts';
 import { dataUrlBytes } from './PdfView';
 import { clampZoom } from './ZoomFrame';
 
@@ -65,6 +67,26 @@ async function demoRepo() {
   return { db, repo: new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false }) };
 }
 
+type DemoRepo = Awaited<ReturnType<typeof demoRepo>>['repo'];
+
+/** a shop's receipt where it lives — its connection's own feed — with the demo space reading that feed; answers the feed */
+async function seedShopReceipt(repo: DemoRepo, connectionId: string, store: string, receiptId: string, fields: Partial<ReceiptRow>): Promise<string> {
+  const { demoReceiptFeedId } = await import('@/application/storeFeed');
+  const { storeConnLinkId } = await import('@/domain/feedIds');
+  const feed = demoReceiptFeedId(connectionId);
+  await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', connectionId), { instanceId: connectionId, store, displayName: store, feedSpaceId: feed });
+  await repo.upsert('receipt', feed, receiptId, { source: store, instanceId: connectionId, date: '2026-07-03', totalCents: 0, ...fields });
+  return feed;
+}
+
+/** what the demo space decided about a receipt; answers the link's id */
+async function seedLink(repo: DemoRepo, receiptId: string, feedSpaceId: string, state: Partial<ReceiptLinkRow>): Promise<string> {
+  const { receiptLinkId } = await import('@/domain/feedIds');
+  const id = receiptLinkId('demo_space', receiptId);
+  await repo.upsert('receiptLink', 'demo_space', id, { receiptId, feedSpaceId, auto: 0, ...state });
+  return id;
+}
+
 describe('Receipts (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -85,6 +107,13 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-delete'));
     fireEvent.click(screen.getByTestId('receipt-delete'));
     await screen.findByTestId('receipt-empty');
+    // the photo was the space's own receipt: it goes with its link
+    const { db } = await demoRepo();
+    await waitFor(async () => {
+      expect((await db.receiptLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
+      expect((await db.receipts.where('spaceId').equals('demo_space').toArray()).every((r) => r.deleted === 1)).toBe(true);
+    });
+    db.close();
   }, 15_000);
 
   it('the connections door reaches the hub; the demo shows its connections and cannot connect', async () => {
@@ -94,7 +123,7 @@ describe('Receipts (demo identity)', () => {
     const { storeConnLinkId } = await import('@/domain/feedIds');
     await repo.upsert('storeConn', 'demo_store_feed', 'demo_conn_ah', { store: 'ah', displayName: 'Albert Heijn', connectedAt: '2026-08-01', status: 'ok' });
     await repo.upsert('storeConn', 'demo_store_feed', 'demo_conn_jumbo', { store: 'jumbo', displayName: 'Jumbo', connectedAt: '2026-09-01', status: 'expired' });
-    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn' });
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn', feedSpaceId: 'demo_store_feed:demo_conn_ah' });
     await repo.store.connectorConnPut({ id: 'demo_conn_ah', provider: 'ah', bundle: 'sb_v1.demo', state: 'active', refreshedAt: '2026-09-29T08:00:00Z', lastSyncAt: '2026-09-29T08:00:00Z' });
     await repo.store.connectorConnPut({ id: 'demo_conn_jumbo', provider: 'jumbo', state: 'needs_reauth', refreshedAt: '2026-09-27T08:00:00Z' });
     db.close();
@@ -243,8 +272,9 @@ describe('Receipts (demo identity)', () => {
       const { db, repo } = await demoRepo();
       await waitFor(async () => {
         const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0);
-        expect(link?.totalCents).toBe(2310);
         expect(link?.picks ?? {}).toEqual({});
+        const receipt = await repo.store.get('receipt', link?.receiptId ?? '');
+        expect(receipt).toMatchObject({ spaceId: 'demo_space', totalCents: 2310 });
       });
       const before = await repo.store.get('transaction', 'dm101');
       expect(before?.cats ?? []).toEqual([]);
@@ -282,7 +312,7 @@ describe('Receipts (demo identity)', () => {
     // the lines a reader would hand back: 25.60 printed, 2.50 off, 23.10 paid — the payment's own amount
     const { db, repo } = await demoRepo();
     const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0)!;
-    await repo.upsert('receiptLink', 'demo_space', link.id, {
+    await repo.upsert('receipt', 'demo_space', link.receiptId, {
       totalCents: 2310,
       items: [
         { name: 'Halfvolle melk', totalCents: 1000 },
@@ -309,9 +339,14 @@ describe('Receipts (demo identity)', () => {
       const stored = await repo.store.get('receiptLink', link.id);
       expect(stored?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
     });
+    // #648: the photo is kept unless the person chose otherwise — using its lines leaves it alone
+    expect((await repo.store.get('receipt', link.receiptId))?.imageId).toBeTruthy();
     db.close();
 
-    fireEvent.click(screen.getByTestId('receipt-categorise'));
+    // opened again later, the sheet starts from what was kept
+    cleanup();
+    renderApp('/transactions/dm101');
+    fireEvent.click(await screen.findByTestId('receipt-categorise', {}, { timeout: 5000 }));
     expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Eating out › Treats');
     expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
   }, 20_000);
@@ -335,16 +370,14 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receipt-facts-save'));
 
     const { db, repo } = await demoRepo();
-    let photoId = '';
+    const { DEMO_SCANS_FEED_ID } = await import('@/application/storeFeed');
     await waitFor(async () => {
       const proposal = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.proposedTxId === 'dm101' && l.deleted === 0);
-      expect(proposal?.source).toBe('photo');
-      expect(proposal?.totalCents).toBe(2310);
-      expect((await repo.store.get('receiptFile', proposal?.imageId ?? ''))?.dataUrl).toBe(FAKE_PHOTO);
-      photoId = proposal!.receiptId!;
-    });
-    // the person's own receipt stays theirs, whatever a space copied of it
-    expect((await repo.store.get('receipt', photoId))?.merchant).toBe('Albert Heijn');
+      expect(proposal?.feedSpaceId).toBe(DEMO_SCANS_FEED_ID);
+      const scan = await repo.store.get('receipt', proposal?.receiptId ?? '');
+      expect(scan).toMatchObject({ spaceId: DEMO_SCANS_FEED_ID, source: 'photo', totalCents: 2310, merchant: 'Albert Heijn' });
+      expect((await repo.store.get('receiptFile', scan?.imageId ?? ''))?.dataUrl).toBe(FAKE_PHOTO);
+    }, { timeout: 5000 });
     db.close();
 
     cleanup();
@@ -391,26 +424,23 @@ describe('Receipts (demo identity)', () => {
     await attachPhoto();
 
     const { db, repo } = await demoRepo();
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-jumbo-x1', {
-      receiptId: 'rcpt:jumbo:demo_conn_jumbo:x1',
-      source: 'jumbo',
-      date: '2026-07-01',
-      totalCents: 2199,
-      merchant: 'Jumbo',
-      items: [{ name: 'HALFVOLLE MELK', totalCents: 258 }],
-    });
+    const JUMBO = 'rcp2:jumbo:demo_conn_jumbo:x1';
+    await seedShopReceipt(repo, 'demo_conn_jumbo', 'jumbo', JUMBO, { date: '2026-07-01', totalCents: 2199, merchant: 'Jumbo', items: [{ name: 'HALFVOLLE MELK', totalCents: 258 }] });
     db.close();
     cleanup();
 
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
-    const jumbo = 'receipt-row-rcpt:jumbo:demo_conn_jumbo:x1';
+    const jumbo = `receipt-row-${JUMBO}`;
     const rows = () => [...document.querySelectorAll('[data-testid^="receipt-row-"]')].map((row) => row.getAttribute('data-testid'));
     const day = await screen.findByTestId('receipts-day-2026-07-01');
     expect(day.textContent).toMatch(/Jul/);
     expect(day.querySelector(`[data-testid="${jumbo}"]`)).toBeTruthy();
     const everything = rows().length;
     expect(everything).toBeGreaterThan(1);
+    // where each lives: the shop's in a feed the space reads, the photo in the space itself
+    expect(screen.getByTestId(`receipt-scope-${JUMBO}`).dataset.scope).toBe('global');
+    expect([...document.querySelectorAll('[data-scope="space"]')]).toHaveLength(everything - 1);
 
     fireEvent.click(screen.getByTestId('receipts-filter-scanned'));
     await waitFor(() => expect(screen.queryByTestId(jumbo)).toBeNull());
@@ -438,10 +468,10 @@ describe('Receipts (demo identity)', () => {
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
     const { db, repo } = await demoRepo();
-    await repo.upsert('receiptFile', 'demo_space', 'rfile-bol-inv', { ownerId: 'rlink-bol-inv', dataUrl: 'data:application/pdf;base64,JVBERi0=' });
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-bol-inv', {
-      receiptId: 'rcpt:bol:c1:o-1',
-      source: 'bol',
+    const INVOICED = 'rcp2:bol:demo_conn_bol:o-1';
+    const { demoReceiptFeedId } = await import('@/application/storeFeed');
+    await repo.upsert('receiptFile', demoReceiptFeedId('demo_conn_bol'), 'rfile-bol-inv', { ownerId: INVOICED, dataUrl: 'data:application/pdf;base64,JVBERi0=' });
+    await seedShopReceipt(repo, 'demo_conn_bol', 'bol', INVOICED, {
       date: '2026-07-02',
       totalCents: 4999,
       merchant: 'bol',
@@ -451,7 +481,7 @@ describe('Receipts (demo identity)', () => {
       ],
     });
     db.close();
-    const row = await screen.findByTestId('receipt-row-rcpt:bol:c1:o-1', {}, { timeout: 5000 });
+    const row = await screen.findByTestId(`receipt-row-${INVOICED}`, {}, { timeout: 5000 });
     expect(row.textContent).toContain('Invoice');
     fireEvent.click(row);
     await screen.findByTestId('receipt-documents');
@@ -581,28 +611,27 @@ describe('Receipts (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Corner Bakery'), { timeout: 5000 });
     expect(screen.getByTestId('review-receipt-look')).toBeTruthy();
     const { db: check } = await demoRepo();
-    await waitFor(async () => expect((await check.receiptLinks.toArray()).find((l) => l.txId === 'rv-photo')?.source).toBe('photo'), { timeout: 5000 });
+    await waitFor(async () => {
+      const link = (await check.receiptLinks.toArray()).find((l) => l.txId === 'rv-photo');
+      expect(await check.receipts.get(link?.receiptId ?? '')).toMatchObject({ source: 'photo', spaceId: 'demo_space' });
+    }, { timeout: 5000 });
     check.close();
   }, 25_000);
 
   it('a bulk recategorize walks the siblings’ receipts in turn (#495): a fit attached from its look, a proposal answered yes, one skipped — then the walk is done', async () => {
     await openFirstTx();
     const { db, repo } = await demoRepo();
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
-    const { receiptLinkId, storeConnLinkId } = await import('@/domain/feedIds');
-    const FIT_B = 'rcpt:ah:demo_conn_ah:wb';
-    const ASKED_C = 'rcpt:ah:demo_conn_ah:wc';
-    const FIT_D = 'rcpt:ah:demo_conn_ah:wd';
-    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn' });
+    const FIT_B = 'rcp2:ah:demo_conn_ah:wb';
+    const ASKED_C = 'rcp2:ah:demo_conn_ah:wc';
+    const FIT_D = 'rcp2:ah:demo_conn_ah:wd';
+    let feed = '';
     await repo.upsert('transaction', 'demo_space', 'walk-a', { accountId: 'demo_main', date: '2026-03-02', amountCents: -1250, currency: 'EUR', merchant: 'AH Walkshop', catId: 'groceries', needsReview: 1 });
     const siblings = [['walk-b', 2380, FIT_B], ['walk-c', 3100, ASKED_C], ['walk-d', 4410, FIT_D]] as const;
     for (const [id, cents, receiptId] of siblings) {
       await repo.upsert('transaction', 'demo_space', id, { accountId: 'demo_main', date: '2026-03-09', amountCents: -cents, currency: 'EUR', merchant: 'AH Walkshop', catId: 'groceries', needsReview: 1 });
-      await repo.upsert('receipt', DEMO_STORE_FEED_ID, receiptId, { source: 'ah', instanceId: 'demo_conn_ah', date: '2026-03-09', totalCents: cents, merchant: 'Albert Heijn' });
+      feed = await seedShopReceipt(repo, 'demo_conn_ah', 'ah', receiptId, { date: '2026-03-09', totalCents: cents, merchant: 'Albert Heijn' });
     }
-    await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', ASKED_C), {
-      receiptId: ASKED_C, source: 'ah', instanceId: 'demo_conn_ah', date: '2026-03-09', totalCents: 3100, merchant: 'Albert Heijn', auto: 0, proposedTxId: 'walk-c',
-    });
+    await seedLink(repo, ASKED_C, feed, { proposedTxId: 'walk-c' });
     db.close();
     cleanup();
     renderApp('/transactions/walk-a');
@@ -671,16 +700,9 @@ describe('Receipts (demo identity)', () => {
   it('a proposed match asks on the transaction; yes attaches it (§5.7)', async () => {
     const txId = await openFirstTx();
     const { db, repo } = await demoRepo();
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-proposed', {
-      receiptId: 'rcpt:ah:demo_conn_ah:p1',
-      source: 'ah',
-      instanceId: 'demo_conn_ah',
-      date: '2026-07-03',
-      totalCents: 1250,
-      merchant: 'Albert Heijn',
-      auto: 0,
-      proposedTxId: txId,
-    });
+    const P1 = 'rcp2:ah:demo_conn_ah:p1';
+    const feed = await seedShopReceipt(repo, 'demo_conn_ah', 'ah', P1, { totalCents: 1250, merchant: 'Albert Heijn' });
+    await seedLink(repo, P1, feed, { proposedTxId: txId });
     db.close();
     const proposal = await screen.findByTestId('receipt-proposal', {}, { timeout: 5000 });
     expect(proposal.textContent).toContain('Receipt to check');
@@ -698,29 +720,23 @@ describe('Receipts (demo identity)', () => {
   it('a match to check opens the receipt and the transaction it fits, so the answer is not a guess (user ss 2026-10-05)', async () => {
     const txId = await openFirstTx();
     const { db, repo } = await demoRepo();
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-compare', {
-      receiptId: 'rcpt:ah:demo_conn_ah:p2',
-      source: 'ah',
-      instanceId: 'demo_conn_ah',
-      date: '2026-07-03',
-      totalCents: 1250,
-      merchant: 'Albert Heijn',
-      auto: 0,
-      proposedTxId: txId,
-    });
+    const P2 = 'rcp2:ah:demo_conn_ah:p2';
+    const feed = await seedShopReceipt(repo, 'demo_conn_ah', 'ah', P2, { totalCents: 1250, merchant: 'Albert Heijn' });
+    const linkId = await seedLink(repo, P2, feed, { proposedTxId: txId });
     db.close();
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId('receipts-to-check', {}, { timeout: 5000 });
-    const txDoor = await screen.findByTestId('receipt-proposal-tx-rlink-compare', {}, { timeout: 5000 });
-    expect(txDoor.textContent).toMatch(/€[0-9]/);
-    expect(screen.getByTestId('receipt-proposal-open-rlink-compare').textContent).toContain('Albert Heijn');
+    const txDoor = await screen.findByTestId(`receipt-proposal-tx-${linkId}`, {}, { timeout: 5000 });
+    expect(txDoor.textContent).toMatch(/€[1-9]/);
+    expect(screen.getByTestId(`receipt-proposal-open-${linkId}`).textContent).toContain('Albert Heijn');
     fireEvent.click(txDoor);
     await screen.findByTestId('tx-detail-amount', {}, { timeout: 5000 });
     cleanup();
     renderApp('/receipts');
-    fireEvent.click(await screen.findByTestId('receipt-proposal-open-rlink-compare', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId(`receipt-proposal-open-${linkId}`, {}, { timeout: 5000 }));
     await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+    expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[1-9]/);
   }, 20_000);
 
   it('an answered match folds away instead of vanishing (user 2026-10-09): the card is marked leaving, its buttons stand down, the write runs once', async () => {
@@ -728,54 +744,42 @@ describe('Receipts (demo identity)', () => {
     await screen.findByTestId('screen-receipts');
     const { db, repo } = await demoRepo();
     await repo.upsert('transaction', 'demo_space', 'pay-exit', { accountId: 'demo_main', date: '2026-07-03', amountCents: -1250, currency: 'EUR', merchant: 'Albert Heijn 1842', catId: 'groceries', needsReview: 0 });
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-exit', {
-      receiptId: 'rcpt:ah:demo_conn_ah:x1',
-      source: 'ah',
-      instanceId: 'demo_conn_ah',
-      date: '2026-07-03',
-      totalCents: 1250,
-      merchant: 'Albert Heijn',
-      items: [{ name: 'HALFVOLLE MELK', totalCents: 125 }],
-      auto: 0,
-      proposedTxId: 'pay-exit',
-    });
+    const X1 = 'rcp2:ah:demo_conn_ah:x1';
+    const feed = await seedShopReceipt(repo, 'demo_conn_ah', 'ah', X1, { totalCents: 1250, merchant: 'Albert Heijn', items: [{ name: 'HALFVOLLE MELK', totalCents: 125 }] });
+    const linkId = await seedLink(repo, X1, feed, { proposedTxId: 'pay-exit' });
     db.close();
-    const card = await screen.findByTestId('receipt-proposal-rlink-exit', {}, { timeout: 5000 });
-    expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('Receipt to check');
-    expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('1 items');
+    const card = await screen.findByTestId(`receipt-proposal-${linkId}`, {}, { timeout: 5000 });
+    expect(screen.getByTestId(`receipt-proposal-open-${linkId}`).textContent).toContain('Receipt to check');
+    expect(screen.getByTestId(`receipt-proposal-open-${linkId}`).textContent).toContain('1 items');
     // the transaction row waits for the transactions' own live query (a separate subscription that may land a beat later under load)
-    const txRow = await screen.findByTestId('receipt-proposal-tx-rlink-exit', {}, { timeout: 5000 });
+    const txRow = await screen.findByTestId(`receipt-proposal-tx-${linkId}`, {}, { timeout: 5000 });
     expect(txRow.textContent).toContain('Albert Heijn 1842');
     expect(txRow.textContent).toMatch(/€[1-9]/);
     expect(card.closest('[data-leaving]')).toBeNull();
 
     vi.mocked(acceptProposal).mockClear();
-    const yes = screen.getByTestId('receipt-proposal-accept-rlink-exit') as HTMLButtonElement;
+    const yes = screen.getByTestId(`receipt-proposal-accept-${linkId}`) as HTMLButtonElement;
     fireEvent.click(yes);
     expect(card.closest('[data-leaving]')).toBeTruthy();
     expect(yes.disabled).toBe(true);
-    expect((screen.getByTestId('receipt-proposal-reject-rlink-exit') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId(`receipt-proposal-reject-${linkId}`) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(yes);
     expect(acceptProposal).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.queryByTestId('receipt-proposal-rlink-exit')).toBeNull(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId(`receipt-proposal-${linkId}`)).toBeNull(), { timeout: 5000 });
     const { db: check } = await demoRepo();
-    await waitFor(async () => expect((await check.receiptLinks.get('rlink-exit'))?.txId).toBe('pay-exit'), { timeout: 5000 });
+    await waitFor(async () => expect((await check.receiptLinks.get(linkId))?.txId).toBe('pay-exit'), { timeout: 5000 });
     check.close();
   }, 20_000);
 
-  const AMAZON = 'rcpt:amazon-nl:demo_conn_amz:a1';
-  const COOLBLUE = 'rcpt:coolblue:demo_conn_cb:c1';
+  const AMAZON = 'rcp2:amazon-nl:demo_conn_amz:a1';
+  const COOLBLUE = 'rcp2:coolblue:demo_conn_cb:c1';
 
   async function seedTwoShopReceipts() {
     const { db, repo } = await demoRepo();
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
-    const { storeConnLinkId } = await import('@/domain/feedIds');
-    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon' });
-    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue' });
-    await repo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, {
-      source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl', items: [{ name: 'USB-C kabel', totalCents: 1299 }, { name: 'Muismat', totalCents: 4657 }],
+    await seedShopReceipt(repo, 'demo_conn_amz', 'amazon-nl', AMAZON, {
+      date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl', items: [{ name: 'USB-C kabel', totalCents: 1299 }, { name: 'Muismat', totalCents: 4657 }],
     });
-    await repo.upsert('receipt', DEMO_STORE_FEED_ID, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
+    await seedShopReceipt(repo, 'demo_conn_cb', 'coolblue', COOLBLUE, { date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
     db.close();
     await waitFor(() => expect(screen.getByTestId('receipt-candidate-count').textContent).toBe('2'), { timeout: 5000 });
   }
@@ -868,21 +872,14 @@ describe('Receipts (demo identity)', () => {
     expect(screen.getAllByTestId(`receipt-row-${COOLBLUE}`)).toHaveLength(1);
   }, 30_000);
 
-  const BOL = 'rcpt:bol:demo_conn_bol:b1';
+  const BOL = 'rcp2:bol:demo_conn_bol:b1';
 
   async function seedOneReceiptTwoPayments(linked: boolean) {
     const { db, repo } = await demoRepo();
-    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
-    const { receiptLinkId, storeConnLinkId } = await import('@/domain/feedIds');
-    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_bol'), { instanceId: 'demo_conn_bol', store: 'bol', displayName: 'bol.com' });
-    await repo.upsert('receipt', DEMO_STORE_FEED_ID, BOL, { source: 'bol', instanceId: 'demo_conn_bol', date: '2026-05-29', totalCents: 15733, merchant: 'bol.com' });
+    const feed = await seedShopReceipt(repo, 'demo_conn_bol', 'bol', BOL, { date: '2026-05-29', totalCents: 15733, merchant: 'bol.com' });
     await repo.upsert('transaction', 'demo_space', 'pay1', { accountId: 'demo_main', date: '2026-05-29', amountCents: -10000, currency: 'EUR', merchant: 'bol.com', catId: 'groceries', needsReview: 0 });
     await repo.upsert('transaction', 'demo_space', 'pay2', { accountId: 'demo_main', date: '2026-05-30', amountCents: -5733, currency: 'EUR', merchant: 'bol.com', catId: 'groceries', needsReview: 0 });
-    if (linked) {
-      await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', BOL), {
-        receiptId: BOL, source: 'bol', instanceId: 'demo_conn_bol', date: '2026-05-29', totalCents: 15733, merchant: 'bol.com', txId: 'pay1', alsoTxIds: ['pay2'], auto: 0,
-      });
-    }
+    if (linked) await seedLink(repo, BOL, feed, { txId: 'pay1', alsoTxIds: ['pay2'] });
     db.close();
   }
 
@@ -951,4 +948,233 @@ describe('Receipts (demo identity)', () => {
     }, { timeout: 5000 });
     db.close();
   }, 25_000);
+
+  it('#648: a receipt deleted where it lives says first how many transactions it is on, then goes from every one of them', async () => {
+    await openFirstTx();
+    await seedOneReceiptTwoPayments(true);
+    cleanup();
+    renderApp(`/connections/receipts/${BOL}`);
+    await screen.findByTestId('receipt-view-total', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-delete-impact')).toBeNull();
+    fireEvent.click(screen.getByTestId('receipt-delete'));
+    expect((await screen.findByTestId('receipt-delete-impact')).textContent).toContain('2 transactions');
+    fireEvent.click(screen.getByTestId('receipt-delete'));
+    await screen.findByTestId('screen-connection-receipts', {}, { timeout: 5000 });
+
+    const { db } = await demoRepo();
+    await waitFor(async () => {
+      expect((await db.receipts.get(BOL))?.deleted).toBe(1);
+      expect((await db.receiptLinks.toArray()).find((l) => l.receiptId === BOL)?.deleted).toBe(1);
+    }, { timeout: 5000 });
+    db.close();
+  }, 25_000);
+
+  /** a photo on dm101 whose lines are known; answers the receipt's id and its picture's */
+  async function readPhotoOnPayment(): Promise<{ receiptId: string; fileId: string }> {
+    renderApp('/transactions/dm101');
+    await screen.findByTestId('receipt-empty');
+    await attachPhoto();
+    const { db, repo } = await demoRepo();
+    const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0)!;
+    const fileId = (await repo.store.get('receipt', link.receiptId))!.imageId!;
+    await repo.upsert('receipt', 'demo_space', link.receiptId, {
+      totalCents: 2310,
+      items: [
+        { name: 'Halfvolle melk', totalCents: 1000 },
+        { name: 'Chocolade', totalCents: 800 },
+        { name: 'Brood', totalCents: 760 },
+        { name: 'Bonus', totalCents: -250, kind: 'discount' },
+      ],
+    });
+    db.close();
+    return { receiptId: link.receiptId, fileId };
+  }
+
+  it('#648: once a photo is read, its owner can delete the photo with two taps — the receipt and its lines stay, the picture is gone everywhere', async () => {
+    const { receiptId, fileId } = await readPhotoOnPayment();
+    fireEvent.click(await screen.findByTestId('receipt-card'));
+    await screen.findByTestId('screen-receipt');
+    const door = await screen.findByTestId('receipt-photo-delete', {}, { timeout: 5000 });
+    expect(door.textContent).toBe('Delete the photo');
+    expect(screen.queryByTestId('receipt-photo-gone')).toBeNull();
+    fireEvent.click(door);
+    expect(screen.getByTestId('receipt-photo-delete').textContent).toBe('Delete the photo for good');
+    fireEvent.click(screen.getByTestId('receipt-photo-delete'));
+
+    await screen.findByTestId('receipt-photo-gone', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-photo-cleanup')).toBeNull();
+    expect(screen.getByText('Chocolade')).toBeTruthy();
+    const { db, repo } = await demoRepo();
+    await waitFor(async () => {
+      const receipt = await repo.store.get('receipt', receiptId);
+      expect(receipt).toMatchObject({ deleted: 0, totalCents: 2310 });
+      expect(receipt?.items).toHaveLength(4);
+      expect(receipt?.imageId ?? null).toBeNull();
+      // emptied as well as removed: the picture leaves every device's copy, not only the list
+      expect(await repo.store.get('receiptFile', fileId)).toMatchObject({ deleted: 1, dataUrl: '' });
+    });
+    db.close();
+  }, 20_000);
+
+  it('#648: with “delete it once I use the reading”, applying a photo’s lines to its payment deletes the photo; the lines and the categories stay', async () => {
+    const { setReceiptPhotoCleanup } = await import('./receiptAi');
+    setReceiptPhotoCleanup('verified');
+    const { receiptId } = await readPhotoOnPayment();
+    fireEvent.click(await screen.findByTestId('receipt-categorise'));
+    await screen.findByTestId('receiptcats-sheet');
+    fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
+    fireEvent.click(screen.getByTestId('receiptcats-categorise'));
+    fireEvent.click(await screen.findByTestId('catpicker-sweets'));
+    fireEvent.click(screen.getByTestId('receiptcats-apply'));
+
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Treats.*7\.22/));
+    const { db, repo } = await demoRepo();
+    await waitFor(async () => {
+      const receipt = await repo.store.get('receipt', receiptId);
+      expect(receipt?.imageId ?? null).toBeNull();
+      expect(receipt?.items).toHaveLength(4);
+    });
+    db.close();
+  }, 20_000);
+
+  it('#648: with “delete it when the reading adds up”, a reading whose lines make the printed total takes its photo by itself', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 328,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 129, totalCents: 129, kind: 'item', categoryId: null },
+          { name: 'Volkoren brood', quantity: 1, unitCents: 199, totalCents: 199, kind: 'item', categoryId: null },
+        ],
+      },
+    });
+    receiptAi.setReceiptAiChoice('yes');
+    receiptAi.setReceiptPhotoCleanup('certain');
+    try {
+      await openFirstTx();
+      fireEvent.click(await attachPhoto());
+      await screen.findByTestId('screen-receipt');
+      fireEvent.click(await screen.findByTestId('receipt-ai-read'));
+      await screen.findByText('Volkoren brood');
+      await screen.findByTestId('receipt-photo-gone', {}, { timeout: 5000 });
+      expect(screen.queryByTestId('receipt-photo-delete')).toBeNull();
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 20_000);
+
+  it('#648: what a reading does to its photo follows the standing choice — only a reading that adds up, and only under “certain”, deletes it', async () => {
+    const { keepRead } = await import('./keepRead');
+    const { setReceiptPhotoCleanup } = await import('./receiptAi');
+    const run = async (mode: 'off' | 'verified' | 'certain', reading: { reconciled: boolean; totalCents: number; items: ReceiptRow['items'] }) => {
+      setReceiptPhotoCleanup(mode);
+      const ops = { setRead: vi.fn(async () => undefined), removePhoto: vi.fn(async () => undefined) };
+      const fileBy = vi.fn(async () => true);
+      const entry = { kind: 'link', data: { id: 'r1', spaceId: 'demo_space' }, txIds: ['t1'] } as unknown as ReceiptEntry;
+      await keepRead(ops as unknown as ReceiptOps, fileBy, entry, { ...reading, items: reading.items ?? [] });
+      expect(ops.setRead).toHaveBeenCalledTimes(1);
+      expect(fileBy).toHaveBeenCalledWith('t1');
+      return ops.removePhoto.mock.calls.length;
+    };
+    const items = [{ name: 'Melk', totalCents: 129 }];
+    expect(await run('certain', { reconciled: true, totalCents: 129, items })).toBe(1);
+    expect(await run('certain', { reconciled: false, totalCents: 129, items })).toBe(0);
+    expect(await run('certain', { reconciled: true, totalCents: 0, items })).toBe(0);
+    expect(await run('certain', { reconciled: true, totalCents: 129, items: [] })).toBe(0);
+    expect(await run('verified', { reconciled: true, totalCents: 129, items })).toBe(0);
+    expect(await run('off', { reconciled: true, totalCents: 129, items })).toBe(0);
+  });
+
+  it('#648: the app icon’s “Scan a receipt” lands on a scan screen; an uploaded picture becomes one of the person’s scans and its screen opens', async () => {
+    renderApp('/scan');
+    await screen.findByTestId('screen-receipt-scan');
+    fireEvent.change(screen.getByTestId('receipt-scan-upload-file'), { target: { files: [new File(['x'], 'bon.jpg', { type: 'image/jpeg' })] } });
+    await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+    await screen.findByTestId('receipt-facts');
+
+    const { db, repo } = await demoRepo();
+    const { DEMO_SCANS_FEED_ID } = await import('@/application/storeFeed');
+    const scans = (await repo.store.bySpace('receipt', DEMO_SCANS_FEED_ID)).filter((r) => r.deleted === 0);
+    expect(scans).toHaveLength(1);
+    expect(scans[0]).toMatchObject({ source: 'photo', totalCents: 0 });
+    expect((await repo.store.get('receiptFile', scans[0].imageId ?? ''))?.dataUrl).toBe(FAKE_PHOTO);
+    db.close();
+  }, 20_000);
+
+  it('#648: in the native shell the scan screen opens the camera by itself, and the photo taken becomes a scan', async () => {
+    const getPhoto = vi.fn(() => Promise.resolve({ base64String: btoa('img'), format: 'jpeg' }));
+    const shell = globalThis as { Capacitor?: unknown };
+    shell.Capacitor = { isNativePlatform: () => true, Plugins: { Camera: { getPhoto } } };
+    try {
+      renderApp('/scan');
+      await screen.findByTestId('screen-receipt', {}, { timeout: 8000 });
+      expect(getPhoto).toHaveBeenCalledTimes(1);
+      expect(getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: 'CAMERA' }));
+    } finally {
+      delete shell.Capacitor;
+    }
+  }, 20_000);
+});
+
+describe('Receipts (signed-in user, #648)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('a scan opened in a space that does not read the person’s scans asks to share them; the server is asked, and the scan can then go on a payment', async () => {
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { scansFeedId } = await import('@/domain/feedIds');
+    const scans = scansFeedId(USER_TEST_SUB);
+    const seed = new MunniDB(USER_TEST_DB);
+    await new Repo(new DexieBackend(seed), new HlcClock('t'), { trackOutbox: false }).upsert('receipt', scans, 'scan-1', { source: 'photo', date: '2026-09-21', totalCents: 788, merchant: 'Corner Shop' });
+    seed.close();
+    const shared: unknown[] = [];
+    renderAppAsUser('/receipts/scan-1', {
+      api: {
+        // the server grants the person's own scans feed: a device purges a feed the server does not list
+        'GET /me/spaces': () => ['s-user', scans],
+        'POST /feeds': () => ({ feedSpaceId: scans, owned: true }),
+        'POST /spaces/s-user/stores': (body) => {
+          shared.push(body);
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('receipt-unshared', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-link-tx')).toBeNull();
+    fireEvent.click(screen.getByTestId('receipt-share-scans'));
+    await screen.findByTestId('receipt-link-tx', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-unshared')).toBeNull();
+    expect(shared).toEqual([{ feedSpaceId: scans }]);
+    const check = new MunniDB(USER_TEST_DB);
+    expect((await check.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toMatchObject([{ spaceId: 's-user', instanceId: scans, store: 'photo', feedSpaceId: scans }]);
+    check.close();
+  }, 20_000);
+
+  it('a scan taken while the person’s scans cannot be reached yet says so on the scan screen, and nothing is kept half-way', async () => {
+    // no POST /feeds answer: the scans feed was never registered from this device
+    renderAppAsUser('/scan');
+    await screen.findByTestId('screen-receipt-scan', {}, { timeout: 5000 });
+    fireEvent.change(screen.getByTestId('receipt-scan-upload-file'), { target: { files: [new File(['x'], 'bon.jpg', { type: 'image/jpeg' })] } });
+    await screen.findByTestId('receipt-scan-refused', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('screen-receipt')).toBeNull();
+    const { MunniDB } = await import('@/db/schema');
+    const check = new MunniDB(USER_TEST_DB);
+    expect((await check.receipts.toArray()).filter((r) => r.deleted === 0)).toHaveLength(0);
+    check.close();
+  }, 20_000);
 });

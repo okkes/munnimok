@@ -184,6 +184,10 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // the value it replaces, and the server has written the same one
   const { splitReceiptFiles } = await import('@/application/receiptFiles');
   await splitReceiptFiles(store, upkeep);
+  // #648: a receipt lives once and a link only names it — rows still in the old shape follow (after the split: a
+  // receipt moves with files of its own). What depends on where a receipt went waits for a confirmed copy
+  const { moveReceiptFeeds } = await import('@/application/receiptFeeds');
+  await moveReceiptFeeds(store, upkeep, confirmed);
 }
 
 async function startFirstSync(

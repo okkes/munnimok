@@ -2,9 +2,9 @@
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
+import { USER_TEST_DB, USER_TEST_SUB, renderAppAsUser } from '@/test/harness';
 import { NO_INGEST, catalogueOf, manifestOf } from '@/test/connectorFixtures';
-import { storeConnLinkId } from '@/domain/feedIds';
+import { receiptFeedId, receiptLinkId, storeConnLinkId } from '@/domain/feedIds';
 import { usePendingLogins } from './pendingLogins';
 import { useSyncActivity } from './syncActivity';
 
@@ -17,6 +17,8 @@ const envelope = (status: number, code: string, extra: Record<string, unknown> =
 const catalogue = { 'GET /connectors/providers': () => catalogueOf(manifestOf()) };
 const feeds = { 'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }) };
 const quietSync = { [`POST /connectors/${PROVIDER}/sync`]: () => ({ sessionId: 'ses_1', state: 'active', ingested: NO_INGEST }) };
+/** the server grants the person's own receipt feeds: a device purges a feed the server does not list */
+const granting = (...feeds: string[]) => ({ 'GET /me/spaces': () => ['s-user', ...feeds] });
 
 async function userDb() {
   const { MunniDB } = await import('@/db/schema');
@@ -27,14 +29,14 @@ async function seedConnection(id: string, extra: Record<string, unknown> = {}) {
   const { Repo } = await import('@/db/repo');
   const { DexieBackend } = await import('@/db/backend');
   const { HlcClock } = await import('@/sync/hlc');
-  const { storeFeedId } = await import('@/domain/feedIds');
+  const { receiptFeedId, storeFeedId } = await import('@/domain/feedIds');
   const { USER_TEST_SUB } = await import('@/test/harness');
   const db = await userDb();
   const backend = new DexieBackend(db);
   const repo = new Repo(backend, new HlcClock('t'), { trackOutbox: false });
   const feed = storeFeedId(USER_TEST_SUB);
   await repo.upsert('storeConn', feed, id, { store: PROVIDER, displayName: 'Mock thuis', connectedAt: '2026-09-01', status: 'ok' });
-  await repo.upsert('storeConnLink', 's-user', storeConnLinkId('s-user', id), { instanceId: id, store: PROVIDER, displayName: 'Mock thuis' });
+  await repo.upsert('storeConnLink', 's-user', storeConnLinkId('s-user', id), { instanceId: id, store: PROVIDER, displayName: 'Mock thuis', feedSpaceId: receiptFeedId(id, USER_TEST_SUB) });
   await backend.connectorConnPut({ id, provider: PROVIDER, bundle: 'sb_v1.seeded', sessionId: 'ses_1', state: 'active', refreshedAt: '2026-09-01T00:00:00Z', ...extra });
   db.close();
 }
@@ -43,14 +45,16 @@ async function seedReceipts(connectionId: string) {
   const { Repo } = await import('@/db/repo');
   const { DexieBackend } = await import('@/db/backend');
   const { HlcClock } = await import('@/sync/hlc');
-  const { storeFeedId } = await import('@/domain/feedIds');
+  const { receiptFeedId } = await import('@/domain/feedIds');
   const { USER_TEST_SUB } = await import('@/test/harness');
   const db = await userDb();
   const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-  const feed = storeFeedId(USER_TEST_SUB);
-  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:1`, { source: PROVIDER, date: '2026-09-01', totalCents: 1250, merchant: 'Mock Store', instanceId: connectionId, items: [{ name: 'Melk', totalCents: 125 }] });
-  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:2`, { source: PROVIDER, date: '2026-09-20', totalCents: 4999, merchant: 'Mock Store', instanceId: connectionId, documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-2.pdf', fileId: 'rfile-factuur-2' }] });
+  // a connection's receipts live in a feed of their own
+  const feed = receiptFeedId(connectionId, USER_TEST_SUB);
+  await repo.upsert('receipt', feed, `rcp2:mock:${connectionId}:1`, { source: PROVIDER, date: '2026-09-01', totalCents: 1250, merchant: 'Mock Store', instanceId: connectionId, items: [{ name: 'Melk', totalCents: 125 }] });
+  await repo.upsert('receipt', feed, `rcp2:mock:${connectionId}:2`, { source: PROVIDER, date: '2026-09-20', totalCents: 4999, merchant: 'Mock Store', instanceId: connectionId, documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-2.pdf', fileId: 'rfile-factuur-2' }] });
   db.close();
+  return feed;
 }
 
 describe('Connections hub — the failure report (#441 L1)', () => {
@@ -312,7 +316,8 @@ describe('Connections hub (signed-in user)', () => {
     expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
   }, 20_000);
 
-  it('connects a shop through the catalogue, names it, picks its spaces afterwards — the bundle stays in the tab', async () => {
+  it('connects a shop through the catalogue, names it, picks its spaces afterwards — the server shares its receipts there first; the bundle stays in the tab', async () => {
+    const shared: [string, string][] = [];
     renderAppAsUser('/connections', {
       spaces: [
         { id: 's-user', name: 'Personal' },
@@ -322,6 +327,14 @@ describe('Connections hub (signed-in user)', () => {
         ...catalogue,
         ...feeds,
         ...quietSync,
+        'POST /spaces/s-two/stores': (body) => {
+          shared.push(['s-two', (body as { feedSpaceId: string }).feedSpaceId]);
+          return {};
+        },
+        'POST /spaces/s-user/stores': (body) => {
+          shared.push(['s-user', (body as { feedSpaceId: string }).feedSpaceId]);
+          return {};
+        },
         [`POST /connectors/${PROVIDER}/login`]: (body) => {
           const request = body as { connectionId: string; inputs: Record<string, string>; idempotencyKey: string };
           expect(request.inputs).toEqual({ username: 'a@b.nl', password: 'pw' });
@@ -375,6 +388,9 @@ describe('Connections hub (signed-in user)', () => {
     await waitFor(async () => {
       const links = (await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0);
       expect(links.map((l) => l.spaceId).sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
+      // each space reads the connection's own feed, and the server was asked to let it
+      expect(links.map((l) => l.feedSpaceId)).toEqual([receiptFeedId(id, USER_TEST_SUB), receiptFeedId(id, USER_TEST_SUB)]);
+      expect(shared).toEqual([['s-two', receiptFeedId(id, USER_TEST_SUB)], ['s-user', receiptFeedId(id, USER_TEST_SUB)]]);
       const meta = (await db.storeConns.toArray()).find((c) => c.deleted === 0);
       expect(meta?.displayName).toBe('Mock thuis');
       expect(meta?.providerAccountHash).toBeTruthy();
@@ -724,22 +740,22 @@ describe('Connections hub (signed-in user)', () => {
 
   it('#648: Global settings leads to the person’s own receipts — what each shop handed over, by day, opened without a space’s linking', async () => {
     await seedConnection('c-seeded', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
-    await seedReceipts('c-seeded');
-    renderAppAsUser('/connections', { api: { ...catalogue } });
+    const feed = await seedReceipts('c-seeded');
+    renderAppAsUser('/connections', { api: { ...catalogue, ...granting(feed) } });
     await screen.findByTestId('screen-connections');
     await waitFor(() => expect(screen.getByTestId('conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/), { timeout: 5000 });
     expect(screen.queryByTestId('conn-view-receipts')).toBeNull();
     cleanup();
-    renderAppAsUser('/settings/global', { api: { ...catalogue } });
+    renderAppAsUser('/settings/global', { api: { ...catalogue, ...granting(feed) } });
     fireEvent.click(await screen.findByTestId('settings-own-receipts-row', {}, { timeout: 5000 }));
     const list = await screen.findByTestId('screen-connection-receipts');
-    const row = await screen.findByTestId('receipt-row-rcpt:mock:c-seeded:2', {}, { timeout: 5000 });
+    const row = await screen.findByTestId('receipt-row-rcp2:mock:c-seeded:2', {}, { timeout: 5000 });
     expect(row.textContent).toContain('Invoice');
     expect(list.querySelectorAll('[data-testid^="receipt-row-"]')).toHaveLength(2);
     expect(list.querySelector('[data-testid^="receipts-day-"]')).toBeTruthy();
     expect(list.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
     expect(screen.queryByTestId('receipts-filter-unlinked')).toBeNull();
-    fireEvent.click(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2'));
+    fireEvent.click(screen.getByTestId('receipt-row-rcp2:mock:c-seeded:2'));
     await screen.findByTestId('screen-receipt');
     expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[1-9]/);
     expect(screen.getByTestId('receipt-connection').textContent).toContain('Mock thuis');
@@ -754,24 +770,24 @@ describe('Connections hub (signed-in user)', () => {
     const receiptAi = await import('@/features/shopping/receiptAi');
     const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
     await seedConnection('c-seeded', { lastSyncAt: new Date().toISOString() });
-    await seedReceipts('c-seeded');
+    const feed = await seedReceipts('c-seeded');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
     const { HlcClock } = await import('@/sync/hlc');
-    const { storeFeedId } = await import('@/domain/feedIds');
+    const { scansFeedId } = await import('@/domain/feedIds');
     const { USER_TEST_SUB } = await import('@/test/harness');
     const db = await userDb();
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-    await repo.upsert('receipt', storeFeedId(USER_TEST_SUB), 'own-scan', { source: 'photo', date: '2026-09-21', totalCents: 788, merchant: 'Corner Shop' });
+    await repo.upsert('receipt', scansFeedId(USER_TEST_SUB), 'own-scan', { source: 'photo', date: '2026-09-21', totalCents: 788, merchant: 'Corner Shop' });
     db.close();
     try {
-      renderAppAsUser('/connections/receipts', { api: { ...catalogue } });
+      renderAppAsUser('/connections/receipts', { api: { ...catalogue, ...granting(feed, scansFeedId(USER_TEST_SUB)) } });
       await screen.findByTestId('screen-connection-receipts');
       const scan = await screen.findByTestId('receipt-row-own-scan', {}, { timeout: 5000 });
       expect(scan.textContent).toContain('Corner Shop');
       expect(scan.textContent).toContain('Scanned');
       fireEvent.click(screen.getByTestId('receipts-filter-scanned'));
-      await waitFor(() => expect(screen.queryByTestId('receipt-row-rcpt:mock:c-seeded:1')).toBeNull());
+      await waitFor(() => expect(screen.queryByTestId('receipt-row-rcp2:mock:c-seeded:1')).toBeNull());
       expect(screen.getByTestId('receipt-row-own-scan')).toBeTruthy();
 
       expect((await screen.findByTestId('receipts-autoread-state')).textContent).toBe('OFF');
@@ -810,15 +826,31 @@ describe('Connections hub (signed-in user)', () => {
     await waitFor(() => expect(screen.getByTestId('conn-state-c-failed').textContent).toMatch(/Last attempt failed · The party changed its site/), { timeout: 5000 });
   }, 15_000);
 
-  it('a connection whose session died reads "reconnect", and removing it signs the party out', async () => {
+  it('a connection whose session died reads "reconnect"; removing it signs the party out and takes its receipts off every payment, feed and all (#648)', async () => {
     await seedConnection('c-dead', { state: 'needs_reauth', bundle: undefined });
+    const feed = await seedReceipts('c-dead');
+    {
+      const { Repo } = await import('@/db/repo');
+      const { DexieBackend } = await import('@/db/backend');
+      const { HlcClock } = await import('@/sync/hlc');
+      const seed = await userDb();
+      const repo = new Repo(new DexieBackend(seed), new HlcClock('t'), { trackOutbox: false });
+      await repo.upsert('receiptLink', 's-user', receiptLinkId('s-user', 'rcp2:mock:c-dead:1'), { receiptId: 'rcp2:mock:c-dead:1', feedSpaceId: feed, txId: 'tx-1', auto: 0 });
+      seed.close();
+    }
     let loggedOut = false;
+    const erased: string[] = [];
     renderAppAsUser('/connections', {
       api: {
         ...catalogue,
+        ...granting(feed),
         [`DELETE /connectors/${PROVIDER}/sessions/ses_1`]: () => {
           loggedOut = true;
           return { loggedOut: true };
+        },
+        [`DELETE /me/feeds/${feed}`]: () => {
+          erased.push(feed);
+          return {};
         },
       },
     });
@@ -837,7 +869,10 @@ describe('Connections hub (signed-in user)', () => {
       expect(await db.connectorConns.toArray()).toHaveLength(0);
       expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
       expect((await db.storeConnLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
+      expect((await db.receipts.toArray()).map((r) => r.deleted)).toEqual([1, 1]);
+      expect((await db.receiptLinks.toArray()).map((l) => l.deleted)).toEqual([1]);
     });
+    await waitFor(() => expect(erased).toEqual([feed]));
     db.close();
   }, 20_000);
 
@@ -1237,6 +1272,418 @@ describe('Connections hub (signed-in user)', () => {
       await waitFor(() => expect(opened).toEqual(['https://bank.example/consent/1']));
     } finally {
       delete (globalThis as { Capacitor?: unknown }).Capacitor;
+    }
+  }, 20_000);
+});
+
+/** the rows a test writes as they would have arrived: the user's own database, no outbox */
+async function seedRows(write: (repo: import('@/db/repo').Repo, db: import('@/db/schema').MunniDB) => Promise<void>) {
+  const { Repo } = await import('@/db/repo');
+  const { DexieBackend } = await import('@/db/backend');
+  const { HlcClock } = await import('@/sync/hlc');
+  const db = await userDb();
+  await write(new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false }), db);
+  db.close();
+}
+
+const TWO_SPACES = [
+  { id: 's-user', name: 'Personal' },
+  { id: 's-two', name: 'Second', kind: 'shared' as const },
+];
+const ticked = (spaceId: string) => !!screen.getByTestId(`conn-space-${spaceId}`).querySelector('.mdi-checkbox-marked');
+
+describe('Connections hub: which spaces read a connection’s receipts (#648)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    usePendingLogins.setState({ logins: {} });
+    useSyncActivity.setState({ activity: {} });
+  });
+
+  it('a space whose payments hold the connection’s receipts is asked about first, with how many; yes takes them off there and tells the server — a space without any is let go at once', async () => {
+    await seedConnection('c-share', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    const feed = await seedReceipts('c-share');
+    await seedRows(async (repo) => {
+      await repo.upsert('storeConnLink', 's-two', storeConnLinkId('s-two', 'c-share'), { instanceId: 'c-share', store: PROVIDER, displayName: 'Mock thuis', feedSpaceId: feed });
+      await repo.upsert('receiptLink', 's-user', receiptLinkId('s-user', `rcp2:mock:c-share:1`), { receiptId: 'rcp2:mock:c-share:1', feedSpaceId: feed, txId: 'tx-1', auto: 0 });
+    });
+    const unshared: string[] = [];
+    const unshare = (spaceId: string) => () => {
+      unshared.push(spaceId);
+      return new Response(null, { status: 204 });
+    };
+    renderAppAsUser('/connections', {
+      spaces: TWO_SPACES,
+      api: {
+        ...catalogue,
+        ...feeds,
+        'GET /me/spaces': () => ['s-user', 's-two', feed],
+        [`DELETE /spaces/s-user/stores/${feed}`]: unshare('s-user'),
+        [`DELETE /spaces/s-two/stores/${feed}`]: unshare('s-two'),
+      },
+    });
+    fireEvent.click(await screen.findByTestId('conn-manage-c-share', {}, { timeout: 5000 }));
+    await screen.findByTestId('conn-space-s-two', {}, { timeout: 5000 });
+    await waitFor(() => expect(ticked('s-user') && ticked('s-two')).toBe(true));
+
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    await waitFor(() => expect(ticked('s-two')).toBe(false));
+    expect(screen.queryByTestId('conn-manage-spaces-unshare-body')).toBeNull();
+    expect(unshared).toEqual(['s-two']);
+
+    fireEvent.click(screen.getByTestId('conn-space-s-user'));
+    expect((await screen.findByTestId('conn-manage-spaces-unshare-body')).textContent).toBe('These receipts leave Personal. 1 transaction loses its receipt.');
+    fireEvent.click(screen.getByTestId('conn-manage-spaces-unshare-cancel'));
+    expect(ticked('s-user')).toBe(true);
+    expect(unshared).toEqual(['s-two']);
+
+    fireEvent.click(screen.getByTestId('conn-space-s-user'));
+    await waitFor(() => expect(screen.getByTestId('conn-manage-spaces-unshare-body').textContent).toContain('Personal'));
+    fireEvent.click(screen.getByTestId('conn-manage-spaces-unshare-confirm'));
+    await waitFor(() => expect(ticked('s-user')).toBe(false));
+    expect(unshared).toEqual(['s-two', 's-user']);
+    const db = await userDb();
+    await waitFor(async () => {
+      expect((await db.storeConnLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
+      expect((await db.receiptLinks.toArray()).map((l) => l.deleted)).toEqual([1]);
+      // the receipts are the connection's still: only the spaces stopped reading them
+      expect((await db.receipts.toArray()).map((r) => r.deleted)).toEqual([0, 0]);
+    });
+    db.close();
+  }, 25_000);
+
+  it('a share the server does not take says so, and the space stays unticked', async () => {
+    await seedConnection('c-offline', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    const feed = receiptFeedId('c-offline', USER_TEST_SUB);
+    renderAppAsUser('/connections', {
+      spaces: TWO_SPACES,
+      api: {
+        ...catalogue,
+        ...feeds,
+        'GET /me/spaces': () => ['s-user', 's-two', feed],
+        'POST /spaces/s-two/stores': () => envelope(500, 'server_error'),
+      },
+    });
+    fireEvent.click(await screen.findByTestId('conn-manage-c-offline', {}, { timeout: 5000 }));
+    await screen.findByTestId('conn-space-s-two', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('conn-manage-spaces-failed')).toBeNull();
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    expect((await screen.findByTestId('conn-manage-spaces-failed', {}, { timeout: 5000 })).textContent).toContain('Sharing needs a connection');
+    expect(ticked('s-two')).toBe(false);
+    const db = await userDb();
+    expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0).map((l) => l.spaceId)).toEqual(['s-user']);
+    db.close();
+  }, 20_000);
+
+  it('removing a connection says how many transactions lose their receipt, and then takes the receipts and the links to them along', async () => {
+    await seedConnection('c-gone', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    const feed = await seedReceipts('c-gone');
+    await seedRows(async (repo) => {
+      await repo.upsert('receiptLink', 's-user', receiptLinkId('s-user', 'rcp2:mock:c-gone:1'), { receiptId: 'rcp2:mock:c-gone:1', feedSpaceId: feed, txId: 'tx-1', auto: 0 });
+      await repo.upsert('receiptLink', 's-user', receiptLinkId('s-user', 'rcp2:mock:c-gone:2'), { receiptId: 'rcp2:mock:c-gone:2', feedSpaceId: feed, txId: 'tx-2', alsoTxIds: ['tx-3'], auto: 0 });
+    });
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...granting(feed),
+        [`DELETE /connectors/${PROVIDER}/sessions/ses_1`]: () => ({ loggedOut: true }),
+        [`DELETE /me/feeds/${feed}`]: () => ({}),
+      },
+    });
+    fireEvent.click(await screen.findByTestId('conn-manage-c-gone', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('conn-remove'));
+    const body = await screen.findByTestId('conn-remove-body');
+    expect(body.textContent).toMatch(/also from the transactions they are on\. 3 transactions lose their receipt\.$/);
+    fireEvent.click(screen.getByTestId('conn-remove-confirm'));
+    await waitFor(() => expect(screen.queryByTestId('conn-card-c-gone')).toBeNull(), { timeout: 5000 });
+    const db = await userDb();
+    await waitFor(async () => {
+      expect((await db.receipts.toArray()).map((r) => r.deleted)).toEqual([1, 1]);
+      expect((await db.receiptLinks.toArray()).map((l) => l.deleted)).toEqual([1, 1]);
+      expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
+    });
+    db.close();
+  }, 20_000);
+
+  it('a connection whose receipts are on no transaction is removed without a count', async () => {
+    await seedConnection('c-quiet', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    const feed = await seedReceipts('c-quiet');
+    renderAppAsUser('/connections', { api: { ...catalogue, ...granting(feed) } });
+    fireEvent.click(await screen.findByTestId('conn-manage-c-quiet', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('conn-remove'));
+    expect((await screen.findByTestId('conn-remove-body')).textContent).toBe(
+      'The party is signed out. Its receipts are deleted with this connection, also from the transactions they are on.',
+    );
+  }, 20_000);
+
+  it('the connect flow’s space step stays open and says so when the server does not take the share', async () => {
+    renderAppAsUser('/connections', {
+      spaces: TWO_SPACES,
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        'POST /spaces/s-two/stores': () => envelope(503, 'unavailable'),
+        [`POST /connectors/${PROVIDER}/login`]: () => ({ sessionId: 'ses_1', state: 'active', bundle: 'sb_v1.abc', providerAccount: { displayName: 'Tester', externalId: '779' }, custody: 'ephemeral', notes: [] }),
+      },
+    });
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    fireEvent.click(await screen.findByTestId('conn-name-save', {}, { timeout: 5000 }));
+
+    await screen.findByTestId('conn-spaces-step', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    fireEvent.click(screen.getByTestId('conn-spaces-save'));
+    expect((await screen.findByTestId('conn-spaces-failed', {}, { timeout: 5000 })).textContent).toContain('Sharing needs a connection');
+    expect(screen.getByTestId('conn-spaces-step')).toBeTruthy();
+    const db = await userDb();
+    expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toHaveLength(0);
+    db.close();
+  }, 25_000);
+
+  it('a failed share skipped past is not still reported on the next connection’s space step', async () => {
+    let logins = 0;
+    renderAppAsUser('/connections', {
+      spaces: TWO_SPACES,
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        'POST /spaces/s-two/stores': () => envelope(503, 'unavailable'),
+        [`POST /connectors/${PROVIDER}/login`]: () => {
+          logins += 1;
+          return { sessionId: `ses_${logins}`, state: 'active', bundle: `sb_v1.${logins}`, notes: [] };
+        },
+      },
+    });
+    // a closed sheet stays mounted under test: the naming step is known by the name it proposes
+    const connect = async (proposed: string) => {
+      fireEvent.click(await screen.findByTestId('conn-add-open'));
+      fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+      fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+      fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+      fireEvent.click(screen.getByTestId('connect-next'));
+      await waitFor(() => expect((screen.getByTestId('conn-name-input') as HTMLInputElement).value).toBe(proposed), { timeout: 5000 });
+      fireEvent.click(screen.getByTestId('conn-name-save'));
+      await screen.findByTestId('conn-spaces-step', {}, { timeout: 5000 });
+    };
+    await connect('Mock Store');
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    fireEvent.click(screen.getByTestId('conn-spaces-save'));
+    await screen.findByTestId('conn-spaces-failed', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('conn-spaces-skip'));
+    await waitFor(() => expect(screen.queryByTestId('conn-spaces-step')).toBeNull());
+
+    await connect('Mock Store 2');
+    expect(screen.queryByTestId('conn-spaces-failed')).toBeNull();
+  }, 30_000);
+});
+
+describe('The person’s own receipts (#648)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    usePendingLogins.setState({ logins: {} });
+    useSyncActivity.setState({ activity: {} });
+  });
+
+  it('their scans are shared with the spaces they tick, the way a connection is: the server first, then the space reads the scans', async () => {
+    const { scansFeedId } = await import('@/domain/feedIds');
+    const scans = scansFeedId(USER_TEST_SUB);
+    const shared: unknown[] = [];
+    renderAppAsUser('/connections/receipts', {
+      spaces: TWO_SPACES,
+      api: {
+        ...catalogue,
+        'GET /me/spaces': () => ['s-user', 's-two', scans],
+        'POST /feeds': () => ({ feedSpaceId: scans, owned: true }),
+        'POST /spaces/s-two/stores': (body) => {
+          shared.push(body);
+          return {};
+        },
+      },
+    });
+    const sharing = await screen.findByTestId('receipts-scans-sharing', {}, { timeout: 5000 });
+    await waitFor(() => expect(sharing.querySelector('[data-testid="conn-space-s-two"]')).toBeTruthy());
+    expect(ticked('s-two')).toBe(false);
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    await waitFor(() => expect(ticked('s-two')).toBe(true), { timeout: 5000 });
+    expect(shared).toEqual([{ feedSpaceId: scans }]);
+    const db = await userDb();
+    expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toMatchObject([{ spaceId: 's-two', instanceId: scans, store: 'photo', feedSpaceId: scans }]);
+    db.close();
+  }, 20_000);
+
+  it('the photo setting shows what becomes of a photo after a reading, and the sheet changes it for this device', async () => {
+    const api = await import('@/lib/api');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    try {
+      renderAppAsUser('/connections/receipts', { api: { ...catalogue } });
+      const row = await screen.findByTestId('receipts-cleanup-row', {}, { timeout: 5000 });
+      expect(row.textContent).toContain('Keep the photo');
+      fireEvent.click(row);
+      await screen.findByTestId('receipts-cleanup-sheet');
+      expect(screen.getByTestId('receipts-cleanup-off').getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(screen.getByTestId('receipts-cleanup-certain'));
+      await waitFor(() => expect(screen.getByTestId('receipts-cleanup-row').textContent).toContain('Delete it when the reading adds up'));
+      expect(localStorage.getItem('munni_receipt_photo_cleanup')).toBe('certain');
+
+      fireEvent.click(screen.getByTestId('receipts-cleanup-row'));
+      fireEvent.click(await screen.findByTestId('receipts-cleanup-verified'));
+      await waitFor(() => expect(screen.getByTestId('receipts-cleanup-row').textContent).toContain('Delete it once I use the reading'));
+      expect(localStorage.getItem('munni_receipt_photo_cleanup')).toBe('verified');
+      fireEvent.click(screen.getByTestId('receipts-cleanup-row'));
+      fireEvent.click(await screen.findByTestId('receipts-cleanup-off'));
+      await waitFor(() => expect(screen.getByTestId('receipts-cleanup-row').textContent).toContain('Keep the photo'));
+      expect(localStorage.getItem('munni_receipt_photo_cleanup')).toBeNull();
+    } finally {
+      caps.mockRestore();
+    }
+  }, 20_000);
+
+  it('categorising new fetched receipts switches on only with the reader’s yes, and from today on', async () => {
+    const api = await import('@/lib/api');
+    const { receiptAutoCategoriseFrom } = await import('@/features/shopping/receiptAi');
+    const { localToday } = await import('@/application/recurring');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    try {
+      renderAppAsUser('/connections/receipts', { api: { ...catalogue } });
+      expect((await screen.findByTestId('receipts-autocat-state', {}, { timeout: 5000 })).textContent).toBe('OFF');
+      fireEvent.click(screen.getByTestId('receipts-autocat-toggle'));
+      fireEvent.click(await screen.findByTestId('receipt-ai-no'));
+      expect(screen.getByTestId('receipts-autocat-state').textContent).toBe('OFF');
+      expect(receiptAutoCategoriseFrom()).toBeNull();
+
+      fireEvent.click(screen.getByTestId('receipts-autocat-toggle'));
+      fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
+      await waitFor(() => expect(screen.getByTestId('receipts-autocat-state').textContent).toBe('ON'));
+      expect(receiptAutoCategoriseFrom()).toBe(localToday());
+
+      fireEvent.click(screen.getByTestId('receipts-autocat-toggle'));
+      expect(screen.getByTestId('receipts-autocat-state').textContent).toBe('OFF');
+      expect(receiptAutoCategoriseFrom()).toBeNull();
+    } finally {
+      caps.mockRestore();
+    }
+  }, 20_000);
+
+  it('“categorise the receipts you have” asks about the line names nobody asked about and says how many receipts learned something', async () => {
+    const api = await import('@/lib/api');
+    const { setReceiptAiChoice } = await import('@/features/shopping/receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    setReceiptAiChoice('yes');
+    await seedConnection('c-cat', { lastSyncAt: new Date().toISOString() });
+    const feed = await seedReceipts('c-cat');
+    const asked: unknown[] = [];
+    try {
+      renderAppAsUser('/connections/receipts', {
+        api: {
+          ...catalogue,
+          ...granting(feed),
+          'POST /receipts/categorise': (body) => {
+            asked.push(body);
+            return { state: 'ok', categories: ['groceryDairy'], until: null };
+          },
+        },
+      });
+      await screen.findByTestId('receipt-row-rcp2:mock:c-cat:1', {}, { timeout: 5000 });
+      const row = await screen.findByTestId('receipts-categorise-all');
+      expect(row.textContent).toContain('names not asked yet');
+      fireEvent.click(row);
+      await waitFor(() => expect(screen.getByTestId('receipts-categorise-all').textContent).toContain('1 receipt has suggested categories now.'), { timeout: 5000 });
+      expect(asked).toHaveLength(1);
+      expect(asked[0]).toMatchObject({ merchant: 'Mock Store', names: ['Melk'] });
+      const db = await userDb();
+      expect((await db.receipts.get('rcp2:mock:c-cat:1'))?.itemCats).toEqual({ melk: 'groceryDairy' });
+      db.close();
+
+      // every name is known now: a second tap asks nothing
+      fireEvent.click(screen.getByTestId('receipts-categorise-all'));
+      await waitFor(() => expect(screen.getByTestId('receipts-categorise-all').textContent).toContain('every line name is known'));
+      expect(asked).toHaveLength(1);
+    } finally {
+      caps.mockRestore();
+    }
+  }, 20_000);
+
+  it('a fetched receipt of mine offers the reader’s categories for its lines; the lines then show them and the offer is gone', async () => {
+    const api = await import('@/lib/api');
+    const { setReceiptAiChoice } = await import('@/features/shopping/receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    setReceiptAiChoice('yes');
+    await seedConnection('c-door', { lastSyncAt: new Date().toISOString() });
+    const feed = await seedReceipts('c-door');
+    const asked: unknown[] = [];
+    try {
+      renderAppAsUser('/connections/receipts/rcp2:mock:c-door:1', {
+        api: {
+          ...catalogue,
+          ...granting(feed),
+          'POST /receipts/categorise': (body) => {
+            asked.push(body);
+            return { state: 'ok', categories: ['sweets'], until: null };
+          },
+        },
+      });
+      await screen.findByText('Melk', {}, { timeout: 5000 });
+      expect(screen.queryByTestId('receipt-item-cat-0')).toBeNull();
+      const door = await screen.findByTestId('receipt-categorise-ai', {}, { timeout: 5000 });
+      expect(door.textContent).toBe('Suggest categories for the lines');
+      fireEvent.click(door);
+      expect((await screen.findByTestId('receipt-item-cat-0', {}, { timeout: 5000 })).textContent).toBe('Eating out › Treats');
+      expect(asked).toMatchObject([{ merchant: 'Mock Store', names: ['Melk'] }]);
+      await waitFor(() => expect(screen.queryByTestId('receipt-categorise-ai')).toBeNull());
+    } finally {
+      caps.mockRestore();
+    }
+  }, 20_000);
+
+  it('the reader says it has done all it may: the receipt says to try later and keeps its lines as they were', async () => {
+    const api = await import('@/lib/api');
+    const { setReceiptAiChoice } = await import('@/features/shopping/receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    setReceiptAiChoice('yes');
+    await seedConnection('c-later', { lastSyncAt: new Date().toISOString() });
+    const feed = await seedReceipts('c-later');
+    try {
+      renderAppAsUser('/connections/receipts/rcp2:mock:c-later:1', {
+        api: { ...catalogue, ...granting(feed), 'POST /receipts/categorise': () => ({ state: 'limited', categories: null, until: '2026-11-25T00:00:00Z' }) },
+      });
+      fireEvent.click(await screen.findByTestId('receipt-categorise-ai', {}, { timeout: 5000 }));
+      expect((await screen.findByTestId('receipt-categorise-note', {}, { timeout: 5000 })).textContent).toContain('Try again later');
+      expect(screen.queryByTestId('receipt-item-cat-0')).toBeNull();
+    } finally {
+      caps.mockRestore();
+    }
+  }, 20_000);
+
+  it('a member who only reads another person’s shop receipts is not offered to categorise them', async () => {
+    const api = await import('@/lib/api');
+    const { setReceiptAiChoice } = await import('@/features/shopping/receiptAi');
+    const { SPACE_ROLES_KEY } = await import('@/sync/spaceAccess');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    setReceiptAiChoice('yes');
+    const FRIEND = 'feed-friend';
+    await seedRows(async (repo, db) => {
+      await repo.upsert('storeConnLink', 's-user', storeConnLinkId('s-user', 'c-friend'), { instanceId: 'c-friend', store: PROVIDER, displayName: 'Friend’s shop', feedSpaceId: FRIEND });
+      await repo.upsert('receipt', FRIEND, 'rcp2:mock:c-friend:1', { source: PROVIDER, date: '2026-09-01', totalCents: 1250, merchant: 'Mock Store', instanceId: 'c-friend', items: [{ name: 'Melk', totalCents: 125 }] });
+      // the server last named this feed read-only for the user: the device starts out knowing it
+      await db.meta.put({ key: SPACE_ROLES_KEY, value: { [FRIEND]: 'reader' } });
+    });
+    try {
+      renderAppAsUser('/receipts/rcp2:mock:c-friend:1', { roles: { [FRIEND]: 'reader' }, api: { ...catalogue, 'GET /me/spaces': () => ['s-user', FRIEND] } });
+      await screen.findByText('Melk', {}, { timeout: 5000 });
+      await waitFor(() => expect(caps).toHaveBeenCalled());
+      await caps.mock.results[0].value;
+      await screen.findByTestId('receipt-view-total');
+      expect(screen.queryByTestId('receipt-categorise-ai')).toBeNull();
+    } finally {
+      caps.mockRestore();
     }
   }, 20_000);
 });

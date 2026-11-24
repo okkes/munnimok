@@ -8,6 +8,7 @@ import { useSession } from './session';
 import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
 import { useConnectionKeepAlive } from '@/application/connections';
+import { useReceiptAutoCategorise } from '@/features/shopping/useCategoriser';
 import { useReviewSuggestionTriggers } from '@/application/reviewSuggestions';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { osNotifyAllowed } from '@/application/spaceNotifications';
@@ -157,6 +158,7 @@ function RecurringReminders() {
 
 function StoreKeepAlive() {
   useConnectionKeepAlive();
+  useReceiptAutoCategorise();
   return null;
 }
 

@@ -67,6 +67,7 @@ const ConnectionsScreen = lazyScreen(() => import('@/features/connectors/Connect
 const AgentsScreen = lazyScreen(() => import('@/features/connectors/AgentsScreen'), 'AgentsScreen');
 const ReceiptsScreen = lazyScreen(() => import('@/features/shopping/ReceiptsScreen'), 'ReceiptsScreen');
 const ReceiptScreen = lazyScreen(() => import('@/features/shopping/ReceiptScreen'), 'ReceiptScreen');
+const ReceiptScanScreen = lazyScreen(() => import('@/features/shopping/ReceiptScanScreen'), 'ReceiptScanScreen');
 const ConnectionReceiptsScreen = lazyScreen(() => import('@/features/connectors/ConnectionReceiptsScreen'), 'ConnectionReceiptsScreen');
 const PortfolioScreen = lazyScreen(() => import('@/features/portfolio/PortfolioScreen'), 'PortfolioScreen');
 const HoldingDetailScreen = lazyScreen(() => import('@/features/portfolio/HoldingDetailScreen'), 'HoldingDetailScreen');
@@ -325,6 +326,8 @@ const receiptDetailRoute = createRoute({
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
 });
+// #648: the app icon's "Scan a receipt" (munni://scan, the installed web app's shortcut)
+const receiptScanRoute = createRoute({ getParentRoute: () => appRoute, path: '/scan', component: ReceiptScanScreen });
 const connectionReceiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts', component: ConnectionReceiptsScreen });
 function ConnectionReceipt() {
   const { receiptId } = connectionReceiptDetailRoute.useParams();
@@ -423,6 +426,7 @@ export const routeTree = rootRoute.addChildren([
     connectionsRoute,
     agentsRoute,
     receiptsRoute,
+    receiptScanRoute,
     receiptDetailRoute,
     connectionReceiptsRoute,
     connectionReceiptDetailRoute,

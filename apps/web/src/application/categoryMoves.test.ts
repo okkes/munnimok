@@ -6,7 +6,9 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { CATEGORY_BY_ID, childrenOf, mainCatOf } from '@/domain/categories';
-import { GROCERY_SUB_BY_NAME, MERGED_BUILTINS, movedIds, movedStory } from '@/domain/categoryMoves';
+import { GROCERY_SUB_BY_NAME, MERGED_BUILTINS, movedIds, movedItemCats, movedStory } from '@/domain/categoryMoves';
+import { receiptLinkId } from '@/domain/feedIds';
+import { DEMO_SCANS_FEED_ID, DEMO_STORE_FEED_ID, demoReceiptFeedId } from './storeFeed';
 import { applyCategoryMoves, foldOwnGroceries } from './categoryMoves';
 
 const SPACE = 'sp1';
@@ -61,6 +63,12 @@ describe('#653: the catalog after Groceries got a main of its own', () => {
     expect(movedIds(['softDrinks', 'coffee', 'sweets'], MERGED_BUILTINS)).toEqual(['coffee', 'sweets']);
     expect(movedIds(['sweets'], MERGED_BUILTINS)).toBeNull();
   });
+
+  it('#648: the categories a reader suggested for a fetched receipt’s line names follow a merge; a name asked with no answer stays asked', () => {
+    expect(movedItemCats({ cola: 'softDrinks', melk: 'groceryDairy', cadeaukaart: '' }, MERGED_BUILTINS)).toEqual({ cola: 'coffee', melk: 'groceryDairy', cadeaukaart: '' });
+    expect(movedItemCats({ melk: 'groceryDairy' }, MERGED_BUILTINS)).toBeNull();
+    expect(movedItemCats(undefined, MERGED_BUILTINS)).toBeNull();
+  });
 });
 
 describe('#653: what a device still holds follows the catalog', () => {
@@ -99,9 +107,9 @@ describe('#653: what a device still holds follows the catalog', () => {
     await repo.upsert('recurring', SPACE, 'r1', { name: 'Box', kind: 'subscription', amountCents: 5000, every: 'week', dueDay: 1, active: 1, catId: 'own-main' });
     await repo.upsert('budget', SPACE, 'b1', { name: 'Food', amountCents: 40000, every: 'month', anchor: '2026-01-01', catIds: ['consumption', 'own-main', 'softDrinks'] });
     await repo.upsert('planSubject', SPACE, 'ps1', { planId: 'p', segment: 'expenses', order: 1, name: 'Food', catIds: ['own-main'], excludeCatIds: ['own-baby', 'own-dairy'] });
-    await repo.upsert('receiptLink', SPACE, 'l1', {
-      source: 'photo', date: '2026-11-01', totalCents: 500, auto: 0,
-      items: [{ name: 'Melk', totalCents: 500, catId: 'own-dairy' }],
+    await repo.upsert('receipt', SPACE, 'r1', { source: 'photo', date: '2026-11-01', totalCents: 500, items: [{ name: 'Melk', totalCents: 500, catId: 'own-dairy' }] });
+    await repo.upsert('receiptLink', SPACE, receiptLinkId(SPACE, 'r1'), {
+      receiptId: 'r1', feedSpaceId: SPACE, txId: 't-dairy', auto: 0,
       picks: { 't-dairy': [{ line: 0, catId: 'own-dairy', amountCents: 500 }] },
     });
     return { store, repo };
@@ -125,8 +133,8 @@ describe('#653: what a device still holds follows the catalog', () => {
     const subject = await store.get('planSubject', 'ps1');
     expect(subject?.catIds).toEqual(['grocery']);
     expect(subject?.excludeCatIds).toEqual(['own-baby', 'groceryDairy']);
-    const link = await store.get('receiptLink', 'l1');
-    expect(link?.items?.[0].catId).toBe('groceryDairy');
+    expect((await store.get('receipt', 'r1'))?.items?.[0].catId).toBe('groceryDairy');
+    const link = await store.get('receiptLink', receiptLinkId(SPACE, 'r1'));
     expect(link?.picks?.['t-dairy'][0]).toMatchObject({ catId: 'groceryDairy', amountCents: 500 });
     const space = await store.get('space', SPACE);
     expect(space?.hiddenMains).toEqual(['grocery']);
@@ -149,6 +157,24 @@ describe('#653: what a device still holds follows the catalog', () => {
     expect((await store.get('transaction', 't-dairy'))?.catId).toBe('groceryDairy');
     expect((await store.get('transaction', 't-spread'))?.catId).toBe('groceryCooking');
     expect((await store.get('category', 'own-main'))?.deleted).toBe(1);
+  });
+
+  it('the lines of the person’s own scans and fetched receipts follow too: those receipts live in feeds, not in a space', async () => {
+    const { store, repo } = await seed();
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
+    try {
+      const line = [{ name: 'Cola', totalCents: 250, catId: 'softDrinks' }];
+      await repo.upsert('receipt', DEMO_SCANS_FEED_ID, 'scan-1', { source: 'photo', date: '2026-11-01', totalCents: 250, items: line });
+      await repo.upsert('storeConn', DEMO_STORE_FEED_ID, 'conn-1', { store: 'ah', displayName: 'Shop', connectedAt: '2026-11-01', status: 'ok' });
+      await repo.upsert('receipt', demoReceiptFeedId('conn-1'), 'rcp2:ah:conn-1:o-1', { source: 'ah', date: '2026-11-01', totalCents: 250, items: line });
+      await repo.upsert('receipt', demoReceiptFeedId('conn-1'), 'rcp2:ah:conn-1:o-2', { source: 'ah', date: '2026-11-02', totalCents: 250, items: [{ name: 'Cola', totalCents: 250 }], itemCats: { cola: 'softDrinks' } });
+      await applyCategoryMoves(store, repo);
+      expect((await store.get('receipt', 'scan-1'))?.items?.[0].catId).toBe('coffee');
+      expect((await store.get('receipt', 'rcp2:ah:conn-1:o-1'))?.items?.[0].catId).toBe('coffee');
+      expect((await store.get('receipt', 'rcp2:ah:conn-1:o-2'))?.itemCats).toEqual({ cola: 'coffee' });
+    } finally {
+      localStorage.removeItem('munni_session');
+    }
   });
 
   it('a space this identity only reads is left to the people who write it', async () => {
