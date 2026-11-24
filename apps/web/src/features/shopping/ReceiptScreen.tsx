@@ -8,9 +8,10 @@ import { useReceiptFile } from '@/application/receiptFiles';
 import { useReceiptOps } from '@/application/receipts';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { connectorsAvailable, useStoreConnMetas } from '@/application/connections';
-import { globalAsEntry, linkAsEntry, spaceReceipts } from '@/application/receiptLinks';
+import { globalAsEntry, includedFeeds, joinReceipt, linkAsEntry, paymentsHolding } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
-import { myStoreFeedId } from '@/application/storeFeed';
+import { myScansFeedId } from '@/application/storeFeed';
+import { receiptLinkId } from '@/domain/feedIds';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
@@ -20,37 +21,41 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { ReceiptAiRead } from './ReceiptAiRead';
+import { CategoriseDoor, PhotoCleanupDoor, ShareScansDoor } from './ReceiptDoors';
+import { uncategorisedNames } from '@/domain/receiptCats';
 import { ReceiptFacts } from './ReceiptFacts';
 import { keepRead } from './keepRead';
 import { useFileByReceipt } from './useFileByReceipt';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
-import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 
-// born: on a transaction, the link IS the receipt; own: kept without a transaction;
-// linked: an own photo attached or proposed in this space (#567)
-const photoKind = (entry: ReceiptEntry | null | undefined): 'born' | 'own' | 'linked' | null => {
+// born: the space's own (a photo taken on a transaction); own: a scan seen without a link here;
+// linked: a scan this space put on a transaction, or is asked about (#567)
+const photoKind = (entry: ReceiptEntry | null | undefined, spaceId: string): 'born' | 'own' | 'linked' | null => {
   if (entry?.data.source !== 'photo') return null;
-  if (entry.kind === 'global') return 'own';
-  return entry.data.id === entry.linkId ? 'born' : 'linked';
+  if (entry.data.spaceId === spaceId) return 'born';
+  return entry.kind === 'global' ? 'own' : 'linked';
+};
+
+/** a link lets go of its payment(s) where the space may be changed; the receipt itself is deleted by its owner, where no
+ *  link stands in front of it — from their own list, in the space that made it, or where the space does not read it */
+const mayRemove = (at: { linked: boolean; mine: boolean; spaceLocked: boolean; outside: boolean }): boolean => {
+  if (at.linked) return !at.spaceLocked;
+  return at.mine && (at.outside || !at.spaceLocked);
 };
 
 /** where a receipt is looked at from: a space (links, matching) or the connections hub (the party's own list) */
 export type ReceiptScope = 'space' | 'global';
 
-const globalRow = async (store: StorageBackend, receiptId: string): Promise<ReceiptRow | undefined> => {
-  const feedId = myStoreFeedId();
-  if (!feedId) return undefined;
-  return (await store.bySpace('receipt', feedId)).find((r) => r.deleted === 0 && r.id === receiptId);
-};
-
+/** the receipt where it lives, with what this space decided about it when it is looked at from a space */
 async function findEntry(store: StorageBackend, scope: ReceiptScope, spaceId: string, receiptId: string): Promise<ReceiptEntry | null> {
+  const receipt = await store.get('receipt', receiptId);
+  if (receipt?.deleted !== 0) return null;
   if (scope === 'space') {
-    const link = (await spaceReceipts(store, spaceId)).find((l) => (l.receiptId ?? l.id) === receiptId);
-    if (link) return linkAsEntry(link);
+    const link = await store.get('receiptLink', receiptLinkId(spaceId, receiptId));
+    if (link?.deleted === 0) return linkAsEntry(joinReceipt(link, receipt));
   }
-  const row = await globalRow(store, receiptId);
-  return row ? globalAsEntry(row) : null;
+  return globalAsEntry(receipt);
 }
 
 // from a space it carries the matching; from the connections hub it is the party's document as fetched,
@@ -77,6 +82,8 @@ export function ReceiptScreen({
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const entry = useQuery(store, async () => findEntry(store, scope, spaceId, receiptId), [scope, spaceId, receiptId]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #648: a receipt that goes takes itself off every payment it is on — said before it happens
+  const [impact, setImpact] = useState(0);
   const [picking, setPicking] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
@@ -85,9 +92,16 @@ export function ReceiptScreen({
 
   const receipt = entry?.data ?? null;
   const picture = useReceiptFile(receipt?.imageId);
+  const feedId = receipt?.spaceId;
+  // #648: a receipt is put on a payment only in a space that holds it or reads the feed it lives in
+  const inSpace = useQuery(store, async () => !feedId || feedId === spaceId || (await includedFeeds(store, spaceId)).has(feedId), [spaceId, feedId]);
+  // the receipt is whose feed (or space) it lives in: only they change or delete it
+  const mine = !!receipt && receiptOps.canEdit(receipt);
+  const spaceOwn = receipt?.spaceId === spaceId;
 
   useEffect(() => {
     setConfirmDelete(false);
+    setImpact(0);
     setPicking(false);
     setShowMore(false);
     setOcrState('idle');
@@ -111,14 +125,19 @@ export function ReceiptScreen({
   const detachOne = !!contextTxId && linkedIds.length > 1 && linkedIds.includes(contextTxId);
   const ladder = receipt && scope === 'space' ? candidateLadder(receipt, txs ?? []) : { primary: [], more: [] };
   const candidates = () => (showMore ? [...ladder.primary, ...ladder.more] : ladder.primary);
-  const photo = photoKind(entry);
+  const photo = photoKind(entry, spaceId);
   const photoBorn = photo === 'born';
-  // an own photo is the person's to read whatever the space allows; one in the space follows the space
-  const readable = photo === 'own' || (photo !== null && !spaceLocked);
+  // what a reader finds is written to the receipt itself: only who may write it has it read
+  const readable = photo !== null && mine;
   const connection = receipt?.instanceId ? metas?.find((m) => m.id === receipt.instanceId) : undefined;
+  // a scan of mine looked at from a space that does not read my scans: it is shared before it is used there
+  const unshared = scope === 'space' && inSpace === false && !!receipt && receipt.spaceId === myScansFeedId();
+  const deletes = mayRemove({ linked: entry?.kind === 'link', mine, spaceLocked, outside: scope === 'global' || spaceOwn || inSpace === false });
+  const photoRemovable = photo !== null && mine && !!receipt?.imageId && !!receipt.items?.length;
+  const toCategorise = !!receipt && receipt.source !== 'photo' && mine && aiReader && uncategorisedNames(receipt).length > 0;
 
   const readItems = async () => {
-    if (!picture || !entry?.linkId) return;
+    if (!picture || !receipt) return;
     setOcrState('busy');
     try {
       const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: picture }) });
@@ -132,7 +151,7 @@ export function ReceiptScreen({
         setOcrState('failed');
         return;
       }
-      await receiptOps.setItems(entry.linkId, items);
+      await receiptOps.setItems(receipt, items);
       setOcrState('idle');
     } catch {
       setOcrState('failed');
@@ -141,22 +160,24 @@ export function ReceiptScreen({
 
   const deleteLabel = (): string => {
     if (detachOne) return t('receipt.detachOne');
-    // a store receipt's link "deletes" by unlinking — the wording must say so
-    if (entry?.kind === 'link' && !photoBorn) return t('receipt.unlink');
+    // a receipt from a feed "deletes" here by unlinking — the wording must say so
+    if (entry?.kind === 'link' && !spaceOwn) return t('receipt.unlink');
     return t('action.delete');
   };
 
   const removeReceipt = async () => {
     if (!entry) return;
     if (!confirmDelete) {
+      if (entry.kind === 'global') setImpact(await paymentsHolding(store, (link) => link.receiptId === entry.data.id));
       setConfirmDelete(true);
       return;
     }
-    // each kind deletes in its own store; from ONE transaction only when others hold the receipt too
-    if (entry.kind === 'global') await receiptOps.removeGlobalReceipt(entry.data.id);
+    // a link lets go (from ONE transaction when others hold the receipt too) and the space's own receipt goes with
+    // its last one; without a link it is the receipt itself that is deleted, for everyone who read it
+    if (entry.kind === 'global') await receiptOps.removeReceipt(entry.data);
     else if (entry.linkId) {
       const txId = detachOne ? contextTxId : undefined;
-      await (photoBorn ? receiptOps.remove(entry.linkId, txId) : receiptOps.unlinkReceipt(entry.linkId, txId));
+      await (spaceOwn ? receiptOps.remove(entry.linkId, txId) : receiptOps.unlinkReceipt(entry.linkId, txId));
     }
     leave();
   };
@@ -198,12 +219,12 @@ export function ReceiptScreen({
               </div>
             )}
             {/* #567: a receipt kept without a transaction: facts typed here or read below, it waits for the payment it fits */}
-            {photo === 'own' && (
+            {photo === 'own' && mine && (
               <>
                 <ReceiptFacts
                   key={`${receipt.date}:${receipt.totalCents}:${receipt.merchant ?? ''}`}
                   receipt={receipt}
-                  onSave={(facts) => receiptOps.setOwnFacts(receipt.id, facts)}
+                  onSave={(facts) => receiptOps.setOwnFacts(receipt, facts)}
                 />
                 {receipt.totalCents > 0 && (
                   <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-waiting">
@@ -215,7 +236,8 @@ export function ReceiptScreen({
             {scope === 'space' && (
               <>
                 <ReadOnlyNote testId="receipt-readonly-note" />
-                {!linkedTxId && !spaceLocked && (
+                {unshared && !spaceLocked && <ShareScansDoor key={receipt.id} spaceId={spaceId} spaceName={space?.name ?? ''} />}
+                {!linkedTxId && !spaceLocked && inSpace && (
                   <>
                     <Button variant="outline" className="w-full" data-testid="receipt-link-tx" onClick={() => setPicking((v) => !v)}>
                       {t('receipts.pickTx')}
@@ -269,13 +291,25 @@ export function ReceiptScreen({
                 )}
               </>
             )}
+            {toCategorise && <CategoriseDoor key={receipt.id} receipt={receipt} />}
+            {photoRemovable && <PhotoCleanupDoor key={receipt.id} receipt={receipt} />}
+            {photo !== null && !receipt.imageId && (
+              <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-photo-gone">
+                {t('receipt.photo.gone')}
+              </p>
+            )}
             {scope === 'global' && (
               <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-space-hint">
                 {t('receipt.spaceHint')}
               </p>
             )}
 
-            {!spaceLocked && (
+            {deletes && confirmDelete && impact > 0 && (
+              <p className="px-1 text-[12px] leading-snug text-ink-3" data-testid="receipt-delete-impact">
+                {t(impact === 1 ? 'receipt.onPaymentsOne' : 'receipt.onPaymentsN', { n: impact })}
+              </p>
+            )}
+            {deletes && (
               <Button variant="danger" className="w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
                 {confirmDelete ? t('action.confirm') : deleteLabel()}
               </Button>

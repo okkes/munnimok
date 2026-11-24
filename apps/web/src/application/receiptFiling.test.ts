@@ -7,6 +7,7 @@ import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { visibleTransactions } from '@/db/joined';
 import type { ReceiptItem } from '@/db/types';
+import { receiptLinkId } from '@/domain/feedIds';
 import { fileByReceipt } from './receiptFiling';
 
 const SPACE = 'space_filing';
@@ -27,8 +28,12 @@ const payment = (id: string, amountCents: number, more: Record<string, unknown> 
   repo.upsert('transaction', SPACE, id, {
     accountId: 'wallet', date: '2026-11-12', amountCents, currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0, catId: 'groceries', txType: 'expense', ...more,
   } as never);
-const receipt = (id: string, txId: string, totalCents: number, more: Record<string, unknown> = {}) =>
-  repo.upsert('receiptLink', SPACE, id, { txId, source: 'photo', date: '2026-11-12', totalCents, merchant: 'Albert Heijn', items: LINES, auto: 0, ...more } as never);
+/** a photo taken on the payment: the space's own receipt, and the link that ties it to the payment */
+const receipt = async (id: string, txId: string, totalCents: number, facts: Record<string, unknown> = {}, state: Record<string, unknown> = {}) => {
+  await repo.upsert('receipt', SPACE, id, { source: 'photo', date: '2026-11-12', totalCents, merchant: 'Albert Heijn', items: LINES, ...facts } as never);
+  await repo.upsert('receiptLink', SPACE, receiptLinkId(SPACE, id), { receiptId: id, feedSpaceId: SPACE, txId, auto: 0, ...state });
+};
+const linkOf = (id: string) => store.get('receiptLink', receiptLinkId(SPACE, id));
 const viewed = async (id: string) => (await visibleTransactions(store, SPACE)).find((tx) => tx.id === id)!;
 
 describe('a payment filed by its receipt', () => {
@@ -53,17 +58,13 @@ describe('a payment filed by its receipt', () => {
     ]);
     expect(tx.catId).toBe('groceries');
     expect(tx.needsReview).toBe(1);
-    expect((await store.get('receiptLink', 'r1'))?.picks).toEqual({ t1: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
+    expect((await linkOf('r1'))?.picks).toEqual({ t1: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
     expect(await fileByReceipt(store, repo, SPACE, 't1', known)).toBe(false);
   });
 
   it('what the person filed before outranks the reader, across receipts — and a payment still to review stays to review', async () => {
     await payment('old', -1000, { cats: undefined });
-    await receipt('r0', 'old', 1000, {
-      date: '2026-11-01',
-      items: [{ name: 'chocolade', totalCents: 1000 }],
-      picks: { old: [{ line: 0, catId: 'coffee', amountCents: 1000 }] },
-    });
+    await receipt('r0', 'old', 1000, { date: '2026-11-01', items: [{ name: 'chocolade', totalCents: 1000 }] }, { picks: { old: [{ line: 0, catId: 'coffee', amountCents: 1000 }] } });
     await payment('t2', -2310, { needsReview: 1 });
     await receipt('r2', 't2', 2310);
     expect(await fileByReceipt(store, repo, SPACE, 't2', known)).toBe(true);
@@ -89,7 +90,7 @@ describe('a payment filed by its receipt', () => {
     const tx = await viewed('t6');
     expect(tx.catId).toBe('groceries');
     expect(tx.cats ?? []).toEqual([]);
-    expect((await store.get('receiptLink', 'r6'))?.picks).toBeUndefined();
+    expect((await linkOf('r6'))?.picks).toBeUndefined();
 
     // verified but never categorised: there is nothing of the person's to override
     await payment('t7', -500, { catId: undefined });
@@ -110,6 +111,6 @@ describe('a payment filed by its receipt', () => {
 
     await receipt('r5', 't5', 2310);
     expect(await fileByReceipt(store, repo, SPACE, 't5', () => false)).toBe(false);
-    expect((await store.get('receiptLink', 'r5'))?.picks).toBeUndefined();
+    expect((await linkOf('r5'))?.picks).toBeUndefined();
   });
 });

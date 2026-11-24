@@ -5,10 +5,10 @@ import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
-import { receiptFileId, receiptLinkId } from '@/domain/feedIds';
-import type { ReceiptRow } from '@/db/types';
-import { IMAGE_SLOT, copyReceiptFiles, documentSlot, readReceiptFile, splitReceiptFiles, writeReceiptPhoto } from './receiptFiles';
-import { writeProposedLinks, writeReceiptLink } from './receiptLinks';
+import { receiptFileId } from '@/domain/feedIds';
+import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import { IMAGE_SLOT, documentSlot, readReceiptFile, splitReceiptFiles, writeReceiptPhoto } from './receiptFiles';
+import { spaceReceipts, writeReceiptLink } from './receiptLinks';
 
 const FEED = 'feed-stores';
 const SPACE = 'space-1';
@@ -22,8 +22,6 @@ beforeEach(() => {
   backend = new DexieBackend(new MunniDB(`receipt_files_${++counter}`));
   repo = new Repo(backend, new HlcClock('dev'), { trackOutbox: true });
 });
-
-const outboxOf = async (entity: string) => (await backend.outboxAll()).filter((op) => op.entity === entity);
 
 /** a shop receipt in the owner's feed with a photo and two invoices, each a file of its own */
 async function seedReceipt(id = 'rcpt:bol:c1:o-1'): Promise<ReceiptRow> {
@@ -45,65 +43,23 @@ describe('what a receipt holds is kept apart from it (#630)', () => {
     expect(await readReceiptFile(backend, undefined)).toBeNull();
   });
 
-  it('a link gets its own copies in its space, and the link names those — members never need the owner’s feed', async () => {
+  it('a linked receipt is read with its own files where it lives: the space holds no copy of them (#648)', async () => {
     const receipt = await seedReceipt();
 
-    const linkId = await writeReceiptLink(repo, SPACE, receipt, 'pay-1', false);
+    await writeReceiptLink(repo, SPACE, receipt, 'pay-1', false);
 
-    const link = (await backend.get('receiptLink', linkId))!;
-    expect(link.imageId).toBe(receiptFileId(linkId, IMAGE_SLOT));
-    expect(link.documents?.map((d) => d.fileId)).toEqual([0, 1].map((index) => receiptFileId(linkId, documentSlot(index))));
-    expect(link.documents?.[1]).toMatchObject({ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-1.pdf' });
-    expect(await backend.get('receiptFile', link.imageId!)).toMatchObject({ spaceId: SPACE, ownerId: linkId, dataUrl: PHOTO });
-    expect((await backend.get('receiptFile', link.documents![1].fileId))?.dataUrl).toBe(`${PDF}1`);
-    // nothing of the content rides the link itself
-    expect(JSON.stringify(link)).not.toContain('base64');
-  });
-
-  it('a snapshot written again sends no file again; a file that changed is sent', async () => {
-    const receipt = await seedReceipt();
-    const linkId = await writeReceiptLink(repo, SPACE, receipt, 'pay-1', false);
-    await backend.outboxDelete((await backend.outboxAll()).map((op) => op.opId));
-
-    await writeReceiptLink(repo, SPACE, receipt, 'pay-2', false);
-    expect(await outboxOf('receiptFile')).toHaveLength(0);
-
-    await repo.upsert('receiptFile', FEED, receipt.documents![0].fileId, { dataUrl: `${PDF}-corrected` });
-    await backend.outboxDelete((await backend.outboxAll()).map((op) => op.opId));
-    await writeReceiptLink(repo, SPACE, receipt, 'pay-2', false);
-
-    expect((await outboxOf('receiptFile')).map((op) => op.entityId)).toEqual([receiptFileId(linkId, documentSlot(0))]);
-    expect((await backend.get('receiptFile', receiptFileId(linkId, documentSlot(0))))?.dataUrl).toBe(`${PDF}-corrected`);
-  });
-
-  it('a pass’s proposals carry their files too; a file that has not arrived yet is not invented', async () => {
-    const first = await seedReceipt('rcpt:bol:c1:o-1');
-    const second = await seedReceipt('rcpt:bol:c1:o-2');
-    await backend.deleteRow('receiptFile', second.imageId!);
-
-    await writeProposedLinks(repo, SPACE, [
-      { receipt: first, txId: 'pay-1' },
-      { receipt: second, txId: 'pay-2' },
-    ]);
-
-    const [a, b] = await Promise.all([first, second].map((r) => backend.get('receiptLink', receiptLinkId(SPACE, r.id))));
-    expect(a).toMatchObject({ proposedTxId: 'pay-1' });
-    expect(await readReceiptFile(backend, a?.imageId)).toBe(PHOTO);
-    expect(await readReceiptFile(backend, b?.documents?.[0].fileId)).toBe(`${PDF}0`);
-    expect(await readReceiptFile(backend, b?.imageId)).toBeNull();
-  });
-
-  it('copying a receipt that holds nothing writes nothing', async () => {
-    await repo.upsert('receipt', FEED, 'rcpt:ah:c1:o-9', { source: 'ah', date: '2026-05-29', totalCents: 700 });
-    const plain = (await backend.get('receipt', 'rcpt:ah:c1:o-9'))!;
-
-    expect(await copyReceiptFiles(repo, plain, SPACE, 'link-1')).toEqual({ imageId: undefined, documents: undefined });
-    expect(await outboxOf('receiptFile')).toHaveLength(0);
+    const [linked] = await spaceReceipts(backend, SPACE);
+    expect(await readReceiptFile(backend, linked.imageId)).toBe(PHOTO);
+    expect(linked.documents?.[1]).toMatchObject({ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-1.pdf' });
+    expect(await readReceiptFile(backend, linked.documents?.[1].fileId)).toBe(`${PDF}1`);
+    expect(await backend.bySpace('receiptFile', SPACE)).toEqual([]);
   });
 });
 
 describe('receipts written before #630 hand what they held to files', () => {
   const OLD = '000000100-0000-devA';
+  // a photo-born link of those builds held the photo itself; the start-up pass of #648 makes it a receipt afterwards
+  const oldLink = async (id: string) => (await backend.get('receiptLink', id)) as (ReceiptLinkRow & { imageId?: string }) | undefined;
   // rows as the older builds wrote them — the content inside the row — arriving as any change does
   const oldPhotoLink = (id: string, spaceId = SPACE, hlc = OLD) =>
     repo.applyRemoteOps([{ opId: `op-${id}`, spaceId, entity: 'receiptLink', entityId: id, hlc, fields: { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, image: PHOTO } }]);
@@ -133,7 +89,7 @@ describe('receipts written before #630 hand what they held to files', () => {
 
     expect(await splitReceiptFiles(backend, repo)).toBe(5);
 
-    const link = (await backend.get('receiptLink', 'link-photo'))!;
+    const link = (await oldLink('link-photo'))!;
     expect(link.imageId).toBe(receiptFileId('link-photo', IMAGE_SLOT));
     expect((link as unknown as { image: unknown }).image).toBeNull();
     expect(await backend.get('receiptFile', link.imageId!)).toMatchObject({ spaceId: SPACE, ownerId: 'link-photo', dataUrl: PHOTO });
@@ -190,7 +146,7 @@ describe('receipts written before #630 hand what they held to files', () => {
 
     expect(await splitReceiptFiles(backend, repo)).toBe(2);
 
-    const gone = (await backend.get('receiptLink', 'link-gone'))!;
+    const gone = (await oldLink('link-gone'))!;
     expect(gone.deleted).toBe(1);
     expect(JSON.stringify(gone)).not.toContain('base64');
     expect(await readReceiptFile(backend, gone.imageId)).toBe(PHOTO);
@@ -214,20 +170,7 @@ describe('receipts written before #630 hand what they held to files', () => {
 
     expect(await splitReceiptFiles(backend, reader)).toBe(2);
 
-    expect((await backend.get('receiptLink', 'link-mine'))?.imageId).toBeTruthy();
-    expect((await backend.get('receiptLink', 'link-theirs'))?.imageId).toBeUndefined();
-  });
-
-  it('a receipt not split yet is split the moment it is linked: the link gets its files, never a name for nothing', async () => {
-    await oldReceipt('rcpt:bol:c1:o-1');
-    const unsplit = (await backend.get('receipt', 'rcpt:bol:c1:o-1'))!;
-
-    const linkId = await writeReceiptLink(repo, SPACE, unsplit, 'pay-1', false);
-
-    const link = (await backend.get('receiptLink', linkId))!;
-    expect(link.documents?.map((d) => d.filename)).toEqual(['factuur.pdf', 'creditnota.pdf']);
-    expect(await readReceiptFile(backend, link.documents?.[0].fileId)).toBe(PDF);
-    expect(await readReceiptFile(backend, link.documents?.[1].fileId)).toBe(`${PDF}2`);
-    expect(JSON.stringify([link, await backend.get('receipt', 'rcpt:bol:c1:o-1')])).not.toContain('base64');
+    expect((await oldLink('link-mine'))?.imageId).toBeTruthy();
+    expect((await oldLink('link-theirs'))?.imageId).toBeUndefined();
   });
 });

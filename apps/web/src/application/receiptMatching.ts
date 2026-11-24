@@ -9,10 +9,10 @@ import type { AccountTailOf } from '@/domain/storeReceipts';
 import { receiptLinkId } from '@/domain/feedIds';
 import { spaceAccountLinks, visibleTransactions } from '@/db/joined';
 import { measure } from '@/lib/perf';
-import { linkedTxIds, writeProposedLinks } from './receiptLinks';
-import { myStoreFeedId } from './storeFeed';
+import { linkedTxIds, receiptsInSpace, writeProposedLinks } from './receiptLinks';
 
-// receipts live once in the owner's store feed; the matcher runs per INCLUDED space and writes receiptLink rows (#367)
+// #648: a receipt lives once, in a feed a space reads (or in the space); the matcher runs per space over the receipts
+// that space may use and writes receiptLink rows that only name them (#367) — on every member's device that may write
 // matching is upfront: proposals exist before the review opens; a reviewed candidate is proposed, never attached (§5.7)
 
 export interface MatchOutcome {
@@ -32,38 +32,15 @@ export async function includedSpaces(store: StorageBackend, connectionId: string
     .map((l) => l.spaceId);
 }
 
-const includedConnectionIds = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
-  new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
-
-/** #567: the person kept a receipt of their own — a photo taken before its transaction existed */
-async function holdsOwnPhotos(store: StorageBackend): Promise<boolean> {
-  const mine = myStoreFeedId();
-  return !!mine && (await store.bySpace('receipt', mine)).some((r) => r.deleted === 0 && r.source === 'photo');
-}
-
-/** spaces that include a connection, or every live space while an own photo waits for its transaction */
-async function spacesToMatch(store: StorageBackend): Promise<string[]> {
+/** the live rows by which spaces read a feed */
+const feedLinks = async (store: StorageBackend) => {
   const live = await liveSpaceIds(store);
-  if (await holdsOwnPhotos(store)) return [...live];
-  return [...new Set((await store.allRows('storeConnLink')).filter((l) => l.deleted === 0 && live.has(l.spaceId)).map((l) => l.spaceId))];
-}
-
-/** the connections' feeds plus the person's own, which holds their photos with or without a shop (#567) */
-const storeFeedIds = async (store: StorageBackend): Promise<Set<string>> => {
-  const ids = new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.spaceId));
-  const mine = myStoreFeedId();
-  if (mine) ids.add(mine);
-  return ids;
+  return (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0 && !!l.feedSpaceId && live.has(l.spaceId));
 };
 
-/** a named set limits to those connections' receipts, plus the own photos unless the pass is about one connection */
-async function feedReceipts(store: StorageBackend, connectionIds?: ReadonlySet<string>, photos = true): Promise<ReceiptRow[]> {
-  const receipts: ReceiptRow[] = [];
-  for (const feedId of await storeFeedIds(store)) {
-    receipts.push(...(await store.bySpace('receipt', feedId)));
-  }
-  if (!connectionIds) return receipts;
-  return receipts.filter((r) => (photos && r.source === 'photo') || (!!r.instanceId && connectionIds.has(r.instanceId)));
+/** the spaces that read a feed: only they have receipts to meet their payments */
+async function spacesToMatch(store: StorageBackend): Promise<string[]> {
+  return [...new Set((await feedLinks(store)).map((l) => l.spaceId))];
 }
 
 async function accountTailResolver(store: StorageBackend): Promise<AccountTailOf> {
@@ -109,27 +86,30 @@ export async function matchReceiptsIntoSpace(
 }
 
 /** after a shop's sync landed new rows, or when a connection joins the space (R5); `connectionId` narrows to one */
+/** after a feed landed new rows, or when a feed joins the space (R5); `feedSpaceId` narrows to that feed's receipts */
 export async function reevaluateSpace(
   storage: StorageBackend,
   repo: Repo,
   spaceId: string,
-  connectionId?: string,
+  feedSpaceId?: string,
 ): Promise<MatchOutcome> {
-  return matchReceiptsIntoSpace(storage, repo, spaceId, await feedReceipts(storage, connectionId ? new Set([connectionId]) : undefined, false));
+  const receipts = await receiptsInSpace(storage, spaceId);
+  return matchReceiptsIntoSpace(storage, repo, spaceId, feedSpaceId ? receipts.filter((r) => r.spaceId === feedSpaceId) : receipts);
 }
 
-/** #567: one receipt against every space of its owner — a photo that just got its amount may fit a payment in any */
+/** #567: one receipt against every space that reads it — a scan that just got its amount may fit a payment in any */
 export async function matchReceiptEverywhere(storage: StorageBackend, repo: Repo, receipt: ReceiptRow): Promise<MatchOutcome> {
   const outcome: MatchOutcome = { linked: 0, proposed: 0 };
-  for (const spaceId of await liveSpaceIds(storage)) {
+  const readers = new Set((await feedLinks(storage)).filter((l) => l.feedSpaceId === receipt.spaceId).map((l) => l.spaceId));
+  for (const spaceId of readers) {
     outcome.proposed += (await matchReceiptsIntoSpace(storage, repo, spaceId, [receipt])).proposed;
   }
   return outcome;
 }
 
-/** run when transactions moved rather than receipts; a space that includes no shop has nothing to match */
+/** run when transactions moved rather than receipts; a space that reads no feed and holds no receipt has nothing to match */
 export async function rematchSpace(storage: StorageBackend, repo: Repo, spaceId: string): Promise<MatchOutcome> {
-  const receipts = await feedReceipts(storage, await includedConnectionIds(storage, spaceId));
+  const receipts = await receiptsInSpace(storage, spaceId);
   return receipts.length === 0 ? NOTHING : matchReceiptsIntoSpace(storage, repo, spaceId, receipts);
 }
 
@@ -165,8 +145,9 @@ export async function matchInputFingerprint(store: StorageBackend): Promise<stri
   for (const feedId of [...feeds].sort((a, b) => a.localeCompare(b))) {
     parts.push(`${feedId}:${await store.countBySpace('transaction', feedId)}`);
   }
-  for (const feedId of [...(await storeFeedIds(store))].sort((a, b) => a.localeCompare(b))) {
-    parts.push(`r:${feedId}:${await store.countBySpace('receipt', feedId)}`);
+  const receiptFeeds = new Set((await feedLinks(store)).map((l) => `${l.spaceId}>${l.feedSpaceId}`));
+  for (const pair of [...receiptFeeds].sort((a, b) => a.localeCompare(b))) {
+    parts.push(`r:${pair}:${await store.countBySpace('receipt', pair.slice(pair.indexOf('>') + 1))}`);
   }
   return parts.join('|');
 }

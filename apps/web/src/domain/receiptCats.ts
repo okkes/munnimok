@@ -58,6 +58,22 @@ export function itemMemoryOf(links: readonly { date: string; items?: ReceiptItem
   return memory;
 }
 
+/** #648: a fetched receipt's lines as its owner had them categorised; a line's own category (a read photo) stands */
+export function categorisedItems(receipt: { items?: ReceiptItem[]; itemCats?: Record<string, string> }): ReceiptItem[] | undefined {
+  const cats = receipt.itemCats;
+  if (!receipt.items || !cats) return receipt.items;
+  return receipt.items.map((item) => {
+    const catId = item.catId || item.kind ? undefined : cats[itemKey(item.name)];
+    return catId ? { ...item, catId } : item;
+  });
+}
+
+/** the product lines of a receipt that nobody asked a category for yet */
+export function uncategorisedNames(receipt: { items?: ReceiptItem[]; itemCats?: Record<string, string> }): string[] {
+  const asked = receipt.itemCats ?? {};
+  return (receipt.items ?? []).filter((item) => !item.kind && !item.catId && item.totalCents > 0 && !(itemKey(item.name) in asked)).map((item) => item.name);
+}
+
 /** #567: what the person chose before outranks the reader's guess; a category that is gone suggests nothing */
 export function suggestedCat(item: Pick<ReceiptItem, 'name' | 'catId'>, memory: ItemMemory, known: (catId: string) => boolean): string | undefined {
   const remembered = memory.get(itemKey(item.name));

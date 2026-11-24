@@ -4,16 +4,30 @@ import { useData } from '@/app/data';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
-import { useGlobalReceipts, useStoreConnMetas } from '@/application/connections';
+import { useConnectionOps, useGlobalReceipts, useScansSpaces, useStoreConnMetas } from '@/application/connections';
 import type { FetchedRange } from '@/application/connections';
+import { myScansFeedId } from '@/application/storeFeed';
 import { ReceiptAiConsentSheet } from '@/features/shopping/ReceiptAiRead';
 import { ReceiptList } from '@/features/shopping/ReceiptList';
-import { receiptAiChoice, receiptAutoRead, setReceiptAutoRead } from '@/features/shopping/receiptAi';
+import {
+  receiptAiChoice,
+  receiptAutoCategoriseFrom,
+  receiptAutoRead,
+  receiptPhotoCleanup,
+  setReceiptAutoCategorise,
+  setReceiptAutoRead,
+  setReceiptPhotoCleanup,
+} from '@/features/shopping/receiptAi';
+import { useCategoriseAll } from '@/features/shopping/useCategoriser';
+import { localToday } from '@/application/recurring';
+import type { PhotoCleanup } from '@/features/shopping/receiptAi';
 import { getApiCapabilities } from '@/lib/api';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
+import { Sheet } from '@/ui/Sheet';
+import { useFeedSharing } from './FeedSharing';
 import { resultStillFresh, useSyncActivity } from './syncActivity';
 import type { SyncActivity } from './syncActivity';
 
@@ -44,13 +58,19 @@ export function activityLine(activity: SyncActivity | undefined, t: Translate, l
   return { text, busy: false };
 }
 
-/** #648: a photo is read as soon as it is taken; switching it on is also the say-so the reader asks for once */
-function AutoReadRow() {
-  const { t } = useLang();
-  const [on, setOn] = useState(receiptAutoRead);
+/** a standing order for the reader: switching it on is also the say-so the reader asks for once */
+function StandingOrderRow({
+  testId,
+  icon,
+  title,
+  sub,
+  read,
+  write,
+}: Readonly<{ testId: string; icon: string; title: string; sub: string; read: () => boolean; write: (on: boolean) => void }>) {
+  const [on, setOn] = useState(read);
   const [asking, setAsking] = useState(false);
   const set = (next: boolean) => {
-    setReceiptAutoRead(next);
+    write(next);
     setOn(next);
   };
   const toggle = () => {
@@ -61,13 +81,13 @@ function AutoReadRow() {
   return (
     <>
       <Row
-        testId="receipts-autoread-toggle"
-        icon="text-recognition"
-        title={t('receipts.autoRead')}
-        sub={t('receipts.autoReadSub')}
+        testId={`${testId}-toggle`}
+        icon={icon}
+        title={title}
+        sub={sub}
         chevron={false}
         trailing={
-          <Pill tone={on ? 'accent' : 'neutral'} testId="receipts-autoread-state">
+          <Pill tone={on ? 'accent' : 'neutral'} testId={`${testId}-state`}>
             {on ? 'ON' : 'OFF'}
           </Pill>
         }
@@ -75,6 +95,137 @@ function AutoReadRow() {
       />
       <ReceiptAiConsentSheet open={asking} onOpenChange={setAsking} onAnswer={(agreed) => set(agreed)} />
     </>
+  );
+}
+
+/** #648: a photo is read as soon as it is taken */
+function AutoReadRow() {
+  const { t } = useLang();
+  return <StandingOrderRow testId="receipts-autoread" icon="text-recognition" title={t('receipts.autoRead')} sub={t('receipts.autoReadSub')} read={receiptAutoRead} write={setReceiptAutoRead} />;
+}
+
+/** #648: the lines of receipts a shop hands over from now on get a suggested category by themselves */
+function AutoCategoriseRow() {
+  const { t } = useLang();
+  return (
+    <StandingOrderRow
+      testId="receipts-autocat"
+      icon="shape-outline"
+      title={t('receipts.autoCat')}
+      sub={t('receipts.autoCatSub')}
+      read={() => receiptAutoCategoriseFrom() !== null}
+      write={(on) => setReceiptAutoCategorise(on, localToday())}
+    />
+  );
+}
+
+/** #648: the receipts the person already has are categorised when they say so — never a whole history by itself */
+function CategoriseAllRow() {
+  const { t } = useLang();
+  const run = useCategoriseAll();
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'none' | 'later' | 'unavailable'>('idle');
+  const [count, setCount] = useState(0);
+  const [more, setMore] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const start = async () => {
+    setState('busy');
+    const outcome = await run();
+    setCount(outcome.receipts);
+    setMore(outcome.more);
+    if (outcome.receipts > 0) setState('done');
+    else if (outcome.state === 'limited' || outcome.state === 'capped') setState('later');
+    else setState(outcome.state === 'unavailable' ? 'unavailable' : 'none');
+  };
+  const done = [t(count === 1 ? 'receipts.catAllDoneOne' : 'receipts.catAllDone', { n: count }), more ? t('receipts.catAllMore') : ''].filter(Boolean).join(' ');
+  const note: Record<typeof state, string> = {
+    idle: t('receipts.catAllSub'),
+    busy: t('receipt.cats.busy'),
+    done,
+    none: t('receipts.catAllNone'),
+    later: t('receipt.cats.later'),
+    unavailable: t('receipt.ai.unavailable'),
+  };
+  return (
+    <>
+      <Row
+        testId="receipts-categorise-all"
+        icon="shape-plus-outline"
+        title={t('receipts.catAll')}
+        sub={note[state]}
+        chevron={false}
+        onClick={() => {
+          if (state === 'busy') return;
+          if (receiptAiChoice() === 'yes') void start();
+          else setAsking(true);
+        }}
+      />
+      <ReceiptAiConsentSheet open={asking} onOpenChange={setAsking} onAnswer={(agreed) => agreed && void start()} />
+    </>
+  );
+}
+
+const CLEANUP_MODES: readonly PhotoCleanup[] = ['off', 'verified', 'certain'];
+
+/** #648: what becomes of a photo once it was read — the person's standing choice, per device like the reader's yes */
+function PhotoCleanupRow() {
+  const { t } = useLang();
+  const [mode, setMode] = useState(receiptPhotoCleanup);
+  const [open, setOpen] = useState(false);
+  const pick = (next: PhotoCleanup) => {
+    setReceiptPhotoCleanup(next);
+    setMode(next);
+    setOpen(false);
+  };
+  return (
+    <>
+      <Row
+        testId="receipts-cleanup-row"
+        icon="image-remove-outline"
+        title={t('receipts.photoCleanup')}
+        sub={t(`receipts.photoCleanup.${mode}`)}
+        onClick={() => setOpen(true)}
+      />
+      <Sheet open={open} onOpenChange={setOpen} title={t('receipts.photoCleanup')} size="form">
+        <div className="flex flex-col gap-2 pt-1" data-testid="receipts-cleanup-sheet">
+          {CLEANUP_MODES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={option === mode}
+              data-testid={`receipts-cleanup-${option}`}
+              onClick={() => pick(option)}
+              className={`m-tap flex w-full items-start gap-3 rounded-card border bg-surface px-4 py-3 text-left ${option === mode ? 'border-accent' : 'border-line'}`}
+            >
+              <Icon name={option === mode ? 'radiobox-marked' : 'radiobox-blank'} size={20} color={option === mode ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-[13px] font-medium text-ink">{t(`receipts.photoCleanup.${option}`)}</span>
+                <span className="text-[11px] leading-snug text-ink-4">{t(`receipts.photoCleanup.${option}Sub`)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
+/** #648: a person's scans are one more source of receipts, shared with the spaces they pick like a connection's */
+function ScansSharing() {
+  const { t } = useLang();
+  const { store } = useData();
+  const ops = useConnectionOps();
+  const shared = useScansSpaces();
+  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
+  const feedId = myScansFeedId();
+  const sharing = useFeedSharing({ spaces: spaces ?? [], selected: shared ?? [], feedId, apply: (next) => ops.setScansSpaces(next), testId: 'receipts-scans-spaces' });
+  if (!feedId || !spaces?.length) return null;
+  return (
+    <div className="mb-3 flex flex-col gap-1" data-testid="receipts-scans-sharing">
+      <div className="m-cap px-1">{t('receipts.scansSpaces')}</div>
+      <p className="px-1 text-[11px] leading-snug text-ink-4">{t('receipts.scansSpacesSub')}</p>
+      {sharing.picker}
+      {sharing.confirm}
+    </div>
   );
 }
 
@@ -111,8 +262,12 @@ export function ConnectionReceiptsScreen() {
         {aiReader && (
           <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="receipts-settings">
             <AutoReadRow />
+            <PhotoCleanupRow />
+            <AutoCategoriseRow />
+            <CategoriseAllRow />
           </div>
         )}
+        <ScansSharing />
         {running.map(({ meta, line }) => (
           <p
             key={meta.id}

@@ -55,13 +55,23 @@ export function ConnectSteps({
     // a shop's receipts reach no space until picked: the step follows the name
     const meta = (await store.allRows('storeConn')).find((c) => c.id === named && c.deleted === 0);
     const kind = meta?.kind ?? (meta ? catalogue.byId.get(meta.store)?.kind : undefined) ?? 'store';
-    if (meta && kind === 'store' && (allSpaces ?? []).length > 0) setSpacesStep({ connectionId: named, picked: [] });
+    if (meta && kind === 'store' && (allSpaces ?? []).length > 0) {
+      setSpacesFailed(false);
+      setSpacesStep({ connectionId: named, picked: [] });
+    }
   };
 
+  // #648: a pick is the server's grant to read the connection's receipts: without a network the step stays, and says so
+  const [spacesFailed, setSpacesFailed] = useState(false);
   const saveSpaces = async () => {
     if (!spacesStep) return;
-    if (spacesStep.picked.length > 0) await ops.setIncludedSpaces(spacesStep.connectionId, spacesStep.picked);
-    setSpacesStep(null);
+    setSpacesFailed(false);
+    try {
+      if (spacesStep.picked.length > 0) await ops.setIncludedSpaces(spacesStep.connectionId, spacesStep.picked);
+      setSpacesStep(null);
+    } catch {
+      setSpacesFailed(true);
+    }
   };
 
   const togglePicked = (spaceId: string) =>
@@ -135,6 +145,11 @@ export function ConnectSteps({
           <div className="flex flex-col gap-3 pt-1" data-testid="conn-spaces-step">
             <p className="text-[13px] leading-relaxed text-ink-2">{t('conn.spacesHint')}</p>
             <SpacePicker spaces={allSpaces ?? []} selected={spacesStep.picked} onToggle={togglePicked} testId="conn-spaces-list" />
+            {spacesFailed && (
+              <p className="px-1 text-[12px] leading-snug text-negative" data-testid="conn-spaces-failed">
+                {t('receipt.shareFailed')}
+              </p>
+            )}
             <Button data-testid="conn-spaces-save" onClick={() => void saveSpaces()}>
               {t('action.save')}
             </Button>

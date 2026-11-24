@@ -4,6 +4,7 @@ import type { ConnectorBackfill, ConnectorConnRow, ConnectorLastError, Connector
 import type { SyncEngine } from '@/sync/engine';
 import { appendNotification, syncFailedKey } from '@/application/notifications';
 import { includedSpaces, reevaluateSpace, rematchSpaces } from '@/application/receiptMatching';
+import { myReceiptFeedId } from '@/application/storeFeed';
 import { ConnectorError, connectorApi } from './api';
 import { dropBundle, keepBundle, readBundle } from './bundles';
 import { subscribeConnectorFrames } from './events';
@@ -107,7 +108,7 @@ async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEng
   let linked = 0;
   let proposed = 0;
   for (const spaceId of await includedSpaces(storage, connectionId)) {
-    const outcome = await reevaluateSpace(storage, repo, spaceId, connectionId);
+    const outcome = await reevaluateSpace(storage, repo, spaceId, myReceiptFeedId(connectionId) ?? undefined);
     linked += outcome.linked;
     proposed += outcome.proposed;
   }

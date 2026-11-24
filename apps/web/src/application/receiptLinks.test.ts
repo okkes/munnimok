@@ -5,25 +5,48 @@ import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
-import { receiptLinkId } from '@/domain/feedIds';
+import { receiptLinkId, storeConnLinkId } from '@/domain/feedIds';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
 import { writeReceiptPhoto } from './receiptFiles';
-import { attachReceiptTo, detachReceiptFrom, isLinkedTo, linkAsEntry, linkedTxIds, rejectProposal, releaseLink, writeProposedLink } from './receiptLinks';
+import {
+  attachReceiptTo,
+  detachReceiptFrom,
+  includedFeeds,
+  isLinkedTo,
+  linkAsEntry,
+  linkedTxIds,
+  receiptsInSpace,
+  rejectProposal,
+  releaseLink,
+  spaceReceipts,
+  writeProposedLink,
+  writeReceiptLink,
+} from './receiptLinks';
 
-const FEED = 'feed-stores';
+const FEED = 'feed-bol';
 const SPACE = 's1';
-const RECEIPT = 'rcpt:bol:conn-bol:o-1';
+const RECEIPT = 'rcp2:bol:conn-bol:o-1';
 let counter = 0;
 let db: MunniDB;
 let repo: Repo;
 let backend: DexieBackend;
 
-const seedReceipt = async (id = RECEIPT): Promise<ReceiptRow> => {
-  await repo.upsert('receipt', FEED, id, { source: 'bol', instanceId: 'conn-bol', date: '2026-05-29', totalCents: 15733, merchant: 'bol.com' });
+const seedReceipt = async (id = RECEIPT, spaceId = FEED, date = '2026-05-29'): Promise<ReceiptRow> => {
+  await repo.upsert('receipt', spaceId, id, { source: 'bol', instanceId: 'conn-bol', date, totalCents: 15733, merchant: 'bol.com' });
   return (await backend.get('receipt', id))!;
 };
 
 const link = async (): Promise<ReceiptLinkRow> => (await backend.get('receiptLink', receiptLinkId(SPACE, RECEIPT)))!;
+
+/** a photo taken on a payment: the space's own receipt, tied to the payment by a link */
+const seedOwnPhoto = async (txId: string, alsoTxIds?: string[]): Promise<{ receiptId: string; linkId: string; imageId: string }> => {
+  const receiptId = repo.newId();
+  const imageId = await writeReceiptPhoto(repo, SPACE, receiptId, 'data:image/jpeg;base64,ZmFrZQ==');
+  await repo.upsert('receipt', SPACE, receiptId, { source: 'photo', date: '2026-05-29', totalCents: 1500, imageId });
+  const linkId = await writeReceiptLink(repo, SPACE, { id: receiptId, spaceId: SPACE }, txId, false);
+  if (alsoTxIds) await repo.upsert('receiptLink', SPACE, linkId, { alsoTxIds });
+  return { receiptId, linkId, imageId };
+};
 
 beforeEach(async () => {
   db = new MunniDB(`receipt_links_${++counter}`);
@@ -40,10 +63,10 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect(isLinkedTo({ txId: 'a' }, 'b')).toBe(false);
   });
 
-  it('attaching: the first transaction writes the snapshot link, a second joins alsoTxIds, the same one again changes nothing', async () => {
+  it('attaching: the first transaction writes a link naming the receipt and where it lives, a second joins alsoTxIds, the same one again changes nothing', async () => {
     const receipt = await seedReceipt();
     await attachReceiptTo(repo, SPACE, receipt, 'pay-1');
-    expect(await link()).toMatchObject({ receiptId: RECEIPT, txId: 'pay-1', merchant: 'bol.com', auto: 0 });
+    expect(await link()).toMatchObject({ receiptId: RECEIPT, feedSpaceId: FEED, txId: 'pay-1', auto: 0 });
     expect(linkedTxIds(await link())).toEqual(['pay-1']);
 
     await attachReceiptTo(repo, SPACE, receipt, 'pay-2');
@@ -51,7 +74,8 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     const before = await link();
     await attachReceiptTo(repo, SPACE, receipt, 'pay-2');
     expect(await link()).toEqual(before);
-    expect(linkAsEntry(await link())).toMatchObject({ kind: 'link', txId: 'pay-1', txIds: ['pay-1', 'pay-2'] });
+    const [linked] = await spaceReceipts(backend, SPACE);
+    expect(linkAsEntry(linked)).toMatchObject({ kind: 'link', txId: 'pay-1', txIds: ['pay-1', 'pay-2'], data: { id: RECEIPT, merchant: 'bol.com' } });
   });
 
   it('attaching settles a proposal: the receipt is attached to the transaction, the question is gone', async () => {
@@ -86,9 +110,10 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect(left.deleted).toBe(0);
     expect(linkedTxIds(left)).toEqual([]);
     expect(left.rejectedTxIds).toEqual(['pay-1', 'pay-3', 'pay-2']);
+    expect((await backend.get('receipt', RECEIPT))?.deleted).toBe(0);
   });
 
-  it('releasing a whole link (#496): a store receipt stays unattached and turned down for each of its transactions; a photo is gone', async () => {
+  it('releasing a whole link (#496): a feed receipt stays unattached and turned down for each of its transactions; the space own photo goes, link and receipt', async () => {
     const receipt = await seedReceipt();
     await writeProposedLink(repo, SPACE, receipt, 'pay-0');
     await rejectProposal(repo, SPACE, await link());
@@ -98,35 +123,34 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect(await link()).toMatchObject({ deleted: 0, rejectedTxIds: ['pay-0', 'pay-1', 'pay-2'] });
     expect((await link()).txId).toBeFalsy();
     expect((await link()).proposedTxId).toBeFalsy();
+    expect((await backend.get('receipt', RECEIPT))?.deleted).toBe(0);
 
-    const photo = repo.newId();
-    const imageId = await writeReceiptPhoto(repo, SPACE, photo, 'data:image/jpeg;base64,ZmFrZQ==');
-    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, imageId });
-    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo))!, ['pay-1']);
-    expect((await backend.get('receiptLink', photo))?.deleted).toBe(1);
+    const photo = await seedOwnPhoto('pay-1');
+    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo.linkId))!, ['pay-1']);
+    expect((await backend.get('receiptLink', photo.linkId))?.deleted).toBe(1);
+    expect((await backend.get('receipt', photo.receiptId))?.deleted).toBe(1);
   });
 
   it('a removed photo that an edit made elsewhere brings back still has its picture (#630)', async () => {
-    const photo = repo.newId();
-    const imageId = await writeReceiptPhoto(repo, SPACE, photo, 'data:image/jpeg;base64,ZmFrZQ==');
-    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, imageId });
-    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo))!, ['pay-1']);
+    const photo = await seedOwnPhoto('pay-1');
+    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo.linkId))!, ['pay-1']);
 
     // another device read the photo's lines while this one removed it: the later write wins, the row is back
-    await repo.upsert('receiptLink', SPACE, photo, { items: [{ name: 'Brood', totalCents: 1500 }] });
+    await repo.upsert('receipt', SPACE, photo.receiptId, { items: [{ name: 'Brood', totalCents: 1500 }] });
 
-    expect(await backend.get('receiptLink', photo)).toMatchObject({ deleted: 0, imageId });
-    expect(await backend.get('receiptFile', imageId)).toMatchObject({ deleted: 0, dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
+    expect(await backend.get('receipt', photo.receiptId)).toMatchObject({ deleted: 0, imageId: photo.imageId });
+    expect(await backend.get('receiptFile', photo.imageId)).toMatchObject({ deleted: 0, dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
   });
 
-  it('a photo-born link (the photo IS the link) goes with its last transaction', async () => {
-    const id = repo.newId();
-    const imageId = await writeReceiptPhoto(repo, SPACE, id, 'data:image/jpeg;base64,ZmFrZQ==');
-    await repo.upsert('receiptLink', SPACE, id, { txId: 'pay-1', alsoTxIds: ['pay-2'], source: 'photo', date: '2026-05-29', totalCents: 15733, imageId });
-    await detachReceiptFrom(repo, SPACE, (await backend.get('receiptLink', id))!, 'pay-2');
-    expect(await backend.get('receiptLink', id)).toMatchObject({ txId: 'pay-1', deleted: 0 });
-    await detachReceiptFrom(repo, SPACE, (await backend.get('receiptLink', id))!, 'pay-1');
-    expect((await backend.get('receiptLink', id))?.deleted).toBe(1);
+  it('the space own receipt and its link go with its last transaction, and remember no rejected ones on the way', async () => {
+    const photo = await seedOwnPhoto('pay-1', ['pay-2']);
+    await detachReceiptFrom(repo, SPACE, (await backend.get('receiptLink', photo.linkId))!, 'pay-2');
+    const kept = await backend.get('receiptLink', photo.linkId);
+    expect(kept).toMatchObject({ txId: 'pay-1', deleted: 0 });
+    expect(kept?.rejectedTxIds).toBeFalsy();
+    await detachReceiptFrom(repo, SPACE, kept!, 'pay-1');
+    expect((await backend.get('receiptLink', photo.linkId))?.deleted).toBe(1);
+    expect((await backend.get('receipt', photo.receiptId))?.deleted).toBe(1);
   });
 
   it('a re-link after a remove starts clean: the revived tombstone keeps none of its old attachments', async () => {
@@ -138,5 +162,39 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     const row = await link();
     expect(row.deleted).toBe(0);
     expect(linkedTxIds(row)).toEqual(['pay-3']);
+  });
+});
+
+describe('a link names a receipt that lives once (#648)', () => {
+  it('a link is read with the receipt it names; one whose receipt is gone or not here shows nothing', async () => {
+    const receipt = await seedReceipt();
+    await attachReceiptTo(repo, SPACE, receipt, 'pay-1');
+    await writeReceiptLink(repo, SPACE, { id: 'rcp2:bol:conn-bol:never-here', spaceId: FEED }, 'pay-2', false);
+    expect((await spaceReceipts(backend, SPACE)).map((l) => [l.receiptId, l.merchant, l.totalCents])).toEqual([[RECEIPT, 'bol.com', 15733]]);
+
+    await repo.upsert('receipt', FEED, RECEIPT, { merchant: 'bol' });
+    expect((await spaceReceipts(backend, SPACE))[0].merchant).toBe('bol');
+
+    await repo.remove('receipt', FEED, RECEIPT);
+    expect(await spaceReceipts(backend, SPACE)).toEqual([]);
+  });
+
+  it('a space uses its own receipts and those of the feeds it reads, newest first — a feed it does not read stays out', async () => {
+    await seedReceipt('rcp2:bol:conn-bol:o-old', FEED, '2026-05-01');
+    await seedReceipt('rcp2:bol:conn-bol:o-new', FEED, '2026-05-20');
+    await seedReceipt('rcp2:bol:other:o-1', 'feed-other', '2026-05-25');
+    await seedReceipt('own-photo', SPACE, '2026-05-10');
+    await seedReceipt('gone', FEED, '2026-05-28');
+    await repo.remove('receipt', FEED, 'gone');
+    expect((await receiptsInSpace(backend, SPACE)).map((r) => r.id)).toEqual(['own-photo']);
+
+    await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-bol'), { instanceId: 'conn-bol', store: 'bol', displayName: 'bol', feedSpaceId: FEED });
+    // a row written before feeds were shared names no feed: it gives the space nothing to read
+    await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-other'), { instanceId: 'conn-other', store: 'bol', displayName: 'other' });
+    expect([...(await includedFeeds(backend, SPACE)).keys()]).toEqual([FEED]);
+    expect((await receiptsInSpace(backend, SPACE)).map((r) => r.id)).toEqual(['rcp2:bol:conn-bol:o-new', 'own-photo', 'rcp2:bol:conn-bol:o-old']);
+
+    await repo.remove('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-bol'));
+    expect((await receiptsInSpace(backend, SPACE)).map((r) => r.id)).toEqual(['own-photo']);
   });
 });

@@ -7,6 +7,7 @@ import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { storeConnLinkId } from '@/domain/feedIds';
 import { readInbox } from '@/application/notifications';
+import { demoReceiptFeedId } from '@/application/storeFeed';
 import { NO_INGEST } from '@/test/connectorFixtures';
 import { ConnectorError, connectorApi } from './api';
 import { readBundle } from './bundles';
@@ -68,8 +69,8 @@ describe('syncConnection — one pass through the relay', () => {
 
   it("a bank's sync re-reads every space with a shop against the shop's receipts (user 2026-10-09: proposals before the review)", async () => {
     await repo.upsert('storeConn', 'feed', 'conn-ah', { store: 'ah', kind: 'store', displayName: 'Albert Heijn', connectedAt: '2026-09-01', status: 'ok' });
-    await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-ah'), { instanceId: 'conn-ah', store: 'ah', displayName: 'Albert Heijn' });
-    await repo.upsert('receipt', 'feed', 'rcpt:ah:conn-ah:1', { source: 'ah', instanceId: 'conn-ah', date: '2026-07-05', totalCents: 2350, merchant: 'Albert Heijn', storeRef: 'ah:1' });
+    await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-ah'), { instanceId: 'conn-ah', store: 'ah', displayName: 'Albert Heijn', feedSpaceId: 'feed-ah' });
+    await repo.upsert('receipt', 'feed-ah', 'rcp2:ah:conn-ah:1', { source: 'ah', instanceId: 'conn-ah', date: '2026-07-05', totalCents: 2350, merchant: 'Albert Heijn', storeRef: 'ah:1' });
     await repo.upsert('transaction', SPACE, 'tx-ah', { accountId: 'a1', date: '2026-07-05', amountCents: -2350, currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0 });
     // the bank is included nowhere (its accounts attach, its connection does not): the pass walks the spaces with a shop
     await repo.upsert('storeConn', 'feed', 'conn-bank', { store: 'mock-bank', kind: 'bank', displayName: 'Mock bank', connectedAt: '2026-09-01', status: 'ok' });
@@ -80,7 +81,30 @@ describe('syncConnection — one pass through the relay', () => {
     });
     const report = await syncConnection(backend, repo, 'conn-bank');
     expect(report).toMatchObject({ status: 'ok', transactions: 3, proposed: 1 });
-    expect((await backend.bySpace('receiptLink', SPACE)).find((l) => l.proposedTxId === 'tx-ah')?.instanceId).toBe('conn-ah');
+    expect((await backend.bySpace('receiptLink', SPACE)).find((l) => l.proposedTxId === 'tx-ah')?.feedSpaceId).toBe('feed-ah');
+  });
+
+  it('a shop’s sync matches the receipts of that shop’s own feed, in every space that reads it (#648)', async () => {
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
+    try {
+      const ownFeed = demoReceiptFeedId(CONN);
+      await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, CONN), { feedSpaceId: ownFeed });
+      await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-ah'), { instanceId: 'conn-ah', store: 'ah', displayName: 'Albert Heijn', feedSpaceId: 'feed-ah' });
+      // each receipt fits a payment of its own: only the synced shop's is asked about
+      const payment = { accountId: 'a1', date: '2026-07-05', currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0 as const };
+      await repo.upsert('receipt', ownFeed, 'rcp2:mock:conn-1:1', { date: '2026-07-05', totalCents: 2350, merchant: 'Albert Heijn', source: PROVIDER, instanceId: CONN });
+      await repo.upsert('receipt', 'feed-ah', 'rcp2:ah:conn-ah:1', { date: '2026-07-05', totalCents: 1100, merchant: 'Albert Heijn', source: 'ah', instanceId: 'conn-ah' });
+      await repo.upsert('transaction', SPACE, 'tx-1', { ...payment, amountCents: -2350 });
+      await repo.upsert('transaction', SPACE, 'tx-2', { ...payment, amountCents: -1100 });
+      vi.spyOn(connectorApi, 'sync').mockResolvedValue({
+        accepted: false,
+        outcome: { sessionId: 'ses_1', state: 'active', ingested: { ...NO_INGEST, records: 1, receipts: 1 } },
+      });
+      expect(await syncConnection(backend, repo, CONN)).toMatchObject({ status: 'ok', proposed: 1 });
+      expect((await backend.bySpace('receiptLink', SPACE)).map((l) => l.feedSpaceId)).toEqual([ownFeed]);
+    } finally {
+      localStorage.removeItem('munni_session');
+    }
   });
 
   it('a dead session drops the bundle and asks for a sign-in; a budget refusal asks for patience', async () => {

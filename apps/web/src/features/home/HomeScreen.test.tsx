@@ -117,8 +117,16 @@ describe('#313: desktop columns follow what actually renders', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('transaction', 'demo_space', 'hr-reviewed', { accountId: 'demo_main', date: '2026-01-02', amountCents: -2000, currency: 'EUR', merchant: 'Jumbo', catId: 'groceries', needsReview: 0 });
     await repo.upsert('transaction', 'demo_space', 'hr-open', { accountId: 'demo_main', date: '2026-01-02', amountCents: -2500, currency: 'EUR', merchant: 'Jumbo', needsReview: 1 });
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-home-1', { receiptId: 'rcpt:jumbo:c:1', source: 'jumbo', instanceId: 'c', date: '2026-01-02', totalCents: 2000, merchant: 'Jumbo', auto: 0, proposedTxId: 'hr-reviewed' });
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-home-2', { receiptId: 'rcpt:jumbo:c:2', source: 'jumbo', instanceId: 'c', date: '2026-01-02', totalCents: 2500, merchant: 'Jumbo', auto: 0, proposedTxId: 'hr-open' });
+    // the receipts live in the demo Jumbo connection's feed, which the demo space reads
+    const { demoReceiptFeedId } = await import('@/application/storeFeed');
+    const { receiptLinkId, storeConnLinkId } = await import('@/domain/feedIds');
+    const feed = demoReceiptFeedId('demo_conn_jumbo');
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_jumbo'), { instanceId: 'demo_conn_jumbo', store: 'jumbo', displayName: 'Jumbo', feedSpaceId: feed });
+    for (const [n, totalCents, proposedTxId] of [['1', 2000, 'hr-reviewed'], ['2', 2500, 'hr-open']] as const) {
+      const receiptId = `rcp2:jumbo:demo_conn_jumbo:${n}`;
+      await repo.upsert('receipt', feed, receiptId, { source: 'jumbo', instanceId: 'demo_conn_jumbo', date: '2026-01-02', totalCents, merchant: 'Jumbo' });
+      await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', receiptId), { receiptId, feedSpaceId: feed, auto: 0, proposedTxId });
+    }
     db.close();
     first.unmount();
 

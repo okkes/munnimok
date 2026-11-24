@@ -4,7 +4,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { linkAsEntry } from '@/application/receiptLinks';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
-import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { LinkedReceipt, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
 import { txTitle } from '@/lib/text';
@@ -24,7 +24,7 @@ export interface ReceiptPickSheetProps {
   testIdPrefix: string;
   /** the suggestion rows' own prefix when it is not `<testIdPrefix>-pick` (the detail's rows stay `receipt-pick-<id>`) */
   pickTestIdPrefix?: string;
-  proposal?: ReceiptLinkRow;
+  proposal?: LinkedReceipt;
   /** behind a full-height sheet the transaction is out of sight, so the card shows both rows to compare */
   proposalTx?: SpaceTx;
   candidates: readonly ReceiptRow[];
@@ -40,8 +40,8 @@ export interface ReceiptPickSheetProps {
   // (several payments, one receipt)
   attachedTo?: ReadonlyMap<string, readonly string[]>;
   describeTx?: (txId: string) => string | undefined;
-  onAccept: (link: ReceiptLinkRow) => void;
-  onReject: (link: ReceiptLinkRow) => void;
+  onAccept: (link: LinkedReceipt) => void;
+  onReject: (link: LinkedReceipt) => void;
   onPick: (row: ReceiptRow | null) => void;
   context?: ReactNode;
   children?: ReactNode;
@@ -120,13 +120,13 @@ export function ReceiptProposalCard({
   busy = false,
   className = '',
 }: Readonly<{
-  link: ReceiptLinkRow;
+  link: LinkedReceipt;
   tx?: SpaceTx;
   currency: string;
   /** the card's testids; `open` and `tx` default to `<card>-open` / `<card>-tx` */
   ids: { card: string; accept: string; reject: string; open?: string; tx?: string };
-  onAccept: (link: ReceiptLinkRow) => void;
-  onReject: (link: ReceiptLinkRow) => void;
+  onAccept: (link: LinkedReceipt) => void;
+  onReject: (link: LinkedReceipt) => void;
   onOpenReceipt?: () => void;
   onOpenTx?: (txId: string) => void;
   busy?: boolean;

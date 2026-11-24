@@ -1,4 +1,4 @@
-import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { LinkedReceipt, ReceiptRow } from '@/db/types';
 import { compareFits, receiptFit } from '@/domain/storeReceipts';
 import type { ReceiptTx } from '@/features/shopping/receiptPick';
 
@@ -36,28 +36,28 @@ export function markedReceiptId(stage: ReceiptStage, attachedId: string | null |
 export function cardReceipt(
   stage: ReceiptStage,
   attached: ReceiptRow | null | undefined,
-  proposal: ReceiptLinkRow | undefined,
+  proposal: LinkedReceipt | undefined,
   auto: ReceiptRow | null,
 ): Pick<ReceiptRow, 'id' | 'totalCents' | 'items'> | null {
   if (stage.kind === 'none') return null;
   if (stage.kind === 'picked') return stage.receipt;
   if (attached) return attached;
-  if (proposal) return { id: proposal.receiptId ?? proposal.id, totalCents: proposal.totalCents, items: proposal.items };
+  if (proposal) return proposal.receipt;
   return auto;
 }
 
 export type ReceiptSettlement =
   | { kind: 'keep' }
-  | { kind: 'accept'; proposal: ReceiptLinkRow }
-  | { kind: 'reject'; proposal: ReceiptLinkRow }
-  | { kind: 'pick'; receipt: ReceiptRow | null; reject?: ReceiptLinkRow };
+  | { kind: 'accept'; proposal: LinkedReceipt }
+  | { kind: 'reject'; proposal: LinkedReceipt }
+  | { kind: 'pick'; receipt: ReceiptRow | null; reject?: LinkedReceipt };
 
 // #496: an attached receipt can be changed on the card: another pick replaces it, "no receipt" lets it go
 // a passed-over proposal is rejected
 export function receiptSettlement(
   stage: ReceiptStage,
   attached: ReceiptRow | null | undefined,
-  proposal: ReceiptLinkRow | undefined,
+  proposal: LinkedReceipt | undefined,
   auto: ReceiptRow | null,
 ): ReceiptSettlement {
   if (attached) {
@@ -65,7 +65,7 @@ export function receiptSettlement(
     return stage.kind === 'none' ? { kind: 'pick', receipt: null } : { kind: 'keep' };
   }
   if (stage.kind === 'picked') {
-    if (proposal && (proposal.receiptId ?? proposal.id) === stage.receipt.id) return { kind: 'accept', proposal };
+    if (proposal?.receiptId === stage.receipt.id) return { kind: 'accept', proposal };
     return { kind: 'pick', receipt: stage.receipt, reject: proposal };
   }
   if (stage.kind === 'none') return proposal ? { kind: 'reject', proposal } : { kind: 'keep' };

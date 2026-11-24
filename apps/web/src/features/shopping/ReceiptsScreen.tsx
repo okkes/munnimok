@@ -4,8 +4,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
-import { globalAsEntry, linkAsEntry, useProposedMatches, useSpaceReceipts } from '@/application/receiptLinks';
-import { useUnmatchedReceipts } from '@/application/connections';
+import { useProposedMatches } from '@/application/receiptLinks';
+import { useAttachableReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
 import { useSpaceTransactions } from '@/application/transactions';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -37,8 +37,7 @@ export function ReceiptsScreen() {
   const navigate = useNavigate();
   const { store, spaceId } = useData();
 
-  const links = useSpaceReceipts();
-  const unmatched = useUnmatchedReceipts();
+  const inventory = useAttachableReceipts();
   const proposals = useProposedMatches();
   const txs = useSpaceTransactions();
   const receiptOps = useReceiptOps();
@@ -49,14 +48,16 @@ export function ReceiptsScreen() {
   // an answered match folds away before it leaves the data
   const { rows: toCheck, leave } = useLeavingRows(proposals, PROPOSAL_EXIT_MS);
 
-  const items = useMemo((): ReceiptListItem[] | undefined => {
-    if (!links) return undefined;
-    const linked = links.map(linkAsEntry);
-    // a link that holds no transaction (a proposal, one taken off — #496) and its global row are one receipt
-    const inSpace = new Set(linked.map((entry) => entry.data.id));
-    const open = (unmatched ?? []).filter((row) => !inSpace.has(row.id)).map(globalAsEntry);
-    return [...linked, ...open].map((entry) => ({ receipt: entry.data, txIds: entry.txIds ?? [] }));
-  }, [links, unmatched]);
+  // #648: the space's own receipts and those of every feed it reads, each marked by where it lives
+  const items = useMemo(
+    (): ReceiptListItem[] | undefined =>
+      inventory?.rows.map((receipt) => ({
+        receipt,
+        txIds: inventory.attachedTo.get(receipt.id) ?? [],
+        scope: receipt.spaceId === spaceId ? 'space' : 'global',
+      })),
+    [inventory, spaceId],
+  );
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-receipts">
@@ -107,7 +108,7 @@ export function ReceiptsScreen() {
                       reject: `receipt-proposal-reject-${link.id}`,
                     }}
                     busy={leaving}
-                    onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
+                    onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId } })}
                     onOpenTx={(txId) => void navigate({ to: '/transactions/$txId', params: { txId } })}
                     onAccept={(answered) =>
                       leave(answered, index, async () => {

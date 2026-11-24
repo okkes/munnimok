@@ -493,11 +493,12 @@ export interface ReceiptPayment {
   accountTail?: string;
 }
 
-// a store receipt's line-item proof: lives ONCE in the owner's STORE FEED (the global fetch/dedupe layer); linking snapshots
-// it into a space via `receiptLink`; photo receipts skip the global layer (photo-born `receiptLink` rows)
+// #648: a receipt lives ONCE — a fetched one in its connection's feed, a scan in its owner's scans feed, a photo taken
+// on a payment in that payment's space. A space that includes a feed reads it; what the space decides about a receipt
+// (which payment, which lines) is its `receiptLink`. Only the receipt's owner writes it
 export interface ReceiptRow extends SyncEnvelope {
   id: string;
-  /** the owner's store feed */
+  /** the feed it lives in, or the space that made it */
   spaceId: string;
   /** 'photo' for the camera, else the connector provider id that fetched
    *  it (`ah`, `jumbo`, `amazon-nl`, `mock-store-simple` …) — the
@@ -519,6 +520,9 @@ export interface ReceiptRow extends SyncEnvelope {
   documents?: ReceiptDocument[];
   /** false when the party says the line items do not add up to the total */
   reconciled?: boolean;
+  /** #648: the category a reader suggested per line NAME of a fetched receipt ('' = asked, none fits), kept apart
+   *  from `items` because the shop's next fetch rewrites those; its owner's to write like the rest of the receipt */
+  itemCats?: Record<string, string>;
 }
 
 export type ConnectorSessionState =
@@ -605,47 +609,36 @@ export interface StoreConnRow extends SyncEnvelope {
   status?: 'ok' | 'expired';
 }
 
-// per-space inclusion of a connection (accountLink analogue): members see it and its receipts flow into the space;
-// carries a name/icon snapshot because members cannot read the owner's store feed
+// per-space inclusion of a receipt feed (accountLink analogue): a connection's, or a person's own scans. The server
+// lets the space's members read the feed; this row is what they render it by (they cannot read the owner's connections)
 export interface StoreConnLinkRow extends SyncEnvelope {
   id: string; // `sclink:{spaceId}:{instanceId}`
   spaceId: string;
+  /** the connection's id; for a person's scans the scans feed's own id */
   instanceId: string;
+  /** the party, or 'photo' for a person's scans */
   store: string;
   displayName: string;
   icon?: string;
   addedByName?: string;
+  /** #648: the feed the space reads; absent on a row written before feeds were shared (the start-up pass fills it) */
+  feedSpaceId?: string;
 }
 
-// per-space receipt-transaction link (txMeta analogue) with a SNAPSHOT of the receipt: linked receipts follow the
-// transactions (survive leaving and instance removal), as the link needs no read access to the owner's store feed
+// #648: what a space decided about a receipt (txMeta analogue) — which payment it proves, which lines were picked. It
+// names the receipt and holds nothing of it: the receipt is read where it lives, and is gone from the space with it
 export interface ReceiptLinkRow extends SyncEnvelope {
-  id: string;
+  id: string; // receiptLinkId(spaceId, receiptId)
   spaceId: string;
-  /** global receipt id; absent for photo-born links (the photo IS the
-   *  link — nothing lives behind it) */
-  receiptId?: string;
-  /** absent = the receipt is present in the space but not attached yet */
+  receiptId: string;
+  /** where the receipt lives: a feed the space reads, or the space itself */
+  feedSpaceId: string;
+  /** absent = the receipt is in the space but on no payment (it only remembers who turned it down) */
   txId?: string;
   /** the other transactions this receipt proves (user 2026-10-08: several payments, one receipt); `txId` stays
    *  the first attachment so every existing reader keeps working; absent = attached to txId alone */
   alsoTxIds?: string[];
-  source: string;
-  instanceId?: string;
-  date: string;
-  totalCents: number;
-  merchant?: string;
-  items?: ReceiptItem[];
-  /** #567: false when the lines a reader found do not add up to the total */
-  reconciled?: boolean;
-  /** #567: the currency a reader found on the receipt; absent = the space's */
-  currency?: string;
   picks?: Record<string, ReceiptPick[]>;
-  /** the link's own copy of the photo, in its space */
-  imageId?: string;
-  payment?: ReceiptPayment;
-  /** the invoices ride the snapshot like a photo does, as the link's own copies — members open them without the owner's feed */
-  documents?: ReceiptDocument[];
   /** 1 = the matcher linked it, 0/absent = a human did */
   auto?: 0 | 1;
   /** #367: the matcher's best candidate was already reviewed, so it asks
@@ -654,6 +647,13 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   proposedTxId?: string;
   /** transactions a human said this receipt is NOT for — never proposed again */
   rejectedTxIds?: string[];
+}
+
+/** a link read together with the receipt it names: what every screen draws */
+export interface LinkedReceipt
+  extends ReceiptLinkRow,
+    Pick<ReceiptRow, 'source' | 'instanceId' | 'date' | 'totalCents' | 'merchant' | 'items' | 'reconciled' | 'currency' | 'imageId' | 'payment' | 'documents'> {
+  receipt: ReceiptRow;
 }
 
 export type AssetClass = 'stock' | 'etf' | 'crypto' | 'cash' | 'other';

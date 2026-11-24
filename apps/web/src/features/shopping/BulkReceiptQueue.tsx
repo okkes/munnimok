@@ -50,7 +50,7 @@ function ReceiptQueueStep({
   };
   const pick = (row: ReceiptRow | null) =>
     answer(async () => {
-      if (row && proposal && (proposal.receiptId ?? proposal.id) === row.id) {
+      if (row && proposal?.receiptId === row.id) {
         await ops.acceptMatch(proposal);
         return;
       }

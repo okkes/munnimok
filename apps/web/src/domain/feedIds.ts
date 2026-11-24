@@ -54,5 +54,24 @@ export const importOpId = (seed: string): string => uuidv5(`op:${seed}`, IMPORT_
 
 export const storeConnLinkId = (spaceId: string, instanceId: string): string => `sclink:${spaceId}:${instanceId}`;
 
-/** the owner's personal STORE FEED — global receipts + instance metadata */
+/** the owner's personal feed that lists their connections (it held every receipt before #648) */
 export const storeFeedId = (sub: string): string => personalFeedSpaceId('STORES', sub);
+
+// #648: a connection's receipts are a feed of their own, a person's scans another — a space is given one to read,
+// never everything the person holds (the server's ImportIds names them the same way)
+export const receiptFeedRef = (connectionId: string): string => `STORE:${connectionId}`;
+export const SCANS_FEED_REF = 'SCANS';
+export const receiptFeedId = (connectionId: string, sub: string): string => personalFeedSpaceId(receiptFeedRef(connectionId), sub);
+export const scansFeedId = (sub: string): string => personalFeedSpaceId(SCANS_FEED_REF, sub);
+
+const ENTITY_ID_MAX = 128;
+const fit = (prefix: string, rest: string): string => (prefix.length + rest.length <= ENTITY_ID_MAX ? prefix + rest : prefix + importOpId(rest));
+
+/** the id a receipt has in its own feed: what the ingest names a fetched one, or a scan's (the server's ReceiptFeeds) */
+export function movedReceiptId(oldId: string, scan: boolean): string {
+  if (scan) return fit('scan:', oldId);
+  return fit('rcp2:', oldId.startsWith('rcpt:') ? oldId.slice('rcpt:'.length) : oldId);
+}
+
+/** the receipt a space made itself out of the copy a link held */
+export const spaceReceiptId = (linkId: string): string => fit('srcp:', linkId);

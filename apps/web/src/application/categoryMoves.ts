@@ -1,6 +1,6 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { CategoryRow } from '@/db/types';
+import type { CategoryRow, ReceiptRow } from '@/db/types';
 import {
   GROCERY_MAIN_ID,
   GROCERY_MAIN_NAMES,
@@ -8,19 +8,19 @@ import {
   GROCERY_SUB_BY_NAME,
   MERGED_BUILTINS,
   movedIds,
+  movedItemCats,
   movedItems,
   movedPicks,
   movedStory,
   normCatName,
 } from '@/domain/categoryMoves';
 import type { CatMoves } from '@/domain/categoryMoves';
-import { myStoreFeedId } from './storeFeed';
+import { myReceiptFeeds } from './storeFeed';
 
-/** the spaces this identity may write, and its own store feed (receipts live there; a feed has no space row) */
+/** the spaces this identity may write, and the feeds its own receipts live in (#648; a feed has no space row) */
 async function writableSpaceIds(store: StorageBackend, repo: Repo): Promise<string[]> {
   const ids = new Set((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id));
-  const feed = myStoreFeedId();
-  if (feed) ids.add(feed);
+  for (const feed of await myReceiptFeeds(store)) ids.add(feed);
   return [...ids].filter((id) => repo.canWrite(id));
 }
 
@@ -79,19 +79,26 @@ async function moveReceipts(store: StorageBackend, repo: Repo, spaceId: string, 
   let touched = 0;
   for (const link of await store.bySpace('receiptLink', spaceId)) {
     if (link.deleted !== 0) continue;
-    const items = movedItems(link.items, moves);
     const picks = movedPicks(link.picks, moves);
-    if (!items && !picks) continue;
-    await repo.upsert('receiptLink', spaceId, link.id, { ...(items ? { items } : {}), ...(picks ? { picks } : {}) });
+    if (!picks) continue;
+    await repo.upsert('receiptLink', spaceId, link.id, { picks });
     touched += 1;
   }
-  for (const receipt of await store.bySpace('receipt', spaceId)) {
-    const items = receipt.deleted === 0 ? movedItems(receipt.items, moves) : null;
-    if (!items) continue;
-    await repo.upsert('receipt', spaceId, receipt.id, { items });
+  for (const receipt of (await store.bySpace('receipt', spaceId)).filter((row) => row.deleted === 0)) {
+    const moved = movedReceiptCats(receipt, moves);
+    if (!moved) continue;
+    await repo.upsert('receipt', spaceId, receipt.id, moved);
     touched += 1;
   }
   return touched;
+}
+
+/** the categories a receipt's lines carry, and the ones suggested per line name, with the moved ones replaced */
+function movedReceiptCats(receipt: Pick<ReceiptRow, 'items' | 'itemCats'>, moves: CatMoves): Partial<Pick<ReceiptRow, 'items' | 'itemCats'>> | null {
+  const items = movedItems(receipt.items, moves);
+  const itemCats = movedItemCats(receipt.itemCats, moves);
+  if (!items && !itemCats) return null;
+  return { ...(items ? { items } : {}), ...(itemCats ? { itemCats } : {}) };
 }
 
 async function moveSpaceRow(store: StorageBackend, repo: Repo, spaceId: string, moves: CatMoves): Promise<number> {

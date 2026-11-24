@@ -2,49 +2,14 @@ import { useMemo } from 'react';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { receiptLinkId } from '@/domain/feedIds';
-import { itemMemoryOf } from '@/domain/receiptCats';
+import { categorisedItems, itemMemoryOf } from '@/domain/receiptCats';
 import type { ItemMemory } from '@/domain/receiptCats';
-import { copyReceiptFiles } from './receiptFiles';
-import type { FileRefs } from './receiptFiles';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
-import type { ReceiptDocument, ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
+import type { LinkedReceipt, ReceiptLinkRow, ReceiptPick, ReceiptRow, StoreConnLinkRow } from '@/db/types';
 
-// a receiptLink snapshots the receipt payload, so linked receipts outlive the owner leaving or the connection going
-
-export interface ReceiptSnapshot {
-  receiptId?: string;
-  source: ReceiptRow['source'];
-  instanceId?: string;
-  date: string;
-  totalCents: number;
-  merchant?: string;
-  items?: ReceiptRow['items'];
-  imageId?: string;
-  payment?: ReceiptRow['payment'];
-  documents?: ReceiptDocument[];
-  currency?: string;
-  reconciled?: boolean;
-}
-
-/** `files`: the link's own copies of what the receipt holds (copyReceiptFiles) */
-export function receiptSnapshot(receipt: ReceiptRow, files: FileRefs): ReceiptSnapshot {
-  return {
-    receiptId: receipt.id,
-    source: receipt.source,
-    instanceId: receipt.instanceId,
-    date: receipt.date,
-    totalCents: receipt.totalCents,
-    merchant: receipt.merchant,
-    items: receipt.items,
-    imageId: files.imageId,
-    payment: receipt.payment,
-    documents: files.documents,
-    // the party's currency and its "lines do not add up" travel with the copy: members read them without the owner's feed
-    ...(receipt.currency ? { currency: receipt.currency } : {}),
-    ...(receipt.reconciled === false ? { reconciled: false } : {}),
-  };
-}
+// #648: a receiptLink names a receipt and holds what the space decided about it; the receipt is read where it lives —
+// a feed the space includes, or the space itself — and a link whose receipt is not there shows nothing
 
 /** the first attachment is `txId`, the others `alsoTxIds`; deduped, empties dropped; no `txId` = attached to nothing */
 export function linkedTxIds(link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>): string[] {
@@ -54,16 +19,44 @@ export function linkedTxIds(link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>): s
 
 export const isLinkedTo = (link: Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'>, txId: string): boolean => linkedTxIds(link).includes(txId);
 
+/** a receipt the space made itself (a photo taken on a payment): it lives and dies with the space's use of it */
+export const isSpaceOwn = (link: Pick<ReceiptLinkRow, 'spaceId' | 'feedSpaceId'>): boolean => link.feedSpaceId === link.spaceId;
+
+/** which receipt, by where it lives */
+export type ReceiptRef = Pick<ReceiptRow, 'id' | 'spaceId'>;
+
+/** what a link says about which receipt it is; written with every first write, never changed */
+const naming = (receipt: ReceiptRef) => ({ receiptId: receipt.id, feedSpaceId: receipt.spaceId });
+
+/** the feeds a space reads (a connection's receipts, a person's scans), each with the row the space keeps for it */
+export async function includedFeeds(store: StorageBackend, spaceId: string): Promise<Map<string, StoreConnLinkRow>> {
+  const feeds = new Map<string, StoreConnLinkRow>();
+  for (const link of await store.bySpace('storeConnLink', spaceId)) {
+    if (link.deleted === 0 && link.feedSpaceId) feeds.set(link.feedSpaceId, link);
+  }
+  return feeds;
+}
+
+/** a receipt as it is shown and filed by: its lines carry the categories its owner had suggested for them (#648) */
+export const shownReceipt = (receipt: ReceiptRow): ReceiptRow => (receipt.itemCats ? { ...receipt, items: categorisedItems(receipt) } : receipt);
+
+/** every receipt a space may put on a payment: its own and those of the feeds it reads; newest first */
+export async function receiptsInSpace(store: StorageBackend, spaceId: string): Promise<ReceiptRow[]> {
+  const rows = await store.bySpace('receipt', spaceId);
+  for (const feedId of (await includedFeeds(store, spaceId)).keys()) rows.push(...(await store.bySpace('receipt', feedId)));
+  return rows.filter((row) => row.deleted === 0).map(shownReceipt).sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export async function writeReceiptLink(
   repo: Repo,
   spaceId: string,
-  receipt: ReceiptRow,
+  receipt: ReceiptRef,
   txId: string | undefined,
   auto: boolean,
 ): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   await repo.upsert('receiptLink', spaceId, id, {
-    ...receiptSnapshot(receipt, await copyReceiptFiles(repo, receipt, spaceId, id)),
+    ...naming(receipt),
     txId: txId ?? (null as never), // explicit null clears a stale link
     // a tombstone revived by this write would keep the attachments it had: a fresh link proves one transaction
     alsoTxIds: null as never,
@@ -74,7 +67,7 @@ export async function writeReceiptLink(
 }
 
 /** `txId` stays the first attachment, further ones ride `alsoTxIds`; already attached = no-op */
-export async function attachReceiptTo(repo: Repo, spaceId: string, receipt: ReceiptRow, txId: string): Promise<string> {
+export async function attachReceiptTo(repo: Repo, spaceId: string, receipt: ReceiptRef, txId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   const link = await repo.store.get('receiptLink', id);
   if (link?.deleted !== 0 || !link.txId) return writeReceiptLink(repo, spaceId, receipt, txId, false);
@@ -91,11 +84,12 @@ const withRejected = (link: Pick<ReceiptLinkRow, 'rejectedTxIds'>, txIds: readon
   ...new Set([...(link.rejectedTxIds ?? []), ...txIds]),
 ];
 
-// a photo-born link IS the receipt and goes; a store receipt stays unattached and remembers the rejected transactions,
-// so neither the matcher nor a picker offers it there again (#496)
+// the space's own receipt goes with its last payment; a receipt from a feed stays unattached and remembers the
+// rejected transactions, so neither the matcher nor a picker offers it there again (#496)
 export async function releaseLink(repo: Repo, spaceId: string, link: ReceiptLinkRow, txIds: readonly string[]): Promise<void> {
-  if (!link.receiptId) {
+  if (isSpaceOwn(link)) {
     await repo.remove('receiptLink', spaceId, link.id);
+    await repo.remove('receipt', spaceId, link.receiptId);
     return;
   }
   await repo.upsert('receiptLink', spaceId, link.id, {
@@ -120,34 +114,32 @@ export async function detachReceiptFrom(repo: Repo, spaceId: string, link: Recei
   await repo.upsert('receiptLink', spaceId, link.id, {
     txId: first,
     alsoTxIds: rest.length > 0 ? rest : (null as never),
-    ...(link.receiptId ? { rejectedTxIds: withRejected(link, [txId]) } : {}),
+    ...(isSpaceOwn(link) ? {} : { rejectedTxIds: withRejected(link, [txId]) }),
   });
 }
 
-// #367: the best candidate was already reviewed, so the receipt asks: `proposedTxId` and no `txId`,
-// listed under "Matches to check" until a human decides
-export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRow, proposedTxId: string): Promise<string> {
-  const id = receiptLinkId(spaceId, receipt.id);
-  await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, await copyReceiptFiles(repo, receipt, spaceId, id), proposedTxId));
-  return id;
-}
-
-const proposalFields = (receipt: ReceiptRow, files: FileRefs, proposedTxId: string) => ({
-  ...receiptSnapshot(receipt, files),
+const proposalFields = (receipt: ReceiptRef, proposedTxId: string) => ({
+  ...naming(receipt),
   txId: null as never,
   alsoTxIds: null as never, // a proposal proves nothing yet
   auto: 0 as const,
   proposedTxId,
 });
 
-/** a pass's proposals, committed together (#554); their files a receipt at a time: a pass never holds every invoice at once */
-export async function writeProposedLinks(repo: Repo, spaceId: string, proposals: readonly { receipt: ReceiptRow; txId: string }[]): Promise<void> {
-  const writes = [];
-  for (const { receipt, txId } of proposals) {
-    const entityId = receiptLinkId(spaceId, receipt.id);
-    writes.push({ spaceId, entityId, fields: proposalFields(receipt, await copyReceiptFiles(repo, receipt, spaceId, entityId), txId) });
-  }
-  await repo.upsertMany('receiptLink', writes);
+// #367: the best candidate was already reviewed, so the receipt asks: `proposedTxId` and no `txId`,
+// listed under "Matches to check" until a human decides
+export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRef, proposedTxId: string): Promise<string> {
+  const id = receiptLinkId(spaceId, receipt.id);
+  await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, proposedTxId));
+  return id;
+}
+
+/** a pass's proposals, committed together (#554) */
+export async function writeProposedLinks(repo: Repo, spaceId: string, proposals: readonly { receipt: ReceiptRef; txId: string }[]): Promise<void> {
+  await repo.upsertMany(
+    'receiptLink',
+    proposals.map(({ receipt, txId }) => ({ spaceId, entityId: receiptLinkId(spaceId, receipt.id), fields: proposalFields(receipt, txId) })),
+  );
 }
 
 export async function acceptProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
@@ -161,18 +153,45 @@ export async function rejectProposal(repo: Repo, spaceId: string, link: ReceiptL
   await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never, rejectedTxIds: withRejected(link, [link.proposedTxId]) });
 }
 
-export function useProposedMatches(): ReceiptLinkRow[] | undefined {
+export function useProposedMatches(): LinkedReceipt[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => (await spaceReceipts(store, spaceId)).filter((l) => !!l.proposedTxId && !l.txId), [spaceId]);
 }
 
-export async function spaceReceipts(store: StorageBackend, spaceId: string): Promise<ReceiptLinkRow[]> {
-  const links = (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0);
-  links.sort((a, b) => b.date.localeCompare(a.date));
-  return links;
+export const joinReceipt = (link: ReceiptLinkRow, stored: ReceiptRow, receipt = shownReceipt(stored)): LinkedReceipt => ({
+  ...link,
+  source: receipt.source,
+  instanceId: receipt.instanceId,
+  date: receipt.date,
+  totalCents: receipt.totalCents,
+  merchant: receipt.merchant,
+  items: receipt.items,
+  reconciled: receipt.reconciled,
+  currency: receipt.currency,
+  imageId: receipt.imageId,
+  payment: receipt.payment,
+  documents: receipt.documents,
+  receipt,
+});
+
+/** the links of a space with the receipts they name, newest first; a link whose receipt is gone (or not here yet) is left out */
+export async function linkedReceipts(store: StorageBackend, links: readonly ReceiptLinkRow[]): Promise<LinkedReceipt[]> {
+  const live = links.filter((link) => link.deleted === 0 && !!link.receiptId);
+  if (live.length === 0) return [];
+  const receipts = new Map((await store.getMany('receipt', [...new Set(live.map((link) => link.receiptId))])).map((receipt) => [receipt.id, receipt]));
+  const joined = live.flatMap((link) => {
+    const receipt = receipts.get(link.receiptId);
+    return receipt?.deleted === 0 ? [joinReceipt(link, receipt)] : [];
+  });
+  joined.sort((a, b) => b.date.localeCompare(a.date));
+  return joined;
 }
 
-export function useSpaceReceipts(): ReceiptLinkRow[] | undefined {
+export async function spaceReceipts(store: StorageBackend, spaceId: string): Promise<LinkedReceipt[]> {
+  return linkedReceipts(store, await store.bySpace('receiptLink', spaceId));
+}
+
+export function useSpaceReceipts(): LinkedReceipt[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => spaceReceipts(store, spaceId), [spaceId]);
 }
@@ -185,43 +204,26 @@ export function useItemMemory(): ItemMemory {
 export type ReceiptKind = 'link' | 'global';
 
 export interface ReceiptEntry {
+  /** 'link' = seen from a space that has decided something about it; 'global' = the receipt alone */
   kind: ReceiptKind;
   data: ReceiptRow;
-  /** the receiptLink row id (kind 'link' — the unlink/delete target) */
+  /** the receiptLink row id (kind 'link' — the unlink target) */
   linkId?: string;
   txId?: string;
   txIds?: string[];
   picks?: Record<string, ReceiptPick[]>;
 }
 
-const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
-  id: link.receiptId ?? link.id,
-  spaceId: link.spaceId,
-  source: link.source,
-  date: link.date,
-  totalCents: link.totalCents,
-  merchant: link.merchant,
-  items: link.items,
-  imageId: link.imageId,
-  instanceId: link.instanceId,
-  payment: link.payment,
-  documents: link.documents,
-  currency: link.currency,
-  reconciled: link.reconciled,
-  fieldVersions: link.fieldVersions,
-  deleted: link.deleted,
-});
-
-export const linkAsEntry = (link: ReceiptLinkRow): ReceiptEntry => ({
+export const linkAsEntry = (link: LinkedReceipt): ReceiptEntry => ({
   kind: 'link',
-  data: linkAsReceipt(link),
+  data: link.receipt,
   linkId: link.id,
   txId: link.txId,
   txIds: linkedTxIds(link),
   picks: link.picks,
 });
 
-export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: row });
+export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: shownReceipt(row) });
 
 export function useTxReceiptEntry(txId: string | undefined): ReceiptEntry | null | undefined {
   const { store, spaceId } = useData();
@@ -229,9 +231,27 @@ export function useTxReceiptEntry(txId: string | undefined): ReceiptEntry | null
     store,
     async () => {
       if (!txId) return null;
-      const link = (await spaceReceipts(store, spaceId)).find((l) => isLinkedTo(l, txId));
+      const links = (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0 && isLinkedTo(l, txId));
+      const [link] = await linkedReceipts(store, links);
       return link ? linkAsEntry(link) : null;
     },
     [spaceId, txId],
   );
+}
+
+/** #648: how many payments lose their receipt when these receipts go — across every space this device holds */
+export async function paymentsHolding(store: StorageBackend, holds: (link: ReceiptLinkRow) => boolean): Promise<number> {
+  const held = new Set<string>();
+  for (const link of await store.allRows('receiptLink')) {
+    if (link.deleted === 0 && holds(link)) for (const txId of linkedTxIds(link)) held.add(`${link.spaceId}:${txId}`);
+  }
+  return held.size;
+}
+
+/** the links to these receipts go with them, in every space this identity may write: nothing of a receipt stays behind */
+export async function removeLinksTo(repo: Repo, holds: (link: ReceiptLinkRow) => boolean): Promise<void> {
+  const upkeep = repo.upkeep();
+  for (const link of await repo.store.allRows('receiptLink')) {
+    if (link.deleted === 0 && holds(link)) await upkeep.remove('receiptLink', link.spaceId, link.id);
+  }
 }
