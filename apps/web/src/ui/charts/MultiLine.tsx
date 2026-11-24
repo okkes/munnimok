@@ -434,7 +434,8 @@ export function MultiLine({
     </svg>
   );
   if (!scrub) return picture;
-  const sliderAt = scrubbed ?? Math.min(n - 1, Math.max(0, scrub.origin));
+  const sliderRest = Math.min(n - 1, Math.max(0, scrub.origin));
+  const sliderAt = scrubbed ?? sliderRest;
   const sliderTip = scrub.tip(sliderAt);
   return (
     <div>
@@ -442,6 +443,7 @@ export function MultiLine({
       <ScrubSlider
         count={n}
         value={sliderAt}
+        rest={sliderRest}
         onPick={(index) => pickScrub(index, index !== null)}
         label={scrub.sliderLabel ?? scrub.ariaLabel}
         valueText={[sliderTip.title, ...sliderTip.rows.map((row) => row.text)].join(', ')}

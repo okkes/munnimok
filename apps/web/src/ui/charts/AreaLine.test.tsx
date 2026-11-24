@@ -106,7 +106,7 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(onScrub).toHaveBeenLastCalledWith(null);
   });
 
-  it('#510: the slider under the chart walks the days from Today — into the expectation, to its nearest point — and lets go when lifted', () => {
+  it('#510: the slider under the chart walks the days from Today — into the expectation, to its nearest point — keeps its day when lifted and lets go back on Today', () => {
     const { onScrub } = renderChart();
     const slider = screen.getByTestId('al-slider') as HTMLInputElement;
     expect(slider.max).toBe('9');
@@ -119,6 +119,9 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     fireEvent.change(slider, { target: { value: '0' } });
     expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-01');
     fireEvent.touchEnd(slider);
+    expect(screen.getByTestId('al-tip').textContent).toContain('2026-06-01');
+    expect(slider.value).toBe('0');
+    fireEvent.change(slider, { target: { value: '4' } });
     expect(onScrub).toHaveBeenLastCalledWith(null);
     expect(screen.queryByTestId('al-tip')).toBeNull();
     expect(slider.value).toBe('4');

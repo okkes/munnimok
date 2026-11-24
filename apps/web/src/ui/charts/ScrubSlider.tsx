@@ -2,11 +2,13 @@ import type { CSSProperties } from 'react';
 
 /**
  * #510: the day scrub as a control under the chart, so reading a day never competes with scrolling the page.
- * The reading lasts while the thumb is held (or the slider has the keyboard), like a finger on the chart.
+ * The thumb stays where it is left: the day is read with both hands free, and the list under the chart can be scrolled to.
+ * Back on its resting day (or Escape) the reading is let go.
  */
 export function ScrubSlider({
   count,
   value,
+  rest,
   onPick,
   label,
   valueText,
@@ -16,6 +18,8 @@ export function ScrubSlider({
 }: Readonly<{
   count: number;
   value: number;
+  /** where the thumb stands when no day is picked (today) */
+  rest: number;
   onPick: (index: number | null) => void;
   label?: string;
   valueText: string;
@@ -26,7 +30,7 @@ export function ScrubSlider({
   testId?: string;
 }>) {
   if (count < 2) return null;
-  const release = () => onPick(null);
+  const pick = (next: number) => onPick(next === rest ? null : next);
   // the thumb's centre travels between half a thumb in from each end: the margins put it under the chart's points
   const style = {
     '--m-scrub-ink': color,
@@ -45,15 +49,11 @@ export function ScrubSlider({
       aria-valuetext={valueText}
       data-testid={testId}
       style={style}
-      onChange={(e) => onPick(Number(e.currentTarget.value))}
-      onPointerUp={release}
-      onTouchEnd={release}
-      onTouchCancel={release}
-      onBlur={release}
+      onChange={(e) => pick(Number(e.currentTarget.value))}
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return;
         e.preventDefault();
-        release();
+        onPick(null);
       }}
     />
   );

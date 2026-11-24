@@ -308,6 +308,7 @@ export function AreaLine({
       <ScrubSlider
         count={all.length > 1 ? totalDays + 1 : 1}
         value={dayDiff(first, sliderPoint.date)}
+        rest={dayDiff(first, all[n - 1].date)}
         onPick={(day) => pick(day === null ? null : nearestTo(day), day !== null)}
         label={sliderLabel ?? ariaLabel}
         valueText={`${dayText(sliderPoint)}: ${formatValue(sliderPoint.cents)}`}

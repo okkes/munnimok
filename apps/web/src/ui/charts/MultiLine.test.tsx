@@ -297,7 +297,7 @@ describe('MultiLine', () => {
 
     const touch = (pointerId = 1, clientX = 0, clientY = 50) => ({ pointerId, pointerType: 'touch', clientX, clientY });
 
-    it('the slider under the chart moves the same cursor: it rests on the origin, sliding shows the tip and reports the day, lifting lets go', () => {
+    it('the slider under the chart moves the same cursor: it rests on the origin, sliding shows the tip and reports the day, a lifted thumb keeps its day, and back on the origin lets go', () => {
       const { onScrub, slider } = renderScrub();
       expect(slider.type).toBe('range');
       expect(slider.getAttribute('aria-label')).toBe('Pick a day');
@@ -311,6 +311,11 @@ describe('MultiLine', () => {
       fireEvent.change(slider, { target: { value: '3' } });
       expect(screen.getByTestId('scr-tip').textContent).toMatch(/^Day 4/);
       fireEvent.pointerUp(slider);
+      fireEvent.blur(slider);
+      expect(onScrub).toHaveBeenLastCalledWith(3);
+      expect(screen.getByTestId('scr-tip').textContent).toMatch(/^Day 4/);
+      expect(slider.value).toBe('3');
+      fireEvent.change(slider, { target: { value: '2' } });
       expect(onScrub).toHaveBeenLastCalledWith(null);
       expect(screen.queryByTestId('scr-tip')).toBeNull();
       expect(slider.value).toBe('2');
