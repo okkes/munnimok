@@ -264,6 +264,16 @@ export function GlobalSettingsScreen() {
           <WeekStartRow />
           {/* receipts are a space view; the global door is the hub of every connected party (#367) */}
           <Row testId="settings-hub-row" icon="link-variant" title={t('conn.title')} onClick={() => void navigate({ to: '/connections' })} />
+          {/* #648: the person's own receipts (fetched and scanned) and how photos are read; a space's Receipts does the linking */}
+          {identity?.kind !== 'offline' && (
+            <Row
+              testId="settings-own-receipts-row"
+              icon="receipt-text-outline"
+              title={t('receipts.globalTitle')}
+              sub={t('receipts.globalSub')}
+              onClick={() => void navigate({ to: '/connections/receipts' })}
+            />
+          )}
           {/* trust feature: munni reads your banks, so it also lets you leave */}
           <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />

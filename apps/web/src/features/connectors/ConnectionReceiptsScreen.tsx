@@ -1,27 +1,23 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@/db/useQuery';
+import { useData } from '@/app/data';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
-import { useFetchedRanges, useGlobalReceipts, useStoreConnMetas } from '@/application/connections';
+import { useGlobalReceipts, useStoreConnMetas } from '@/application/connections';
 import type { FetchedRange } from '@/application/connections';
-import { partyName } from '@/features/connectors/logos';
-import { fmtCents } from '@/lib/money';
+import { ReceiptAiConsentSheet } from '@/features/shopping/ReceiptAiRead';
+import { ReceiptList } from '@/features/shopping/ReceiptList';
+import { receiptAiChoice, receiptAutoRead, setReceiptAutoRead } from '@/features/shopping/receiptAi';
+import { getApiCapabilities } from '@/lib/api';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Picture } from '@/ui/Picture';
-import { SearchField } from '@/ui/SearchField';
-import type { ReceiptRow, StoreConnRow } from '@/db/types';
+import { Pill, Row } from '@/ui/primitives';
 import { resultStillFresh, useSyncActivity } from './syncActivity';
 import type { SyncActivity } from './syncActivity';
 
 type Translate = ReturnType<typeof useLang>['t'];
-
-function rowMatches(receipt: ReceiptRow, q: string, amountQ: string | null): boolean {
-  const haystack = [receipt.merchant ?? '', receipt.source, ...(receipt.items?.map((i) => i.name) ?? [])].join(' ').toLowerCase();
-  if (haystack.includes(q)) return true;
-  return !!amountQ && String(Math.abs(receipt.totalCents)).includes(amountQ);
-}
 
 const fmtDay = (iso: string, lang: Lang) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -48,97 +44,55 @@ export function activityLine(activity: SyncActivity | undefined, t: Translate, l
   return { text, busy: false };
 }
 
-// the hub's receipts: the data is global, so no matched/unmatched labels or linking; a space's Receipts screen has those
+/** #648: a photo is read as soon as it is taken; switching it on is also the say-so the reader asks for once */
+function AutoReadRow() {
+  const { t } = useLang();
+  const [on, setOn] = useState(receiptAutoRead);
+  const [asking, setAsking] = useState(false);
+  const set = (next: boolean) => {
+    setReceiptAutoRead(next);
+    setOn(next);
+  };
+  const toggle = () => {
+    if (on) set(false);
+    else if (receiptAiChoice() === 'yes') set(true);
+    else setAsking(true);
+  };
+  return (
+    <>
+      <Row
+        testId="receipts-autoread-toggle"
+        icon="text-recognition"
+        title={t('receipts.autoRead')}
+        sub={t('receipts.autoReadSub')}
+        chevron={false}
+        trailing={
+          <Pill tone={on ? 'accent' : 'neutral'} testId="receipts-autoread-state">
+            {on ? 'ON' : 'OFF'}
+          </Pill>
+        }
+        onClick={toggle}
+      />
+      <ReceiptAiConsentSheet open={asking} onOpenChange={setAsking} onAnswer={(agreed) => set(agreed)} />
+    </>
+  );
+}
+
+// the person's own receipts: what their shops handed over and what they scanned, with no linking (a space's business)
 export function ConnectionReceiptsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
+  const { store } = useData();
   const metas = useStoreConnMetas();
   const receipts = useGlobalReceipts();
-  const ranges = useFetchedRanges();
   const activity = useSyncActivity((s) => s.activity);
-  const [query, setQuery] = useState('');
-  // every shop folded by default; a search unfolds the ones with hits
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
-  const toggle = (id: string) =>
-    setUnfolded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const aiReader = useQuery(store, async () => (await getApiCapabilities()).receiptAi === true, []) === true;
 
-  const shops = useMemo(() => (metas ?? []).filter((m) => (m.kind ?? 'store') === 'store').sort((a, b) => a.displayName.localeCompare(b.displayName)), [metas]);
-
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const digits = q.replaceAll(/[\s.,€-]/g, '');
-    const amountQ = /^\d+$/.test(digits) && digits.length > 0 ? digits : null;
-    return shops.map((meta) => ({
-      meta,
-      rows: (receipts ?? []).filter((r) => r.instanceId === meta.id && (!q || rowMatches(r, q, amountQ))),
-    }));
-  }, [shops, receipts, query]);
-
-  const renderRow = (receipt: ReceiptRow) => (
-    <button
-      key={receipt.id}
-      data-testid={`receipt-row-${receipt.id}`}
-      onClick={() => void navigate({ to: '/connections/receipts/$receiptId', params: { receiptId: receipt.id } })}
-      className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-    >
-      <Icon name="storefront-outline" size={18} color="var(--m-ink-3)" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-ink">{receipt.merchant ?? partyName(receipt.source)}</span>
-        <span className="block text-[11px] text-ink-4">
-          {fmtDay(receipt.date, lang)}
-          {receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : ''}
-          {receipt.documents?.length ? ` · ${t('receipts.invoice')}` : ''}
-        </span>
-      </span>
-      {!!receipt.documents?.length && <Icon name="file-pdf-box" size={16} color="var(--m-ink-4)" data-testid={`receipt-invoice-${receipt.id}`} />}
-      <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, receipt.currency ?? 'EUR', lang)}</span>
-    </button>
-  );
-
-  const renderGroup = ({ meta, rows }: { meta: StoreConnRow; rows: ReceiptRow[] }) => {
-    const running = activityLine(activity[meta.id], t, lang);
-    const open = unfolded.has(meta.id) || (query.trim().length > 0 && rows.length > 0);
-    return (
-      <div key={meta.id} data-testid={`receipts-conn-${meta.id}`}>
-        <div className="mt-4 mb-1 px-1">
-          <button
-            type="button"
-            data-testid={`receipts-conn-toggle-${meta.id}`}
-            aria-expanded={open}
-            onClick={() => toggle(meta.id)}
-            className="m-tap flex w-full items-center gap-2 border-none bg-transparent p-0 text-left"
-          >
-            {meta.icon ? <Picture src={meta.icon} className="h-5 w-5 rounded object-contain" /> : <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />}
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{meta.displayName}</span>
-            <span className="text-[12px] text-ink-4" data-testid={`receipts-conn-count-${meta.id}`}>
-              {rows.length}
-            </span>
-            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} color="var(--m-ink-4)" />
-          </button>
-          <p className="text-[11px] text-ink-4" data-testid={`receipts-conn-range-${meta.id}`}>
-            {rangeLine(ranges?.[meta.id], t, lang)}
-          </p>
-          {running && (
-            <p className={`flex items-center gap-1 text-[11px] ${running.busy ? 'text-accent-deep' : 'text-ink-3'}`} data-testid={`receipts-conn-activity-${meta.id}`}>
-              {running.busy && <Icon name="progress-clock" size={13} color="var(--m-accent-deep)" />}
-              {running.text}
-            </p>
-          )}
-        </div>
-        {open && rows.length > 0 && <div className="overflow-hidden rounded-card border border-line bg-surface">{rows.map(renderRow)}</div>}
-        {open && rows.length === 0 && (
-          <p className="rounded-card border border-dashed border-line px-4 py-3 text-[12px] text-ink-4" data-testid={`receipts-conn-empty-${meta.id}`}>
-            {t('receipts.noneYet')}
-          </p>
-        )}
-      </div>
-    );
-  };
+  const items = useMemo(() => receipts?.map((receipt) => ({ receipt })), [receipts]);
+  const running = (metas ?? [])
+    .filter((meta) => (meta.kind ?? 'store') === 'store')
+    .map((meta) => ({ meta, line: activityLine(activity[meta.id], t, lang) }))
+    .filter((entry): entry is { meta: typeof entry.meta; line: { text: string; busy: boolean } } => entry.line !== null);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-connection-receipts">
@@ -154,13 +108,26 @@ export function ConnectionReceiptsScreen() {
         <p className="mb-2 px-1 text-[12px] leading-relaxed text-ink-4" data-testid="receipts-global-note">
           {t('receipts.globalNote')}
         </p>
-        {shops.length > 0 ? (
-          <>
-            <SearchField testId="receipts-global-search" value={query} onChange={setQuery} placeholder={t('receipts.searchPlaceholder')} />
-            {groups.map(renderGroup)}
-          </>
-        ) : (
-          metas && (
+        {aiReader && (
+          <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="receipts-settings">
+            <AutoReadRow />
+          </div>
+        )}
+        {running.map(({ meta, line }) => (
+          <p
+            key={meta.id}
+            className={`mb-1 flex items-center gap-1 px-1 text-[11px] ${line.busy ? 'text-accent-deep' : 'text-ink-3'}`}
+            data-testid={`receipts-conn-activity-${meta.id}`}
+          >
+            {line.busy && <Icon name="progress-clock" size={13} color="var(--m-accent-deep)" />}
+            {`${meta.displayName} · ${line.text}`}
+          </p>
+        ))}
+        <ReceiptList
+          items={items}
+          fallbackCurrency="EUR"
+          onOpen={(receipt) => void navigate({ to: '/connections/receipts/$receiptId', params: { receiptId: receipt.id } })}
+          empty={
             <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="receipts-global-empty">
               <Icon name="receipt-text-outline" size={34} color="var(--m-ink-4)" />
               <p className="text-[14px] font-medium text-ink-2">{t('receipts.globalEmpty')}</p>
@@ -169,8 +136,8 @@ export function ConnectionReceiptsScreen() {
                 {t('conn.title')}
               </Button>
             </div>
-          )
-        )}
+          }
+        />
       </div>
     </div>
   );

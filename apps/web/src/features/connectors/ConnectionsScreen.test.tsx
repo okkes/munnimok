@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 import { NO_INGEST, catalogueOf, manifestOf } from '@/test/connectorFixtures';
 import { storeConnLinkId } from '@/domain/feedIds';
@@ -722,21 +722,23 @@ describe('Connections hub (signed-in user)', () => {
     await waitFor(() => expect(screen.getByTestId('conn-result-c-count').textContent).toContain('12 new receipts'), { timeout: 10_000 });
   }, 20_000);
 
-  it('Fetched receipts lists what each shop handed over with the dates covered, and opens one without a space’s linking (user ruling 2026-10-02)', async () => {
+  it('#648: Global settings leads to the person’s own receipts — what each shop handed over, by day, opened without a space’s linking', async () => {
     await seedConnection('c-seeded', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
     await seedReceipts('c-seeded');
     renderAppAsUser('/connections', { api: { ...catalogue } });
     await screen.findByTestId('screen-connections');
     await waitFor(() => expect(screen.getByTestId('conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/), { timeout: 5000 });
-    fireEvent.click(screen.getByTestId('conn-view-receipts'));
-    await screen.findByTestId('screen-connection-receipts');
-    const group = await screen.findByTestId('receipts-conn-c-seeded', {}, { timeout: 5000 });
-    await waitFor(() => expect(screen.getByTestId('receipts-conn-count-c-seeded').textContent).toBe('2'));
-    expect(screen.getByTestId('receipts-conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/);
-    expect(group.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
-    expect(screen.queryByTestId('receipt-row-rcpt:mock:c-seeded:2')).toBeNull();
-    fireEvent.click(screen.getByTestId('receipts-conn-toggle-c-seeded'));
-    expect(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2').textContent).toContain('Invoice');
+    expect(screen.queryByTestId('conn-view-receipts')).toBeNull();
+    cleanup();
+    renderAppAsUser('/settings/global', { api: { ...catalogue } });
+    fireEvent.click(await screen.findByTestId('settings-own-receipts-row', {}, { timeout: 5000 }));
+    const list = await screen.findByTestId('screen-connection-receipts');
+    const row = await screen.findByTestId('receipt-row-rcpt:mock:c-seeded:2', {}, { timeout: 5000 });
+    expect(row.textContent).toContain('Invoice');
+    expect(list.querySelectorAll('[data-testid^="receipt-row-"]').length).toBe(2);
+    expect(list.querySelector('[data-testid^="receipts-day-"]')).toBeTruthy();
+    expect(list.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
+    expect(screen.queryByTestId('receipts-filter-unlinked')).toBeNull();
     fireEvent.click(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2'));
     await screen.findByTestId('screen-receipt');
     expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[1-9]/);
@@ -745,6 +747,56 @@ describe('Connections hub (signed-in user)', () => {
     expect(screen.queryByTestId('receipt-link-tx')).toBeNull();
     expect(screen.getByTestId('receipt-space-hint')).toBeTruthy();
     expect(screen.getByTestId('receipt-delete')).toBeTruthy();
+  }, 20_000);
+
+  it('#648: the person’s own receipts hold their scans too, with a chip of their own; the auto-read switch asks for the reader’s yes once', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('@/features/shopping/receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    await seedConnection('c-seeded', { lastSyncAt: new Date().toISOString() });
+    await seedReceipts('c-seeded');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const db = await userDb();
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('receipt', storeFeedId(USER_TEST_SUB), 'own-scan', { source: 'photo', date: '2026-09-21', totalCents: 788, merchant: 'Corner Shop' });
+    db.close();
+    try {
+      renderAppAsUser('/connections/receipts', { api: { ...catalogue } });
+      await screen.findByTestId('screen-connection-receipts');
+      const scan = await screen.findByTestId('receipt-row-own-scan', {}, { timeout: 5000 });
+      expect(scan.textContent).toContain('Corner Shop');
+      expect(scan.textContent).toContain('Scanned');
+      fireEvent.click(screen.getByTestId('receipts-filter-scanned'));
+      await waitFor(() => expect(screen.queryByTestId('receipt-row-rcpt:mock:c-seeded:1')).toBeNull());
+      expect(screen.getByTestId('receipt-row-own-scan')).toBeTruthy();
+
+      expect((await screen.findByTestId('receipts-autoread-state')).textContent).toBe('OFF');
+      fireEvent.click(screen.getByTestId('receipts-autoread-toggle'));
+      fireEvent.click(await screen.findByTestId('receipt-ai-no'));
+      expect(screen.getByTestId('receipts-autoread-state').textContent).toBe('OFF');
+      fireEvent.click(screen.getByTestId('receipts-autoread-toggle'));
+      fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
+      await waitFor(() => expect(screen.getByTestId('receipts-autoread-state').textContent).toBe('ON'));
+      expect(receiptAi.receiptAutoRead()).toBe(true);
+      fireEvent.click(screen.getByTestId('receipts-autoread-toggle'));
+      expect(screen.getByTestId('receipts-autoread-state').textContent).toBe('OFF');
+      expect(receiptAi.receiptAutoRead()).toBe(false);
+      // the yes stands: switching on again asks nothing
+      fireEvent.click(screen.getByTestId('receipts-autoread-toggle'));
+      expect(screen.getByTestId('receipts-autoread-state').textContent).toBe('ON');
+
+      // an own scan keeps its facts and its reader when it is opened from here
+      fireEvent.click(screen.getByTestId('receipt-row-own-scan'));
+      await screen.findByTestId('screen-receipt');
+      expect(await screen.findByTestId('receipt-waiting')).toBeTruthy();
+      expect(screen.getByTestId('receipt-space-hint')).toBeTruthy();
+    } finally {
+      caps.mockRestore();
+    }
   }, 20_000);
 
   it('#640: a connection whose last sync failed says so and why — it used to read as connected and fine', async () => {

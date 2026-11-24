@@ -386,7 +386,7 @@ describe('Receipts (demo identity)', () => {
     expect(await screen.findByTestId('screen-connections')).toBeTruthy();
   }, 15_000);
 
-  it('the receipts browser groups by party and searches names and amounts', async () => {
+  it('#648: the receipts browser lists by day, filters by shop or scanned, and searches names and amounts', async () => {
     await openFirstTx();
     await attachPhoto();
 
@@ -404,20 +404,34 @@ describe('Receipts (demo identity)', () => {
 
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
-    await screen.findByTestId('receipts-group-jumbo');
-    await screen.findByTestId('receipts-group-photo');
+    const jumbo = 'receipt-row-rcpt:jumbo:demo_conn_jumbo:x1';
+    const rows = () => [...document.querySelectorAll('[data-testid^="receipt-row-"]')].map((row) => row.getAttribute('data-testid'));
+    const day = await screen.findByTestId('receipts-day-2026-07-01');
+    expect(day.textContent).toMatch(/Jul/);
+    expect(day.querySelector(`[data-testid="${jumbo}"]`)).toBeTruthy();
+    const everything = rows().length;
+    expect(everything).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByTestId('receipts-filter-scanned'));
+    await waitFor(() => expect(screen.queryByTestId(jumbo)).toBeNull());
+    expect(rows().length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
+    await waitFor(() => expect(screen.getByTestId(jumbo)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('receipts-filter-jumbo'));
+    await waitFor(() => expect(rows().length).toBe(everything));
 
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
-    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
+    await waitFor(() => expect(rows().length).toBeLessThan(everything));
+    expect(screen.getByTestId(jumbo)).toBeTruthy();
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '21,99' } });
-    await waitFor(() => expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy());
-    expect(screen.queryByTestId('receipts-group-photo')).toBeNull();
+    await waitFor(() => expect(rows()).toEqual([jumbo]));
+    fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'nothing reads like this' } });
+    expect(await screen.findByTestId('receipts-none-found')).toBeTruthy();
 
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '' } });
     fireEvent.click(await screen.findByTestId('receipts-filter-unlinked'));
-    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
+    await waitFor(() => expect(rows().length).toBeLessThan(everything));
+    expect(screen.getByTestId(jumbo)).toBeTruthy();
   }, 20_000);
 
   it('a fetched receipt carries its invoice, opened in place (#367)', async () => {

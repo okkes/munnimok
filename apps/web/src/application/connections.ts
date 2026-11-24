@@ -205,7 +205,8 @@ export function useGlobalReceipts(): ReceiptRow[] | undefined {
     async () => {
       const feedId = myStoreFeedId();
       if (!feedId) return [];
-      const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0 && r.instanceId != null);
+      // #648: what the shops handed over and what the person scanned are one list
+      const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0);
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },
