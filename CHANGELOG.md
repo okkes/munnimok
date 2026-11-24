@@ -1,5 +1,32 @@
 # Changelog
 
+## [5.30.0](https://github.com/okkes/munnimok/compare/v5.29.0...v5.30.0) (2026-11-24)
+
+
+### ✨ Features
+
+* **web:** a loan can be paid back whenever, with no fixed payment ([#683](https://github.com/okkes/munnimok/issues/683)) ([5fc1edc](https://github.com/okkes/munnimok/commit/5fc1edc321856ff76b4976ae169eb1c0c537b1ea))
+* **web:** a loan's Add payment picks Repaid or Borrowed from the sign ([#684](https://github.com/okkes/munnimok/issues/684)) ([73849c8](https://github.com/okkes/munnimok/commit/73849c812edc3c67378dea6afa5d90ca03f5d005))
+* **web:** a payment the person verified keeps its category when a receipt lands ([#648](https://github.com/okkes/munnimok/issues/648)) ([83c538a](https://github.com/okkes/munnimok/commit/83c538ab30772b312316227978a7c544f7c1cc1f))
+* **web:** a receipt's lines stand in its transaction, and a photo is read where it was taken ([#648](https://github.com/okkes/munnimok/issues/648)) ([35188ea](https://github.com/okkes/munnimok/commit/35188eaa1374eb9669e7ba198728b9c6e0d1c34b))
+* **web:** a slider under the Trends line charts reads any day, and a finger only reads the graph after resting on it ([#510](https://github.com/okkes/munnimok/issues/510)) ([75f6c95](https://github.com/okkes/munnimok/commit/75f6c95b75ea0b8f880be589aaa895d925020a5e))
+* **web:** receipts are listed by day, and the person's own receipts sit under Global settings ([#648](https://github.com/okkes/munnimok/issues/648)) ([8091ba9](https://github.com/okkes/munnimok/commit/8091ba95586bb0e933e721aac2987368aa2119b5))
+* **web:** switching the app lock or hidden figures off unlocks like opening the app ([#530](https://github.com/okkes/munnimok/issues/530)) ([f1ded6b](https://github.com/okkes/munnimok/commit/f1ded6b591037db93917a5dad54ad861ec9d6049))
+* **web:** the devices list refreshes on demand and several devices disconnect at once ([#685](https://github.com/okkes/munnimok/issues/685)) ([5ef404b](https://github.com/okkes/munnimok/commit/5ef404b6bd2dc285b3a30d27ce6ffb447b0774f9))
+
+
+### 🐞 Bug Fixes
+
+* **api:** a secret logo key in the publishable slot is never handed to a client ([#678](https://github.com/okkes/munnimok/issues/678)) ([e631182](https://github.com/okkes/munnimok/commit/e631182bf7ec3a9518d86545a3300f3e927d3b4e))
+* **consoles:** a sign-in that aged out ends at the sign-in door instead of a flickering page ([#681](https://github.com/okkes/munnimok/issues/681)) ([b2a9e9f](https://github.com/okkes/munnimok/commit/b2a9e9fb2bb774de0c78a710442ff1fdb022eaeb))
+* **web:** a disconnected device signs in again as a new device ([#685](https://github.com/okkes/munnimok/issues/685)) ([aa308a4](https://github.com/okkes/munnimok/commit/aa308a464a6b81c30eaef482d07c3da990755ac0))
+* **web:** a one-off charge is no price change, and a change stops being news ([#682](https://github.com/okkes/munnimok/issues/682)) ([06bb101](https://github.com/okkes/munnimok/commit/06bb1011de5019a8274ebf996ccd11f8fbcc6d4a))
+* **web:** a receipt whose total is the sum of its lines no longer says they do not add up ([#642](https://github.com/okkes/munnimok/issues/642)) ([23c4da1](https://github.com/okkes/munnimok/commit/23c4da199a68c72a33ee7906eb158595792d0269))
+* **web:** an offline profile is offered no web search, and a long transaction title wraps instead of being cut short ([#506](https://github.com/okkes/munnimok/issues/506)) ([7489dfb](https://github.com/okkes/munnimok/commit/7489dfba5980a8ead621a97b0bc73c7d14ad1c5c))
+* **web:** the icon grid of a recurring cost runs down to the foot of its sheet ([#520](https://github.com/okkes/munnimok/issues/520)) ([4208a04](https://github.com/okkes/munnimok/commit/4208a04ed9554ce0f3168317e2706bc452a9086a))
+* **web:** the payoff planner's month field keeps to its card on a phone ([#513](https://github.com/okkes/munnimok/issues/513)) ([6a266ac](https://github.com/okkes/munnimok/commit/6a266acdd845586c87064612ff846f77c35a2770))
+* **web:** the Trends slider keeps the day it is left on ([#510](https://github.com/okkes/munnimok/issues/510)) ([2d09057](https://github.com/okkes/munnimok/commit/2d09057961a66b0eb82c6a4ef0cd11a63382167a))
+
 ## [5.29.0](https://github.com/okkes/munnimok/compare/v5.28.0...v5.29.0) (2026-11-21)
 
 
