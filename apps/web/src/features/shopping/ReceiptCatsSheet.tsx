@@ -10,6 +10,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { CatPath, useCatPath } from './ReceiptItems';
 
 interface LineState {
   catId?: string;
@@ -108,6 +109,7 @@ export function ReceiptCatsSheet({
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
+  const catPath = useCatPath();
   const lines = useMemo(() => receiptLines(items), [items]);
   const [states, setStates] = useState<ReadonlyMap<number, LineState>>(new Map());
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -139,7 +141,8 @@ export function ReceiptCatsSheet({
   const placed = filed.reduce((sum, line) => sum + stateOf(line.index).amountCents, 0);
   const left = netCents - placed;
   const unfiled = lines.filter((line) => !stateOf(line.index).catId);
-  const suggestible = unfiled.filter((line) => suggestions.has(line.index));
+  // #648: with lines ticked, the suggestions are taken for those alone
+  const suggestible = unfiled.filter((line) => suggestions.has(line.index) && (selected.size === 0 || selected.has(line.index)));
   const fmt = (cents: number) => fmtCents(cents, currency, lang);
 
   const apply = () => {
@@ -224,10 +227,11 @@ export function ReceiptCatsSheet({
                     const next = new Map(states);
                     for (const line of suggestible) next.set(line.index, { ...stateOf(line.index), catId: suggestions.get(line.index) });
                     setStates(next);
+                    setSelected(new Set());
                   }}
                   className="m-tap border-none bg-transparent p-0 text-[12px] font-medium text-accent-deep"
                 >
-                  {t('receiptcats.useSuggestions', { n: suggestible.length })}
+                  {t(selected.size > 0 ? 'receiptcats.useSuggestionsTicked' : 'receiptcats.useSuggestions', { n: suggestible.length })}
                 </button>
               )}
             </div>
@@ -251,7 +255,7 @@ export function ReceiptCatsSheet({
                       <div className="text-[13px] text-ink">{line.name}</div>
                       {state.catId && (
                         <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-accent-soft py-0.5 pr-1 pl-2 text-[11px] font-medium text-accent-deep">
-                          <span data-testid={`receiptcats-cat-${line.index}`}>{catName(cats.byId(state.catId), t)}</span>
+                          <CatPath catId={state.catId} testId={`receiptcats-cat-${line.index}`} />
                           <button
                             data-testid={`receiptcats-clear-${line.index}`}
                             aria-label={t('receiptcats.clear')}
@@ -268,7 +272,7 @@ export function ReceiptCatsSheet({
                           onClick={() => patch([line.index], (s) => ({ ...s, catId: suggestion }))}
                           className="m-tap mt-0.5 block border-none bg-transparent p-0 text-left text-[11px] font-medium text-accent-deep"
                         >
-                          {t('receipt.itemCategory', { name: catName(cats.byId(suggestion), t) })}
+                          {t('receipt.itemCategory', { name: catPath(suggestion).label })}
                         </button>
                       )}
                     </div>

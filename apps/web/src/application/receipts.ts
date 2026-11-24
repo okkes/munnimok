@@ -24,7 +24,8 @@ export interface OwnReceiptFacts {
 }
 
 export interface ReceiptOps {
-  attachPhoto: (tx: Pick<SpaceTx, 'id' | 'date' | 'merchant' | 'amountCents'>, file: Blob) => Promise<void>;
+  /** resolves to the new receipt's id (the link's own: a photo taken on a transaction is its receipt) */
+  attachPhoto: (tx: Pick<SpaceTx, 'id' | 'date' | 'merchant' | 'amountCents'>, file: Blob) => Promise<string>;
   remove: (linkId: string, txId?: string) => Promise<void>;
   setItems: (linkId: string, items: ReceiptRow['items']) => Promise<void>;
   /** #567: what a reader made of the photo — its lines, whether they add up, the currency it saw */
@@ -71,6 +72,7 @@ export function useReceiptOps(): ReceiptOps {
         auto: 0,
       });
       void logActivity(store, repo, spaceId, 'receiptAdd', tx.merchant);
+      return id;
     },
     remove: async (linkId, txId) => {
       const row = await letGo(linkId, txId);

@@ -7,6 +7,7 @@ import type { ReceiptRow } from '@/db/types';
 import { renderWithData } from '@/test/harness';
 import { ReceiptAiRead } from './ReceiptAiRead';
 import { ReceiptBody } from './ReceiptBody';
+import { ReceiptItems } from './ReceiptItems';
 import * as receiptAi from './receiptAi';
 import type { ReadReceipt, ReceiptReadReply } from './receiptAi';
 
@@ -136,9 +137,59 @@ describe('reading a receipt photo', () => {
     } as unknown as ReceiptRow;
     renderWithData(<ReceiptBody receipt={row} currency="EUR" />);
     const first = await screen.findByTestId(/item-cat-0$/);
-    expect(first.textContent).toMatch(/^Suggested: .*Coffee/);
+    expect(first.textContent).toBe('Eating out › Coffee & Cafés');
     expect(screen.queryByTestId(/item-cat-1$/)).toBeNull();
     expect(screen.getAllByText('Lavazza')).toHaveLength(2);
     expect(screen.getByTestId(/unreconciled$/)).toBeTruthy();
+  });
+
+  it('#648: the standing order reads a photo taken a moment ago without the button, once; a no to the reader ends the order', async () => {
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue(reply({}));
+    const onRead = vi.fn(async () => undefined);
+    const door = () => renderWithData(<ReceiptAiRead variant="row" testIdPrefix="card" images={[PHOTO]} hasItems={false} freshId="r1" onRead={onRead} />);
+
+    // no order: a new photo waits for the button
+    receiptAi.markFreshPhoto('r1');
+    expect(receiptAi.takeFreshPhoto('r1')).toBe(false);
+    // the order alone sends nothing: the reader's own yes comes first
+    receiptAi.setReceiptAutoRead(true);
+    expect(receiptAi.receiptAutoRead()).toBe(false);
+    receiptAi.setReceiptAiChoice('yes');
+    expect(receiptAi.receiptAutoRead()).toBe(true);
+
+    receiptAi.markFreshPhoto('r1');
+    door();
+    await waitFor(() => expect(onRead).toHaveBeenCalledTimes(1));
+    expect(read).toHaveBeenCalledTimes(1);
+    cleanup();
+    door();
+    expect((await screen.findByTestId('card-read')).textContent).toBe('Read this receipt');
+    expect(read).toHaveBeenCalledTimes(1);
+
+    receiptAi.setReceiptAiChoice('no');
+    expect(receiptAi.receiptAutoRead()).toBe(false);
+    receiptAi.setReceiptAiChoice('yes');
+    expect(receiptAi.receiptAutoRead()).toBe(false);
+  });
+
+  it('#648: a reading that came to nothing says so under the card’s door', async () => {
+    vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue(reply({ state: 'unreadable', receipt: null }));
+    receiptAi.setReceiptAiChoice('yes');
+    renderWithData(<ReceiptAiRead variant="row" testIdPrefix="card" images={[PHOTO]} hasItems={false} onRead={async () => undefined} />);
+    fireEvent.click(await screen.findByTestId('card-read'));
+    expect((await screen.findByTestId('card-note')).getAttribute('data-state')).toBe('unreadable');
+    expect(screen.queryByTestId('receipt-ai-on')).toBeNull();
+  });
+
+  it('#648: a long receipt folds inside a transaction: the first lines, then all of them on a tap', async () => {
+    const items = Array.from({ length: 10 }, (_, index) => ({ name: `Line ${index}`, totalCents: 100 + index }));
+    renderWithData(<ReceiptItems items={items} currency="EUR" testIdPrefix="card" limit={8} />);
+    await screen.findByText('Line 7');
+    expect(screen.queryByText('Line 8')).toBeNull();
+    const all = screen.getByTestId('card-items-all');
+    expect(all.textContent).toBe('Show all 10 items');
+    fireEvent.click(all);
+    expect(screen.getByText('Line 9')).toBeTruthy();
+    expect(screen.queryByTestId('card-items-all')).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { useReceiptOps } from '@/application/receipts';
 import { Sheet } from '@/ui/Sheet';
 import { ReceiptCaptureRungs } from './ReceiptCapture';
+import { markFreshPhoto } from './receiptAi';
 
 // #567: a receipt kept before its transaction exists joins the person's own receipts (every space lists it)
 // its amount is what the payment is recognised by when it arrives
@@ -23,6 +24,7 @@ export function ReceiptQuickAdd({ open, onOpenChange }: Readonly<{ open: boolean
         setRefused(true);
         return;
       }
+      markFreshPhoto(receiptId);
       onOpenChange(false);
       void navigate({ to: '/receipts/$receiptId', params: { receiptId } });
     } finally {

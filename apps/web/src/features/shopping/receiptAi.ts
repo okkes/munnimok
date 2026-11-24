@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import type { ReceiptItem } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 
@@ -74,7 +75,58 @@ export function receiptAiChoice(): 'yes' | 'no' | null {
 export function setReceiptAiChoice(choice: 'yes' | 'no'): void {
   try {
     localStorage.setItem(CONSENT_KEY, choice);
+    // "no" ends the standing order too: nothing is sent on its own after it
+    if (choice === 'no') localStorage.removeItem(AUTO_READ_KEY);
   } catch {
     // a private window keeps nothing: the notice simply comes again
   }
+}
+
+const AUTO_READ_KEY = 'munni_receipt_auto_read';
+
+/** #648: a photo is read as soon as it is taken, without the button; only ever on with the consent given */
+export function receiptAutoRead(): boolean {
+  try {
+    return localStorage.getItem(AUTO_READ_KEY) === 'yes' && receiptAiChoice() === 'yes';
+  } catch {
+    return false;
+  }
+}
+
+export function setReceiptAutoRead(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(AUTO_READ_KEY, 'yes');
+    else localStorage.removeItem(AUTO_READ_KEY);
+  } catch {
+    // a private window keeps nothing: the photo then waits for the button
+  }
+}
+
+// the photos just taken on this device; the read door that shows one of them starts by itself, once
+const fresh = new Set<string>();
+const watchers = new Set<() => void>();
+const changed = () => watchers.forEach((watcher) => watcher());
+
+/** a photo was just taken as this receipt (or link): with the standing order on, it is read where it is shown next */
+export function markFreshPhoto(id: string): void {
+  if (!receiptAutoRead()) return;
+  fresh.add(id);
+  changed();
+}
+
+export function takeFreshPhoto(id: string): boolean {
+  const taken = fresh.delete(id);
+  if (taken) changed();
+  return taken;
+}
+
+/** a door already on screen when its photo is marked learns of it: the row can land before the mark does */
+export function useFreshPhoto(id: string | undefined): boolean {
+  return useSyncExternalStore(
+    (watcher) => {
+      watchers.add(watcher);
+      return () => watchers.delete(watcher);
+    },
+    () => !!id && fresh.has(id),
+  );
 }

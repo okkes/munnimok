@@ -106,7 +106,7 @@ function ReceiptQueueStep({
       onPick={(row) => void pick(row)}
       context={context}
     >
-      <ReceiptCaptureRungs testIdPrefix="receipt-queue" busy={busy} onFile={(file) => void answer(() => ops.attachPhoto(tx, file))} />
+      <ReceiptCaptureRungs testIdPrefix="receipt-queue" busy={busy} onFile={(file) => void answer(async () => void (await ops.attachPhoto(tx, file)))} />
     </ReceiptPickSheet>
   );
 }
