@@ -603,6 +603,70 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€50.00'), { timeout: 5000 });
   }, 15_000);
+
+  /** a hand-kept loan, then the loan's add-payment door: the form staged onto it */
+  const openLoanPaymentDoor = async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('lp'), { trackOutbox: false });
+    await repo.upsert('account', 'demo_space', 't_family_loan', {
+      name: 'Family loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -200_000,
+    });
+    cleanup();
+    renderApp('/transactions/new?counter=t_family_loan&title=Family%20loan');
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Family loan'), { timeout: 5000 });
+    return db;
+  };
+
+  it('#684: the add-payment door picks the loan’s category from the sign, and it follows the sign', async () => {
+    const db = await openLoanPaymentDoor();
+    const category = () => screen.getByTestId('txform-category').textContent;
+    await waitFor(() => expect(category()).toContain('Repaid'));
+    // nothing typed yet: leaving asks nothing
+    fireEvent.click(screen.getByTestId('txform-back'));
+    expect(screen.queryByTestId('screen-discard-stay')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('txform-income'));
+    await waitFor(() => expect(category()).toContain('Borrowed'));
+    fireEvent.click(screen.getByTestId('txform-expense'));
+    await waitFor(() => expect(category()).toContain('Repaid'));
+    fireEvent.click(screen.getByTestId('txform-income'));
+    await waitFor(() => expect(category()).toContain('Borrowed'));
+
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '500,00' } });
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-save'));
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Family loan' && r.accountId === 'demo_main');
+      expect(row).toMatchObject({ amountCents: 50_000, catId: 'debtBorrowed', linkedAccountId: 't_family_loan' });
+    }, { timeout: 5000 });
+    db.close();
+  }, 20_000);
+
+  it('#684: a category picked by hand stays when the sign changes afterwards', async () => {
+    const db = await openLoanPaymentDoor();
+    const category = () => screen.getByTestId('txform-category').textContent;
+    await waitFor(() => expect(category()).toContain('Repaid'));
+    // confirmed by hand: from here on it is the person's choice, not the sign's
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Family loan'));
+
+    fireEvent.click(screen.getByTestId('txform-income'));
+    expect(category()).toContain('Repaid');
+    expect(category()).not.toContain('Borrowed');
+    db.close();
+  }, 20_000);
 });
 
 describe('the create screen in a space this member only reads (#505)', () => {
