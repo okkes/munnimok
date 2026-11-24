@@ -180,10 +180,14 @@ describe('DataProvider startup (local-first)', () => {
       try {
         const { fetchMock } = renderAppAsUser('/home');
         await screen.findByTestId('screen-home', {}, { timeout: 5000 });
+        const { getDeviceId } = await import('@/db/device');
+        const disconnected = getDeviceId();
         globalThis.dispatchEvent(new CustomEvent('munni:device-revoked'));
         await waitFor(() => expect(held.unsubscribe).toHaveBeenCalled());
         await waitFor(() => expect(assign).toHaveBeenCalledWith('/#/login'));
         expect(askedToForget(fetchMock)).toBe(false);
+        // #685: the server refuses the disconnected id for good — the next sign-in here comes as a new device
+        expect(getDeviceId()).not.toBe(disconnected);
       } finally {
         assign.mockRestore();
         held.remove();
