@@ -45,7 +45,7 @@ describe('RecurringScreen (demo identity)', () => {
     clearRecurringView(); // #168 r5: the tab memory outlives renderApp by design
   });
 
-  it('a sustained price change badges the row, the detail and the yearly totals', async () => {
+  it('a sustained price change badges the row and the detail while the cost’s own amount waits for it; taken over, the list lets go and the detail keeps the news (#682)', async () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     const db = new MunniDB('munni_demo');
@@ -53,7 +53,7 @@ describe('RecurringScreen (demo identity)', () => {
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_price', {
       name: 'Streamo',
       kind: 'subscription',
-      amountCents: 1599,
+      amountCents: 1399,
       every: 'month',
       dueDay: 7,
       active: 1,
@@ -83,7 +83,16 @@ describe('RecurringScreen (demo identity)', () => {
     expect(card.textContent).toContain('€13.99');
     expect(card.textContent).toContain('€15.99');
     expect(card.textContent).toContain('+€24.00');
+
+    fireEvent.click(screen.getByTestId('recdetail-price-apply'));
+    await waitFor(() => expect(screen.queryByTestId('recdetail-price-apply')).toBeNull(), { timeout: 5000 });
+    expect(screen.getByTestId('recdetail-pricechange')).toBeTruthy();
     db.close();
+
+    cleanup();
+    renderApp('/recurring');
+    await screen.findByTestId('recurring-row-rec_price', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('recurring-pricechange-rec_price')).toBeNull();
   }, 20_000);
 
   it('creates a recurring cost from the sheet and shows it with period stats', async () => {

@@ -9,7 +9,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useRecurringOps } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
 import { txSliceViews } from '@/domain/txSlices';
-import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
+import { detectPriceChange, priceChangeTold, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import { RecurringLinkSheet } from './RecurringLinkSheet';
@@ -127,7 +127,7 @@ export function RecurringDetailScreen() {
           }
         />
 
-        {priceChange && (
+        {priceChangeTold(rec, priceChange) && (
           <div
             className="mt-3 flex items-center gap-2.5 rounded-card border border-warning bg-warning-soft px-4 py-3"
             data-testid="recdetail-pricechange"
