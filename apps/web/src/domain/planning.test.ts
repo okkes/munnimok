@@ -6,6 +6,7 @@ import {
   brokenSubjects,
   budgetTargetCents,
   categoryReservations,
+  costCycle,
   coverCandidates,
   debtTargetCents,
   estimateTarget,
@@ -23,6 +24,7 @@ import {
   periodLedger,
   periodsAhead,
   periodsUntil,
+  planBarParts,
   planFundedFraction,
   planId,
   planPoolAccounts,
@@ -37,6 +39,7 @@ import {
   unplannedSources,
   reservationConflicts,
   sameSubjects,
+  setAsideChoice,
   shortfallCents,
   spreadTargetCents,
   subjectFamily,
@@ -83,6 +86,26 @@ const NO_OWNERS: SliceOwners = { recurringIds: new Set(), loanIds: new Set(), ev
 const ledgerOf = (txs: TxView[], over: Partial<SliceOwners> = {}, forPeriod = period): PeriodLedger => periodLedger(txs, forPeriod, { ...NO_OWNERS, ...over });
 
 const event = (over: Partial<EventRow>): EventRow => ({ id: 'ev', name: 'Trip', ...envelope, ...over }) as EventRow;
+
+describe('planBarParts (#691: the parts a subject’s bar draws)', () => {
+  it('splits the funding into spent and still there, and names the part of the target nothing covers', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 60_00, realizedCents: 35_00 })).toEqual({ spentCents: 35_00, leftCents: 25_00, overCents: 0, gapCents: 40_00, pastTargetCents: 0 });
+  });
+
+  it('spending beyond the funding is its own part, and it eats into the uncovered target', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 60_00, realizedCents: 80_00 })).toEqual({ spentCents: 60_00, leftCents: 0, overCents: 20_00, gapCents: 20_00, pastTargetCents: 0 });
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 100_00, realizedCents: 125_00 })).toMatchObject({ spentCents: 100_00, overCents: 25_00, gapCents: 0 });
+  });
+
+  it('past the target but covered: the stretch beyond the target is marked inside the spent part', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 200_00, realizedCents: 150_00 })).toEqual({ spentCents: 150_00, leftCents: 50_00, overCents: 0, gapCents: 0, pastTargetCents: 50_00 });
+  });
+
+  it('no target, rolled-over money taken away, a period of net refunds: never a negative part', () => {
+    expect(planBarParts({ targetCents: null, fundedCents: 40_00, realizedCents: 0 })).toEqual({ spentCents: 0, leftCents: 40_00, overCents: 0, gapCents: 0, pastTargetCents: 0 });
+    expect(planBarParts({ targetCents: 50_00, fundedCents: -10_00, realizedCents: -5_00 })).toEqual({ spentCents: 0, leftCents: 0, overCents: 0, gapCents: 50_00, pastTargetCents: 0 });
+  });
+});
 
 describe('periods for planning', () => {
   it('finds the period a date falls in, the periods ahead, and how many periods a date is away', () => {
@@ -263,6 +286,52 @@ describe('targets', () => {
     const weekly = { active: 1 as const, amountCents: 15_00, every: 'week' as const, dueDay: 1, since: '2026-09-07' };
     expect(recurringTargetCents(weekly, space, period, 0)).toBe(60_00);
     expect(recurringTargetCents(weekly, space, period, 20_00)).toBe(40_00);
+  });
+
+  // #692 (the user's own example): €1,000 once a year in a monthly plan; four periods went by, this is the fifth of twelve
+  const yearly = { active: 1 as const, amountCents: 1000_00, every: 'year' as const, dueDay: 20, dueMonth: 5 };
+  const november = { start: '2026-11-01', end: '2026-11-30' };
+  const may = { start: '2027-05-01', end: '2027-05-31' };
+
+  it('a cost’s cycle runs from the period after its last payment to the one it is due in', () => {
+    expect(costCycle(yearly, space, period)).toEqual({ periods: 12, periodNo: 5, periodsLeft: 8, evenCents: 83_33 });
+    expect(costCycle(yearly, space, may)).toMatchObject({ periodNo: 12, periodsLeft: 1 });
+    // the period type the user's own space has: the 21st to the 20th
+    const from21 = { periodType: 'month' as const, periodDay: 21 };
+    expect(costCycle({ ...yearly, dueMonth: 6, dueDay: 10 }, from21, { start: '2026-11-21', end: '2026-12-20' })).toMatchObject({ periods: 12, periodNo: 6, periodsLeft: 7 });
+    expect(costCycle({ ...yearly, active: 0 }, space, period)).toBeNull();
+  });
+
+  it('spread: what is still to save over the periods left — nothing set aside yet, or some', () => {
+    expect(recurringTargetCents(yearly, space, period, 0)).toBe(125_00);
+    expect(recurringTargetCents(yearly, space, period, 300_00)).toBe(87_50);
+  });
+
+  it('catch up: everything the periods so far would have set aside, then one even share a period', () => {
+    const catchUp = { ...yearly, planPace: 'catchUp' as const };
+    expect(recurringTargetCents(catchUp, space, period, 0)).toBe(416_67);
+    expect(recurringTargetCents(catchUp, space, november, 416_67)).toBe(83_33);
+    // some of it was set aside already: only the distance to the even schedule is asked
+    expect(recurringTargetCents(catchUp, space, period, 300_00)).toBe(116_67);
+    // ahead of the schedule asks for nothing, and the period it is due in for all that is missing
+    expect(recurringTargetCents(catchUp, space, period, 600_00)).toBe(0);
+    expect(recurringTargetCents(catchUp, space, may, 916_67)).toBe(83_33);
+    // the pace is the cost's own unless one is asked for by name
+    expect(recurringTargetCents(catchUp, space, period, 0, 'spread')).toBe(125_00);
+    expect(recurringTargetCents(yearly, space, period, 0, 'catchUp')).toBe(416_67);
+  });
+
+  it('the two ways side by side — and no choice where all of it is due now or every period', () => {
+    expect(setAsideChoice(yearly, space, period, 300_00)).toEqual({
+      cycle: { periods: 12, periodNo: 5, periodsLeft: 8, evenCents: 83_33 },
+      openCents: 700_00,
+      offers: [
+        { pace: 'spread', nowCents: 87_50, laterCents: 87_50 },
+        { pace: 'catchUp', nowCents: 116_67, laterCents: 83_33 },
+      ],
+    });
+    expect(setAsideChoice(yearly, space, may, 0)).toBeNull();
+    expect(setAsideChoice({ active: 1 as const, amountCents: 900_00, every: 'month' as const, dueDay: 25 }, space, period, 0)).toBeNull();
   });
 
   it('spending outside every subject gathers under its main, subs broken out, locked families left alone', () => {

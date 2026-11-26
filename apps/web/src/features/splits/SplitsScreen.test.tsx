@@ -526,7 +526,7 @@ describe('Splits', () => {
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
-    await repo.upsert('event', 's-user', 'ev-ski', { name: 'Ski week' });
+    await repo.upsert('event', 's-user', 'ev-ski', { name: 'Ski week', archived: 1, note: 'Chalet with the cousins' });
     db.close();
     const { api, sent } = server();
     renderAppAsUser(`/splits/${ID}`, { api });
@@ -542,8 +542,18 @@ describe('Splits', () => {
     // the bond is the event's own fact: two events name this split, and one lets go again
     expect(text('split-event-row')).toContain('Not linked to an event');
     fireEvent.click(screen.getByTestId('split-event-row'));
-    fireEvent.click(await screen.findByTestId('split-event-ev-rome'));
+    // #537: an archived event says so and comes after the running ones; the eye shows which event it was before it is ticked
+    await screen.findByTestId('split-event-ev-rome');
+    expect(text('split-event-ev-ski-archived')).toBe('Archived');
+    expect(screen.queryByTestId('split-event-ev-rome-archived')).toBeNull();
+    const listed = [...screen.getByTestId('split-events-sheet').querySelectorAll('[data-testid$="-row"]')].map((row) => row.getAttribute('data-testid'));
+    expect(listed).toEqual(['split-event-ev-rome-row', 'split-event-ev-ski-row']);
+    fireEvent.click(screen.getByTestId('split-event-ev-ski-peek'));
+    expect((await screen.findByTestId('split-event-ev-ski-preview')).textContent).toContain('Chalet with the cousins');
+    expect(text('split-event-row')).toContain('Not linked to an event');
+    fireEvent.click(screen.getByTestId('split-event-ev-rome'));
     fireEvent.click(screen.getByTestId('split-event-ev-ski'));
+    await waitFor(() => expect(screen.getByTestId('split-event-ev-ski').getAttribute('aria-pressed')).toBe('true'));
     await waitFor(() => expect(text('split-event-row')).toBe('Rome weekend, Ski week'));
     const check = new MunniDB(USER_TEST_DB);
     expect((await check.events.get('ev-ski'))?.splitId).toBe(ID);

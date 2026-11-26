@@ -58,6 +58,10 @@ export interface SpaceRow extends SyncEnvelope {
   trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[]; /** #455: what goals bought stays out */ skipGoalSpending?: boolean }[];
   /** #531: the Cash flow tab's graphs: a balance line over the named accounts; an LWW list like trendGraphs */
   cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
+  /** #690: the Recurring tab's graphs: the year chart over the recurring costs a graph leaves in — an absent `kinds` reads
+   *  fixed costs and subscriptions alike, an absent `luxury` both, an absent `catIds` every main category (later ones too;
+   *  '' is a cost without one); an LWW list like trendGraphs */
+  recurringGraphs?: { id: string; name: string; kinds?: RecurringKind[]; luxury?: 'only' | 'without'; catIds?: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
@@ -67,6 +71,9 @@ export type AccountSource = 'manual' | 'camt053' | 'connector';
 export interface AccountRow extends SyncEnvelope {
   id: string;
   spaceId: string;
+  /** #536: what the party that feeds the account calls it (a savings account, a card, a loan), stamped by the server on
+   *  every fetch — a space attaches the account as this type and no other; absent = the space decides */
+  partyType?: AccountType;
   name: string;
   type: AccountType;
   source: AccountSource;
@@ -317,6 +324,9 @@ export interface RecurringRow extends SyncEnvelope {
   merchantKey?: string;
   /** #274: counterparty account for special categories; linked transactions inherit it */
   linkedAccountId?: string;
+  /** #692: how the plan sets the cost aside when it is not due every period — absent = what is left, spread over the
+   *  periods left; it lives on the cost, so no plan that is started over, copied or carried on can lose it */
+  planPace?: 'catchUp';
 }
 
 /** a rejected recurring suggestion: never suggested again; synced, so a partner's dismissal counts for the space */

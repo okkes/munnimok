@@ -20,7 +20,7 @@ import {
   subjectShape,
   subjectView,
 } from '@/domain/planning';
-import type { SubjectShape, SubjectView } from '@/domain/planning';
+import type { PlanPace, SubjectShape, SubjectView } from '@/domain/planning';
 import { measure } from '@/lib/perf';
 import { logActivity } from './activity';
 import type { ActivityFigures } from './activity';
@@ -109,6 +109,8 @@ export interface PlanningOps {
   reorderSubjects: (orderedIds: string[]) => Promise<void>;
   setSegments: (plan: PlanRow, segments: PlanSegmentConfig[]) => Promise<void>;
   snooze: (subjectId: string, on: boolean) => Promise<void>;
+  /** #692: how a cost that is not due every period is set aside; written on the cost, so every plan of it reads the same */
+  setPace: (subjectId: string, pace: PlanPace) => Promise<void>;
   /** a sub under a chosen main becomes an exclusion; a subject left with no category goes (#535) */
   freeCategories: (holderId: string, catIds: string[]) => Promise<void>;
   fundAhead: (period: Period) => Promise<void>;
@@ -508,6 +510,14 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     snooze: async (subjectId, on) => {
       await write(subjectId, { snoozed: on ? 1 : 0 });
       act(on ? 'planSkip' : 'planUnskip', await nameOf(subjectId));
+    },
+
+    setPace: async (subjectId, pace) => {
+      const subject = await store.get('planSubject', subjectId);
+      if (subject?.segment !== 'recurring' || !subject.sourceId) return;
+      // null, not undefined: JSON drops an undefined field, so "back to spreading" would never sync
+      await repo.upsert('recurring', spaceId, subject.sourceId, { planPace: pace === 'catchUp' ? 'catchUp' : (null as never) });
+      act(pace === 'catchUp' ? 'planPaceCatchUp' : 'planPaceSpread', subject.name);
     },
 
     freeCategories: async (holderId, catIds) => {

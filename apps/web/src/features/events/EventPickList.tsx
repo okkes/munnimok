@@ -15,17 +15,23 @@ import { eventPicture, eventPictureStyle } from './EventsScreen';
 export function EventPickList({
   events,
   selectedId,
+  selectedIds,
   onPick,
   testIdPrefix,
   variant = 'check',
+  subOf,
 }: Readonly<{
   events: readonly EventRow[];
   selectedId?: string | null;
+  /** 'multi': every chosen event */
+  selectedIds?: ReadonlySet<string>;
   onPick: (eventId: string) => void;
   /** the pick button's testid is `${testIdPrefix}${event.id}` */
   testIdPrefix: string;
-  /** 'radio' leads with the radio mark (the split's picker); 'check' trails a check when chosen */
-  variant?: 'check' | 'radio';
+  /** 'check' trails a check on the one chosen; 'multi' leads with a tick box, several can be chosen (a split's events) */
+  variant?: 'check' | 'multi';
+  /** a second line under the dates — the space an event lives in, where the list crosses spaces */
+  subOf?: (event: EventRow) => string | undefined;
 }>) {
   const [peekId, setPeekId] = useState<string | null>(null);
   const ordered = [...events].filter((e) => e.deleted === 0).sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0));
@@ -35,12 +41,13 @@ export function EventPickList({
         <EventPickRow
           key={event.id}
           event={event}
-          selected={selectedId === event.id}
+          selected={selectedIds ? selectedIds.has(event.id) : selectedId === event.id}
           peeking={peekId === event.id}
           onPick={() => onPick(event.id)}
           onPeek={() => setPeekId((id) => (id === event.id ? null : event.id))}
           testId={`${testIdPrefix}${event.id}`}
           variant={variant}
+          sub={subOf?.(event)}
         />
       ))}
     </>
@@ -55,6 +62,7 @@ function EventPickRow({
   onPeek,
   testId,
   variant,
+  sub,
 }: Readonly<{
   event: EventRow;
   selected: boolean;
@@ -62,7 +70,8 @@ function EventPickRow({
   onPick: () => void;
   onPeek: () => void;
   testId: string;
-  variant: 'check' | 'radio';
+  variant: 'check' | 'multi';
+  sub?: string;
 }>) {
   const { t, lang } = useLang();
   const day = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
@@ -77,10 +86,10 @@ function EventPickRow({
           aria-pressed={selected}
           className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
         >
-          {variant === 'radio' && (
+          {variant === 'multi' && (
             <Icon
-              name={selected ? 'radiobox-marked' : 'radiobox-blank'}
-              size={20}
+              name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+              size={22}
               color={selected ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
             />
           )}
@@ -92,7 +101,7 @@ function EventPickRow({
           />
           <span className="min-w-0 flex-1">
             <span className={`block truncate text-[14px] ${archived ? 'text-ink-3' : 'text-ink'}`}>{event.name}</span>
-            <span className="block truncate text-[12px] text-ink-4">{range}</span>
+            <span className="block truncate text-[12px] text-ink-4">{sub ? `${range} · ${sub}` : range}</span>
           </span>
           {archived && <Pill testId={`${testId}-archived`}>{t('events.archivedPill')}</Pill>}
           {variant === 'check' && selected && <Icon name="check" size={17} color="var(--m-accent-deep)" />}

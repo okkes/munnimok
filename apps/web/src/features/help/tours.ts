@@ -284,6 +284,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.trends.3t', bodyKey: 'tour.trends.3b', illustration: '🔀', anchor: 'trends-graph-view-compare-all' },
       { titleKey: 'tour.trends.4t', bodyKey: 'tour.trends.4b', illustration: '🌊', anchor: 'trends-view-cashflow' },
       { titleKey: 'tour.trends.5t', bodyKey: 'tour.trends.5b', illustration: '📈', anchor: 'trends-view-networth' },
+      { titleKey: 'tour.trends.6t', bodyKey: 'tour.trends.6b', illustration: '🔁', anchor: 'trends-view-recurring' },
     ],
   },
   {

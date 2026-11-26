@@ -7,11 +7,10 @@ import type { SpaceAccount, SpaceTx } from '@/application/transactions';
 import type { SpaceRow } from '@/db/types';
 import type { Period } from '@/domain/periods';
 import type { InSpaceCurrency } from '@/domain/trends';
-import { catName, useCategories } from '@/features/categories/useCategories';
+import { useCategories } from '@/features/categories/useCategories';
 import type { Catalog } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
 import { accountsText } from './AccountTicks';
-import { CatPickerSheet } from './CatPickerSheet';
 import { GraphEditorSheet } from './GraphEditorSheet';
 import { SpendingCard } from './SpendingCard';
 import type { GraphDef } from './SpendingCard';
@@ -38,8 +37,6 @@ export function SpendingTab({
   txs,
   today,
   currency,
-  catId,
-  onCatId,
   fmt,
   inSpace,
 }: Readonly<{
@@ -49,9 +46,6 @@ export function SpendingTab({
   txs: readonly SpaceTx[];
   today: string;
   currency: string;
-  /** the built-in card's scope (kept by the screen so a tab switch does not drop it) */
-  catId: string | undefined;
-  onCatId: (catId: string | undefined) => void;
   fmt: (cents: number) => string;
   inSpace: InSpaceCurrency;
 }>) {
@@ -59,20 +53,11 @@ export function SpendingTab({
   const { spaceId } = useData();
   const cats = useCategories();
   const accounts = useSpaceAccounts() ?? NO_ACCOUNTS;
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [editor, setEditor] = useState<{ open: boolean; graph: TrendGraph | null }>({ open: false, graph: null });
   const canEdit = useCanEdit(); // #505: the graphs are the space's
   const ops = useTrendGraphOps(space);
 
-  const selected = catId ? cats.byId(catId) : undefined;
-  const builtIn: GraphDef = {
-    id: 'all',
-    name: selected ? catName(selected, t) : t('trends.allExpenses'),
-    catIds: catId ? [catId] : null,
-    accountIds: null,
-    icon: selected?.icon ?? 'shape-outline',
-    color: catId ? colorOf(cats, catId) : ACCENT,
-  };
+  const builtIn: GraphDef = { id: 'all', name: t('trends.allExpenses'), catIds: null, accountIds: null, icon: 'shape-outline', color: ACCENT };
   const shared = { periods, labels, txs, today, currency, spaceId, fmt, inSpace };
 
   return (
@@ -83,15 +68,10 @@ export function SpendingTab({
         chartTestId="trends-cat-chart"
         currentTestId="trends-cat-current"
         header={
-          <button
-            data-testid="trends-cat-picker"
-            onClick={() => setPickerOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent p-0 text-left"
-          >
-            <Icon name={builtIn.icon} size={19} color={selected ? builtIn.color : 'var(--m-ink-3)'} />
+          <div className="flex items-center gap-3" data-testid="trends-cat-head">
+            <Icon name={builtIn.icon} size={19} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink">{builtIn.name}</span>
-            <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
-          </button>
+          </div>
         }
       />
       {(space?.trendGraphs ?? []).map((graph) => {
@@ -144,7 +124,6 @@ export function SpendingTab({
         </button>
       )}
 
-      <CatPickerSheet open={pickerOpen} onOpenChange={setPickerOpen} catId={catId} onPick={onCatId} />
       <GraphEditorSheet
         open={editor.open}
         onOpenChange={(open) => setEditor((prev) => ({ ...prev, open }))}

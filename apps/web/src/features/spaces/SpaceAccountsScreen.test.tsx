@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
@@ -416,6 +416,48 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     fireEvent.click(screen.getByTestId('space-attach-type-mortgage'));
     expect(screen.getByTestId('space-attach-type-mortgage').className).toContain('border-accent');
     expect(screen.getByTestId('space-attach-type-loan').className).not.toContain('border-accent');
+    expect(screen.queryByTestId('space-attach-type-stated')).toBeNull();
+  }, 20_000);
+
+  it('#536: where the party itself says what the account is, the attach step shows every type and offers that one alone', async () => {
+    await seedRows();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t5'), { trackOutbox: false });
+    // a student debt: the registry's own word is "loan", whatever type the row was seeded with
+    await repo.upsert('account', 'feed-2', 'studydebt', { name: 'Study debt', type: 'checking', partyType: 'loan', source: 'connector', provider: 'duo', currency: 'EUR', balanceCents: -1_243_477 });
+    db.close();
+    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
+    setSpaceAttachIntent('studydebt');
+    const attached: unknown[] = [];
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: {
+        ...apiWithCandidate('personal'),
+        'POST /spaces/s-user/accounts': (body: unknown) => {
+          attached.push(body);
+          return { id: 'srv-2', feedSpaceId: 'feed-2', accountId: 'studydebt' };
+        },
+      },
+    });
+
+    await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 });
+    expect(screen.getByTestId('space-attach-type-stated').textContent).toBe('DUO reports this account as “Loan” — a space holds it as that and nothing else.');
+    expect(screen.getByTestId('space-attach-type-loan').className).toContain('border-accent');
+    expect((screen.getByTestId('space-attach-type-loan') as HTMLButtonElement).disabled).toBe(false);
+    for (const other of ['checking', 'savings', 'cash', 'brokerage', 'credit', 'mortgage', 'funding']) {
+      expect((screen.getByTestId(`space-attach-type-${other}`) as HTMLButtonElement).disabled).toBe(true);
+    }
+    // a switched-off type cannot be picked
+    fireEvent.click(screen.getByTestId('space-attach-type-mortgage'));
+    expect(screen.getByTestId('space-attach-type-loan').className).toContain('border-accent');
+
+    fireEvent.click(screen.getByTestId('space-attach-save'));
+    await waitFor(() => expect(attached).toHaveLength(1));
+    expect(attached[0]).toMatchObject({ accountId: 'studydebt', type: 'loan' });
   }, 20_000);
 });
 
@@ -460,6 +502,37 @@ describe('SpaceAccountsScreen — connecting and reconnecting from the space (#5
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
+
+  it('#536: an attached account whose party says what it is keeps that type — one attached under another type can only move to it', async () => {
+    await seedRows();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('pt'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feed-loan', { name: 'Loan as loan', type: 'loan', partyType: 'loan', source: 'connector', provider: 'ing-nl', currency: 'EUR', balanceCents: -5000 });
+    await repo.upsert('accountLink', 's-user', 'link-loan', { feedSpaceId: 'feed-1', accountId: 'feed-loan', type: 'loan' });
+    await repo.upsert('account', 'feed-1', 'feed-card', { name: 'Loan as card', type: 'loan', partyType: 'loan', source: 'connector', provider: 'ing-nl', currency: 'EUR', balanceCents: -7000 });
+    await repo.upsert('accountLink', 's-user', 'link-card', { feedSpaceId: 'feed-1', accountId: 'feed-card', type: 'credit' });
+    db.close();
+    renderAppAsUser('/spaces/s-user/accounts', { spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }], api: apiWithCandidate('personal') });
+
+    fireEvent.click(await screen.findByTestId('space-account-link-loan', {}, { timeout: 5000 }));
+    expect((await screen.findByTestId('account-type-stated')).textContent).toContain('ING reports this account as “Loan”');
+    expect((screen.getByTestId('account-type-row') as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    renderAppAsUser('/spaces/s-user/accounts', { spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }], api: apiWithCandidate('personal') });
+
+    fireEvent.click(await screen.findByTestId('space-account-link-card', {}, { timeout: 5000 }));
+    const row = (await screen.findByTestId('account-type-row')) as HTMLButtonElement;
+    expect(row.disabled).toBe(false);
+    expect(row.textContent).toContain('Credit Card');
+    fireEvent.click(row);
+    await screen.findByTestId('account-type-grid');
+    expect((screen.getByTestId('account-type-pick-loan') as HTMLButtonElement).disabled).toBe(false);
+    for (const other of ['checking', 'savings', 'credit', 'mortgage']) expect((screen.getByTestId(`account-type-pick-${other}`) as HTMLButtonElement).disabled).toBe(true);
+  }, 20_000);
 
   it('#527: the archived accounts fold away below the list — a quiet toggle shows them', async () => {
     await seedRows();

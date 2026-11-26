@@ -3,7 +3,9 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { changeAccountType, changeLinkedAccountType } from '@/application/accounts';
 import { logActivity } from '@/application/activity';
+import { partyTypeOf } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
+import { partyName } from '@/features/connectors/logos';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -37,8 +39,11 @@ export function AccountTypeRow({
     }
   };
 
+  // #536: an attached account whose party says what it is has one type to be; one attached before that was known can still move to it
+  const stated = link ? partyTypeOf(account) : undefined;
   // funding pots and munni's own default ledgers never change type
-  const locked = readOnly || current === 'funding' || !!account.defaultFor;
+  const locked = readOnly || current === 'funding' || !!account.defaultFor || stated === current;
+  const statedNote = stated && t('acct.typeByParty', { party: partyName(account.provider ?? account.source), type: t(typeDef(stated).labelKey) });
 
   return (
     <>
@@ -53,6 +58,11 @@ export function AccountTypeRow({
         <span className="text-[11px] text-ink-4">{t('acct.typeRow')}</span>
         {!locked && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
       </button>
+      {statedNote && (
+        <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="account-type-stated">
+          {statedNote}
+        </p>
+      )}
 
       <Sheet open={pickOpen} onOpenChange={setPickOpen} title={t('acct.typeRow')} size="tall" dragHandle>
         <p className="pb-2 text-[12px] leading-relaxed text-ink-3">{t('acct.typeChangeHint')}</p>
@@ -61,11 +71,12 @@ export function AccountTypeRow({
             <button
               key={def.type}
               data-testid={`account-type-pick-${def.type}`}
+              disabled={stated !== undefined && def.type !== stated}
               onClick={() => {
                 if (def.type === current) setPickOpen(false);
                 else setPendingType(def.type);
               }}
-              className={`m-tap flex flex-col items-start gap-2 rounded-card border p-4 text-left ${
+              className={`m-tap flex flex-col items-start gap-2 rounded-card border p-4 text-left disabled:opacity-40 ${
                 def.type === current ? 'border-accent bg-accent-soft/40' : 'border-line bg-surface'
               }`}
             >

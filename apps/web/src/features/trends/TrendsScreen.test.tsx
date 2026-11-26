@@ -27,7 +27,7 @@ describe('TrendsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('settings reaches trends; the built-in card charts the periods with numbers, the picker narrows it, the other tabs render', async () => {
+  it('settings reaches trends; the built-in card charts the periods with numbers, the other tabs render', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     fireEvent.click(screen.getByTestId('settings-trends-row'));
@@ -46,9 +46,7 @@ describe('TrendsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('trends-cat-chart-bar-11'));
     expect(screen.getByTestId('trends-cat-current').textContent).toContain('This period');
 
-    fireEvent.click(screen.getByTestId('trends-cat-picker'));
-    fireEvent.click(await screen.findByTestId('trends-cat-consumption'));
-    await waitFor(() => expect(screen.getByTestId('trends-cat-picker').textContent).toContain('Eating out'));
+    expect(screen.getByTestId('trends-cat-head').textContent).toBe('All expenses');
 
     fireEvent.click(screen.getByTestId('trends-view-cashflow'));
     await screen.findByTestId('trends-flow-chart');
@@ -331,6 +329,112 @@ describe('TrendsScreen (demo identity)', () => {
     expect(screen.getByTestId('trends-flow-scrub-g_usd').textContent).toMatch(/^Now €500\.00/);
     fireEvent.click(screen.getByTestId('trends-view-networth'));
     await waitFor(() => expect(screen.getByTestId('trends-worth-now').textContent).toBe('€12,070.55'));
+  }, 20_000);
+});
+
+describe('Trends → Recurring (#690: the recurring chart over the costs a graph leaves in)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  /** rent with no category, a luxury meal box and a coffee club, both filed under Eating out */
+  async function withCosts() {
+    const first = renderApp('/trends');
+    await screen.findByTestId('screen-trends');
+    // the boot chain settles before the seed opens its own connection
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-rec'), { trackOutbox: false });
+    const cost = (id: string, fields: Record<string, unknown>) => repo.upsert('recurring', DEMO_SPACE_ID, id, { every: 'month', dueDay: 5, active: 1, ...fields } as never);
+    await cost('r_rent', { name: 'Rent', kind: 'fixed', amountCents: 90_000 });
+    await cost('r_box', { name: 'Meal box', kind: 'subscription', amountCents: 6_000, luxury: 1, catId: 'restaurants' });
+    await cost('r_club', { name: 'Coffee club', kind: 'subscription', amountCents: 1_500, catId: 'coffee' });
+    db.close();
+    first.unmount();
+    renderApp('/trends');
+    fireEvent.click(await screen.findByTestId('trends-view-recurring'));
+    await screen.findByTestId('trends-rec-graph-all');
+  }
+
+  /** what a card expects for January of next year: every cost is due once, so the figure is the sum of the costs it reads */
+  async function januaryOf(graphId: string): Promise<string> {
+    fireEvent.click(screen.getByTestId(`trends-rec-year-next-${graphId}`));
+    fireEvent.click(await screen.findByTestId(`recurring-chart-${graphId}-dot-0-0`));
+    return (await screen.findByTestId(`recurring-chart-value-${graphId}`)).textContent ?? '';
+  }
+
+  it('the built-in card charts every cost; a graph of your own reads the kinds, the luxury side and the categories you leave in', async () => {
+    await withCosts();
+    expect(await januaryOf('all')).toContain('€975.00');
+
+    fireEvent.click(screen.getByTestId('trends-rec-new'));
+    const save = await screen.findByTestId('trends-rec-save');
+    expect(save.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByTestId('trends-rec-name'), { target: { value: 'My subs' } });
+    // the categories on offer are the ones the costs carry, with how many costs each holds
+    expect(screen.getByTestId('trends-rec-cat-consumption').textContent).toBe('Eating out2');
+    expect(screen.getByTestId('trends-rec-cat-none').textContent).toBe('No category1');
+    fireEvent.click(screen.getByTestId('trends-rec-kind-fixed'));
+    fireEvent.click(save);
+
+    const title = await screen.findByText('My subs', { selector: 'section span' }, { timeout: 5000 });
+    const id = title.closest('section')!.dataset.testid!.replace('trends-rec-graph-', '');
+    expect(screen.getByTestId(`trends-rec-scope-${id}`).textContent).toBe('Subscriptions');
+    expect(await januaryOf(id)).toContain('€75.00');
+    await waitFor(async () => expect((await readSpace())?.recurringGraphs).toEqual([{ id, name: 'My subs', kinds: ['subscription'] }]));
+
+    // without luxury the meal box goes; back to both kinds, with only the costs that have no category, rent is left
+    fireEvent.click(screen.getByTestId(`trends-rec-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('trends-rec-luxury-without'));
+    fireEvent.click(screen.getByTestId('trends-rec-save'));
+    await waitFor(() => expect(screen.getByTestId(`trends-rec-scope-${id}`).textContent).toBe('Subscriptions · No luxury'));
+    await waitFor(async () => expect((await readSpace())?.recurringGraphs?.[0]).toEqual({ id, name: 'My subs', kinds: ['subscription'], luxury: 'without' }));
+
+    fireEvent.click(screen.getByTestId(`trends-rec-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('trends-rec-kind-fixed'));
+    fireEvent.click(screen.getByTestId('trends-rec-cat-consumption'));
+    expect(screen.getByTestId('trends-rec-cat-all').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByTestId('trends-rec-save'));
+    await waitFor(() => expect(screen.getByTestId(`trends-rec-scope-${id}`).textContent).toBe('No luxury · No category'));
+    await waitFor(async () => expect((await readSpace())?.recurringGraphs?.[0]).toEqual({ id, name: 'My subs', luxury: 'without', catIds: [''] }));
+
+    // only luxury among the costs without a category: nothing fits, and the card says so
+    fireEvent.click(screen.getByTestId(`trends-rec-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('trends-rec-luxury-only'));
+    fireEvent.click(screen.getByTestId('trends-rec-save'));
+    expect((await screen.findByTestId(`trends-rec-empty-${id}`)).textContent).toBe('No recurring cost fits this graph.');
+
+    fireEvent.click(screen.getByTestId(`trends-rec-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('trends-rec-delete'));
+    fireEvent.click(await screen.findByTestId('trends-rec-delete-confirm'));
+    await waitFor(() => expect(screen.queryByTestId(`trends-rec-graph-${id}`)).toBeNull(), { timeout: 5000 });
+    await waitFor(async () => expect((await readSpace())?.recurringGraphs).toEqual([]));
+  }, 30_000);
+
+  it('a graph needs a name, a kind and a category; ticking every category again is “every category”', async () => {
+    await withCosts();
+    fireEvent.click(screen.getByTestId('trends-rec-new'));
+    const save = await screen.findByTestId('trends-rec-save');
+    fireEvent.change(screen.getByTestId('trends-rec-name'), { target: { value: 'Everything' } });
+    expect(save.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(screen.getByTestId('trends-rec-kind-fixed'));
+    fireEvent.click(screen.getByTestId('trends-rec-kind-subscription'));
+    expect(save.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByTestId('trends-rec-kind-fixed'));
+    fireEvent.click(screen.getByTestId('trends-rec-kind-subscription'));
+    fireEvent.click(screen.getByTestId('trends-rec-cat-all'));
+    expect(save.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByTestId('trends-rec-cat-none'));
+    fireEvent.click(screen.getByTestId('trends-rec-cat-consumption'));
+    expect(screen.getByTestId('trends-rec-cat-all').getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(save);
+    const title = await screen.findByText('Everything', { selector: 'section span' }, { timeout: 5000 });
+    const id = title.closest('section')!.dataset.testid!.replace('trends-rec-graph-', '');
+    // a graph that reads everything says nothing under its name
+    expect(screen.queryByTestId(`trends-rec-scope-${id}`)).toBeNull();
+    await waitFor(async () => expect((await readSpace())?.recurringGraphs).toEqual([{ id, name: 'Everything' }]));
   }, 20_000);
 });
 

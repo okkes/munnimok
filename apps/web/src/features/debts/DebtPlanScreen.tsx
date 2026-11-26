@@ -299,8 +299,9 @@ interface ByDate {
 const MONTH_INPUT = /^\d{4}-\d{2}$/;
 
 // a month field on iOS keeps a width of its own and runs out of its card unless its native look is off and it may shrink;
-// its value sits centred there, the other fields' at the left (#513)
-const MONTH_FIELD_CLASS = `${INPUT_CLASS} block min-w-0 max-w-full appearance-none text-left [&::-webkit-date-and-time-value]:text-left`;
+// its value sits centred there, the other fields' at the left; iOS centres the value's height through the field's own
+// flex box, so the field stays one — as a plain block its text sat at the top (#513)
+const MONTH_FIELD_CLASS = `${INPUT_CLASS} flex min-w-0 max-w-full appearance-none items-center text-left [&::-webkit-date-and-time-value]:m-0 [&::-webkit-date-and-time-value]:text-left`;
 
 function byDateNote(t: Translate, byDate: ByDate | null, money: Money, date: MonthName, today: string): string {
   if (!byDate) return t('debtplan.byDateHint');

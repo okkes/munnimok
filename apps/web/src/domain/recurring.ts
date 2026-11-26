@@ -1,4 +1,4 @@
-import type { RecurringRow } from '@/db/types';
+import type { RecurringKind, RecurringRow } from '@/db/types';
 
 // all date arithmetic is calendar-based (year/month/day), never millisecond diffs: DST burned us once
 
@@ -80,6 +80,42 @@ export function nextDueDate(rec: Pick<RecurringRow, 'active'> & CadenceFields, t
     if (rec.until && toIso(yy, mm, 1) > rec.until) return null;
   }
   return null;
+}
+
+/** the due date one cycle before `due` — where the cycle that ends on `due` began, whether or not the cost existed then */
+export function previousDueDate(rec: Pick<RecurringRow, 'every' | 'everyN' | 'dueDay'>, due: string): string {
+  const n = stepN(rec);
+  if (rec.every === 'week') return addDays(due, -7 * n);
+  const [y, m] = parts(due);
+  const months = y * 12 + (m - 1) - (rec.every === 'year' ? 12 * n : n);
+  const py = Math.floor(months / 12);
+  const pm = (months % 12) + 1;
+  return toIso(py, pm, Math.min(rec.dueDay, daysInMonth(py, pm)));
+}
+
+export type LuxuryScope = 'only' | 'without';
+
+/** #690: which recurring costs a graph reads; every part left out reads everything */
+export interface RecurringScope {
+  kinds?: readonly RecurringKind[];
+  luxury?: LuxuryScope;
+  /** main categories; '' is a cost without one */
+  catIds?: readonly string[];
+}
+
+/** the costs a scope leaves in; `mainOf` names a cost's main category ('' for none) */
+export function recurringsInScope<R extends Pick<RecurringRow, 'kind' | 'luxury' | 'catId'>>(
+  recs: readonly R[],
+  scope: RecurringScope,
+  mainOf: (catId: string | undefined) => string,
+): R[] {
+  const kinds = scope.kinds ? new Set(scope.kinds) : null;
+  const cats = scope.catIds ? new Set(scope.catIds) : null;
+  return recs.filter((rec) => {
+    if (kinds && !kinds.has(rec.kind)) return false;
+    if (scope.luxury && (rec.luxury === 1) !== (scope.luxury === 'only')) return false;
+    return !cats || cats.has(mainOf(rec.catId));
+  });
 }
 
 /** stable id of the billing cycle containing `date` — caps auto-linking at one payment per cycle */

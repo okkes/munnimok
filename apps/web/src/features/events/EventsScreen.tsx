@@ -24,7 +24,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { Pill, ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { DecimalInput } from '@/ui/DecimalInput';
@@ -308,7 +308,11 @@ export function EventsScreen() {
         </div>
         <div className="px-4 py-3">
           <span className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[15px] font-semibold text-ink">{event.name}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[15px] font-semibold text-ink">{event.name}</span>
+              {/* #537: a dimmed card alone did not say why it was dim */}
+              {event.archived === 1 && <Pill testId={`event-archived-${event.id}`}>{t('events.archivedPill')}</Pill>}
+            </span>
             {event.budgetCents ? (
               <span className="shrink-0 text-[11px] text-ink-4">{t('budgets.of', { amount: fmt(event.budgetCents, currency) })}</span>
             ) : null}

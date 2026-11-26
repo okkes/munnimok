@@ -61,7 +61,7 @@ function toggleSub(picked: ReadonlySet<string>, main: Cat, sub: Cat, subs: reado
   return next;
 }
 
-function TickBox({ tick }: Readonly<{ tick: Tick }>) {
+export function TickBox({ tick }: Readonly<{ tick: Tick }>) {
   return (
     <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${TICK_BOX[tick]}`}>
       {tick === 'checked' && <Icon name="check" size={14} color="white" />}

@@ -50,6 +50,55 @@ describe('a subject’s row in the plan (#557)', () => {
     expect(screen.getByTestId('plan-subject-settled-s1').textContent).toMatch(/^Paid off by what the periods before/);
   });
 
+  // #691: the bar says where the money stands; the widths are shares of the longest of target, funding and spending
+  const widths = () =>
+    Object.fromEntries(
+      (['spent', 'left', 'over'] as const).map((part) => [part, (screen.queryByTestId(`plan-subject-bar-s1-${part}`) as HTMLElement | null)?.style.width ?? null]),
+    );
+
+  it('funded and partly spent: the spent part, then what is still there — and the line says how much', () => {
+    show(view({ status: 'funded', targetCents: 100_00, fundedCents: 100_00, realizedCents: 35_00 }));
+    expect(widths()).toEqual({ spent: '35%', left: '65%', over: null });
+    expect(screen.getByTestId('plan-spentline-s1').textContent).toBe('spent €35.00 · €65.00 left');
+    expect(screen.getByTestId('plan-subject-bar-s1').getAttribute('aria-label')).toBe('Spent, Still there');
+  });
+
+  it('underfunded and partly spent: spent, still there, and the rest of the target stays bare', () => {
+    show(view({ targetCents: 100_00, fundedCents: 60_00, realizedCents: 35_00 }));
+    expect(widths()).toEqual({ spent: '35%', left: '25%', over: null });
+    expect(screen.getByTestId('plan-subject-bar-s1').getAttribute('aria-label')).toBe('Spent, Still there, Not funded');
+  });
+
+  it('everything funded is spent: one full spent part, nothing left', () => {
+    show(view({ status: 'funded', targetCents: 100_00, fundedCents: 100_00, realizedCents: 100_00 }));
+    expect(widths()).toEqual({ spent: '100%', left: null, over: null });
+    expect(screen.getByTestId('plan-spentline-s1').textContent).toBe('spent €100.00 · €0.00 left');
+  });
+
+  it('overspent: what the funding paid, then the part beyond it — the line leaves "left" out', () => {
+    show(view({ status: 'overspent', targetCents: 100_00, fundedCents: 100_00, realizedCents: 125_00 }));
+    expect(widths()).toEqual({ spent: '80%', left: null, over: '20%' });
+    expect(screen.getByTestId('plan-spentline-s1').textContent).toBe('spent €125.00');
+  });
+
+  it('nothing funded, nothing spent: a bare bar; nothing spent yet says nothing about what is left', () => {
+    show(view({ targetCents: 100_00 }));
+    expect(widths()).toEqual({ spent: null, left: null, over: null });
+    expect(screen.getByTestId('plan-subject-bar-s1').getAttribute('aria-label')).toBe('Not funded');
+    cleanup();
+    show(view({ targetCents: 100_00, fundedCents: 60_00 }));
+    expect(widths()).toEqual({ spent: null, left: '60%', over: null });
+    expect(screen.getByTestId('plan-spentline-s1').textContent).toBe('spent €0.00');
+  });
+
+  it('spent past the target while the funding covers it (#517): stripes on that stretch only', () => {
+    show(view({ status: 'overTarget', targetCents: 100_00, fundedCents: 200_00, realizedCents: 150_00 }));
+    expect(widths()).toEqual({ spent: '75%', left: '25%', over: null });
+    const stripes = screen.getByTestId('plan-subject-bar-s1-stripes');
+    expect(stripes.style.left).toBe('50%');
+    expect(stripes.style.width).toBe('25%');
+  });
+
   it('a goal and an event say their own reason', () => {
     show(view({ status: 'settled', settledAhead: true }, { segment: 'goals' }));
     expect(screen.getByTestId('plan-subject-settled-s1').textContent).toMatch(/^Reached by/);

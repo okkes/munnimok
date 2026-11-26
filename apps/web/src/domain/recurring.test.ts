@@ -10,6 +10,8 @@ import {
   monthlyRecurringSeries,
   nextDueDate,
   occurrencesBetween,
+  previousDueDate,
+  recurringsInScope,
   recurringAmountMatches,
   summarize,
 } from './recurring';
@@ -115,6 +117,35 @@ describe('every-N and weekly cadences', () => {
 
     expect(cycleKeyOf(rec({}), '2026-07-15')).toBe('2026-07');
     expect(cycleKeyOf(rec({ every: 'year' }), '2026-07-15')).toBe('2026');
+  });
+
+  it('previousDueDate steps one cycle back from a due date, across a year’s end and into a shorter month', () => {
+    expect(previousDueDate(rec({ every: 'year', dueDay: 20, dueMonth: 5 }), '2027-05-20')).toBe('2026-05-20');
+    expect(previousDueDate(rec({ every: 'year', everyN: 2, dueDay: 20, dueMonth: 5 }), '2027-05-20')).toBe('2025-05-20');
+    expect(previousDueDate(rec({ dueDay: 15 }), '2026-01-15')).toBe('2025-12-15');
+    // a quarterly cost due on the 31st: its November date is the 30th
+    expect(previousDueDate(rec({ everyN: 3, dueDay: 31 }), '2026-02-28')).toBe('2025-11-30');
+    expect(previousDueDate(rec({ every: 'week', everyN: 2 }), '2026-07-17')).toBe('2026-07-03');
+  });
+
+  it('#690: a graph’s scope leaves in the kinds, the luxury side and the main categories it names — and everything where it names nothing', () => {
+    const costs = [
+      rec({ id: 'rent', kind: 'fixed', catId: 'housingRent' }),
+      rec({ id: 'box', kind: 'subscription', luxury: 1, catId: 'restaurants' }),
+      rec({ id: 'club', kind: 'subscription', catId: 'coffee' }),
+      rec({ id: 'loose', kind: 'fixed', luxury: 1, catId: undefined }),
+    ];
+    const mainOf = (catId: string | undefined) => ({ housingRent: 'housing', restaurants: 'consumption', coffee: 'consumption' })[catId ?? ''] ?? '';
+    const ids = (scope: Parameters<typeof recurringsInScope>[1]) => recurringsInScope(costs, scope, mainOf).map((cost) => cost.id);
+    expect(ids({})).toEqual(['rent', 'box', 'club', 'loose']);
+    expect(ids({ kinds: ['subscription'] })).toEqual(['box', 'club']);
+    expect(ids({ luxury: 'only' })).toEqual(['box', 'loose']);
+    expect(ids({ luxury: 'without' })).toEqual(['rent', 'club']);
+    expect(ids({ catIds: ['consumption'] })).toEqual(['box', 'club']);
+    // a cost without a category answers to the empty id
+    expect(ids({ catIds: ['', 'housing'] })).toEqual(['rent', 'loose']);
+    expect(ids({ kinds: ['subscription'], luxury: 'without', catIds: ['consumption'] })).toEqual(['club']);
+    expect(ids({ kinds: [] })).toEqual([]);
   });
 
   it('cycleMonths monthlyizes any cadence for insights', () => {

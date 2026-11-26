@@ -4,12 +4,13 @@ import type { TFunc, TranslationKey } from '@/i18n';
 import type { PlanSegmentKind } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
 import type { SubjectView } from '@/domain/planning';
-import { shortfallCents } from '@/domain/planning';
+import { shortfallCents, slackCents } from '@/domain/planning';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
-import { Pill, ProgressBar } from '@/ui/primitives';
+import { Pill } from '@/ui/primitives';
+import { PlanBar } from './PlanBar';
 import { SourceTile } from './SourceTile';
-import { OVER_TARGET_STRIPES, SEGMENT_META, STATUS_BAR, STATUS_KEY, STATUS_TONE } from './planningUi';
+import { SEGMENT_META, STATUS_KEY, STATUS_TONE } from './planningUi';
 
 export type MoneyFmt = (cents: number, currency: string) => string;
 
@@ -28,35 +29,11 @@ export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency:
   return t(key);
 }
 
-/** spent past the target but covered wears orange stripes over the green (#517) */
-export function StatusBar({ view, testId }: Readonly<{ view: SubjectView; testId?: string }>) {
-  const target = view.targetCents ?? 0;
-  const barMax = Math.max(target, view.fundedCents, view.realizedCents, 1);
-  const funded = view.fundedCents / barMax;
-  const spent = view.realizedCents / barMax;
-  return (
-    <ProgressBar
-      value={funded}
-      color={STATUS_BAR[view.status]}
-      size="sm"
-      testId={testId}
-      overlay={
-        <>
-          {view.status === 'overTarget' && (
-            <span
-              aria-hidden
-              data-testid={testId ? `${testId}-stripes` : undefined}
-              className="absolute inset-y-0 left-0 rounded-full"
-              style={{ width: `${Math.min(100, funded * 100)}%`, backgroundImage: OVER_TARGET_STRIPES }}
-            />
-          )}
-          {spent > 0 && (
-            <span aria-hidden className="absolute inset-y-0 left-0 rounded-full opacity-45" style={{ width: `${Math.min(100, spent * 100)}%`, background: 'var(--m-ink-3)' }} />
-          )}
-        </>
-      }
-    />
-  );
+/** #691: what is spent and what the funding still holds, in words — once something was spent and the funding covers it */
+export function spentLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency: string): string {
+  const spent = t('plan.spentShort', { amount: fmt(view.realizedCents, currency) });
+  const covered = view.realizedCents > 0 && view.fundedCents >= view.realizedCents;
+  return covered ? `${spent} · ${t('plan.leftShort', { amount: fmt(slackCents(view), currency) })}` : spent;
 }
 
 export function SubjectRow({
@@ -101,14 +78,15 @@ export function SubjectRow({
           )}
         </span>
         <span className="mt-1 block">
-          <StatusBar view={view} testId={`plan-subject-bar-${subject.id}`} />
+          <PlanBar view={view} testId={`plan-subject-bar-${subject.id}`} />
         </span>
-        <span className="mt-1 flex items-baseline justify-between text-[11px] text-ink-4">
+        {/* the two halves wrap under each other where the row is too narrow for both */}
+        <span className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-[11px] text-ink-4">
           <span className="m-num" data-testid={`plan-subject-funded-${subject.id}`}>
             {t('plan.fundedOf', { funded: fmt(view.fundedCents, currency), target: view.targetCents === null ? '—' : fmt(view.targetCents, currency) })}
           </span>
-          <span className="m-num">
-            {t('plan.spentShort', { amount: fmt(view.realizedCents, currency) })}
+          <span className="m-num" data-testid={`plan-spentline-${subject.id}`}>
+            {spentLine(view, t, fmt, currency)}
             {view.carriedCents > 0 && ` · ${t('plan.carried', { amount: fmt(view.carriedCents, currency) })}`}
           </span>
         </span>

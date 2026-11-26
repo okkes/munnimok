@@ -296,6 +296,9 @@ describe('Payoff planner (#413)', () => {
       expect(field.className).toContain('appearance-none');
       expect(field.className).toContain('min-w-0');
       expect(field.className).toContain('w-full');
+      // its text sits in the middle of the field's height: iOS does that through the field's flex box
+      expect(field.className.split(' ')).toContain('items-center');
+      expect(field.className.split(' ')).not.toContain('block');
     }
     // the card (€6,000 at 12%, €150 a month) paid off in about two years
     const now = new Date();

@@ -24,17 +24,6 @@ export const STATUS_TONE: Record<SubjectStatus, Tone> = {
   settled: 'neutral',
 };
 
-/** the subject's own colour stays on its tile only */
-export const STATUS_BAR: Record<SubjectStatus, string> = {
-  neutral: 'var(--m-ink-4)',
-  underfunded: 'var(--m-warning)',
-  funded: 'var(--m-accent)',
-  overTarget: 'var(--m-accent)',
-  overspent: 'var(--m-negative)',
-  snoozed: 'var(--m-accent)',
-  settled: 'var(--m-ink-4)',
-};
-
 export const OVER_TARGET_STRIPES = 'repeating-linear-gradient(135deg, var(--m-warning) 0 4px, transparent 4px 8px)';
 
 export const STATUS_KEY: Record<SubjectStatus, TranslationKey> = {

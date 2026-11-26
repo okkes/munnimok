@@ -468,6 +468,7 @@ describe('Events (demo identity)', () => {
       () => {
         const archived = document.querySelector('[data-testid^="event-card-"]');
         expect(archived?.className).toContain('opacity-60');
+        expect(archived?.querySelector('[data-testid^="event-archived-"]')?.textContent).toBe('Archived');
       },
       { timeout: 5000 },
     );

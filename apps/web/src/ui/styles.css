@@ -250,9 +250,34 @@
 .m-grow-x {
   animation: m-grow-x 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
+/* #540: a card's views change like pages scrolled sideways; --m-slide-x says how far and to which side */
+@keyframes m-slide-in {
+  from {
+    transform: translateX(var(--m-slide-x));
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes m-slide-out {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateX(var(--m-slide-x));
+  }
+}
+.m-slide-in {
+  animation: m-slide-in 0.26s cubic-bezier(0.3, 0.7, 0.3, 1) both;
+}
+.m-slide-out {
+  animation: m-slide-out 0.26s cubic-bezier(0.3, 0.7, 0.3, 1) both;
+}
 @media (prefers-reduced-motion: reduce) {
   .m-bar-in,
   .m-grow-x,
+  .m-slide-in,
+  .m-slide-out,
   .m-fade {
     animation: none;
   }
