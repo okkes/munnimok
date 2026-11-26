@@ -58,6 +58,10 @@ export interface SpaceRow extends SyncEnvelope {
   trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[]; /** #455: what goals bought stays out */ skipGoalSpending?: boolean }[];
   /** #531: the Cash flow tab's graphs: a balance line over the named accounts; an LWW list like trendGraphs */
   cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
+  /** #690: the Recurring tab's graphs: the year chart over the recurring costs a graph leaves in — an absent `kinds` reads
+   *  fixed costs and subscriptions alike, an absent `luxury` both, an absent `catIds` every main category (later ones too;
+   *  '' is a cost without one); an LWW list like trendGraphs */
+  recurringGraphs?: { id: string; name: string; kinds?: RecurringKind[]; luxury?: 'only' | 'without'; catIds?: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';

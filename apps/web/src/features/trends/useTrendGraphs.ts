@@ -1,9 +1,11 @@
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
-import type { SpaceRow } from '@/db/types';
+import type { RecurringKind, SpaceRow } from '@/db/types';
+import type { LuxuryScope } from '@/domain/recurring';
 
 export type TrendGraph = NonNullable<SpaceRow['trendGraphs']>[number];
 export type CashflowGraph = NonNullable<SpaceRow['cashflowGraphs']>[number];
+export type RecurringGraph = NonNullable<SpaceRow['recurringGraphs']>[number];
 
 export interface TrendGraphDraft {
   /** absent = a new graph */
@@ -20,6 +22,15 @@ export interface CashflowGraphDraft {
   id?: string;
   name: string;
   accountIds: string[];
+}
+
+/** #690: null reads everything — both kinds, luxury or not, every category */
+export interface RecurringGraphDraft {
+  id?: string;
+  name: string;
+  kinds: RecurringKind[] | null;
+  luxury: LuxuryScope | null;
+  catIds: string[] | null;
 }
 
 export interface GraphOps<D> {
@@ -47,6 +58,34 @@ export function useTrendGraphOps(space: SpaceRow | undefined): GraphOps<TrendGra
         catIds: [...draft.catIds],
         ...(draft.accountIds ? { accountIds: [...draft.accountIds] } : {}),
         ...(draft.skipGoalSpending ? { skipGoalSpending: true } : {}),
+      };
+      const exists = current.some((graph) => graph.id === id);
+      await write(withGraph(current, row));
+      void logActivity(store, repo, spaceId, exists ? 'trendGraphEdit' : 'trendGraphAdd', row.name);
+      return id;
+    },
+    remove: async (id) => {
+      const gone = current.find((graph) => graph.id === id);
+      await write(current.filter((graph) => graph.id !== id));
+      void logActivity(store, repo, spaceId, 'trendGraphRemove', gone?.name);
+    },
+  };
+}
+
+export function useRecurringGraphOps(space: SpaceRow | undefined): GraphOps<RecurringGraphDraft> {
+  const { store, repo, spaceId } = useData();
+  const current = space?.recurringGraphs ?? [];
+  const write = (next: RecurringGraph[]) => repo.upsert('space', spaceId, spaceId, { recurringGraphs: next });
+  return {
+    save: async (draft) => {
+      const id = draft.id ?? repo.newId();
+      // what reads everything is left out: a kind or a category that comes later joins by itself
+      const row: RecurringGraph = {
+        id,
+        name: draft.name.trim(),
+        ...(draft.kinds ? { kinds: [...draft.kinds] } : {}),
+        ...(draft.luxury ? { luxury: draft.luxury } : {}),
+        ...(draft.catIds ? { catIds: [...draft.catIds] } : {}),
       };
       const exists = current.some((graph) => graph.id === id);
       await write(withGraph(current, row));

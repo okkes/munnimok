@@ -14,10 +14,11 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Line } from '@/ui/charts/Line';
 import { Icon } from '@/ui/Icon';
 import { CashflowTab } from './CashflowTab';
+import { RecurringTab } from './RecurringTab';
 import { SpendingTab } from './SpendingTab';
 
 /** the tab ids double as testids (`trends-view-<id>`): the tour and the guide captures anchor on them */
-type View = 'categories' | 'cashflow' | 'networth';
+type View = 'categories' | 'cashflow' | 'networth' | 'recurring';
 const PERIOD_COUNT = 12;
 const NONE: never[] = [];
 
@@ -74,13 +75,14 @@ export function TrendsScreen() {
               ['categories', t('trends.viewSpending')],
               ['cashflow', t('trends.viewCashflow')],
               ['networth', t('trends.viewNetworth')],
+              ['recurring', t('trends.viewRecurring')],
             ] as const
           ).map(([value, label]) => (
             <button
               key={value}
               data-testid={`trends-view-${value}`}
               onClick={() => setView(value)}
-              className={`m-tap flex-1 rounded-[10px] border-none py-2 text-[12px] whitespace-nowrap ${
+              className={`m-tap min-w-0 flex-1 truncate rounded-[10px] border-none px-1 py-2 text-[12px] whitespace-nowrap ${
                 view === value ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
               }`}
             >
@@ -117,6 +119,8 @@ export function TrendsScreen() {
             inSpace={inSpace}
           />
         )}
+
+        {view === 'recurring' && <RecurringTab space={space} txs={txs ?? NONE} recurrings={recurrings ?? NONE} today={today} currency={currency} fmt={fmt} />}
 
         {view === 'networth' && (
           <div className="mt-4 rounded-card border border-line bg-surface p-4">
