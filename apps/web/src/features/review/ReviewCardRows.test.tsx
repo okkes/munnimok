@@ -159,6 +159,24 @@ describe('the review card: prepared suggestions and every row standing', () => {
     db.close();
   }, 30_000);
 
+  it('#693: a payment larger than what its loan still owes is said on the card before it is confirmed', async () => {
+    await land(async (repo) => {
+      await repo.upsert('account', DEMO_SPACE_ID, 'loan-a', { type: 'loan', source: 'manual', currency: 'EUR', name: 'ING Loan 1', balanceCents: -43792 });
+      await repo.upsert('account', DEMO_SPACE_ID, 'loan-b', { type: 'loan', source: 'manual', currency: 'EUR', name: 'ING Loan 2', balanceCents: -274631 });
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'repay-big', { ...flagged, date: '2026-01-01', amountCents: -60000, merchant: 'ING BANK NV', catId: 'loanRepayment' });
+    });
+    await openReview('ING BANK NV');
+    expect(screen.queryByTestId('review-loan-over')).toBeNull();
+    fireEvent.click(screen.getByTestId('review-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-pick-loan-a'));
+    expect((await screen.findByTestId('review-loan-over')).textContent).toBe('€162.08 more than ING Loan 1 still owes (€437.92 left)');
+    // the loan that can take all of it has nothing to warn about
+    fireEvent.click(screen.getByTestId('review-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-pick-loan-b'));
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('ING Loan 2'));
+    expect(screen.queryByTestId('review-loan-over')).toBeNull();
+  }, 30_000);
+
   it('#565/#556: the payment a loan\'s plan fits arrives linked to that loan, and the list marks it', async () => {
     await land(async (repo) => {
       const loan = { type: 'loan' as const, source: 'manual' as const, currency: 'EUR', paymentEvery: 'month' as const };

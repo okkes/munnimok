@@ -1,4 +1,5 @@
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
+import { knownCents } from '@/lib/money';
 import { isRetiredDefault } from './defaultAccounts';
 import { nextDueDate } from './recurring';
 
@@ -29,6 +30,32 @@ export const hasNoFixedPayment = (loan: Pick<AccountRow, 'paymentCents'>): boole
  *  owed is its magnitude); an overpaid card sits at 0 owed */
 export function loanRemainingCents(account: Pick<AccountRow, 'balanceCents'>): number {
   return Math.max(0, -account.balanceCents);
+}
+
+/** #693: what was paid back beyond what the loan owed — its balance stands above zero. A card is left out: it may
+ *  hold a credit (a refund, a payment ahead of the statement) and that is no mistake */
+export function loanOverpaidCents(account: Pick<AccountRow, 'type' | 'balanceCents'>): number {
+  return account.type === 'credit' ? 0 : Math.max(0, knownCents(account.balanceCents));
+}
+
+/** one movement of a loan's balance: above zero pays it down, below zero borrows more */
+export interface LoanStep {
+  id: string;
+  date: string;
+  deltaCents: number;
+}
+
+/** #693: the payments that went past zero, each with the part of it that was too much — read back from today's
+ *  balance, newest first, until the loan stood at or below zero again */
+export function overpayingSteps(balanceCents: number, steps: readonly LoanStep[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let after = balanceCents;
+  for (const step of [...steps].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))) {
+    if (after <= 0) break;
+    if (step.deltaCents > 0) out.set(step.id, Math.min(after, step.deltaCents));
+    after -= step.deltaCents;
+  }
+  return out;
 }
 
 /** 0..1 paid-off share — unknowable without the original size */

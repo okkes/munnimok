@@ -51,6 +51,40 @@ describe('Debts (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('#693: a loan paid back beyond what it owed says so — on the list, on the loan with the payment that went past zero, and on that payment', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const repo = demoRepo(seed);
+    // borrowed 800, then paid back 750 twice on one day: the loan stands 700 above zero
+    await repo.upsert('account', 'demo_space', 'loan693', { name: 'Loan from a friend', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: 70_000, originalCents: 80_000 });
+    const leg = (id: string, date: string, cents: number) =>
+      repo.upsert('transaction', 'demo_space', id, { accountId: 'loan693', date, amountCents: cents, currency: 'EUR', merchant: 'A friend', needsReview: 0, catId: 'uncategorized' });
+    await leg('borrow693', isoDayOffset(-14), -80_000);
+    await leg('pay693a', isoDayOffset(-2), 75_000);
+    await leg('pay693b', isoDayOffset(-2), 75_000);
+    seed.close();
+    cleanup();
+
+    renderApp('/debts');
+    expect((await screen.findByTestId('debt-overpaid-loan693', {}, { timeout: 8000 })).textContent).toBe('Paid back €700.00 too much');
+    fireEvent.click(screen.getByTestId('debt-card-loan693'));
+    expect((await screen.findByTestId('debtdetail-overpaid')).textContent).toMatch(/^Paid back €700\.00 too much.*add up to more than it owed/);
+    // one of the two payments of that day carries the whole excess; the other and the draw carry none
+    expect((await screen.findByTestId('debtdetail-over-pay693b')).textContent).toBe('€700.00 of this was too much');
+    expect(screen.queryByTestId('debtdetail-over-pay693a')).toBeNull();
+    expect(screen.queryByTestId('debtdetail-over-borrow693')).toBeNull();
+
+    cleanup();
+    renderApp('/transactions/pay693b');
+    expect((await screen.findByTestId('tx-detail-loan-overpaid', {}, { timeout: 8000 })).textContent).toBe('€700.00 of this went beyond what Loan from a friend still owed');
+    cleanup();
+    renderApp('/transactions/pay693a');
+    await screen.findByTestId('tx-detail-account-row', {}, { timeout: 8000 });
+    expect(screen.queryByTestId('tx-detail-loan-overpaid')).toBeNull();
+  }, 30_000);
+
   it('the Debts + mints a loan account carrying the whole story', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
@@ -239,6 +273,8 @@ describe('Debts (demo identity)', () => {
     await repo.upsert('transaction', 'demo_space', 'pay1', { ...base, date: '2026-04-01', amountCents: -25_000, merchant: 'Termijn' });
     await repo.upsert('transaction', 'demo_space', 'pay2', { ...base, date: '2026-05-01', amountCents: -25_000, merchant: 'Termijn' });
     await repo.upsert('transaction', 'demo_space', 'pay3', { ...base, date: '2026-06-01', amountCents: -25_000, merchant: 'Termijn' });
+    // the balance was typed a while ago: a payment of today moves it (one of the very day it was typed would not)
+    await repo.upsert('account', 'demo_space', accountId, { balanceAsOf: '2026-01-01' });
 
     fireEvent.click(card);
     await screen.findByTestId('debtdetail-hero');
@@ -251,6 +287,12 @@ describe('Debts (demo identity)', () => {
     await screen.findByTestId('txform-save');
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan'));
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
+    // #693: a payment typed here that is more than the loan still owes says so before it is saved
+    expect(screen.queryByTestId('txform-loan-over')).toBeNull();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '6000' } });
+    expect((await screen.findByTestId('txform-loan-over')).textContent).toBe('€1,000.00 more than Car loan still owes (€5,000.00 left)');
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '5000' } });
+    await waitFor(() => expect(screen.queryByTestId('txform-loan-over')).toBeNull());
     db.close();
   }, 15_000);
 

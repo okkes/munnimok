@@ -12,6 +12,7 @@ import { scaleCatsTo } from '@/domain/txSlices';
 import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { useLang } from '@/i18n';
+import type { Lang, TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
@@ -24,6 +25,8 @@ import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
+import { wouldOverpayCents } from '@/application/loanBalance';
+import { loanRemainingCents } from '@/domain/debts';
 import { cleanBankText } from '@/lib/text';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Chip } from '@/ui/primitives';
@@ -98,10 +101,13 @@ function CounterAdjustRows({
   disabled = false,
   adjustment,
   counterBlocker,
+  counterNote,
   onCounter,
   onToggleAdjustment,
   noAdjustment = false,
 }: Readonly<{
+  /** a warning about the counterparty picked, under its row (#693) */
+  counterNote?: string;
   /** #547: a bank fills the account — its balance is the bank's, there is nothing to correct by hand */
   noAdjustment?: boolean;
   counterName: string | undefined;
@@ -130,6 +136,12 @@ function CounterAdjustRows({
         <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
       </button>
       <FormBlockerNote show={!!counterBlocker} text={counterBlocker ?? ''} testId="txform-save-blocker" />
+      {counterNote && (
+        <p className="flex items-start gap-1.5 px-1 text-[11px] leading-snug font-medium text-warning" data-testid="txform-loan-over">
+          <Icon name="alert-outline" size={14} />
+          <span>{counterNote}</span>
+        </p>
+      )}
       {!noAdjustment && (
         <button
           data-testid="txform-adjustment"
@@ -773,8 +785,33 @@ function useStagedReimbursements(args: {
   };
 }
 
+/** #693: a new payment larger than what its loan still owes says so before it is saved — an entry being edited
+ *  already sits in that balance, and a balance correction pays nobody */
+function loanOverNoteFor(
+  t: TFunc,
+  lang: Lang,
+  entry: {
+    editing: boolean;
+    adjustment: boolean;
+    isExpense: boolean;
+    cents: number | null;
+    date: string;
+    loan: (Parameters<typeof wouldOverpayCents>[0] & { name: string; currency: string }) | undefined;
+  },
+): string | undefined {
+  const { loan, cents } = entry;
+  if (entry.editing || entry.adjustment || !entry.isExpense || !loan || !cents) return undefined;
+  const over = wouldOverpayCents(loan, { amountCents: -cents, date: entry.date });
+  if (over <= 0) return undefined;
+  return t('tx.loanWouldOverpay', {
+    amount: fmtCents(over, loan.currency, lang),
+    name: loan.name,
+    owed: fmtCents(loanRemainingCents(loan), loan.currency, lang),
+  });
+}
+
 function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLinkReimb }: TxFormHost) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const canEdit = useCanEdit();
@@ -876,6 +913,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const adjustDelta = adjustDeltaFor(adjustment, adjustTarget, cents, adjustBase, isExpense);
   const adjustNoop = adjustTarget && adjustDelta === 0;
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
+  const loanOverNote = loanOverNoteFor(t, lang, { editing: !!tx, adjustment, isExpense, cents, date, loan: linkedAccount });
   const zeroCounts = landsOnBalance(adjustment, adjustTarget);
   const noAmount = amountMissing(cents, zeroCounts);
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
@@ -1122,6 +1160,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
             disabled={!counterRelevant && !ownStamp && !adjustment}
             adjustment={adjustment}
             counterBlocker={fieldBlocker('counter', blockerField, blockerText)}
+            counterNote={loanOverNote}
             noAdjustment={onBank}
             onCounter={() => setCounterOpen(true)}
             onToggleAdjustment={() => {

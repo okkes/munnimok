@@ -18,7 +18,7 @@ import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { settleSpaceReimbursements } from '@/application/catalogMaintenance';
-import { countPreAnchorTx } from '@/application/loanBalance';
+import { countPreAnchorTx, overpaidByPayment } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
@@ -1637,6 +1637,14 @@ function DetailAccountBlock({
   const { store, repo } = useData();
   const counterRow = !!linkedAccount || !!onEditCounter;
   const loanCount = readOnly ? null : loanCountOffer(tx, account, linkedAccount, peer);
+  // #693: this payment took its loan past zero — said on the payment and on the loan's own leg of it
+  const loanSide = [linkedAccount, account].find((candidate) => candidate?.type === 'loan' || candidate?.type === 'mortgage');
+  const ledger = useSpaceTransactions();
+  const overpaid = useMemo(() => {
+    if (!loanSide) return 0;
+    const by = overpaidByPayment(loanSide, ledger ?? []);
+    return by.get(tx.id) ?? (tx.transferPeerId ? by.get(tx.transferPeerId) : undefined) ?? 0;
+  }, [loanSide, ledger, tx.id, tx.transferPeerId]);
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
       <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-detail-account-row">
@@ -1695,6 +1703,12 @@ function DetailAccountBlock({
             {onEditCounter && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </div>
         </>
+      )}
+      {overpaid > 0 && loanSide && (
+        <p className="flex items-start gap-2 border-t border-line-2 bg-warning-soft px-4 py-2.5 text-[12px] leading-snug text-ink-2" data-testid="tx-detail-loan-overpaid">
+          <Icon name="alert-outline" size={16} color="var(--m-warning)" />
+          <span>{t('tx.loanOverpaid', { amount: fmtCents(overpaid, tx.currency, lang), name: loanSide.name })}</span>
+        </p>
       )}
       {pairState === 'peered' && (
         <TransferPeerRow t={t} lang={lang} peer={peer} accountName={peerAccountName} onOpen={onOpenPeer} onUnpair={onUnpair} />

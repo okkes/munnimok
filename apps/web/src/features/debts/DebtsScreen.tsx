@@ -181,7 +181,7 @@ export function DebtsScreen() {
   }, [statuses, today, t, lang]);
 
   const renderCard = (status: LoanStatus) => {
-    const { account, remainingCents, progress } = status;
+    const { account, remainingCents, progress, overpaidCents } = status;
     const projection = projectPayoff(
       remainingCents,
       account.paymentCents,
@@ -215,6 +215,11 @@ export function DebtsScreen() {
               </span>
             </span>
             {subParts.length > 0 && <span className="block text-[11px] text-ink-4">{subParts.join(' · ')}</span>}
+            {overpaidCents > 0 && (
+              <span className="block text-[11px] font-medium text-warning" data-testid={`debt-overpaid-${account.id}`}>
+                {t('debts.overpaidTitle', { amount: owed(overpaidCents) })}
+              </span>
+            )}
           </span>
         </div>
         {/* progress needs the original size — without it the bar would lie 0% */}

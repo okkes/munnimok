@@ -42,6 +42,9 @@ import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { cardRowGates } from './cardRows';
 import { canBeRecurringCost } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
+import type { Lang, TFunc } from '@/i18n';
+import { wouldOverpayCents } from '@/application/loanBalance';
+import { loanRemainingCents } from '@/domain/debts';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { pairWithExistingRow, releasePeerLeg } from '@/application/counterPair';
@@ -545,6 +548,21 @@ function sliceStory(
   };
 }
 
+/** #693: the card's payment is more than the loan it names still owes — said before the card is confirmed, because
+ *  confirming is what moves the loan. A card filed in parts says nothing: no part is the whole payment */
+function loanOverNote(
+  t: TFunc,
+  lang: Lang,
+  loan: Parameters<typeof wouldOverpayCents>[0] & { name: string } | undefined,
+  tx: Pick<SpaceTx, 'amountCents' | 'date' | 'currency' | 'transferPeerId' | 'loanCounted'>,
+  draft: ReviewDraft | null,
+): string | undefined {
+  if (!loan || draft?.linkedAccountId !== loan.id || draft.splits?.length || draft.cats?.length) return undefined;
+  const over = wouldOverpayCents(loan, tx);
+  if (over <= 0) return undefined;
+  return t('tx.loanWouldOverpay', { amount: fmtCents(over, tx.currency, lang), name: loan.name, owed: fmtCents(loanRemainingCents(loan), tx.currency, lang) });
+}
+
 /** the settled Reimbursed slice is not a part and keeps its own row either way */
 function CardCategoryRows({
   draft,
@@ -554,6 +572,7 @@ function CardCategoryRows({
   onOpenCategories,
   onEditCounter,
   counterRequired,
+  counterNote,
   counterTx,
 }: Readonly<{
   draft: ReviewDraft | null;
@@ -563,6 +582,8 @@ function CardCategoryRows({
   onOpenCategories: () => void;
   onEditCounter?: () => void;
   counterRequired?: boolean;
+  /** a warning about the counterparty picked, under its row */
+  counterNote?: string;
   counterTx?: { face: string; onEdit?: () => void };
 }>) {
   const { t, lang } = useLang();
@@ -644,6 +665,12 @@ function CardCategoryRows({
             {onEditCounter && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
           <FormBlockerNote show={!!counterRequired} text={t('review.counterRequired')} testId="review-counter-required" className="px-4 pb-2" />
+          {counterNote && (
+            <p className="flex items-start gap-1.5 px-4 pb-2 text-[11px] leading-snug font-medium text-warning" data-testid="review-loan-over">
+              <Icon name="alert-outline" size={14} />
+              <span>{counterNote}</span>
+            </p>
+          )}
         </>
       )}
       {!multi && (
@@ -2086,6 +2113,7 @@ export function ReviewScreen() {
                   onOpenCategories={() => setCatsOpen(true)}
                   onEditCounter={counterRowDoors.onEdit}
                   counterRequired={counterRequired}
+                  counterNote={loanOverNote(t, lang, counterAcct, tx, draft)}
                   counterTx={counterTxRow}
                 />
                 <FormBlockerNote show={catRequired && !catChosen} text={t('review.catRequired')} testId="review-cat-required" className="px-4 pb-2" />

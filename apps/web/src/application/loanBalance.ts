@@ -1,5 +1,7 @@
 import { isLiability } from '@/features/accounts/accountTypes';
 import { writeTxTransform } from '@/db/joined';
+import { loanOverpaidCents, loanRemainingCents, overpayingSteps } from '@/domain/debts';
+import type { LoanStep } from '@/domain/debts';
 import { isMintedLeg, txMetaId } from '@/domain/feedIds';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
@@ -23,6 +25,36 @@ const loanDelta = (tx: LinkableTx): number => -tx.amountCents;
 export function countsTowardLoan(account: Pick<AccountRow, 'balanceAsOf'>, tx: LinkableTx): boolean {
   if (tx.loanCounted === 1) return true;
   return !account.balanceAsOf || tx.date > account.balanceAsOf;
+}
+
+interface LoanRow extends LinkableTx {
+  id: string;
+  accountId: string;
+  linkedAccountId?: string;
+  deleted?: 0 | 1;
+}
+
+/** how a row moved a loan's balance: a row on the loan's own ledger by its amount; a payment naming the loan from another
+ *  account by its opposite — unless a mirror on the ledger carries it already, or it predates the balance date uncounted */
+export function loanStepOf(tx: LoanRow, loan: Pick<AccountRow, 'id' | 'balanceAsOf'>): LoanStep | null {
+  if (tx.deleted === 1) return null;
+  if (tx.accountId === loan.id) return { id: tx.id, date: tx.date, deltaCents: tx.amountCents };
+  if (tx.linkedAccountId !== loan.id || tx.transferPeerId || !countsTowardLoan(loan, tx)) return null;
+  return { id: tx.id, date: tx.date, deltaCents: loanDelta(tx) };
+}
+
+/** #693: per payment, the part of it that went beyond what the loan owed — empty while the loan owes something or nothing */
+export function overpaidByPayment(loan: Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'balanceAsOf'>, txs: readonly LoanRow[]): Map<string, number> {
+  if (loanOverpaidCents(loan) === 0) return new Map();
+  return overpayingSteps(loan.balanceCents, txs.flatMap((tx) => loanStepOf(tx, loan) ?? []));
+}
+
+/** #693: what a payment about to be linked to a loan pays beyond what the loan still owes; 0 where the link moves
+ *  nothing (a loan the bank keeps, a row its mirror already carried, one older than the balance date) */
+export function wouldOverpayCents(loan: Pick<AccountRow, 'id' | 'type' | 'source' | 'balanceCents' | 'balanceAsOf'>, tx: LinkableTx): number {
+  if (loan.source !== 'manual' || !isLiability(loan.type) || loan.type === 'credit') return 0;
+  if (tx.transferPeerId || tx.amountCents >= 0 || !countsTowardLoan(loan, tx)) return 0;
+  return Math.max(0, loanDelta(tx) - loanRemainingCents(loan));
 }
 
 async function adjustableLoan(store: StorageBackend, accountId: string | undefined): Promise<AccountRow | null> {
