@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import type { SplitDetail } from '@/application/splitsApi';
+import { EventPickList } from '@/features/events/EventPickList';
 import { writeTxTransform } from '@/db/joined';
 import type { EventRow } from '@/db/types';
 import { useQuery } from '@/db/useQuery';
@@ -52,7 +53,7 @@ export function SplitEventsSection({ detail, onAddToSplit }: Readonly<{ detail: 
     async () => {
       const spaces = new Map((await store.allRows('space')).filter((space) => space.deleted === 0).map((space) => [space.id, space.name]));
       const events = (await store.allRows('event')).filter((event) => event.deleted === 0 && spaces.has(event.spaceId));
-      events.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
+      events.sort((a, b) => a.name.localeCompare(b.name));
       return { spaces, events };
     },
     [],
@@ -65,6 +66,11 @@ export function SplitEventsSection({ detail, onAddToSplit }: Readonly<{ detail: 
   const seedOf = ({ tx }: EventSuggestion): EntrySeed => ({ description: txTitle(tx), amountCents: Math.abs(tx.amountCents), date: tx.date, currency: tx.currency, sourceTxId: tx.id, sourceSpaceId: tx.spaceId });
   const severalSpaces = (all?.spaces.size ?? 0) > 1;
   const names = (bound ?? []).map((event) => event.name).join(', ');
+  const chosen = new Set((all?.events ?? []).filter((event) => event.splitId === splitId).map((event) => event.id));
+  const pick = (eventId: string) => {
+    const event = all?.events.find((candidate) => candidate.id === eventId);
+    if (event) toggle(event);
+  };
 
   return (
     <>
@@ -106,16 +112,16 @@ export function SplitEventsSection({ detail, onAddToSplit }: Readonly<{ detail: 
       <Sheet open={open} onOpenChange={setOpen} title={t('splits.events.cap')} size="tall">
         <div className="flex flex-col gap-3 pt-1" data-testid="split-events-sheet">
           <p className="text-[12px] leading-snug text-ink-4">{t('splits.events.hint')}</p>
-          <div className={`${CARD} px-4`}>
-            {all?.events.map((event) => (
-              <label key={event.id} className="flex items-center gap-3 border-b border-line-2 py-2.5 text-[14px] text-ink last:border-0">
-                <input type="checkbox" data-testid={`split-event-${event.id}`} checked={event.splitId === splitId} onChange={() => toggle(event)} className="h-5 w-5 shrink-0 accent-[var(--m-accent-deep)]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{event.name}</span>
-                  {severalSpaces && <span className="block truncate text-[11px] text-ink-4">{all.spaces.get(event.spaceId)}</span>}
-                </span>
-              </label>
-            ))}
+          {/* #537: the list every event picker shows — archived ones say so, the eye unfolds an event before it is ticked */}
+          <div className={`${CARD} px-3`}>
+            <EventPickList
+              events={all?.events ?? []}
+              selectedIds={chosen}
+              onPick={pick}
+              testIdPrefix="split-event-"
+              variant="multi"
+              subOf={severalSpaces ? (event) => all?.spaces.get(event.spaceId) : undefined}
+            />
             {all?.events.length === 0 && <div className="py-6 text-center text-[13px] text-ink-4">{t('splits.events.empty')}</div>}
           </div>
           <Button variant="outline" data-testid="split-events-done" onClick={() => setOpen(false)}>
