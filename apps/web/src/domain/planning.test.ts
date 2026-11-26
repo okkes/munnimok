@@ -23,6 +23,7 @@ import {
   periodLedger,
   periodsAhead,
   periodsUntil,
+  planBarParts,
   planFundedFraction,
   planId,
   planPoolAccounts,
@@ -83,6 +84,26 @@ const NO_OWNERS: SliceOwners = { recurringIds: new Set(), loanIds: new Set(), ev
 const ledgerOf = (txs: TxView[], over: Partial<SliceOwners> = {}, forPeriod = period): PeriodLedger => periodLedger(txs, forPeriod, { ...NO_OWNERS, ...over });
 
 const event = (over: Partial<EventRow>): EventRow => ({ id: 'ev', name: 'Trip', ...envelope, ...over }) as EventRow;
+
+describe('planBarParts (#691: the parts a subject’s bar draws)', () => {
+  it('splits the funding into spent and still there, and names the part of the target nothing covers', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 60_00, realizedCents: 35_00 })).toEqual({ spentCents: 35_00, leftCents: 25_00, overCents: 0, gapCents: 40_00, pastTargetCents: 0 });
+  });
+
+  it('spending beyond the funding is its own part, and it eats into the uncovered target', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 60_00, realizedCents: 80_00 })).toEqual({ spentCents: 60_00, leftCents: 0, overCents: 20_00, gapCents: 20_00, pastTargetCents: 0 });
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 100_00, realizedCents: 125_00 })).toMatchObject({ spentCents: 100_00, overCents: 25_00, gapCents: 0 });
+  });
+
+  it('past the target but covered: the stretch beyond the target is marked inside the spent part', () => {
+    expect(planBarParts({ targetCents: 100_00, fundedCents: 200_00, realizedCents: 150_00 })).toEqual({ spentCents: 150_00, leftCents: 50_00, overCents: 0, gapCents: 0, pastTargetCents: 50_00 });
+  });
+
+  it('no target, rolled-over money taken away, a period of net refunds: never a negative part', () => {
+    expect(planBarParts({ targetCents: null, fundedCents: 40_00, realizedCents: 0 })).toEqual({ spentCents: 0, leftCents: 40_00, overCents: 0, gapCents: 0, pastTargetCents: 0 });
+    expect(planBarParts({ targetCents: 50_00, fundedCents: -10_00, realizedCents: -5_00 })).toEqual({ spentCents: 0, leftCents: 0, overCents: 0, gapCents: 50_00, pastTargetCents: 0 });
+  });
+});
 
 describe('periods for planning', () => {
   it('finds the period a date falls in, the periods ahead, and how many periods a date is away', () => {

@@ -10,7 +10,8 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
-import { StatusBar, statusLine } from './SegmentSection';
+import { PlanBar } from './PlanBar';
+import { statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
 import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { STATUS_TONE } from './planningUi';
@@ -141,7 +142,7 @@ export function OverspentReview({
                 </div>
               </div>
               <div className="mt-2">
-                <StatusBar view={current} />
+                <PlanBar view={current} testId="plan-review-bar" />
               </div>
               <div className="mt-1 text-[11px] text-ink-4">
                 {t('plan.fundedOf', { funded: fmt(current.fundedCents, currency), target: current.targetCents === null ? '—' : fmt(current.targetCents, currency) })}

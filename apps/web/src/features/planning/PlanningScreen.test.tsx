@@ -204,6 +204,9 @@ describe('Planning (demo identity)', () => {
 
     fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
     await screen.findByTestId('plan-sheet');
+    // #691: the sheet names the bar's parts — nothing funded yet, so all that was spent is beyond the funding
+    expect(screen.getByTestId('plan-sheet-bar-legend').textContent).toMatch(/Overspent €[1-9]/);
+    expect(screen.queryByTestId('plan-sheet-bar-legend-left')).toBeNull();
     expect(screen.getByTestId('plan-fund-chips-hint').textContent).toMatch(/Tap an amount/);
     expect(screen.queryByTestId('plan-fund-chip-spent')).toBeNull();
     expect(screen.getByTestId('plan-fund-chip-target').getAttribute('aria-pressed')).toBe('false');

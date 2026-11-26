@@ -15,6 +15,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { STATUS_TONE } from './planningUi';
+import { PlanBar } from './PlanBar';
 import { SETTLED_KEY, statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
 import { AmountSuggestions } from './AmountSuggestions';
@@ -268,6 +269,10 @@ export function SubjectSheet({
               )}
               {view.cycles > 1 && <div className="text-[11px] text-ink-4">{t('plan.cycles', { n: view.cycles })}</div>}
             </div>
+          </div>
+          {/* #691: the bar once more, with its parts named — the rows show it bare */}
+          <div>
+            <PlanBar view={view} testId="plan-sheet-bar" size="sheet" legend={(cents) => fmt(cents, currency)} />
           </div>
           {editability === 'readOnly' && (
             <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-3" data-testid="plan-sheet-readonly">

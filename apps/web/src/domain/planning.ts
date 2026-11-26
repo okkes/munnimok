@@ -757,6 +757,34 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext, reserv
 export const shortfallCents = (view: Pick<SubjectView, 'targetCents' | 'fundedCents'>): number =>
   view.targetCents === null ? 0 : Math.max(0, view.targetCents - view.fundedCents);
 
+export interface PlanBarParts {
+  /** spent out of what was funded */
+  spentCents: number;
+  /** funded and still there */
+  leftCents: number;
+  /** spent beyond the funding */
+  overCents: number;
+  /** the part of the target neither funding nor spending reaches */
+  gapCents: number;
+  /** of the spent part: what lies past the target while the funding still covers it (#517) */
+  pastTargetCents: number;
+}
+
+// #691: one subject's money in the parts its bar draws; a period of net refunds reads as nothing spent
+export function planBarParts(view: Pick<SubjectView, 'targetCents' | 'fundedCents' | 'realizedCents'>): PlanBarParts {
+  const funded = Math.max(0, view.fundedCents);
+  const realized = Math.max(0, view.realizedCents);
+  const target = Math.max(0, view.targetCents ?? 0);
+  const spent = Math.min(realized, funded);
+  return {
+    spentCents: spent,
+    leftCents: funded - spent,
+    overCents: realized - spent,
+    gapCents: Math.max(0, target - Math.max(funded, realized)),
+    pastTargetCents: target > 0 ? Math.max(0, spent - target) : 0,
+  };
+}
+
 /** funded money not yet spent — what can be taken away without going red */
 export const slackCents = (view: Pick<SubjectView, 'fundedCents' | 'realizedCents'>): number =>
   Math.max(0, view.fundedCents - view.realizedCents);
