@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.32.0](https://github.com/okkes/munnimok/compare/v5.31.0...v5.32.0) (2026-11-26)
+
+
+### ✨ Features
+
+* an account whose bank says what it is is attached as that type only ([#536](https://github.com/okkes/munnimok/issues/536)) ([5d7ca48](https://github.com/okkes/munnimok/commit/5d7ca48cb6e51e83f6a37d6deb6ef33d5ea618b5))
+* **web:** a long-term cost is set aside by spreading what is left or by catching up ([#692](https://github.com/okkes/munnimok/issues/692)) ([19cd0d2](https://github.com/okkes/munnimok/commit/19cd0d21852888f5b9862cdf33ce418a47a1a0a3))
+* **web:** a trend card's views slide sideways, "All expenses" has no picker ([#540](https://github.com/okkes/munnimok/issues/540)) ([d630d59](https://github.com/okkes/munnimok/commit/d630d5921722a5ba5279d758e53517ca775b93ac))
+* **web:** the plan's bar shows what is spent, what is left and what is not funded ([#691](https://github.com/okkes/munnimok/issues/691)) ([412b3bb](https://github.com/okkes/munnimok/commit/412b3bb99715fd39f55ab4933f8501b19f5d288e))
+* **web:** Trends charts recurring costs, with graphs that leave costs out ([#690](https://github.com/okkes/munnimok/issues/690)) ([1d71ec3](https://github.com/okkes/munnimok/commit/1d71ec3ff7dead0040c686316d3908ff2bfdda80))
+
+
+### 🐞 Bug Fixes
+
+* **web:** a split's event list labels archived events and previews them ([#537](https://github.com/okkes/munnimok/issues/537)) ([32cc418](https://github.com/okkes/munnimok/commit/32cc418e85612775d4fb52a09df3c5f3f22a0c47))
+* **web:** the payoff month sits in the middle of its field on iOS ([#513](https://github.com/okkes/munnimok/issues/513)) ([08fa6ad](https://github.com/okkes/munnimok/commit/08fa6add10ec1e18dc251f905bd55f61a69b344b))
+
 ## [5.31.0](https://github.com/okkes/munnimok/compare/v5.30.0...v5.31.0) (2026-11-24)
 
 
