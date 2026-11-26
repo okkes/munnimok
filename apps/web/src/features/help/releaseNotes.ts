@@ -12,6 +12,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.32.0',
+    date: '2026-11-26',
+    items: [
+      {
+        en: 'Trends has a Recurring tab: your recurring costs over the year, month by month, for this year and the next. New graph makes a chart that leaves costs out — only fixed costs or only subscriptions, only luxury or no luxury, and the categories you keep ticked.',
+        nl: 'Trends heeft een tabblad Terugkerend: je terugkerende kosten over het jaar, per maand, voor dit jaar en volgend jaar. Met Nieuwe grafiek maak je een grafiek die kosten weglaat — alleen vaste lasten of alleen abonnementen, alleen luxe of geen luxe, en de categorieën die je aangevinkt laat.',
+        tr: 'Eğilimler’de artık Yinelenen sekmesi var: yinelenen giderlerin yıl boyunca, ay ay, bu yıl ve gelecek yıl için. Yeni grafik bazı giderleri dışarıda bırakan bir grafik oluşturur — yalnızca sabit giderler ya da yalnızca abonelikler, yalnızca lüks ya da lüks hariç, ve işaretli bıraktığın kategoriler.',
+      },
+      {
+        en: 'Planning: the bar of a subject now shows where its money stands — deep green for what is spent, light green for what is still there, bare where the target is not funded yet and red for spending beyond the funding. The row says “spent … · … left”, and the subject’s sheet names each part with its amount.',
+        nl: 'Plannen: de balk van een onderwerp laat nu zien waar het geld staat — donkergroen voor wat besteed is, lichtgroen voor wat er nog is, leeg waar het doel nog niet gedekt is en rood voor uitgaven boven wat je opzij had gezet. De regel zegt “besteed … · nog …”, en het scherm van het onderwerp noemt elk deel met zijn bedrag.',
+        tr: 'Planlama: bir konunun çubuğu artık paranın nerede durduğunu gösteriyor — koyu yeşil harcanan, açık yeşil hâlâ duran, boş kısım henüz ayrılmamış hedef, kırmızı ise ayrılanın ötesindeki harcama. Satırda “harcanan … · … kaldı” yazar; konunun ekranı her parçayı tutarıyla adlandırır.',
+      },
+      {
+        en: 'Planning: a bill that is not due every period — a yearly insurance, say — can be set aside two ways, in its subject’s sheet. “Spread what is left” divides what is still to save over the periods until it is due. “Catch up” asks at once for everything the periods so far would have put by, then one even share a period. munni remembers the choice with the bill, also when you start a plan over.',
+        nl: 'Plannen: een rekening die niet elke periode komt — een jaarlijkse verzekering bijvoorbeeld — kun je op twee manieren opzijzetten, in het scherm van het onderwerp. “Verdeel wat nog moet” deelt wat je nog moet sparen over de periodes tot de betaling. “Inhalen” vraagt in één keer alles wat de periodes tot nu toe opzij hadden gezet, en daarna elke periode één gelijk deel. munni onthoudt de keuze bij de rekening, ook als je een planning opnieuw begint.',
+        tr: 'Planlama: her dönem ödenmeyen bir fatura — örneğin yıllık sigorta — konunun ekranında iki şekilde ayrılabilir. “Kalanı böl”, biriktirilecek tutarı ödemeye kadar olan dönemlere böler. “Arayı kapat”, şimdiye kadarki dönemlerin ayırmış olacağı her şeyi bir kerede, sonra her dönem tek bir eşit pay ister. munni bu seçimi faturayla birlikte hatırlar; planı baştan başlatsan da.',
+      },
+      {
+        en: 'Accounts: where the bank itself says what an account is — a savings account, a credit card or a loan at ING or ASN, your DUO study debt — it is attached to a space as that type. The other types stay in view, switched off.',
+        nl: 'Rekeningen: waar de bank zelf zegt wat een rekening is — een spaarrekening, creditcard of lening bij ING of ASN, je DUO-studieschuld — wordt hij als dat type aan een space gekoppeld. De andere types blijven in beeld, uitgeschakeld.',
+        tr: 'Hesaplar: bankanın kendisi bir hesabın ne olduğunu söylüyorsa — ING ya da ASN’de bir birikim hesabı, kredi kartı ya da kredi, DUO öğrenim borcun — hesap bir alana o türle bağlanır. Diğer türler görünür kalır ama kapalıdır.',
+      },
+      {
+        en: 'Trends: switching a card’s tab slides the old view out and the new one in. Splits: the “Regular events” list labels archived events and lets you preview an event before you tick it. Debts: on an iPhone the “Paid off by” month sits in the middle of its field.',
+        nl: 'Trends: wissel je van tabblad op een kaart, dan schuift de oude weergave weg en de nieuwe erin. Splits: de lijst “Gewone evenementen” markeert gearchiveerde evenementen en laat je een evenement bekijken voordat je het aanvinkt. Schulden: op een iPhone staat de maand bij “Afbetaald in” in het midden van het veld.',
+        tr: 'Eğilimler: bir kartta sekme değiştirince eski görünüm kayarak çıkar, yenisi kayarak girer. Bölüşmeler: “Normal etkinlikler” listesi arşivlenmiş etkinlikleri etiketler ve işaretlemeden önce etkinliğe göz atmanı sağlar. Borçlar: iPhone’da “Bitiş ayı” alanındaki ay, alanın ortasında durur.',
+      },
+    ],
+  },
+  {
     version: '5.31.0',
     date: '2026-11-24',
     items: [
