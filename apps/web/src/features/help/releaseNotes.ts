@@ -12,6 +12,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.33.0',
+    date: '2026-11-26',
+    items: [
+      {
+        en: 'Loans: when a loan is paid back more than it owed, munni says so. A payment larger than what its loan still owes warns you in the review and in “Add payment”, before you confirm. Afterwards the loan’s card and page read “Paid back … too much”, and the payment that went past zero is marked.',
+        nl: 'Schulden: als je een lening verder aflost dan je schuldig was, zegt munni dat. Een betaling die groter is dan wat de lening nog open heeft staan, waarschuwt je bij het beoordelen en bij “Betaling toevoegen”, voordat je bevestigt. Daarna lees je op de kaart en de pagina van de lening “… te veel afgelost”, en de betaling die door nul ging is gemarkeerd.',
+        tr: 'Borçlar: bir krediyi borcundan fazla geri ödediğinde munni bunu söyler. Kredinin kalan borcundan büyük bir ödeme, incelemede ve “Ödeme ekle”de, sen onaylamadan önce uyarır. Sonrasında kredinin kartında ve sayfasında “… fazla geri ödendi” yazar ve sıfırı geçen ödeme işaretlenir.',
+      },
+    ],
+  },
+  {
     version: '5.32.0',
     date: '2026-11-26',
     items: [
