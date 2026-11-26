@@ -20,6 +20,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         nl: 'Schulden: als je een lening verder aflost dan je schuldig was, zegt munni dat. Een betaling die groter is dan wat de lening nog open heeft staan, waarschuwt je bij het beoordelen en bij “Betaling toevoegen”, voordat je bevestigt. Daarna lees je op de kaart en de pagina van de lening “… te veel afgelost”, en de betaling die door nul ging is gemarkeerd.',
         tr: 'Borçlar: bir krediyi borcundan fazla geri ödediğinde munni bunu söyler. Kredinin kalan borcundan büyük bir ödeme, incelemede ve “Ödeme ekle”de, sen onaylamadan önce uyarır. Sonrasında kredinin kartında ve sayfasında “… fazla geri ödendi” yazar ve sıfırı geçen ödeme işaretlenir.',
       },
+      {
+        en: 'Transfers, savings and loan payments now show a “Money movement” on their page: From → To, with the account this transaction is on in green. Tap the other side, or Change, to pick another counterparty.',
+        nl: 'Overboekingen, spaarstortingen en aflossingen tonen nu een “Geldbeweging” op hun pagina: Van → Naar, met de rekening van deze transactie in het groen. Tik op de andere kant, of op Wijzig, om een andere tegenpartij te kiezen.',
+        tr: 'Transferler, birikimler ve kredi ödemeleri artık sayfalarında bir “Para hareketi” gösteriyor: Kaynak → Hedef; bu işlemin bulunduğu hesap yeşil. Başka bir karşı taraf seçmek için diğer tarafa ya da Değiştir’e dokun.',
+      },
     ],
   },
   {

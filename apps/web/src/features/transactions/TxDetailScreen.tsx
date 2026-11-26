@@ -19,6 +19,7 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { settleSpaceReimbursements } from '@/application/catalogMaintenance';
 import { countPreAnchorTx, overpaidByPayment } from '@/application/loanBalance';
+import { MoneyMovement } from './MoneyMovement';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
@@ -1645,15 +1646,64 @@ function DetailAccountBlock({
     const by = overpaidByPayment(loanSide, ledger ?? []);
     return by.get(tx.id) ?? (tx.transferPeerId ? by.get(tx.transferPeerId) : undefined) ?? 0;
   }, [loanSide, ledger, tx.id, tx.transferPeerId]);
+  // one-shot with a busy latch: the liveQuery re-emit that hides the offer trails the write; a double-tap applied the delta twice
+  const countIn = () => {
+    if (!loanCount) return;
+    setLoanCountBusy(true);
+    void countPreAnchorTx(store, repo, { ...loanCount.source, linkedAccountId: loanCount.loan.id } as never, () =>
+      writeTxTransform(repo, loanCount.source, { loanCounted: 1 }),
+    ).finally(() => setLoanCountBusy(false));
+  };
+  // #696: with an account on the other side this is a movement, and it is drawn as one
+  const movement = account && linkedAccount ? { own: account, other: linkedAccount } : null;
   return (
+    <>
+    {movement && (
+      <div className="m-cap mb-1 flex items-center justify-between px-1" data-testid="tx-detail-movement-head">
+        <span>{t('tx.moveTitle')}</span>
+        {onEditCounter && (
+          <button
+            data-testid="tx-detail-counter-change"
+            onClick={onEditCounter}
+            className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            <Icon name="pencil-outline" size={13} />
+            {t('tx.moveChange')}
+          </button>
+        )}
+      </div>
+    )}
     <div className="overflow-hidden rounded-card border border-line bg-surface">
+      {movement && (
+        <>
+          <MoneyMovement
+            own={movement.own}
+            other={{ ...movement.other, ...counterAccountFace(movement.other, spaceAccounts) }}
+            incoming={tx.amountCents > 0}
+            onChange={onEditCounter}
+          />
+          {/* dated before the loan's known-true balance, so it did NOT move the balance: the person may count it in once */}
+          {loanCount && (
+            <button
+              data-testid="tx-detail-loan-count"
+              disabled={loanCountBusy}
+              onClick={countIn}
+              className="m-tap -mt-1 block w-full border-none bg-transparent px-4 pb-3 text-center text-[11px] text-warning underline disabled:opacity-50"
+            >
+              {t('tx.loanNotCounted')}
+            </button>
+          )}
+        </>
+      )}
+      {!movement && (
       <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-detail-account-row">
         <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
         <span className="min-w-0 flex-1 truncate">{account?.name ?? '—'}</span>
         <span className="text-xs text-ink-4">{t('txform.account')}</span>
       </div>
+      )}
       {/* sibling buttons, never nested (S6819) */}
-      {counterRow && (
+      {!movement && counterRow && (
         <>
           <div className="mx-4 h-px bg-line-2" />
           <div className="flex w-full items-center gap-3 px-4 py-3 text-[15px] text-ink">
@@ -1685,14 +1735,7 @@ function DetailAccountBlock({
                 <button
                   data-testid="tx-detail-loan-count"
                   disabled={loanCountBusy}
-                  onClick={() => {
-                    // one-shot with a busy latch: the liveQuery re-emit that hides this button trails the write;
-                    // a double-tap applied the delta twice
-                    setLoanCountBusy(true);
-                    void countPreAnchorTx(store, repo, { ...loanCount.source, linkedAccountId: loanCount.loan.id } as never, () =>
-                      writeTxTransform(repo, loanCount.source, { loanCounted: 1 }),
-                    ).finally(() => setLoanCountBusy(false));
-                  }}
+                  onClick={countIn}
                   className="m-tap mt-0.5 block border-none bg-transparent p-0 text-left text-[11px] text-warning underline disabled:opacity-50"
                 >
                   {t('tx.loanNotCounted')}
@@ -1749,6 +1792,7 @@ function DetailAccountBlock({
         </div>
       )}
     </div>
+    </>
   );
 }
 
