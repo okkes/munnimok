@@ -1574,7 +1574,6 @@ export const en = {
   'trends.viewCashflow': 'Cash flow',
   'trends.viewNetworth': 'Net worth',
   'trends.allExpenses': 'All expenses',
-  'trends.pickCategory': 'Pick a category',
   'trends.avgLine': 'Average {amount}',
   'trends.avgShort': 'avg {amount}',
   'trends.thisPeriod': 'This period {amount}',

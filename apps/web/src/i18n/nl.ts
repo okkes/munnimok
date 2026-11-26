@@ -1576,7 +1576,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'trends.viewCashflow': 'Geldstroom',
   'trends.viewNetworth': 'Vermogen',
   'trends.allExpenses': 'Alle uitgaven',
-  'trends.pickCategory': 'Kies een categorie',
   'trends.avgLine': 'Gemiddeld {amount}',
   'trends.avgShort': 'gem. {amount}',
   'trends.thisPeriod': 'Deze periode {amount}',

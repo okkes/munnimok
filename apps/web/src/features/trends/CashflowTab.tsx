@@ -17,11 +17,11 @@ import {
   recurringsOnAccounts,
 } from '@/domain/trends';
 import type { BalanceRange, InSpaceCurrency } from '@/domain/trends';
-import { AutoHeight } from '@/ui/AutoHeight';
 import { AreaLine } from '@/ui/charts/AreaLine';
 import type { AreaScrub } from '@/ui/charts/AreaLine';
 import { MultiLine } from '@/ui/charts/MultiLine';
 import { Icon } from '@/ui/Icon';
+import { SlideSwitch } from '@/ui/SlideSwitch';
 import { accountsText } from './AccountTicks';
 import { fmtDay, truncateLabel } from './format';
 import { GraphEditorSheet } from './GraphEditorSheet';
@@ -128,8 +128,8 @@ function CashflowCard({
         ))}
       </div>
 
-      {/* #540: the two modes differ in height — the card eases between them */}
-      <AutoHeight>
+      {/* #540: the two modes differ in height — one slides out, the other in, and the card eases between them */}
+      <SlideSwitch viewKey={mode} index={mode === 'balance' ? 0 : 1}>
       {mode === 'balance' && (
         <div className="mt-3">
           <AreaLine
@@ -192,7 +192,7 @@ function CashflowCard({
           )}
         </div>
       )}
-      </AutoHeight>
+      </SlideSwitch>
     </section>
   );
 }

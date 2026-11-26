@@ -25,7 +25,6 @@ export function TrendsScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const [view, setView] = useState<View>('categories');
-  const [catId, setCatId] = useState<string | undefined>(undefined);
 
   const txs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
@@ -99,8 +98,6 @@ export function TrendsScreen() {
             txs={txs ?? NONE}
             today={today}
             currency={currency}
-            catId={catId}
-            onCatId={setCatId}
             fmt={fmt}
             inSpace={inSpace}
           />

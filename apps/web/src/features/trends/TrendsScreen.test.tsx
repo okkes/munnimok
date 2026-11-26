@@ -27,7 +27,7 @@ describe('TrendsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('settings reaches trends; the built-in card charts the periods with numbers, the picker narrows it, the other tabs render', async () => {
+  it('settings reaches trends; the built-in card charts the periods with numbers, the other tabs render', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     fireEvent.click(screen.getByTestId('settings-trends-row'));
@@ -46,9 +46,7 @@ describe('TrendsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('trends-cat-chart-bar-11'));
     expect(screen.getByTestId('trends-cat-current').textContent).toContain('This period');
 
-    fireEvent.click(screen.getByTestId('trends-cat-picker'));
-    fireEvent.click(await screen.findByTestId('trends-cat-consumption'));
-    await waitFor(() => expect(screen.getByTestId('trends-cat-picker').textContent).toContain('Eating out'));
+    expect(screen.getByTestId('trends-cat-head').textContent).toBe('All expenses');
 
     fireEvent.click(screen.getByTestId('trends-view-cashflow'));
     await screen.findByTestId('trends-flow-chart');

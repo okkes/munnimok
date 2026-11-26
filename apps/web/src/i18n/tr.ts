@@ -1576,7 +1576,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'trends.viewCashflow': 'Nakit akışı',
   'trends.viewNetworth': 'Net varlık',
   'trends.allExpenses': 'Tüm harcamalar',
-  'trends.pickCategory': 'Bir kategori seç',
   'trends.avgLine': 'Ortalama {amount}',
   'trends.avgShort': 'ort. {amount}',
   'trends.thisPeriod': 'Bu dönem {amount}',

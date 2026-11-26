@@ -11,9 +11,9 @@ import { netAmountCents } from '@/domain/reimbursement';
 import { expenseSeries, finishedAverage, localDate, scopeIds, scopedContribution } from '@/domain/trends';
 import type { InSpaceCurrency } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { AutoHeight } from '@/ui/AutoHeight';
 import { Bars } from '@/ui/charts/Bars';
 import { Icon } from '@/ui/Icon';
+import { SlideSwitch } from '@/ui/SlideSwitch';
 import { BreakdownView } from './BreakdownView';
 import { CompareView } from './CompareView';
 import { GraphTxSheet } from './GraphTxSheet';
@@ -165,8 +165,8 @@ export function SpendingCard({
           </button>
         ))}
       </div>
-      {/* #540: switching views grows or shrinks the card smoothly — the next card never jumps */}
-      <AutoHeight className="mt-3">
+      {/* #540: a view leaves to the side its tab points away from while the card eases to the next view's height */}
+      <SlideSwitch viewKey={view} index={GRAPH_VIEWS.indexOf(view)} className="mt-3">
         {view === 'periods' && (
           <>
             <Bars
@@ -205,7 +205,7 @@ export function SpendingCard({
             onStep={(delta) => setSelected(Math.min(periods.length - 1, Math.max(0, index + delta)))}
           />
         )}
-      </AutoHeight>
+      </SlideSwitch>
       <button
         data-testid={`trends-graph-txs-${graph.id}`}
         onClick={() => setSheet({ open: true, subId: null })}
