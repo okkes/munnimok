@@ -15,6 +15,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { STATUS_TONE } from './planningUi';
+import { PaceChooser } from './PaceChooser';
 import { PlanBar } from './PlanBar';
 import { SETTLED_KEY, statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
@@ -323,6 +324,7 @@ export function SubjectSheet({
               </div>
             </>
           )}
+          {subject.segment === 'recurring' && !view.orphaned && <PaceChooser view={view} model={model} plan={plan} ops={ops} fmt={fmt} currency={currency} canEdit={canEdit} />}
           {canEdit && subject.segment === 'events' && !view.orphaned && <EventTotal view={view} model={model} ops={ops} fmt={fmt} currency={currency} />}
           <div className="mt-2 overflow-hidden rounded-card border border-line bg-surface">
             {subject.sourceId && (

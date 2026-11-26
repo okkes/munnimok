@@ -10,6 +10,7 @@ import {
   monthlyRecurringSeries,
   nextDueDate,
   occurrencesBetween,
+  previousDueDate,
   recurringAmountMatches,
   summarize,
 } from './recurring';
@@ -115,6 +116,15 @@ describe('every-N and weekly cadences', () => {
 
     expect(cycleKeyOf(rec({}), '2026-07-15')).toBe('2026-07');
     expect(cycleKeyOf(rec({ every: 'year' }), '2026-07-15')).toBe('2026');
+  });
+
+  it('previousDueDate steps one cycle back from a due date, across a year’s end and into a shorter month', () => {
+    expect(previousDueDate(rec({ every: 'year', dueDay: 20, dueMonth: 5 }), '2027-05-20')).toBe('2026-05-20');
+    expect(previousDueDate(rec({ every: 'year', everyN: 2, dueDay: 20, dueMonth: 5 }), '2027-05-20')).toBe('2025-05-20');
+    expect(previousDueDate(rec({ dueDay: 15 }), '2026-01-15')).toBe('2025-12-15');
+    // a quarterly cost due on the 31st: its November date is the 30th
+    expect(previousDueDate(rec({ everyN: 3, dueDay: 31 }), '2026-02-28')).toBe('2025-11-30');
+    expect(previousDueDate(rec({ every: 'week', everyN: 2 }), '2026-07-17')).toBe('2026-07-03');
   });
 
   it('cycleMonths monthlyizes any cadence for insights', () => {

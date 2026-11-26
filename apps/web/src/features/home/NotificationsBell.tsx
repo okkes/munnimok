@@ -100,6 +100,8 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   planTarget: { key: 'act.planTarget', icon: 'clipboard-edit-outline' },
   planSkip: { key: 'act.planSkip', icon: 'clipboard-clock-outline' },
   planUnskip: { key: 'act.planUnskip', icon: 'clipboard-clock-outline' },
+  planPaceSpread: { key: 'act.planPaceSpread', icon: 'clipboard-clock-outline' },
+  planPaceCatchUp: { key: 'act.planPaceCatchUp', icon: 'clipboard-clock-outline' },
   planClear: { key: 'act.planClear', icon: 'clipboard-off-outline' },
   planSegments: { key: 'act.planSegments', icon: 'clipboard-list-outline' },
   planPool: { key: 'act.planPool', icon: 'bank-outline' },

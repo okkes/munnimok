@@ -18,7 +18,7 @@ import type { BudgetPeriodOpts } from './budgets';
 import { LOCKED_MAIN_IDS, REIMBURSED_ID } from './categories';
 import { hasNoFixedPayment, isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
 import { isEventMoney } from './events';
-import { nextDueDate, occurrencesBetween } from './recurring';
+import { nextDueDate, occurrencesBetween, previousDueDate } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
@@ -495,22 +495,86 @@ const RECURRING_CYCLE_DAYS: Record<RecurringRow['every'], number> = { week: 7, m
 export const isLongCadence = (rec: Pick<RecurringRow, 'every' | 'everyN'>, period: Period): boolean =>
   RECURRING_CYCLE_DAYS[rec.every] * Math.max(1, rec.everyN ?? 1) > periodLengthDays(period) + 3;
 
-export function recurringDueFrom(rec: Pick<RecurringRow, 'active' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>, period: Period): string | null {
+type PlannedCost = Pick<RecurringRow, 'active' | 'amountCents' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until' | 'planPace'>;
+
+export function recurringDueFrom(rec: Pick<PlannedCost, 'active' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>, period: Period): string | null {
   return nextDueDate(rec, period.start);
 }
 
-export function recurringTargetCents(
-  rec: Pick<RecurringRow, 'active' | 'amountCents' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>,
-  space: PeriodSpace,
-  period: Period,
-  carriedCents: number,
-): number {
+// #692: two ways to set a cost aside that is not due every period.
+// spread: what is still to save over the periods left — whatever was set aside so far, the rest lands evenly.
+// catchUp: the cost's even share per period counted from where its cycle began — a period that starts late asks for
+//          everything the earlier periods would have set aside, the ones after it for one share each.
+export type PlanPace = 'spread' | 'catchUp';
+
+export const paceOf = (rec: Pick<RecurringRow, 'planPace'>): PlanPace => (rec.planPace === 'catchUp' ? 'catchUp' : 'spread');
+
+export interface CostCycle {
+  /** the periods of the cycle: from the one after the cost's previous due date through the one it is due in */
+  periods: number;
+  /** this period's place in it, from 1 */
+  periodNo: number;
+  /** the periods until it is due, this one included */
+  periodsLeft: number;
+  /** the amount over the cycle's periods */
+  evenCents: number;
+}
+
+/** where a period stands in the cycle of a cost's next payment; null while nothing is due any more */
+export function costCycle(rec: PlannedCost, space: PeriodSpace, period: Period): CostCycle | null {
+  const due = recurringDueFrom(rec, period);
+  if (!due) return null;
+  const periodsLeft = periodsUntil(space, period, due);
+  // a cycle is never shorter than what is left of it (a period type changed halfway, a cadence anchored anew)
+  const periods = Math.max(periodsLeft, periodsUntil(space, periodAt(space, previousDueDate(rec, due)), due) - 1);
+  return { periods, periodNo: periods - periodsLeft + 1, periodsLeft, evenCents: Math.round(Math.abs(rec.amountCents) / periods) };
+}
+
+/** what the cost should hold by the end of the period when every period of its cycle set one even share aside */
+const onPaceCents = (amountCents: number, cycle: CostCycle): number => Math.round((amountCents * cycle.periodNo) / cycle.periods);
+
+/** this period's share on top of what earlier periods set aside and never spent */
+export function recurringTargetCents(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number, pace: PlanPace = paceOf(rec)): number {
+  const amount = Math.abs(rec.amountCents);
   // a cost due more than once inside the period (weekly in a monthly plan) wants every occurrence, not one
   const occurrences = rec.active === 1 ? occurrencesBetween(rec, period.start, period.end).length : 0;
-  if (occurrences > 1) return Math.max(0, occurrences * Math.abs(rec.amountCents) - carriedCents);
-  const due = recurringDueFrom(rec, period);
-  const left = due ? periodsUntil(space, period, due) : 1;
-  return spreadTargetCents(Math.abs(rec.amountCents), carriedCents, left);
+  if (occurrences > 1) return Math.max(0, occurrences * amount - carriedCents);
+  const cycle = costCycle(rec, space, period);
+  if (!cycle) return spreadTargetCents(amount, carriedCents, 1);
+  if (pace === 'catchUp') return Math.max(0, onPaceCents(amount, cycle) - carriedCents);
+  return spreadTargetCents(amount, carriedCents, cycle.periodsLeft);
+}
+
+export interface PaceOffer {
+  pace: PlanPace;
+  /** what this period asks for on top of what is set aside */
+  nowCents: number;
+  /** what each period after it asks for, once this one is funded as asked */
+  laterCents: number;
+}
+
+export interface SetAsideChoice {
+  cycle: CostCycle;
+  /** what is still to save for the next payment */
+  openCents: number;
+  offers: PaceOffer[];
+}
+
+/** the two ways side by side, for a cost with periods to go before it is due; null where there is nothing to choose
+ *  (due every period, due in this one — all of it is wanted now — or not due any more) */
+export function setAsideChoice(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number): SetAsideChoice | null {
+  if (!isLongCadence(rec, period)) return null;
+  const cycle = costCycle(rec, space, period);
+  if (!cycle || cycle.periodsLeft <= 1) return null;
+  const spread = recurringTargetCents(rec, space, period, carriedCents, 'spread');
+  return {
+    cycle,
+    openCents: Math.max(0, Math.abs(rec.amountCents) - carriedCents),
+    offers: [
+      { pace: 'spread', nowCents: spread, laterCents: spread },
+      { pace: 'catchUp', nowCents: recurringTargetCents(rec, space, period, carriedCents, 'catchUp'), laterCents: cycle.evenCents },
+    ],
+  };
 }
 
 export function debtTargetCents(

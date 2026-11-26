@@ -82,6 +82,17 @@ export function nextDueDate(rec: Pick<RecurringRow, 'active'> & CadenceFields, t
   return null;
 }
 
+/** the due date one cycle before `due` — where the cycle that ends on `due` began, whether or not the cost existed then */
+export function previousDueDate(rec: Pick<RecurringRow, 'every' | 'everyN' | 'dueDay'>, due: string): string {
+  const n = stepN(rec);
+  if (rec.every === 'week') return addDays(due, -7 * n);
+  const [y, m] = parts(due);
+  const months = y * 12 + (m - 1) - (rec.every === 'year' ? 12 * n : n);
+  const py = Math.floor(months / 12);
+  const pm = (months % 12) + 1;
+  return toIso(py, pm, Math.min(rec.dueDay, daysInMonth(py, pm)));
+}
+
 /** stable id of the billing cycle containing `date` — caps auto-linking at one payment per cycle */
 export function cycleKeyOf(rec: CadenceFields, date: string): string {
   const n = stepN(rec);

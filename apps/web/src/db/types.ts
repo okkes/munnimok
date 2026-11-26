@@ -317,6 +317,9 @@ export interface RecurringRow extends SyncEnvelope {
   merchantKey?: string;
   /** #274: counterparty account for special categories; linked transactions inherit it */
   linkedAccountId?: string;
+  /** #692: how the plan sets the cost aside when it is not due every period — absent = what is left, spread over the
+   *  periods left; it lives on the cost, so no plan that is started over, copied or carried on can lose it */
+  planPace?: 'catchUp';
 }
 
 /** a rejected recurring suggestion: never suggested again; synced, so a partner's dismissal counts for the space */
