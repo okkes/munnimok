@@ -11,7 +11,7 @@ const DRAWN: readonly Exclude<Part, 'gap'>[] = ['spent', 'left', 'over'];
 
 const PART_COLOR: Record<Part, string> = {
   spent: 'var(--m-accent-deep)',
-  left: 'color-mix(in srgb, var(--m-accent) 42%, var(--m-track))',
+  left: 'color-mix(in srgb, var(--m-accent) 50%, var(--m-surface))',
   over: 'var(--m-negative)',
   gap: 'var(--m-track)',
 };
