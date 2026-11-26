@@ -1007,6 +1007,7 @@ export const en = {
   'acct.bank': 'Bank Account',
   'acct.funding': 'Funding account',
   'acct.attachTypeLabel': 'What is this account to this space?',
+  'acct.typeByParty': '{party} reports this account as “{type}” — a space holds it as that and nothing else.',
   'acct.fundingAttachNote': 'A funding account completes the picture as a counterparty — a shared pot you send money to. Its transactions will not appear in this space, and its balance counts toward nothing.',
   'acct.attachShareWarnTitle': 'This space is shared',
   'acct.attachShareWarnBody': 'Attaching makes this account visible to everyone in “{space}” — transactions included.',

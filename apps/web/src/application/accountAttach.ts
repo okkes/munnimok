@@ -3,6 +3,7 @@ import { releaseAccountReferences } from './accountRelease';
 import { logActivity } from './activity';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { attachAccount, detachAccount, fetchSpaceLinks } from '@/features/accounts/feedGateway';
+import { partyTypeOf } from '@/db/joined';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountType } from '@/db/types';
@@ -22,13 +23,15 @@ export async function attachFeedToSpace(
   // the override, then the space's history start, then the app default: never silently unlimited
   const from =
     historyFrom || (await store.get('space', spaceId))?.historyStartDate || isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-  await attachAccount(spaceId, feedSpaceId, accountId, from, type);
+  // #536: a type the feeding party states is nobody's to pick — whichever door attaches the account
+  const linkType = partyTypeOf(await store.get('account', accountId)) ?? type;
+  await attachAccount(spaceId, feedSpaceId, accountId, from, linkType);
   await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, feedSpaceId), {
     feedSpaceId,
     accountId,
     historyFrom: from,
     archived: 0,
-    ...(type ? { type } : {}),
+    ...(linkType ? { type: linkType } : {}),
   });
   void logActivity(store, repo, spaceId, 'attach', (await store.get('account', accountId))?.name);
 }

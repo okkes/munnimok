@@ -23,6 +23,9 @@ const SPELLED_NAMES: Record<string, string> = {
   enablebanking: 'Enable Banking',
 };
 
+/** the parties whose name is its initials */
+const INITIALS: ReadonlySet<string> = new Set(['ing', 'asn', 'duo', 'bkr']);
+
 // a party's name where no catalogue is at hand (demo receipt source, account source line, group header);
 // brand names are not translated
 export const partyName = (providerId: string): string =>
@@ -30,5 +33,5 @@ export const partyName = (providerId: string): string =>
   providerId
     .replace(/-nl$/, '')
     .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => (INITIALS.has(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
     .join(' ');

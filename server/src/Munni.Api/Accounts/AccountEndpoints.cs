@@ -118,8 +118,9 @@ public static class AccountEndpoints
             return Results.Forbid();
 
         // #212: the link's type is the SPACE's fact about the account: the caller's pick, else the row's own,
-        // decided once so every copy of the link carries it
-        var type = request.Type ?? await AccountTypeAsync(db, request.FeedSpaceId, request.AccountId);
+        // decided once so every copy of the link carries it; #536: a type the feeding party states is nobody's to pick
+        var stated = await PartyTypeRepair.StatedTypeAsync(db, request.FeedSpaceId, request.AccountId);
+        var type = stated ?? request.Type ?? await AccountTypeAsync(db, request.FeedSpaceId, request.AccountId);
 
         var link = await db.SpaceAccountLinks.FirstOrDefaultAsync(l =>
             l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
@@ -145,7 +146,7 @@ public static class AccountEndpoints
             link.ArchivedAtSeq = null;
             link.AttachedBy = me;
             link.HistoryFrom = request.HistoryFrom;
-            if (request.Type is not null) link.Type = request.Type;
+            if ((stated ?? request.Type) is { } wanted) link.Type = wanted;
         }
         try
         {

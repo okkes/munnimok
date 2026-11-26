@@ -205,6 +205,9 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var solo = factory.Read(db => db.EntityRows.Single(r => r.Entity == "account" && r.EntityId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_solo").AccountEntityId).DataJson);
         Assert.Contains("\"provider\":\"ing-nl\"", solo);
         Assert.Contains("\"connectionId\":\"conn-ing\"", solo);
+        // #536: the bank's own connector says what the account is; the open-banking account above says nothing of the kind
+        Assert.Contains("\"partyType\":\"savings\"", solo);
+        Assert.DoesNotContain("partyType", Row());
     }
 
     [Fact]

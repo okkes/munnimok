@@ -13,6 +13,7 @@ import { useMyFeedIds } from '@/application/connections';
 import { ownsFeed } from '@/domain/accountCoverage';
 import type { ReconnectNeed } from '@/domain/accountCoverage';
 import { BankConnect } from '@/features/connectors/BankConnect';
+import { partyName } from '@/features/connectors/logos';
 import { useReconnectReader } from '@/features/connectors/useReconnect';
 import { ReconnectNote } from '@/features/accounts/ReconnectNote';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
@@ -25,7 +26,7 @@ import { useMyRole } from './SpaceSharing';
 import { ReadOnlyNote } from './ReadOnlyNote';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
-import { linkEffectiveType, visibleAccounts } from '@/db/joined';
+import { linkEffectiveType, partyTypeOf, visibleAccounts } from '@/db/joined';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
@@ -68,6 +69,9 @@ interface AttachCandidate {
   ibanTail?: string;
   /** #536: the bank's reported type: only the attach step's first suggestion, the space's pick decides */
   reportedType: AccountType;
+  /** #536: the type its party states — then there is nothing to pick, and `party` is who says so */
+  statedType?: AccountType;
+  party: string;
 }
 
 type T = ReturnType<typeof useLang>['t'];
@@ -212,7 +216,15 @@ export function SpaceAccountsScreen() {
       const attached = new Set(links.filter((l) => l.deleted === 0 && !l.archived).map((l) => l.accountId));
       return allAccounts
         .filter((a) => a.deleted === 0 && myFeeds.has(a.spaceId) && !attached.has(a.id))
-        .map((a) => ({ accountId: a.id, feedSpaceId: a.spaceId, name: a.name, ibanTail: ibanTail(a.iban), reportedType: typeDef(a.type).type }));
+        .map((a) => ({
+          accountId: a.id,
+          feedSpaceId: a.spaceId,
+          name: a.name,
+          ibanTail: ibanTail(a.iban),
+          reportedType: typeDef(a.type).type,
+          statedType: partyTypeOf(a),
+          party: partyName(a.provider ?? a.source),
+        }));
     },
     [spaceId, syncing, attachOpen],
   );
@@ -225,7 +237,7 @@ export function SpaceAccountsScreen() {
       ? candidates.find((c) => c.accountId === pendingAttach.accountId)
       : undefined;
     setPicked(target ?? null);
-    if (target) setAttachType(target.reportedType);
+    if (target) setAttachType(target.statedType ?? target.reportedType);
     setAttachFocus(!!target);
     setAttachOpen(true);
     setPendingAttach(null);
@@ -512,7 +524,7 @@ export function SpaceAccountsScreen() {
                   data-testid={`space-attach-pick-${candidate.accountId}`}
                   onClick={() => {
                     setPicked(candidate);
-                    setAttachType(candidate.reportedType);
+                    setAttachType(candidate.statedType ?? candidate.reportedType);
                   }}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
                 >
@@ -535,13 +547,20 @@ export function SpaceAccountsScreen() {
           {picked && (
             <>
               <p className="px-1 text-[13px] text-ink-2">{t('acct.attachTypeLabel')}</p>
+              {/* #536: what the party itself calls the account is not a pick — the other types stay in view, switched off */}
+              {picked.statedType && (
+                <p className="px-1 text-[12px] leading-snug text-ink-3" data-testid="space-attach-type-stated">
+                  {t('acct.typeByParty', { party: picked.party, type: t(typeDef(picked.statedType).labelKey) })}
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-2" data-testid="space-attach-types">
                 {ACCOUNT_TYPES.map((def) => (
                   <button
                     key={def.type}
                     data-testid={`space-attach-type-${def.type}`}
+                    disabled={!!picked.statedType && def.type !== picked.statedType}
                     onClick={() => setAttachType(def.type)}
-                    className={`m-tap flex items-center gap-2 rounded-card border px-3 py-2.5 text-left text-[13px] ${
+                    className={`m-tap flex items-center gap-2 rounded-card border px-3 py-2.5 text-left text-[13px] disabled:opacity-40 ${
                       attachType === def.type ? 'border-accent bg-accent-soft/30 text-ink' : 'border-line bg-surface text-ink-2'
                     }`}
                   >

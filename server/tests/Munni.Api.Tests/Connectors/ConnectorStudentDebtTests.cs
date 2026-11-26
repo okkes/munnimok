@@ -37,6 +37,7 @@ public class ConnectorStudentDebtTests(ConnectorApiFactory factory) : IClassFixt
         var row = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == feedId && r.Entity == "account"));
         var data = JsonDocument.Parse(row.DataJson).RootElement;
         Assert.Equal("loan", data.GetProperty("type").GetString());
+        Assert.Equal("loan", data.GetProperty("partyType").GetString());
         Assert.Equal(1_243_477, data.GetProperty("balanceCents").GetInt64());
         Assert.Equal("2026-08-01", data.GetProperty("balanceAsOf").GetString());
         Assert.Equal(2_500_000, data.GetProperty("originalCents").GetInt64());

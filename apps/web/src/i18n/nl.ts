@@ -1009,6 +1009,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.bank': 'Betaalrekening',
   'acct.funding': 'Fundingrekening',
   'acct.attachTypeLabel': 'Wat is deze rekening voor deze ruimte?',
+  'acct.typeByParty': '{party} geeft deze rekening op als “{type}” — een ruimte houdt hem zo aan en niet anders.',
   'acct.fundingAttachNote': 'Een fundingrekening maakt het plaatje compleet als tegenpartij — een gezamenlijke pot waar je geld naartoe stuurt. De transacties ervan verschijnen niet in deze ruimte, en het saldo telt nergens in mee.',
   'acct.attachShareWarnTitle': 'Deze ruimte is gedeeld',
   'acct.attachShareWarnBody': 'Door te koppelen wordt deze rekening zichtbaar voor iedereen in “{space}” — inclusief transacties.',

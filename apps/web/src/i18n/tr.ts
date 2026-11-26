@@ -1009,6 +1009,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.bank': 'Banka Hesabı',
   'acct.funding': 'Fonlama hesabı',
   'acct.attachTypeLabel': 'Bu hesap bu alan için nedir?',
+  'acct.typeByParty': '{party} bu hesabı “{type}” olarak bildiriyor — bir alan onu yalnızca bu türle tutar.',
   'acct.fundingAttachNote': 'Fonlama hesabı, karşı taraf olarak resmi tamamlar — para gönderdiğiniz ortak bir kasadır. İşlemleri bu alanda görünmez ve bakiyesi hiçbir yerde sayılmaz.',
   'acct.attachShareWarnTitle': 'Bu alan paylaşımlı',
   'acct.attachShareWarnBody': 'Bağlarsanız bu hesap “{space}” içindeki herkese görünür olur — işlemler dahil.',

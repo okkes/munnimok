@@ -67,6 +67,9 @@ export type AccountSource = 'manual' | 'camt053' | 'connector';
 export interface AccountRow extends SyncEnvelope {
   id: string;
   spaceId: string;
+  /** #536: what the party that feeds the account calls it (a savings account, a card, a loan), stamped by the server on
+   *  every fetch — a space attaches the account as this type and no other; absent = the space decides */
+  partyType?: AccountType;
   name: string;
   type: AccountType;
   source: AccountSource;

@@ -77,6 +77,12 @@ export async function spaceAccountLinks(store: StorageBackend, spaceId: string):
   return (await store.bySpace('accountLink', spaceId)).filter((l) => l.deleted === 0);
 }
 
+const ACCOUNT_KINDS: ReadonlySet<string> = new Set<AccountType>(['checking', 'savings', 'cash', 'brokerage', 'credit', 'mortgage', 'loan', 'funding']);
+
+/** #536: the type the feeding party states for an account, if this build knows it — undefined where the space decides */
+export const partyTypeOf = (account: Pick<AccountRow, 'partyType'> | undefined): AccountType | undefined =>
+  account?.partyType && ACCOUNT_KINDS.has(account.partyType) ? account.partyType : undefined;
+
 /** #152: the link's type wins: a global account has no meaningful type, each space decides at attach time */
 export const linkEffectiveType = (link: AccountLinkRow, account: AccountRow): AccountType =>
   link.type ?? account.type;

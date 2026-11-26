@@ -65,6 +65,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     private const string ProviderField = "provider";
     private const string NameField = "name";
     private const string TypeField = "type";
+    /// <summary>#536: the account's kind as the party that feeds it states it; a row that carries one is attached as that type.</summary>
+    public const string PartyTypeField = "partyType";
     private const string NoteField = "note";
     private const string BalanceField = "balanceCents";
     private const string BalanceAsOfField = "balanceAsOf";
@@ -390,6 +392,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
             fields[TypeField] = Json(AccountTypeOf(account.Text(TypeField)));
         }
+        // #536: stated on every fetch and apart from the row's own type, which only seeds
+        if (StatedTypeOf(reference.Provider, account.Text(TypeField)) is { } stated) fields[PartyTypeField] = Json(stated);
         if (account["balance"] is JsonObject balance && Money(balance[AmountField]) is { } money)
         {
             fields[BalanceField] = Json(money.Value);
@@ -674,6 +678,18 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         _ => AccountTypes.Default,
     };
 
+    // #536: what a party itself calls an account decides its type in every space. An open-banking connection calls every
+    // IBAN a current account, which says nothing; and a current account stays the space's choice, because a shared pot
+    // one only pays into is a current account at the bank too
+    internal static string? StatedTypeOf(string? provider, string? type) =>
+        provider is null || OpenBankingProviders.Contains(provider) ? null : type switch
+        {
+            "savings" => "savings",
+            "credit_card" => CreditAccountType,
+            "loan" => "loan",
+            _ => null,
+        };
+
     // the canonical id, unless a statement import already owns that row on the feed: then the party forks to its own row
     // and the user merges the two in the app (#311)
     private async Task<string> BankAccountEntityIdAsync(string feedId, string accountRef)
@@ -713,6 +729,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 [ProviderField] = Json(provider),
                 [NameField] = Json(credit.Text("creditor") ?? provider),
                 [TypeField] = Json(LiabilityTypeOf(credit.Text("kind"))),
+                [PartyTypeField] = Json(LiabilityTypeOf(credit.Text("kind"))),
                 [CurrencyField] = Json(amount.Value.Currency),
                 // the registry states what was registered, not what is left —
                 // the note says so, and an ended credit reads as settled
@@ -759,6 +776,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 [ProviderField] = Json(provider),
                 [NameField] = Json(providerName),
                 [TypeField] = Json("loan"),
+                [PartyTypeField] = Json("loan"),
                 [CurrencyField] = Json(total.Value.Currency),
                 [BalanceField] = Json(total.Value.Value),
                 [NoteField] = Json(StudentDebtNote(debt)),

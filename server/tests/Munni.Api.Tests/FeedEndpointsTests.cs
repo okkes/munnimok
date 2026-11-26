@@ -181,6 +181,37 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
     }
 
     [Fact]
+    public async Task An_account_whose_party_states_its_type_is_attached_as_that_type_whatever_is_asked()
+    {
+        var feed = FeedId();
+        var first = $"space_{Guid.NewGuid():N}";
+        var second = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor($"owner_{Guid.NewGuid():N}");
+        await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL02INGB0123456780"));
+        // attached before the party's word was known: the space had made it a card
+        await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString(), feed, "account", "loan1", new() { ["name"] = Json("Loan"), ["type"] = Json("loan") }, "000000100-0000-dev")]));
+        await alice.PostAsJsonAsync($"/sync/{first}/push", new PushRequest("dev1", [Op(first, "spacerow")]));
+        await alice.PostAsJsonAsync($"/sync/{second}/push", new PushRequest("dev1", [Op(second, "spacerow")]));
+        var before = await (await alice.PostAsJsonAsync($"/spaces/{first}/accounts",
+            new AttachAccountRequest(feed, "loan1", "2026-01-01", "credit"))).Content.ReadFromJsonAsync<AccountLinkDto>();
+        Assert.Equal("credit", before!.Type);
+
+        await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString(), feed, "account", "loan1", new() { ["partyType"] = Json("loan") }, "000000200-0000-dev")]));
+
+        // a new attachment: the pick loses to the party, and no pick gets the party's type too
+        var asked = await (await alice.PostAsJsonAsync($"/spaces/{second}/accounts",
+            new AttachAccountRequest(feed, "loan1", "2026-01-01", "checking"))).Content.ReadFromJsonAsync<AccountLinkDto>();
+        Assert.Equal("loan", asked!.Type);
+        // the old attachment moves over the next time it is attached, pick or no pick
+        var again = await (await alice.PostAsJsonAsync($"/spaces/{first}/accounts",
+            new AttachAccountRequest(feed, "loan1", "2026-01-01"))).Content.ReadFromJsonAsync<AccountLinkDto>();
+        Assert.Equal(before.Id, again!.Id);
+        Assert.Equal("loan", again.Type);
+    }
+
+    [Fact]
     public async Task Leaving_archives_the_link_history_stays_new_data_stops_rejoin_revives()
     {
         var feed = FeedId();

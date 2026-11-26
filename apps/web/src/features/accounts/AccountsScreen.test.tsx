@@ -147,7 +147,7 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('account-syncempty-feedacct-conn')).toBeTruthy();
     expect(screen.queryByTestId('account-datathrough-feedacct-conn')).toBeNull();
     fireEvent.click(row);
-    expect((await screen.findByTestId('attach-source')).textContent).toContain('Ing');
+    expect((await screen.findByTestId('attach-source')).textContent).toContain('ING');
   });
 
   it('an icon pick shows up while the attach sheet stays open', async () => {

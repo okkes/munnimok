@@ -394,6 +394,23 @@ public class ConnectorUnitTests
     }
 
     [Fact]
+    public void A_party_states_a_type_only_where_its_word_decides()
+    {
+        // munni's own bank connectors read the bank's product: a savings account, a card and a loan are what they are
+        Assert.Equal("savings", ConnectorIngest.StatedTypeOf("ing-nl", "savings"));
+        Assert.Equal("credit", ConnectorIngest.StatedTypeOf("asn", "credit_card"));
+        Assert.Equal("loan", ConnectorIngest.StatedTypeOf("ing-nl", "loan"));
+        // a current account may be a shared pot in one space and the main account in another: the space picks
+        Assert.Null(ConnectorIngest.StatedTypeOf("ing-nl", "current"));
+        Assert.Null(ConnectorIngest.StatedTypeOf("ing-nl", "unknown"));
+        Assert.Null(ConnectorIngest.StatedTypeOf("ing-nl", null));
+        // an open-banking connection calls every IBAN a current account
+        Assert.Null(ConnectorIngest.StatedTypeOf("enablebanking", "savings"));
+        Assert.Null(ConnectorIngest.StatedTypeOf("gocardless", "loan"));
+        Assert.Null(ConnectorIngest.StatedTypeOf(null, "loan"));
+    }
+
+    [Fact]
     public void The_compose_command_quotes_the_name_for_the_shell()
     {
         var command = ConnectorRelayEndpoints.ComposeCommand("https://api.munni.test/connector/", "enr_abc", "Okkes' laptop");
