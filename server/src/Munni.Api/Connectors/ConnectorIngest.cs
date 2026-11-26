@@ -386,14 +386,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         if (account.Text("masked_number") is { } masked) fields["maskedNumber"] = Json(masked);
         if (account.Text("institution") is { Length: > 0 } institution) fields["bankId"] = Json(institution);
 
-        // name and type only seed the row: re-asserting them every fetch clobbered renames made in the app
-        if (existing is null)
-        {
-            fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
-            fields[TypeField] = Json(AccountTypeOf(account.Text(TypeField)));
-        }
-        // #536: stated on every fetch and apart from the row's own type, which only seeds
-        if (StatedTypeOf(reference.Provider, account.Text(TypeField)) is { } stated) fields[PartyTypeField] = Json(stated);
+        AddIdentity(fields, reference, account, seedAsIban: existing is null ? isIban : null);
         if (account["balance"] is JsonObject balance && Money(balance[AmountField]) is { } money)
         {
             fields[BalanceField] = Json(money.Value);
@@ -401,6 +394,18 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             fields[BalanceAsOfField] = Json(asOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         }
         return fields;
+    }
+
+    // name and type only seed the row (seedAsIban says there is no row yet): re-asserting them every fetch clobbered renames
+    // made in the app. #536: what the party itself calls the account is stated on every fetch, apart from that seeded type
+    private static void AddIdentity(Dictionary<string, JsonElement> fields, ConnectorAccountRef reference, JsonObject account, bool? seedAsIban)
+    {
+        if (seedAsIban is { } isIban)
+        {
+            fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
+            fields[TypeField] = Json(AccountTypeOf(account.Text(TypeField)));
+        }
+        if (StatedTypeOf(reference.Provider, account.Text(TypeField)) is { } stated) fields[PartyTypeField] = Json(stated);
     }
 
     private async Task<ConnectorIngestCounts> TransactionsAsync(
@@ -681,14 +686,12 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     // #536: what a party itself calls an account decides its type in every space. An open-banking connection calls every
     // IBAN a current account, which says nothing; and a current account stays the space's choice, because a shared pot
     // one only pays into is a current account at the bank too
-    internal static string? StatedTypeOf(string? provider, string? type) =>
-        provider is null || OpenBankingProviders.Contains(provider) ? null : type switch
-        {
-            "savings" => "savings",
-            "credit_card" => CreditAccountType,
-            "loan" => "loan",
-            _ => null,
-        };
+    internal static string? StatedTypeOf(string? provider, string? type)
+    {
+        if (provider is null || OpenBankingProviders.Contains(provider)) return null;
+        var stated = AccountTypeOf(type);
+        return stated == AccountTypes.Default ? null : stated;
+    }
 
     // the canonical id, unless a statement import already owns that row on the feed: then the party forks to its own row
     // and the user merges the two in the app (#311)
