@@ -1899,6 +1899,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.trackAsDebt': 'Bijhouden als schuld',
   'debts.markPaidOff': 'Afgelost markeren',
   'debts.reopen': 'Heropenen',
+  'debts.paidOffFold': 'Dit jaar afgelost · {n}',
   'debts.stopTracking': 'Niet meer als schuld bijhouden',
   'debts.sharedAccount': 'Gedeeld door {name} — alleen diegene kan deze rekening wijzigen.',
   'debts.sharedAccountAnon': 'Gedeeld door een ander lid — alleen diegene kan deze rekening wijzigen.',

@@ -1899,6 +1899,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.trackAsDebt': 'Borç olarak takip et',
   'debts.markPaidOff': 'Ödendi olarak işaretle',
   'debts.reopen': 'Yeniden aç',
+  'debts.paidOffFold': 'Bu yıl ödenenler · {n}',
   'debts.stopTracking': 'Borç takibini bırak',
   'debts.sharedAccount': '{name} tarafından paylaşıldı — bu hesabı yalnızca o değiştirebilir.',
   'debts.sharedAccountAnon': 'Başka bir üye tarafından paylaşıldı — bu hesabı yalnızca o değiştirebilir.',

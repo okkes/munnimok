@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '@/db/types';
+import { encodeHlc } from '@/sync/hlc';
 import {
   debtsOverview,
   estimatePaymentPlan,
   hasNoFixedPayment,
   isDebtTracked,
   loanOverpaidCents,
+  paidOffYear,
   loanProgress,
   loanRemainingCents,
   monthlyPaymentCents,
@@ -34,6 +36,16 @@ describe('loan math (v2: the account IS the debt)', () => {
     expect(loanRemainingCents(account({ balanceCents: -35_000 }))).toBe(35_000);
     expect(loanRemainingCents(account({ balanceCents: 12_000 }))).toBe(0);
     expect(loanProgress(account({ originalCents: 100_000 }), 35_000)).toBeCloseTo(0.65);
+  });
+
+  it('#697: the year a loan was marked paid off is read from the clock of its archived field', () => {
+    const stamp = (iso: string) => encodeHlc({ wallMs: new Date(iso).getTime(), counter: 0, deviceId: 'd1' });
+    expect(paidOffYear(account({ archived: 1, fieldVersions: { archived: stamp('2025-06-15T12:00:00') } }))).toBe(2025);
+    expect(paidOffYear(account({ archived: 1, fieldVersions: { archived: stamp('2026-11-26T12:00:00') } }))).toBe(2026);
+    // reopened: its clock says when it was reopened, which is no payoff
+    expect(paidOffYear(account({ archived: 0, fieldVersions: { archived: stamp('2025-06-15T12:00:00') } }))).toBeNull();
+    expect(paidOffYear(account({ archived: 1 }))).toBeNull();
+    expect(paidOffYear(account({}))).toBeNull();
   });
 
   it('#693: a loan whose balance stands above zero was paid back too much; a card holding a credit was not', () => {

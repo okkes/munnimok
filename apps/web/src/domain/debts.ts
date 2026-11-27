@@ -1,5 +1,6 @@
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { knownCents } from '@/lib/money';
+import { decodeHlc } from '@/sync/hlc';
 import { isRetiredDefault } from './defaultAccounts';
 import { nextDueDate } from './recurring';
 
@@ -30,6 +31,15 @@ export const hasNoFixedPayment = (loan: Pick<AccountRow, 'paymentCents'>): boole
  *  owed is its magnitude); an overpaid card sits at 0 owed */
 export function loanRemainingCents(account: Pick<AccountRow, 'balanceCents'>): number {
   return Math.max(0, -account.balanceCents);
+}
+
+/** #697: the calendar year a loan was marked paid off, read from the clock its `archived` field was last written with —
+ *  so no date is stored for it; null while it is open, or where the row carries no clock for the field */
+export function paidOffYear(account: Pick<AccountRow, 'archived' | 'fieldVersions'>): number | null {
+  const stamp = account.archived === 1 ? account.fieldVersions?.archived : undefined;
+  if (!stamp) return null;
+  const at = decodeHlc(stamp).wallMs;
+  return Number.isFinite(at) ? new Date(at).getFullYear() : null;
 }
 
 /** #693: what was paid back beyond what the loan owed — its balance stands above zero. A card is left out: it may

@@ -1897,6 +1897,7 @@ export const en = {
   'debts.trackAsDebt': 'Track as debt',
   'debts.markPaidOff': 'Mark paid off',
   'debts.reopen': 'Reopen',
+  'debts.paidOffFold': 'Paid off this year · {n}',
   'debts.stopTracking': 'Stop tracking as debt',
   'debts.sharedAccount': 'Shared by {name} — only they can change this account.',
   'debts.sharedAccountAnon': 'Shared by another member — only they can change this account.',

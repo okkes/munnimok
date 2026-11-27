@@ -6,7 +6,7 @@ import { renderApp } from '@/test/harness';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
-import { HlcClock } from '@/sync/hlc';
+import { HlcClock, encodeHlc } from '@/sync/hlc';
 
 async function createLoan(name: string, current: string, apr?: string, payment?: string, original?: string) {
   fireEvent.click(await screen.findByTestId('debts-add'));
@@ -466,12 +466,42 @@ describe('Debts (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('debtdetail-archive').textContent).toContain('Reopen'));
     cleanup();
     renderApp('/debts');
+    // #697: it folds away under "Paid off this year" and is no card until the fold is opened
+    const toggle = await screen.findByTestId('debts-paidoff-toggle', undefined, { timeout: 5000 });
+    expect(toggle.textContent).toBe('Paid off this year · 1');
+    expect(document.querySelector('[data-testid^="debt-card-"]')).toBeNull();
+    expect(screen.queryByTestId('debts-overview')).toBeNull();
+    fireEvent.click(toggle);
     const archived = await waitFor(() => {
       const el = document.querySelector('[data-testid^="debt-card-"]');
       expect(el).toBeTruthy();
       return el!;
-    }, { timeout: 5000 });
+    });
     expect(archived.className).toContain('opacity-60');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  }, 15_000);
+
+  it('#697: a loan paid off in an earlier year is gone from the list; this year’s wait behind the fold, open loans stay', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    const loan = { type: 'loan', source: 'manual', currency: 'EUR', balanceCents: 0 } as const;
+    const at = (iso: string) => encodeHlc({ wallMs: new Date(iso).getTime(), counter: 0, deviceId: 't' });
+    const lastYear = `${new Date().getFullYear() - 1}-06-15T12:00:00`;
+    await repo.upsert('account', 'demo_space', 'loan-open', { ...loan, name: 'Open loan', balanceCents: -50_000 });
+    await repo.upsert('account', 'demo_space', 'loan-now', { ...loan, name: 'Paid this year', archived: 1 });
+    await repo.upsertStamped('demo_space', [{ entity: 'account', entityId: 'loan-old', fields: { ...loan, name: 'Paid last year', archived: 1 }, hlc: at(lastYear) }]);
+    await screen.findByTestId('debt-card-loan-open');
+    expect(await screen.findByTestId('debts-paidoff-toggle')).toHaveProperty('textContent', 'Paid off this year · 1');
+    expect(screen.queryByTestId('debt-card-loan-now')).toBeNull();
+    fireEvent.click(screen.getByTestId('debts-paidoff-toggle'));
+    expect(await screen.findByTestId('debt-card-loan-now')).toBeTruthy();
+    expect(screen.queryByTestId('debt-card-loan-old')).toBeNull();
+    fireEvent.click(screen.getByTestId('debts-paidoff-toggle'));
+    await waitFor(() => expect(screen.queryByTestId('debt-card-loan-now')).toBeNull());
+    db.close();
   }, 15_000);
 
   it('#286 r2: a loan created WITH matching history still auto-offers the sheet', async () => {
