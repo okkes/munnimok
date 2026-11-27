@@ -148,25 +148,33 @@ async function answerOf(res: Response | null): Promise<Record<string, Entry> | n
   return entriesOf(await res.json().catch(() => null));
 }
 
+/** the first meeting of a device and the account: what the account holds wins, what only this device chose is offered
+ *  to it. Says whether a setting changed here; null when the account could not be reached */
+async function meetAccount(store: Meta, state: SyncState, now: () => Date): Promise<boolean | null> {
+  const held = await answerOf(await request());
+  if (!held) return null;
+  const arrived = await reconcile(store, state, held);
+  for (const setting of ACCOUNT_SETTINGS) {
+    if (held[setting.key] || state.known[setting.key] === null || state.pending.includes(setting.key)) continue;
+    state.at[setting.key] = now().toISOString();
+    state.pending.push(setting.key);
+  }
+  state.adopted = true;
+  return arrived;
+}
+
 /** one round with the account; false when it could not be reached (the pending choices go out next time) */
 export async function syncAccountSettings(store: Meta, sub: string, now: () => Date = () => new Date()): Promise<boolean> {
   const state = readState(sub);
   await noteChanges(store, state, now().toISOString());
   let arrived = false;
   if (!state.adopted) {
-    // the first meeting: what the account holds wins; what only this device chose is offered to it
-    const held = await answerOf(await request());
-    if (!held) {
+    const met = await meetAccount(store, state, now);
+    if (met === null) {
       writeState(sub, state);
       return false;
     }
-    arrived = await reconcile(store, state, held);
-    for (const setting of ACCOUNT_SETTINGS) {
-      if (held[setting.key] || state.known[setting.key] === null || state.pending.includes(setting.key)) continue;
-      state.at[setting.key] = now().toISOString();
-      state.pending.push(setting.key);
-    }
-    state.adopted = true;
+    arrived = met;
   }
   const sent = Object.fromEntries(state.pending.map((key) => [key, { value: state.known[key] ?? null, at: state.at[key] ?? now().toISOString() }]));
   const held = await answerOf(await request(state.pending.length > 0 ? { settings: sent } : undefined));

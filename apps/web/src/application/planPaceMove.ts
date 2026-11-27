@@ -24,8 +24,9 @@ export async function markRestartedPlans(store: StorageBackend, repo: Repo, toda
     if (space.deleted !== 0 || !space.kind) continue;
     const period = periodAt({ periodType: space.periodType ?? 'month', periodDay: space.periodDay ?? 1 }, today);
     const plan = await store.get('plan', planId(space.id, 'actual', period.start));
-    const removedAt = plan?.fieldVersions?.[DELETED_FIELD];
-    if (!plan || plan.deleted !== 0 || !removedAt || plan.fieldVersions.fresh !== undefined) continue;
+    if (plan?.deleted !== 0) continue;
+    const removedAt = plan.fieldVersions[DELETED_FIELD];
+    if (!removedAt || plan.fieldVersions.fresh !== undefined) continue;
     marked += await repo.upsertStamped(space.id, [{ entity: 'plan', entityId: plan.id, fields: { fresh: 1 }, hlc: `${removedAt}~` }]);
   }
   return marked;
