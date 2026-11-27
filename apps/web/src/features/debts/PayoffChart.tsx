@@ -1,4 +1,4 @@
-import { HaloText } from '@/ui/charts/HaloText';
+import { AXIS_W, scaleTicks } from '@/ui/charts/MultiLine';
 import { monotonePath } from '@/ui/charts/monotone';
 import { useUserInk } from '@/ui/userInk';
 import { axisFraction, hasTail } from '@/domain/debtPlan';
@@ -12,9 +12,12 @@ const WIDTH = 320;
 const PAD = 7;
 const PAD_X = 5;
 const LABEL_ZONE = 16;
-const EDGE = 0.08;
-const CUE_INSET = 2;
-const CUE_FONT = 9;
+const LABEL_FONT = 9;
+/** a figure or letter is about this wide at the labels' size: enough to tell that two labels would touch */
+const LETTER_W = LABEL_FONT * 0.56;
+const LABEL_GAP = 4;
+
+type Anchor = 'start' | 'middle' | 'end';
 
 export interface PayoffSeries {
   points: readonly WalkPoint[];
@@ -36,14 +39,29 @@ function AxisBreak({ x, zero, top, testId }: Readonly<{ x: number; zero: number;
   );
 }
 
-function anchorFor(x: number): 'start' | 'middle' | 'end' {
-  if (x <= WIDTH * EDGE) return 'start';
-  if (x >= WIDTH * (1 - EDGE)) return 'end';
-  return 'middle';
+interface Label {
+  tick: ChartTick;
+  x: number;
+  anchor: Anchor;
 }
 
-function AmountCue({ x, y, anchor, text, testId }: Readonly<{ x: number; y: number; anchor: 'start' | 'end'; text: string; testId?: string }>) {
-  return <HaloText x={x} y={y} anchor={anchor} size={CUE_FONT} fill="var(--m-ink-4)" text={text} testId={testId} />;
+const labelFrom = (label: Label): number => {
+  const width = label.tick.label.length * LETTER_W;
+  if (label.anchor === 'start') return label.x;
+  return label.anchor === 'end' ? label.x - width : label.x - width / 2;
+};
+
+/** the labels that fit beside each other, left to right: one that would touch the label before it is left out (#698) */
+export function fittingLabels(labels: readonly Label[]): Label[] {
+  const kept: Label[] = [];
+  let free = -Infinity;
+  for (const label of labels) {
+    const from = labelFrom(label);
+    if (from < free) continue;
+    kept.push(label);
+    free = from + label.tick.label.length * LETTER_W + LABEL_GAP;
+  }
+  return kept;
 }
 
 export function PayoffChart({
@@ -52,27 +70,49 @@ export function PayoffChart({
   ticks,
   height = 120,
   testId,
-  amount,
+  scale,
 }: Readonly<{
   series: readonly PayoffSeries[];
   axis: ChartAxis;
   ticks: readonly ChartTick[];
   height?: number;
   testId?: string;
-  amount?: (cents: number) => string;
+  /** #698: names the chart's amounts on a scale at the left, in the short form its gutter has room for */
+  scale?: (cents: number) => string;
 }>) {
   const ink = useUserInk();
   const series = given.map((s) => ({ ...s, color: ink(s.color) }));
   if (!series.some((s) => s.points.length > 1)) return null;
   // balances never go below zero: the scale runs from the zero line to the biggest opening balance
   const top = Math.max(1, ...series.flatMap((s) => s.points.map((point) => point.value)));
-  const x = (month: number) => PAD_X + axisFraction(axis, month) * (WIDTH - 2 * PAD_X);
+  const left = scale ? AXIS_W : 0;
+  const plot = WIDTH - left - 2 * PAD_X;
+  const x = (month: number) => left + PAD_X + axisFraction(axis, month) * plot;
   const y = (value: number) => height - PAD - (Math.max(0, value) / top) * (height - 2 * PAD);
   const zero = y(0);
   const suffixed = (suffix: string) => (testId ? `${testId}-${suffix}` : undefined);
+  // a label stands under its mark; only where it would leave the picture is it turned inward
+  const anchorFor = (at: number, text: string): Anchor => {
+    const half = (text.length * LETTER_W) / 2;
+    if (at - half < 0) return 'start';
+    return at + half > WIDTH ? 'end' : 'middle';
+  };
+  const labels = fittingLabels(ticks.map((tick) => ({ tick, x: x(tick.month), anchor: anchorFor(x(tick.month), tick.label) })));
   return (
     <svg viewBox={`0 0 ${WIDTH} ${height + LABEL_ZONE}`} className="w-full" aria-hidden data-testid={testId}>
-      <line x1={0} y1={zero} x2={WIDTH} y2={zero} stroke="var(--m-line)" strokeWidth={1} strokeDasharray="3 3" />
+      {scale && (
+        <g data-testid={suffixed('scale')}>
+          {scaleTicks(0, top).map((value) => (
+            <g key={value}>
+              {value > 0 && <line x1={left} x2={WIDTH} y1={y(value)} y2={y(value)} stroke="var(--m-line-2)" strokeWidth={1} />}
+              <text x={left - 5} y={y(value) + 3} textAnchor="end" fontSize={8} fill="var(--m-ink-4)" className="m-num">
+                {scale(value)}
+              </text>
+            </g>
+          ))}
+        </g>
+      )}
+      <line x1={left} y1={zero} x2={WIDTH} y2={zero} stroke="var(--m-line)" strokeWidth={1} strokeDasharray="3 3" />
       {ticks.map((tick) => (
         <line key={`m${tick.month}`} x1={x(tick.month)} y1={zero} x2={x(tick.month)} y2={zero + 4} stroke="var(--m-line)" strokeWidth={1} />
       ))}
@@ -100,24 +140,13 @@ export function PayoffChart({
           </g>
         );
       })}
-      {amount && (
-        <>
-          <AmountCue x={WIDTH - CUE_INSET} y={y(top) + CUE_FONT + 1} anchor="end" text={amount(top)} testId={testId ? `${testId}-top` : undefined} />
-          <AmountCue x={CUE_INSET} y={zero - 3} anchor="start" text={amount(0)} testId={testId ? `${testId}-zero` : undefined} />
-        </>
-      )}
-      {ticks.map((tick) => (
-        <text
-          key={`t${tick.month}`}
-          x={x(tick.month)}
-          y={height + LABEL_ZONE - 3}
-          textAnchor={anchorFor(x(tick.month))}
-          fontSize={9}
-          fill="var(--m-ink-4)"
-        >
-          {tick.label}
-        </text>
-      ))}
+      <g data-testid={suffixed('marks')}>
+        {labels.map((label) => (
+          <text key={`t${label.tick.month}`} x={label.x} y={height + LABEL_ZONE - 3} textAnchor={label.anchor} fontSize={LABEL_FONT} fill="var(--m-ink-4)">
+            {label.tick.label}
+          </text>
+        ))}
+      </g>
     </svg>
   );
 }

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { PayoffChart } from './PayoffChart';
+import { AXIS_W } from '@/ui/charts/MultiLine';
+import { PayoffChart, fittingLabels } from './PayoffChart';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
@@ -80,39 +81,53 @@ describe('PayoffChart (user 2026-10-08)', () => {
     expect(Number(screen.getByTestId('pc5-base-end').getAttribute('cx'))).toBe(315);
   });
 
-  it('with an amount formatter the scale gets its cues — the top of the scale at the top right, zero at the bottom left, haloed and drawn over the lines (user 2026-10-09)', () => {
+  it('#698: a scale names the top, the half and zero in a gutter at the left; the lines start right of it', () => {
     render(
       <PayoffChart
         testId="pc3"
         height={100}
         axis={{ focusMonths: 2, totalMonths: 2 }}
         ticks={[{ month: 0, label: '2026' }]}
-        amount={(cents) => `€${cents / 100}`}
+        scale={(cents) => `€${cents / 100}`}
         series={[
           { points: walk([40_000, 20_000, 0]), landed: true, color: 'grey', dashed: true },
           { points: walk([250_000, 100_000, 0]), landed: true, color: 'green', testId: 'pc3-plan' },
         ]}
       />,
     );
-    const svg = screen.getByTestId('pc3');
-    const top = screen.getByTestId('pc3-top');
-    const zero = screen.getByTestId('pc3-zero');
-    expect(top.textContent).toBe('€2500');
-    expect(top.getAttribute('text-anchor')).toBe('end');
-    expect(Number(top.getAttribute('x'))).toBe(318);
-    expect(zero.textContent).toBe('€0');
-    expect(zero.getAttribute('text-anchor')).toBe('start');
-    // zero sits just above the zero line (height − pad = 93), the top cue just under the top of the scale (pad = 7)
-    expect(Number(zero.getAttribute('y'))).toBe(90);
-    expect(Number(top.getAttribute('y'))).toBe(17);
-    // haloed by a copy underneath, never by an outline of its own (WebKit eats the letters)
-    expect(top.getAttribute('stroke')).toBeNull();
-    expect(top.previousElementSibling?.getAttribute('stroke')).toBe('var(--m-surface)');
-    const order = [...svg.querySelectorAll('path, text')].map((el) => el.tagName.toLowerCase());
-    expect(order.indexOf('text')).toBeGreaterThan(order.lastIndexOf('path'));
-    expect([...svg.querySelectorAll('text:not([aria-hidden])')].map((el) => el.textContent)).toEqual(['€2500', '€0', '2026']);
+    const scale = screen.getByTestId('pc3-scale');
+    const texts = [...scale.querySelectorAll('text')];
+    expect(texts.map((el) => el.textContent)).toEqual(['€2500', '€1250', '€0']);
+    expect(texts.every((el) => el.getAttribute('text-anchor') === 'end' && Number(el.getAttribute('x')) === AXIS_W - 5)).toBe(true);
+    // the top stands at the top of the plot (pad = 7), zero on the zero line (height − pad = 93)
+    expect(texts.map((el) => Number(el.getAttribute('y')))).toEqual([10, 53, 96]);
+    expect([...scale.querySelectorAll('line')].map((el) => Number(el.getAttribute('x1')))).toEqual([AXIS_W, AXIS_W]);
+    expect(screen.getByTestId('pc3-plan').getAttribute('d')).toMatch(new RegExp(`^M${AXIS_W + 5}\\.0,7\\.0 `));
+    // with a gutter beside it the first mark's label stands under its mark
+    expect(screen.getByTestId('pc3-marks').querySelector('text')?.getAttribute('text-anchor')).toBe('middle');
     render(<PayoffChart testId="pc4" height={100} axis={{ focusMonths: 2, totalMonths: 2 }} ticks={[]} series={[{ points: walk([100, 50, 0]), landed: true, color: 'green' }]} />);
-    expect(screen.queryByTestId('pc4-top')).toBeNull();
+    expect(screen.queryByTestId('pc4-scale')).toBeNull();
     expect(screen.getByTestId('pc4').querySelectorAll('text')).toHaveLength(0);
+  });
+
+  it('#698: a label that would touch the one before it is left out; its mark stays', () => {
+    const at = (x: number, label: string, anchor: 'start' | 'middle' | 'end' = 'middle') => ({ tick: { month: x, label }, x, anchor });
+    expect(fittingLabels([at(5, '2026', 'start'), at(30, '2028'), at(80, '2030'), at(108, '2032')]).map((l) => l.tick.label)).toEqual(['2026', '2030', '2032']);
+    expect(fittingLabels([at(20, 'Nov ’26'), at(50, 'May ’27'), at(90, 'Nov ’27'), at(320, '2052', 'end')]).map((l) => l.tick.label)).toEqual(['Nov ’26', 'Nov ’27', '2052']);
+    render(
+      <PayoffChart
+        testId="pc6"
+        height={100}
+        axis={{ focusMonths: 100, totalMonths: 100 }}
+        ticks={[
+          { month: 0, label: '2026' },
+          { month: 5, label: '2027' },
+          { month: 50, label: '2030' },
+        ]}
+        series={[{ points: walk([100, 50, 0]), landed: true, color: 'green' }]}
+      />,
+    );
+    expect([...screen.getByTestId('pc6-marks').querySelectorAll('text')].map((el) => el.textContent)).toEqual(['2026', '2030']);
+    expect(screen.getByTestId('pc6').querySelectorAll('line[y2="97"]')).toHaveLength(3);
   });
 });

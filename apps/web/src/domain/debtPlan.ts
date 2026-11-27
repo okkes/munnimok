@@ -319,9 +319,13 @@ export interface ChartTick {
   label: string;
 }
 
-/** the marks every `stride` months from the start; never two within an eighth of the span of each other */
-function marksEvery(totalMonths: number, stride: number, maxTicks: number, label: (month: number) => string): ChartTick[] {
-  const minGap = Math.max(1, Math.ceil(totalMonths / 8));
+/** the months two marks keep between them: an eighth of the PICTURE, of which these months take `share` (#698: a
+ *  compressed tail leaves the even months less room, and "2026" ran into "2028") */
+const markGap = (months: number, share: number): number => Math.max(1, Math.ceil(months / (8 * share)));
+
+/** the marks every `stride` months from the start; never two within an eighth of the picture of each other */
+function marksEvery(totalMonths: number, stride: number, maxTicks: number, share: number, label: (month: number) => string): ChartTick[] {
+  const minGap = markGap(totalMonths, share);
   const ticks: ChartTick[] = [];
   for (let month = 0; month <= totalMonths && ticks.length < maxTicks; month += stride) {
     const prev = ticks.at(-1);
@@ -333,28 +337,29 @@ function marksEvery(totalMonths: number, stride: number, maxTicks: number, label
 
 // year marks stand where their year BEGINS (#513: a mark at today's month put a June payoff left of its own year's label);
 // round years, the smallest stride that keeps at most maxTicks
-export function yearTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
+export function yearTicks(totalMonths: number, today: string, maxTicks = 6, share = 1): ChartTick[] {
   const months = Math.max(0, totalMonths);
   const [year, month] = today.split('-').map(Number);
   const januaries: { month: number; year: number }[] = [];
   for (let at = (13 - month) % 12; at <= months; at += 12) januaries.push({ month: at, year: year + (at + month - 1) / 12 });
   const stride = YEAR_STRIDES.find((years) => januaries.filter((jan) => jan.year % years === 0).length <= maxTicks) ?? YEAR_STRIDES.at(-1) ?? 1;
   const marks = januaries.filter((jan) => jan.year % stride === 0).map((jan) => ({ month: jan.month, label: String(jan.year) }));
-  const minGap = Math.max(1, Math.ceil(months / 8));
+  const minGap = markGap(months, share);
   const start = marks.length === 0 || marks[0].month >= minGap ? [{ month: 0, label: String(year) }] : [];
   return [...start, ...marks].filter((tick, i, all) => i === 0 || tick.month - all[i - 1].month >= minGap);
 }
 
 // month marks for a short horizon (year marks say nothing about a nine-month plan); labels are yyyy-mm
-export function monthTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
+export function monthTicks(totalMonths: number, today: string, maxTicks = 6, share = 1): ChartTick[] {
   const months = Math.max(0, totalMonths);
   const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES.at(-1) ?? 1;
-  return marksEvery(months, stride, maxTicks, (month) => monthAfter(today, month));
+  return marksEvery(months, stride, maxTicks, share, (month) => monthAfter(today, month));
 }
 
 export function axisTicks(axis: ChartAxis, today: string): ChartTick[] {
   const room = hasTail(axis) ? 4 : 6;
-  const even = axis.focusMonths < MONTH_TICKS_BELOW ? monthTicks(axis.focusMonths, today, room) : yearTicks(axis.focusMonths, today, room);
+  const share = hasTail(axis) ? FOCUS_SHARE : 1;
+  const even = axis.focusMonths < MONTH_TICKS_BELOW ? monthTicks(axis.focusMonths, today, room, share) : yearTicks(axis.focusMonths, today, room, share);
   if (!hasTail(axis)) return even;
   const span = axis.totalMonths - axis.focusMonths;
   const yearAt = (month: number): ChartTick => ({ month, label: monthAfter(today, month).slice(0, 4) });
