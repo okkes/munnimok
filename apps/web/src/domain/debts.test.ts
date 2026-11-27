@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '@/db/types';
+import { encodeHlc } from '@/sync/hlc';
 import {
   debtsOverview,
   estimatePaymentPlan,
   hasNoFixedPayment,
   isDebtTracked,
+  loanOverpaidCents,
+  paidOffYear,
   loanProgress,
   loanRemainingCents,
   monthlyPaymentCents,
   nextDebtPaymentDate,
+  overpayingSteps,
   paymentsPerYear,
   projectPayoff,
 } from './debts';
@@ -32,6 +36,45 @@ describe('loan math (v2: the account IS the debt)', () => {
     expect(loanRemainingCents(account({ balanceCents: -35_000 }))).toBe(35_000);
     expect(loanRemainingCents(account({ balanceCents: 12_000 }))).toBe(0);
     expect(loanProgress(account({ originalCents: 100_000 }), 35_000)).toBeCloseTo(0.65);
+  });
+
+  it('#697: the year a loan was marked paid off is read from the clock of its archived field', () => {
+    const stamp = (iso: string) => encodeHlc({ wallMs: new Date(iso).getTime(), counter: 0, deviceId: 'd1' });
+    expect(paidOffYear(account({ archived: 1, fieldVersions: { archived: stamp('2025-06-15T12:00:00') } }))).toBe(2025);
+    expect(paidOffYear(account({ archived: 1, fieldVersions: { archived: stamp('2026-11-26T12:00:00') } }))).toBe(2026);
+    // reopened: its clock says when it was reopened, which is no payoff
+    expect(paidOffYear(account({ archived: 0, fieldVersions: { archived: stamp('2025-06-15T12:00:00') } }))).toBeNull();
+    expect(paidOffYear(account({ archived: 1 }))).toBeNull();
+    expect(paidOffYear(account({}))).toBeNull();
+  });
+
+  it('#693: a loan whose balance stands above zero was paid back too much; a card holding a credit was not', () => {
+    expect(loanOverpaidCents(account({ balanceCents: 70_000 }))).toBe(70_000);
+    expect(loanOverpaidCents(account({ type: 'mortgage', balanceCents: 5 }))).toBe(5);
+    expect(loanOverpaidCents(account({ balanceCents: -35_000 }))).toBe(0);
+    expect(loanOverpaidCents(account({ balanceCents: 0 }))).toBe(0);
+    expect(loanOverpaidCents(account({ type: 'credit', balanceCents: 12_000 }))).toBe(0);
+    // a bank that states no balance for the account says nothing of the kind
+    expect(loanOverpaidCents(account({ balanceCents: undefined as never }))).toBe(0);
+  });
+
+  it('#693: the payments that went past zero, each with the part that was too much — read back from the balance', () => {
+    // borrowed 800, then paid back 750 twice on one day: the loan stands 700 above zero, and one payment carries all of it
+    const steps = [
+      { id: 'borrow', date: '2026-11-12', deltaCents: -80_000 },
+      { id: 'pay-a', date: '2026-11-24', deltaCents: 75_000 },
+      { id: 'pay-b', date: '2026-11-24', deltaCents: 75_000 },
+    ];
+    expect([...overpayingSteps(70_000, steps)]).toEqual([['pay-b', 70_000]]);
+    // two payments past zero: the newest whole, the one before it in part
+    expect([...overpayingSteps(100_000, [...steps, { id: 'pay-c', date: '2026-11-25', deltaCents: 30_000 }])]).toEqual([
+      ['pay-c', 30_000],
+      ['pay-b', 70_000],
+    ]);
+    // borrowing more after the excess takes it back: nothing is too much any more
+    expect(overpayingSteps(-10_000, steps).size).toBe(0);
+    // a draw is never the payment that was too much, and the walk goes on past it
+    expect([...overpayingSteps(20_000, [{ id: 'pay', date: '2026-11-01', deltaCents: 50_000 }, { id: 'draw', date: '2026-11-02', deltaCents: -10_000 }])]).toEqual([['pay', 30_000]]);
   });
 
   it('#683: a payment of 0 is a loan paid back whenever — nothing due, nothing per month; an empty payment is no such answer', () => {

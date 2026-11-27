@@ -14,6 +14,7 @@ const view = (over: Partial<SubjectView>, subject: Partial<PlanSubjectRow> = {})
   fundedCents: 0,
   realizedCents: 0,
   carriedCents: 0,
+  setAside: null,
   settledAhead: false,
   cycles: 1,
   status: 'underfunded',

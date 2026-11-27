@@ -16,13 +16,14 @@ import { knownCents } from '@/lib/money';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
 import { LOCKED_MAIN_IDS, REIMBURSED_ID } from './categories';
-import { hasNoFixedPayment, isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
+import { debtPaymentCadence, hasNoFixedPayment, isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
 import { isEventMoney } from './events';
 import { nextDueDate, occurrencesBetween, previousDueDate } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
 import type { TxSliceView } from './txSlices';
+import { bornAtMs } from './userState';
 
 // the pool (the ticked accounts' balances) is handed out to subjects, one plan per space and period (#128)
 // only money that is there counts, expected income never does
@@ -495,105 +496,139 @@ const RECURRING_CYCLE_DAYS: Record<RecurringRow['every'], number> = { week: 7, m
 export const isLongCadence = (rec: Pick<RecurringRow, 'every' | 'everyN'>, period: Period): boolean =>
   RECURRING_CYCLE_DAYS[rec.every] * Math.max(1, rec.everyN ?? 1) > periodLengthDays(period) + 3;
 
-type PlannedCost = Pick<RecurringRow, 'active' | 'amountCents' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until' | 'planPace'>;
+type PlannedCost = Pick<RecurringRow, 'active' | 'amountCents' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>;
 
 export function recurringDueFrom(rec: Pick<PlannedCost, 'active' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>, period: Period): string | null {
   return nextDueDate(rec, period.start);
 }
 
-// #692: two ways to set a cost aside that is not due every period.
-// spread: what is still to save over the periods left — whatever was set aside so far, the rest lands evenly.
-// catchUp: the cost's even share per period counted from where its cycle began — a period that starts late asks for
+// #692: two ways to set money aside for something that is paid in a later period — a yearly bill, a quarterly loan
+// payment, a goal with a date, an event still to come.
+// spread: what is still to save over the periods left — whatever is held so far, the rest lands evenly.
+// catchUp: an even share per period counted from where the saving began — a period that starts late asks for
 //          everything the earlier periods would have set aside, the ones after it for one share each.
 export type PlanPace = 'spread' | 'catchUp';
 
-export const paceOf = (rec: Pick<RecurringRow, 'planPace'>): PlanPace => (rec.planPace === 'catchUp' ? 'catchUp' : 'spread');
+/** the choice is the plan's own: it rides on the subject, and a carry-over hands it to the next period's plan */
+export const paceOf = (subject: Pick<PlanSubjectRow, 'pace'>): PlanPace => (subject.pace === 'catchUp' ? 'catchUp' : 'spread');
 
 export interface CostCycle {
-  /** the periods of the cycle: from the one after the cost's previous due date through the one it is due in */
+  /** the periods the saving runs over, through the one the money leaves in */
   periods: number;
-  /** this period's place in it, from 1 */
+  /** this period's place in them, from 1 */
   periodNo: number;
-  /** the periods until it is due, this one included */
+  /** the periods until the money leaves, this one included */
   periodsLeft: number;
   /** the amount over the cycle's periods */
   evenCents: number;
 }
 
-/** where a period stands in the cycle of a cost's next payment; null while nothing is due any more */
-export function costCycle(rec: PlannedCost, space: PeriodSpace, period: Period): CostCycle | null {
-  const due = recurringDueFrom(rec, period);
-  if (!due) return null;
-  const periodsLeft = periodsUntil(space, period, due);
-  // a cycle is never shorter than what is left of it (a period type changed halfway, a cadence anchored anew)
-  const periods = Math.max(periodsLeft, periodsUntil(space, periodAt(space, previousDueDate(rec, due)), due) - 1);
-  return { periods, periodNo: periods - periodsLeft + 1, periodsLeft, evenCents: Math.round(Math.abs(rec.amountCents) / periods) };
+// a cycle is never shorter than what is left of it (a period type changed halfway, a cadence anchored anew)
+const cycleOf = (periodsLeft: number, wholePeriods: number, amountCents: number): CostCycle => {
+  const periods = Math.max(periodsLeft, wholePeriods);
+  return { periods, periodNo: periods - periodsLeft + 1, periodsLeft, evenCents: Math.round(amountCents / periods) };
+};
+
+/** what a subject is saving toward, and where the period stands on the way there */
+export interface SetAside {
+  /** the bill, the payment, the goal's target, what the event still costs */
+  amountCents: number;
+  /** what is held toward it before this period's own funding */
+  heldCents: number;
+  /** the day the money leaves */
+  due: string;
+  cycle: CostCycle;
+  /** a goal's even share rounds up: never a cent short on the day */
+  roundUp?: boolean;
 }
 
-/** what the cost should hold by the end of the period when every period of its cycle set one even share aside */
-const onPaceCents = (amountCents: number, cycle: CostCycle): number => Math.round((amountCents * cycle.periodNo) / cycle.periods);
+/** this period's share on top of what is held */
+export function paceShareCents(aside: Pick<SetAside, 'amountCents' | 'heldCents' | 'cycle' | 'roundUp'>, pace: PlanPace): number {
+  const { amountCents, heldCents, cycle } = aside;
+  const open = Math.max(0, amountCents - heldCents);
+  if (pace === 'catchUp') return Math.min(open, Math.max(0, Math.round((amountCents * cycle.periodNo) / cycle.periods) - heldCents));
+  return aside.roundUp ? Math.ceil(open / Math.max(1, cycle.periodsLeft)) : spreadTargetCents(amountCents, heldCents, cycle.periodsLeft);
+}
+
+type Cadence = Pick<RecurringRow, 'every' | 'everyN' | 'dueDay'>;
+
+/** the periods of one payment's cycle: from the one after its previous due date through the one it is due in */
+const paymentCycle = (cadence: Cadence, space: PeriodSpace, period: Period, due: string, amountCents: number): CostCycle =>
+  cycleOf(periodsUntil(space, period, due), periodsUntil(space, periodAt(space, previousDueDate(cadence, due)), due) - 1, amountCents);
+
+/** a cost's next payment as something to save toward; null while nothing is due any more */
+export function recurringSetAside(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number): SetAside | null {
+  const due = recurringDueFrom(rec, period);
+  if (!due) return null;
+  const amountCents = Math.abs(rec.amountCents);
+  return { amountCents, heldCents: carriedCents, due, cycle: paymentCycle(rec, space, period, due, amountCents) };
+}
+
+/** where a period stands in the cycle of a cost's next payment; null while nothing is due any more */
+export const costCycle = (rec: PlannedCost, space: PeriodSpace, period: Period): CostCycle | null => recurringSetAside(rec, space, period, 0)?.cycle ?? null;
 
 /** this period's share on top of what earlier periods set aside and never spent */
-export function recurringTargetCents(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number, pace: PlanPace = paceOf(rec)): number {
+export function recurringTargetCents(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number, pace: PlanPace = 'spread'): number {
   const amount = Math.abs(rec.amountCents);
   // a cost due more than once inside the period (weekly in a monthly plan) wants every occurrence, not one
   const occurrences = rec.active === 1 ? occurrencesBetween(rec, period.start, period.end).length : 0;
   if (occurrences > 1) return Math.max(0, occurrences * amount - carriedCents);
-  const cycle = costCycle(rec, space, period);
-  if (!cycle) return spreadTargetCents(amount, carriedCents, 1);
-  if (pace === 'catchUp') return Math.max(0, onPaceCents(amount, cycle) - carriedCents);
-  return spreadTargetCents(amount, carriedCents, cycle.periodsLeft);
+  const aside = recurringSetAside(rec, space, period, carriedCents);
+  return aside ? paceShareCents(aside, pace) : spreadTargetCents(amount, carriedCents, 1);
 }
 
-export interface PaceOffer {
-  pace: PlanPace;
-  /** what this period asks for on top of what is set aside */
-  nowCents: number;
-  /** what each period after it asks for, once this one is funded as asked */
-  laterCents: number;
+type LoanPayment = Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN' | 'paymentDay'>;
+
+/** a loan's next payment as something to save toward; null without a payment or a day it is due on */
+export function debtSetAside(loan: LoanPayment, space: PeriodSpace, period: Period, carriedCents: number): SetAside | null {
+  const cadence = debtPaymentCadence(loan);
+  const due = cadence ? nextDueDate(cadence, period.start) : null;
+  if (!cadence || !due || !loan.paymentCents) return null;
+  const amountCents = Math.abs(loan.paymentCents);
+  return { amountCents, heldCents: carriedCents, due, cycle: paymentCycle(cadence, space, period, due, amountCents) };
 }
 
-export interface SetAsideChoice {
-  cycle: CostCycle;
-  /** what is still to save for the next payment */
-  openCents: number;
-  offers: PaceOffer[];
-}
-
-/** the two ways side by side, for a cost with periods to go before it is due; null where there is nothing to choose
- *  (due every period, due in this one — all of it is wanted now — or not due any more) */
-export function setAsideChoice(rec: PlannedCost, space: PeriodSpace, period: Period, carriedCents: number): SetAsideChoice | null {
-  if (!isLongCadence(rec, period)) return null;
-  const cycle = costCycle(rec, space, period);
-  if (!cycle || cycle.periodsLeft <= 1) return null;
-  const spread = recurringTargetCents(rec, space, period, carriedCents, 'spread');
-  return {
-    cycle,
-    openCents: Math.max(0, Math.abs(rec.amountCents) - carriedCents),
-    offers: [
-      { pace: 'spread', nowCents: spread, laterCents: spread },
-      { pace: 'catchUp', nowCents: recurringTargetCents(rec, space, period, carriedCents, 'catchUp'), laterCents: cycle.evenCents },
-    ],
-  };
-}
-
-export function debtTargetCents(
-  loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN' | 'paymentDay'>,
-  space: PeriodSpace,
-  period: Period,
-  carriedCents: number,
-): number {
+export function debtTargetCents(loan: LoanPayment, space: PeriodSpace, period: Period, carriedCents: number, pace: PlanPace = 'spread'): number {
   if (!loan.paymentCents) return 0;
-  const due = nextDebtPaymentDate(loan, period.start);
-  const left = due ? periodsUntil(space, period, due) : 1;
-  return spreadTargetCents(Math.abs(loan.paymentCents), carriedCents, left);
+  const aside = debtSetAside(loan, space, period, carriedCents);
+  return aside ? paceShareCents(aside, pace) : spreadTargetCents(Math.abs(loan.paymentCents), carriedCents, 1);
 }
 
-export function goalTargetCents(goal: Pick<GoalRow, 'targetCents' | 'allocatedCents' | 'targetDate'>, space: PeriodSpace, period: Period): number | null {
+/** a payment that is not due inside the period: what is set aside for it stays with it into the next (#692) */
+export const debtDueLater = (loan: LoanPayment, period: Period): boolean => {
+  const due = nextDebtPaymentDate(loan, period.start);
+  return !!due && due > period.end;
+};
+
+/** a clock from before munni is no birthday (the server's floor stamp reads as 1970) */
+const EARLIEST_BIRTH_MS = Date.UTC(2020, 0, 1);
+
+/** the day a goal or an event was made: where saving for it could have begun */
+function bornOn(row: { fieldVersions?: Record<string, string> }): string | null {
+  const at = bornAtMs(row.fieldVersions);
+  if (at < EARLIEST_BIRTH_MS) return null;
+  const day = new Date(at);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+}
+
+/** the periods from the one a goal or event was made in through the one its money leaves in */
+function ownCycle(row: { fieldVersions?: Record<string, string> }, space: PeriodSpace, period: Period, due: string, amountCents: number): CostCycle {
+  const left = periodsUntil(space, period, due);
+  const born = bornOn(row);
+  return cycleOf(left, born ? periodsUntil(space, periodAt(space, born), due) : left, amountCents);
+}
+
+type DatedGoal = Pick<GoalRow, 'targetCents' | 'targetDate'> & { fieldVersions?: Record<string, string> };
+
+/** a goal with a date as something to save toward; `heldCents` is what it holds when the period begins */
+export function goalSetAside(goal: DatedGoal, heldCents: number, space: PeriodSpace, period: Period): SetAside | null {
   if (!goal.targetDate) return null;
-  const remaining = Math.max(0, goal.targetCents - goal.allocatedCents);
-  if (remaining === 0) return 0;
-  return Math.ceil(remaining / periodsUntil(space, period, goal.targetDate));
+  return { amountCents: goal.targetCents, heldCents, due: goal.targetDate, cycle: ownCycle(goal, space, period, goal.targetDate, goal.targetCents), roundUp: true };
+}
+
+export function goalTargetCents(goal: DatedGoal & Pick<GoalRow, 'allocatedCents'>, space: PeriodSpace, period: Period, pace: PlanPace = 'spread'): number | null {
+  const aside = goalSetAside(goal, goal.allocatedCents, space, period);
+  return aside ? paceShareCents(aside, pace) : null;
 }
 
 /** an event's first and last day; an event with one date is that one day, an undated one has neither */
@@ -615,21 +650,62 @@ export const eventInPeriod = (event: Pick<EventRow, 'from' | 'to'>, period: Peri
   return !span || (span.start <= period.end && span.end >= period.start);
 };
 
-// #504: the person's own total, else the estimate; what it cost before and what was set aside come off, the rest
-// spreads over the periods until it starts; undated, all of it is due now
-export function eventTargetCents(
-  event: Pick<EventRow, 'from' | 'to' | 'budgetCents'>,
+type PlannedEvent = Pick<EventRow, 'from' | 'to' | 'budgetCents'> & { fieldVersions?: Record<string, string> };
+
+/** an event still to come as something to save toward: the person's own total, else the estimate, less what it cost
+ *  already; null for an undated event or one without a figure */
+export function eventSetAside(
+  event: PlannedEvent,
   ownTotalCents: number | null | undefined,
   space: PeriodSpace,
   period: Period,
   carriedCents: number,
   spentBeforeCents: number,
+): SetAside | null {
+  const total = ownTotalCents ?? event.budgetCents ?? null;
+  const span = eventSpan(event);
+  if (total === null || !span) return null;
+  const amountCents = Math.max(0, total - spentBeforeCents);
+  return { amountCents, heldCents: carriedCents, due: span.start, cycle: ownCycle(event, space, period, span.start, amountCents) };
+}
+
+// #504: the person's own total, else the estimate; what it cost before and what was set aside come off, the rest
+// is set aside over the periods until it starts; undated, all of it is due now
+export function eventTargetCents(
+  event: PlannedEvent,
+  ownTotalCents: number | null | undefined,
+  space: PeriodSpace,
+  period: Period,
+  carriedCents: number,
+  spentBeforeCents: number,
+  pace: PlanPace = 'spread',
 ): number | null {
   const total = ownTotalCents ?? event.budgetCents ?? null;
   if (total === null) return null;
-  const span = eventSpan(event);
-  const left = span ? periodsUntil(space, period, span.start) : 1;
-  return spreadTargetCents(Math.max(0, total - spentBeforeCents), carriedCents, left);
+  const aside = eventSetAside(event, ownTotalCents, space, period, carriedCents, spentBeforeCents);
+  return aside ? paceShareCents(aside, pace) : spreadTargetCents(Math.max(0, total - spentBeforeCents), carriedCents, 1);
+}
+
+export interface PaceOffer {
+  pace: PlanPace;
+  /** what this period asks for on top of what is held */
+  nowCents: number;
+  /** what each period after it asks for, once this one is funded as asked */
+  laterCents: number;
+}
+
+/** the two ways side by side, for money that leaves in a later period; null where there is nothing to choose (it
+ *  leaves in this period, so all of it is wanted now) */
+export function paceOffers(aside: SetAside | null): PaceOffer[] | null {
+  if (!aside || aside.cycle.periodsLeft <= 1) return null;
+  const spread = paceShareCents(aside, 'spread');
+  const catchUp = paceShareCents(aside, 'catchUp');
+  // the next period's ask once this one is funded: one even share on pace, less where the subject is ahead of it
+  const next = { ...aside, heldCents: aside.heldCents + catchUp, cycle: { ...aside.cycle, periodNo: aside.cycle.periodNo + 1 } };
+  return [
+    { pace: 'spread', nowCents: spread, laterCents: spread },
+    { pace: 'catchUp', nowCents: catchUp, laterCents: paceShareCents(next, 'catchUp') },
+  ];
 }
 
 // settled (#557: an ahead period earlier funding covers) wins; overspent (more left than funded) is red
@@ -659,8 +735,11 @@ export interface SubjectView {
   /** what it holds: the period's own funding (the row's `fundedCents`) and what rolled over, never below zero */
   fundedCents: number;
   realizedCents: number;
-  /** #557: what earlier periods set aside and never spent (long-cadence costs, events, goals); part of funded and target */
+  /** #557: what earlier periods set aside and never spent (costs and loan payments due later, events, goals); part of
+   *  funded and target */
   carriedCents: number;
+  /** #692: what it is saving toward when its money leaves on a known day; null where there is none */
+  setAside: SetAside | null;
   /** #557: ahead only — the funding before it already pays the loan, reaches the goal or covers the event */
   settledAhead: boolean;
   cycles: number;
@@ -722,6 +801,7 @@ interface Measured {
   overlaps?: Overlap[];
   inPool?: boolean;
   settled?: boolean;
+  setAside?: SetAside | null;
 }
 
 const withCarried = (share: number | null, carried: number): number | null => (share === null ? null : share + carried);
@@ -745,29 +825,34 @@ const MEASURE: Record<PlanSegmentKind, Measure> = {
     const rec = source(ctx.recurringsById, subject);
     if (!rec) return null;
     return {
-      target: recurringTargetCents(rec, ctx.space, ctx.period, carried) + carried,
+      target: recurringTargetCents(rec, ctx.space, ctx.period, carried, paceOf(subject)) + carried,
       realized: ctx.ledger.byRecurring.get(rec.id) ?? 0,
       dueThisPeriod: rec.active === 1 && occurrencesBetween(rec, ctx.period.start, ctx.period.end).length > 0,
+      setAside: recurringSetAside(rec, ctx.space, ctx.period, carried),
     };
   },
-  debts: (subject, ctx) => {
+  debts: (subject, ctx, carried) => {
     const loan = source(ctx.loansById, subject);
     if (!loan) return null;
     const inPool = ctx.poolIds.has(loan.id);
     const realized = ctx.ledger.byDebt.get(loan.id) ?? 0;
     // #683: paid back whenever asks for nothing; the plan funds it by hand, with no target to read as €0
     if (!inPool && hasNoFixedPayment(loan)) return { target: null, realized, inPool };
-    const share = inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, 0);
-    if (!ctx.ahead || !ctx.debtFundedBefore || share === 0) return { target: share, realized, inPool };
+    const share = inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, carried, paceOf(subject));
+    const setAside = inPool ? null : debtSetAside(loan, ctx.space, ctx.period, carried);
+    const dueThisPeriod = !debtDueLater(loan, ctx.period);
+    if (!ctx.ahead || !ctx.debtFundedBefore || share === 0) return { target: share + carried, realized, inPool, setAside, dueThisPeriod };
     // ahead (#557): what the periods before this one hold already pays part of the loan, or all of it
     const open = Math.max(0, loanRemainingCents(loan) - ctx.debtFundedBefore(loan.id));
-    return { target: Math.min(share, open), realized, inPool, settled: open === 0 };
+    return { target: Math.min(share, open) + carried, realized, inPool, settled: open === 0, setAside, dueThisPeriod };
   },
   events: (subject, ctx, carried) => {
     const event = source(ctx.eventsById, subject);
     if (!event) return null;
-    const share = eventTargetCents(event, subject.targetCents, ctx.space, ctx.period, carried, ctx.eventSpentBefore(event.id));
+    const spentBefore = ctx.eventSpentBefore(event.id);
+    const share = eventTargetCents(event, subject.targetCents, ctx.space, ctx.period, carried, spentBefore, paceOf(subject));
     return {
+      setAside: eventSetAside(event, subject.targetCents, ctx.space, ctx.period, carried, spentBefore),
       target: withCarried(share, carried),
       realized: ctx.ledger.byEvent.get(event.id) ?? 0,
       dueThisPeriod: eventInPeriod(event, ctx.period),
@@ -781,8 +866,9 @@ const MEASURE: Record<PlanSegmentKind, Measure> = {
     // from what the goal held when the period began: a target that shrinks with the period's own contributions reads them as past it;
     // what the plan set aside for it and has not moved to savings yet counts as on its way (#557)
     const heldBefore = goalHeldBefore(goal.id, ctx.contributions, ctx.period);
-    const share = goalTargetCents({ ...goal, allocatedCents: heldBefore + carried }, ctx.space, ctx.period);
+    const share = goalTargetCents({ ...goal, allocatedCents: heldBefore + carried }, ctx.space, ctx.period, paceOf(subject));
     return {
+      setAside: goalSetAside(goal, heldBefore + carried, ctx.space, ctx.period),
       target: withCarried(share, carried),
       realized: goalRealizedCents(goal.id, ctx.contributions, ctx.period),
       dueThisPeriod: !!goal.targetDate && goal.targetDate <= ctx.period.end,
@@ -808,6 +894,7 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext, reserv
     fundedCents: funded,
     realizedCents: m.realized,
     carriedCents: carried,
+    setAside: m.setAside ?? null,
     cycles: m.cycles ?? 1,
     status: subjectStatus(subject.segment, m.target, funded, m.realized, subject.snoozed === 1, m.settled),
     settledAhead: m.settled ?? false,
@@ -832,6 +919,8 @@ export interface PlanBarParts {
   gapCents: number;
   /** of the spent part: what lies past the target while the funding still covers it (#517) */
   pastTargetCents: number;
+  /** of what is still there: what was funded beyond the target (#692) */
+  aboveCents: number;
 }
 
 // #691: one subject's money in the parts its bar draws; a period of net refunds reads as nothing spent
@@ -846,6 +935,7 @@ export function planBarParts(view: Pick<SubjectView, 'targetCents' | 'fundedCent
     overCents: realized - spent,
     gapCents: Math.max(0, target - Math.max(funded, realized)),
     pastTargetCents: target > 0 ? Math.max(0, spent - target) : 0,
+    aboveCents: target > 0 ? Math.max(0, funded - Math.max(target, spent)) : 0,
   };
 }
 
@@ -931,6 +1021,8 @@ export interface SubjectShape {
   excludeCatIds?: string[];
   targetCents?: number;
   sourceId?: string;
+  /** #692: how it is set aside — the choice goes where the subject is copied to */
+  pace?: 'catchUp';
 }
 
 export const subjectShape = (subject: PlanSubjectRow): SubjectShape => ({
@@ -943,6 +1035,7 @@ export const subjectShape = (subject: PlanSubjectRow): SubjectShape => ({
   excludeCatIds: subject.excludeCatIds?.length ? [...subject.excludeCatIds].sort((a, b) => a.localeCompare(b)) : undefined,
   targetCents: subject.targetCents,
   sourceId: subject.sourceId,
+  pace: subject.pace === 'catchUp' ? 'catchUp' : undefined,
 });
 
 export interface RelevanceSources {

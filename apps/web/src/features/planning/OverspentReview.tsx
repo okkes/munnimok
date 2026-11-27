@@ -30,7 +30,7 @@ function SourceRow({
   const moved = moveFrom(view, needCents);
   const left = view.fundedCents - moved;
   const target = view.targetCents ?? 0;
-  // the consequence, in so many words: a subject pushed under its target will want money again
+  // the consequence in its colour: a subject pushed under its target will want money again
   const short = target > 0 && left < target;
   return (
     <Row
@@ -144,16 +144,7 @@ export function OverspentReview({
               <div className="mt-2">
                 <PlanBar view={current} testId="plan-review-bar" />
               </div>
-              <div className="mt-1 text-[11px] text-ink-4">
-                {t('plan.fundedOf', { funded: fmt(current.fundedCents, currency), target: current.targetCents === null ? '—' : fmt(current.targetCents, currency) })}
-                {' · '}
-                {t('plan.spentShort', { amount: fmt(current.realizedCents, currency) })}
-              </div>
             </div>
-            <p className="flex items-start gap-2 text-[12px] text-ink-3" data-testid="plan-review-why">
-              <Icon name="information-outline" size={14} />
-              <span>{t('plan.review.why', { amount: fmt(need, currency) })}</span>
-            </p>
             <div className="m-cap px-1">{t('plan.review.from')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {fromPool > 0 && (

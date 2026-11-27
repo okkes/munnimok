@@ -347,6 +347,12 @@ describe('the chart axis (#513)', () => {
     expect(axisTicks(chartAxis(11, 60), '2026-10-08').map((t) => t.label).at(-1)).toBe('2031');
     expect(axisTicks(chartAxis(11, 60), '2026-10-08').filter((t) => t.label.length === 4)).toHaveLength(1);
   });
+
+  it('#698: before a compressed tail the even months have less of the picture, so this year’s mark gives way sooner', () => {
+    // 2028 begins 14 months out: an eighth of 99 months, but only a tenth of the picture
+    expect(yearTicks(99, '2026-11-26', 4).map((t) => t.label)).toEqual(['2026', '2028', '2030', '2032', '2034']);
+    expect(axisTicks(chartAxis(93, 303), '2026-11-26').map((t) => t.label)).toEqual(['2028', '2030', '2032', '2034', '2044', '2052']);
+  });
 });
 
 describe('an end date instead of an amount (#514)', () => {

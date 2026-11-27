@@ -127,17 +127,17 @@ describe('Payoff planner (#413)', () => {
     await screen.findByTestId('debtplan-hero');
     await screen.findByTestId('debtplan-order-loan-car');
     // both seeded loans are in once the scale reads their total (the live query lands the writes one by one)
-    await waitFor(() => expect(screen.getByTestId('debtplan-chart-top').textContent).toMatch(/€10,000/));
+    await waitFor(() => expect(screen.getByTestId('debtplan-chart-scale').textContent).toMatch(/€10K/));
     expect(screen.getByTestId('debtplan-chart').querySelectorAll('path')).toHaveLength(2);
     expect(screen.getByTestId('debtplan-chart-baseline').getAttribute('stroke-dasharray')).toBe('5 4');
     expect(screen.getByTestId('debtplan-chart-plan').getAttribute('stroke-dasharray')).toBeNull();
     expect(screen.getByTestId('debtplan-chart-legend').textContent).toMatch(/Minimums only · free/);
     expect(screen.getByTestId('debtplan-debt-chart-loan-car').querySelectorAll('path')).toHaveLength(2);
     expect(screen.getByTestId('debtplan-debt-legend-loan-car').textContent).toMatch(/Payment \+ extra.*Minimum alone · free/);
-    expect(screen.getByTestId('debtplan-chart-top').textContent).toMatch(/€10,000/);
-    expect(screen.getByTestId('debtplan-chart-zero').textContent).toMatch(/€0/);
-    expect(screen.getByTestId('debtplan-debt-chart-loan-car-top').textContent).toMatch(/€4,000/);
-    const labels = [...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].map((el) => el.textContent);
+    // #698: the amounts stand on a scale at the left edge, short enough for its gutter
+    expect([...screen.getByTestId('debtplan-chart-scale').querySelectorAll('text')].map((el) => el.textContent)).toEqual(['€10K', '€5K', '€0']);
+    expect(screen.getByTestId('debtplan-debt-chart-loan-car-scale').textContent).toMatch(/€4K/);
+    const labels = [...screen.getByTestId('debtplan-chart-marks').querySelectorAll('text')].map((el) => el.textContent);
     expect(labels.length).toBeGreaterThan(1);
     expect(labels.length).toBeLessThanOrEqual(7);
     expect(new Set(labels).size).toBe(labels.length);
@@ -154,7 +154,7 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-budget').textContent).toMatch(/400/);
     fireEvent.change(screen.getByTestId('debtplan-lump'), { target: { value: '9900' } });
     await waitFor(() =>
-      expect([...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].some((el) => /’[0-9]{2}$/.test(el.textContent ?? ''))).toBe(true),
+      expect([...screen.getByTestId('debtplan-chart-marks').querySelectorAll('text')].some((el) => /’[0-9]{2}$/.test(el.textContent ?? ''))).toBe(true),
     );
     cleanup();
     renderApp('/debts/plan');

@@ -55,7 +55,7 @@ describe('planning ops (#128)', () => {
     expect(revived?.targetCents ?? null).toBeNull();
   });
 
-  it('#692: a yearly cost is set aside the way its owner picked — a plan started over and the next period’s plan keep to it', async () => {
+  it('#692: the way a cost is set aside is the plan’s own — kept on the subject, handed to the next period, never written on the cost', async () => {
     const { store, repo, ops } = await fixture();
     stores.push(store);
     // due 15 September: its cycle is October–September, March is the sixth of twelve periods, seven to go
@@ -68,35 +68,107 @@ describe('planning ops (#128)', () => {
     };
     // nothing set aside yet: the amount over the seven periods left
     expect((await view()).targetCents).toBe(17_143);
+    expect((await view()).setAside).toMatchObject({ amountCents: 120_000, due: '2026-09-15', cycle: { periods: 12, periodNo: 6, periodsLeft: 7 } });
 
     await ops.setPace(ins, 'catchUp');
-    expect((await store.get('recurring', 'ins'))?.planPace).toBe('catchUp');
+    expect((await store.get('planSubject', ins))?.pace).toBe('catchUp');
+    expect(Object.keys((await store.get('recurring', 'ins')) ?? {})).not.toContain('planPace');
     // six of twelve even shares are behind it: half the bill is asked at once
     expect((await view()).targetCents).toBe(60_000);
 
-    // the choice is the cost's: Start over takes the subject and its funding, not the way it is set aside
-    await ops.fund(ins, 60_000);
-    await ops.clearPlan((await modelOf(store)).plan!);
-    await ops.startPlan(MARCH, { kind: 'empty' });
-    await ops.addMirrored(march, 'recurring', { id: 'ins', name: 'Insurance' });
-    expect(await view()).toMatchObject({ targetCents: 60_000, fundedCents: 0 });
-
-    // half of it funded; April carries the plan over and asks for the rest of the distance plus its own share
+    // half of it funded; April carries the plan over with the way it is set aside, and asks for the rest of the
+    // distance plus its own share
     await ops.fund(ins, 30_000);
     const april = buildOps(store, repo, SPACE, '2026-04-15');
     expect(await april.continuePlan()).toBe(true);
     expect(await view('2026-04-15')).toMatchObject({ carriedCents: 30_000, fundedCents: 30_000, targetCents: 70_000 });
+    const aprilSubject = (await view('2026-04-15')).subject;
+    expect(aprilSubject.pace).toBe('catchUp');
 
-    // back to spreading: what is still to save over April to September, on top of what is there
-    const aprilSubject = (await view('2026-04-15')).subject.id;
-    await april.setPace(aprilSubject, 'spread');
-    expect((await store.get('recurring', 'ins'))?.planPace ?? null).toBeNull();
+    // back to spreading in April: what is still to save over April to September, on top of what is there
+    await april.setPace(aprilSubject.id, 'spread');
+    expect((await store.get('planSubject', aprilSubject.id))?.pace ?? null).toBeNull();
     expect((await view('2026-04-15')).targetCents).toBe(45_000);
+    // March's own subject keeps what March chose
+    expect((await store.get('planSubject', ins))?.pace).toBe('catchUp');
+  });
 
-    // a subject that mirrors no recurring cost has no pace to set
-    const food = await ops.addExpense(march, { name: 'Food', catIds: ['grocery'], targetCents: 10_000 });
-    await ops.setPace(food, 'catchUp');
-    expect((await store.get('recurring', 'ins'))?.planPace ?? null).toBeNull();
+  it('#692 (user 2026-11-26): starting over starts with nothing — only a plan the new period carried over keeps what was set aside', async () => {
+    const { store, repo, ops } = await fixture();
+    stores.push(store);
+    await repo.upsert('recurring', SPACE, 'ins', { name: 'Insurance', kind: 'fixed', amountCents: 120_000, every: 'year', dueDay: 15, dueMonth: 9, active: 1 });
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    const ins = await ops.addMirrored(march, 'recurring', { id: 'ins', name: 'Insurance' });
+    await ops.fund(ins, 30_000);
+    const APRIL = { start: '2026-04-01', end: '2026-04-30' };
+    const aprilId = planId(SPACE, 'actual', APRIL.start);
+    const april = buildOps(store, repo, SPACE, '2026-04-15');
+    const aprilModel = async () => buildPlanning(await loadPlanningData(store, SPACE), '2026-04-15');
+    const view = async () => {
+      const model = await aprilModel();
+      return model.viewsOf(model.plan!).find((v) => v.subject.sourceId === 'ins');
+    };
+
+    // the new period carries the plan over: March's €300 stays with the subject, and the pool does not have it
+    expect(await april.continuePlan()).toBe(true);
+    expect((await store.get('plan', aprilId))?.fresh ?? 0).toBe(0);
+    expect(await view()).toMatchObject({ carriedCents: 30_000, fundedCents: 30_000 });
+    const carried = await aprilModel();
+    const heldBefore = carried.toAllocateOf(carried.plan!);
+
+    // Start over, start empty: not a cent is funded, and the €300 is back in the pool
+    await april.clearPlan(carried.plan!);
+    await april.startPlan(APRIL, { kind: 'empty' });
+    expect((await store.get('plan', aprilId))?.fresh).toBe(1);
+    await april.addMirrored(aprilId, 'recurring', { id: 'ins', name: 'Insurance' });
+    // six periods are left, and nothing is set aside: the whole bill over them
+    expect(await view()).toMatchObject({ carriedCents: 0, fundedCents: 0, targetCents: 20_000 });
+    const reset = await aprilModel();
+    expect(reset.toAllocateOf(reset.plan!)).toBe(heldBefore + 30_000);
+
+    // "Like the last plan" by hand is a start by hand too: the subjects come back, the money does not
+    await april.clearPlan(reset.plan!);
+    await april.startPlan(APRIL, { kind: 'last' });
+    expect((await store.get('plan', aprilId))?.fresh).toBe(1);
+    expect(await view()).toMatchObject({ carriedCents: 0, fundedCents: 0 });
+
+    // what April sets aside itself rolls into May as before
+    await april.fund((await view())!.subject.id, 20_000);
+    const may = buildOps(store, repo, SPACE, '2026-05-15');
+    expect(await may.continuePlan()).toBe(true);
+    const mayModel = buildPlanning(await loadPlanningData(store, SPACE), '2026-05-15');
+    expect(mayModel.viewsOf(mayModel.plan!).find((v) => v.subject.sourceId === 'ins')).toMatchObject({ carriedCents: 20_000, fundedCents: 20_000 });
+
+    // a period ahead started early is not started over: what rolls into it once it is the current one stays
+    const JUNE = { start: '2026-06-01', end: '2026-06-30' };
+    await may.startPlan(JUNE, { kind: 'last' });
+    expect((await store.get('plan', planId(SPACE, 'actual', JUNE.start)))?.fresh ?? 0).toBe(0);
+  });
+
+  it('#692: a loan payment due in a later period keeps what is set aside for it, like a yearly bill', async () => {
+    const { store, repo, ops } = await fixture();
+    stores.push(store);
+    // €300 once a year, on 10 January: seen from March the next one is eleven periods away
+    await repo.upsert('account', SPACE, 'car', { name: 'Car loan', type: 'loan', currency: 'EUR', balanceCents: -900_000, source: 'manual', paymentCents: 30_000, paymentEvery: 'year', paymentEveryN: 1, paymentDay: 10 });
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    const car = await ops.addMirrored(march, 'debts', { id: 'car', name: 'Car loan' });
+    const view = async (today = TODAY) => {
+      const model = buildPlanning(await loadPlanningData(store, SPACE), today);
+      return model.viewsOf(model.plan!).find((v) => v.subject.sourceId === 'car')!;
+    };
+    const first = await view();
+    expect(first.dueThisPeriod).toBe(false);
+    expect(first.setAside).toMatchObject({ amountCents: 30_000, due: '2027-01-10', cycle: { periods: 12, periodNo: 2, periodsLeft: 11 } });
+    expect(first.targetCents).toBe(2_727);
+    await ops.fund(car, 2_727);
+
+    const april = buildOps(store, repo, SPACE, '2026-04-15');
+    expect(await april.continuePlan()).toBe(true);
+    // March's share is still there; April asks for its own on top
+    expect(await view('2026-04-15')).toMatchObject({ carriedCents: 2_727, fundedCents: 2_727, targetCents: 5_454, dueThisPeriod: false });
+    // catching up asks for the three shares April should stand at
+    await april.setPace((await view('2026-04-15')).subject.id, 'catchUp');
+    expect((await view('2026-04-15')).targetCents).toBe(7_500);
   });
 
   it('#557 (user 2026-11-11): what rolled over is funding like any other — set, moved and taken back in what the subject holds', async () => {
@@ -106,8 +178,9 @@ describe('planning ops (#128)', () => {
     await repo.upsert('recurring', SPACE, 'ins', { name: 'Insurance', kind: 'fixed', amountCents: 120_000, every: 'year', dueDay: 15, dueMonth: 9, active: 1 });
     await repo.upsert('plan', SPACE, february, { kind: 'actual', periodStart: '2026-02-01' });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(february, 'recurring', 'ins'), { planId: february, segment: 'recurring', order: 0, name: 'Insurance', sourceId: 'ins', fundedCents: 30_000 });
-    await ops.startPlan(MARCH, { kind: 'empty' });
-    const ins = await ops.addMirrored(march, 'recurring', { id: 'ins', name: 'Insurance' });
+    // March is the plan the new period carried over: only that one keeps what February set aside (#692)
+    expect(await ops.continuePlan()).toBe(true);
+    const ins = mirroredSubjectId(march, 'recurring', 'ins');
     const rent = await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
     const view = async (id: string) => {
       const model = await modelOf(store);

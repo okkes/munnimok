@@ -4,6 +4,7 @@ import { useData } from '@/app/data';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
+import { useSettingsArrivals } from '@/application/accountSettings';
 import { useConnectionOps, useGlobalReceipts, useScansSpaces, useStoreConnMetas } from '@/application/connections';
 import type { FetchedRange } from '@/application/connections';
 import { myScansFeedId } from '@/application/storeFeed';
@@ -238,6 +239,8 @@ export function ConnectionReceiptsScreen() {
   const receipts = useGlobalReceipts();
   const activity = useSyncActivity((s) => s.activity);
   const aiReader = useQuery(store, async () => (await getApiCapabilities()).receiptAi === true, []) === true;
+  // #700: the rows read their setting when they mount; one changed on another device makes them read again
+  const arrivals = useSettingsArrivals();
 
   const items = useMemo(() => receipts?.map((receipt) => ({ receipt })), [receipts]);
   const running = (metas ?? [])
@@ -260,7 +263,7 @@ export function ConnectionReceiptsScreen() {
           {t('receipts.globalNote')}
         </p>
         {aiReader && (
-          <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="receipts-settings">
+          <div key={arrivals} className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="receipts-settings">
             <AutoReadRow />
             <PhotoCleanupRow />
             <AutoCategoriseRow />

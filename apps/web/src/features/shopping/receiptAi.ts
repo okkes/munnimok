@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { ReceiptItem } from '@/db/types';
 import { apiFetch } from '@/lib/api';
+import { settingChanged } from '@/lib/settingsBus';
 
 export interface ReadCategory {
   id: string;
@@ -71,6 +72,7 @@ export async function categoriseLines(
   return (await res.json()) as { state: 'ok' | 'limited' | 'capped' | 'unavailable'; categories: (string | null)[] | null; until: string | null };
 }
 
+// #700: the consent and the three standing orders below follow the account (application/accountSettings)
 const CONSENT_KEY = 'munni_receipt_ai';
 
 /** 'yes' once agreed, 'no' once switched off, null before either; a one-time notice names the provider */
@@ -91,6 +93,7 @@ export function setReceiptAiChoice(choice: 'yes' | 'no'): void {
       localStorage.removeItem(AUTO_READ_KEY);
       localStorage.removeItem(AUTO_CATEGORISE_KEY);
     }
+    settingChanged();
   } catch {
     // a private window keeps nothing: the notice simply comes again
   }
@@ -111,6 +114,7 @@ export function setReceiptAutoRead(on: boolean): void {
   try {
     if (on) localStorage.setItem(AUTO_READ_KEY, 'yes');
     else localStorage.removeItem(AUTO_READ_KEY);
+    settingChanged();
   } catch {
     // a private window keeps nothing: the photo then waits for the button
   }
@@ -133,6 +137,7 @@ export function setReceiptAutoCategorise(on: boolean, today: string): void {
   try {
     if (on) localStorage.setItem(AUTO_CATEGORISE_KEY, today);
     else localStorage.removeItem(AUTO_CATEGORISE_KEY);
+    settingChanged();
   } catch {
     // a private window keeps nothing: the receipts then wait for the button
   }
@@ -157,6 +162,7 @@ export function setReceiptPhotoCleanup(mode: PhotoCleanup): void {
   try {
     if (mode === 'off') localStorage.removeItem(PHOTO_CLEANUP_KEY);
     else localStorage.setItem(PHOTO_CLEANUP_KEY, mode);
+    settingChanged();
   } catch {
     // a private window keeps nothing: the photos then stay
   }

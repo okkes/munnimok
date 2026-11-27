@@ -324,9 +324,6 @@ export interface RecurringRow extends SyncEnvelope {
   merchantKey?: string;
   /** #274: counterparty account for special categories; linked transactions inherit it */
   linkedAccountId?: string;
-  /** #692: how the plan sets the cost aside when it is not due every period — absent = what is left, spread over the
-   *  periods left; it lives on the cost, so no plan that is started over, copied or carried on can lose it */
-  planPace?: 'catchUp';
 }
 
 /** a rejected recurring suggestion: never suggested again; synced, so a partner's dismissal counts for the space */
@@ -739,6 +736,9 @@ export interface PlanRow extends SyncEnvelope {
   savedAt?: string;
   /** #494: the Unplanned rows this period funds without planning them (actual and sandbox plans only) */
   oneOffs?: PlanOneOff[];
+  /** #692: started by hand on its own period (the first plan, or after Start over): nothing set aside in earlier
+   *  periods rolls into it — only a plan a new period carried over by itself keeps that money */
+  fresh?: 0 | 1;
 }
 
 // one subject of a plan (#128): an expense subject is the person's own (a main claims its subs, later ones too,
@@ -761,6 +761,9 @@ export interface PlanSubjectRow extends SyncEnvelope {
   fundedCents: number;
   /** recurring, debts, goals: not due this period — green without funding */
   snoozed?: 0 | 1;
+  /** #692: how money that leaves in a later period is set aside meanwhile — absent = spread what is left; the plan's
+   *  own choice, copied with the subject into the next period, a blueprint or the sandbox */
+  pace?: 'catchUp';
 }
 
 export interface QuoteCacheRow {

@@ -20,6 +20,7 @@ export function AmountSuggestions({
   testIdPrefix,
   selectedCents = null,
   onPick,
+  hint = true,
 }: Readonly<{
   items: readonly AmountSuggestion[];
   fmt: MoneyFmt;
@@ -27,15 +28,19 @@ export function AmountSuggestions({
   testIdPrefix: string;
   selectedCents?: number | null;
   onPick: (cents: number) => void;
+  /** the line that says a chip is tappable; a page with little else to say leaves it out */
+  hint?: boolean;
 }>) {
   const { t } = useLang();
   const chips = distinctAmounts(items);
   if (chips.length === 0) return null;
   return (
     <div data-testid={`${testIdPrefix}s`}>
-      <p className="mb-1.5 px-1 text-[11px] text-ink-4" data-testid={`${testIdPrefix}s-hint`}>
-        {t('plan.suggestions.hint')}
-      </p>
+      {hint && (
+        <p className="mb-1.5 px-1 text-[11px] text-ink-4" data-testid={`${testIdPrefix}s-hint`}>
+          {t('plan.suggestions.hint')}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         {chips.map((item) => {
           const pressed = selectedCents !== null && item.cents === selectedCents;

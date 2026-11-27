@@ -233,6 +233,8 @@ describe('TxDetailScreen (demo identity)', () => {
 
     const row = await screen.findByTestId('tx-detail-counter-row');
     expect(row.textContent).toContain('No counter account');
+    // #696: an ordinary payment has no other account, so it is no movement to draw
+    expect(screen.queryByTestId('tx-detail-movement')).toBeNull();
     fireEvent.click(row);
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -245,8 +247,35 @@ describe('TxDetailScreen (demo identity)', () => {
       expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase + 5240);
     }, { timeout: 8000 });
     await waitFor(() => expect(screen.getByTestId('tx-detail-counter-row').textContent).toContain('Demo Savings'));
+    // #696: with an account on the other side it is drawn as a movement — money left this account (From, the green
+    // side, "This transaction") for the savings account (To); each side names its kind of account
+    await screen.findByTestId('tx-detail-movement');
+    expect(screen.getByTestId('tx-detail-movement-head').textContent).toContain('Money movement');
+    const own = screen.getByTestId('tx-detail-account-row');
+    expect(own.getAttribute('data-side')).toBe('from');
+    expect(own.textContent).toMatch(/^From.*Demo Checking.*Bank Account.*This transaction$/);
+    const other = screen.getByTestId('tx-detail-counter-row');
+    expect(other.getAttribute('data-side')).toBe('to');
+    expect(other.textContent).toMatch(/^To.*Demo Savings.*Saving Account$/);
+    // the tiles read left to right in the direction the money went
+    const order = [...screen.getByTestId('tx-detail-movement').querySelectorAll('[data-side]')].map((tile) => tile.getAttribute('data-side'));
+    expect(order).toEqual(['from', 'to']);
 
-    fireEvent.click(screen.getByTestId('tx-detail-counter-row'));
+    // the other side of the same movement: the savings account's own leg received it
+    cleanup();
+    renderApp(`/transactions/${mirrorTxId('dm6')}`);
+    await screen.findByTestId('tx-detail-movement', {}, { timeout: 8000 });
+    const arrived = screen.getByTestId('tx-detail-account-row');
+    expect(arrived.getAttribute('data-side')).toBe('to');
+    expect(arrived.textContent).toMatch(/^To.*Demo Savings.*This transaction$/);
+    expect(screen.getByTestId('tx-detail-counter-row').textContent).toMatch(/^From.*Demo Checking/);
+    expect([...screen.getByTestId('tx-detail-movement').querySelectorAll('[data-side]')].map((tile) => tile.getAttribute('data-side'))).toEqual(['from', 'to']);
+    cleanup();
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('tx-detail-movement', {}, { timeout: 8000 });
+
+    // "Change" in the section's head opens the same counterparty sheet as the tile
+    fireEvent.click(screen.getByTestId('tx-detail-counter-change'));
     fireEvent.click(await screen.findByTestId('counter-detach'));
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');

@@ -44,6 +44,7 @@ import type {
 } from '@/domain/debtPlan';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { compactMoney } from '@/features/trends/format';
 import { HelpButton } from '@/features/help/HelpButton';
 import { LoanTile } from './DebtsScreen';
 import { PayoffChart } from './PayoffChart';
@@ -345,6 +346,8 @@ interface DebtCardProps {
   onApply?: (paymentCents: number) => void;
   today: string;
   money: Money;
+  /** the chart scale's short amounts */
+  short: Money;
   stress?: ReactNode;
   /** stands where Apply would: the loan is another member's to change */
   ownerNote?: ReactNode;
@@ -352,10 +355,11 @@ interface DebtCardProps {
 
 // walked alone (minimum + its own extra) so no other card moves this one
 // the combined plan lives on the overall card
-function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, stress, ownerNote }: Readonly<DebtCardProps>) {
+function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, short, stress, ownerNote }: Readonly<DebtCardProps>) {
   const { t, lang } = useLang();
   // #530: the balance and the chart's scale hide with the sensitive figures
-  const owed = useDisplayMoney().sensitive(money);
+  const { sensitive } = useDisplayMoney();
+  const owed = sensitive(money);
   const [text, setText] = useState(() => eurosText(extraCents));
   const [confirming, setConfirming] = useState(false);
   const alone = useMemo(() => simulateDebtAlone(debt, extraCents), [debt, extraCents]);
@@ -413,7 +417,7 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
           height={90}
           axis={chart.axis}
           ticks={chart.ticks}
-          amount={owed}
+          scale={sensitive(short)}
           series={[
             { points: chart.base, landed: chart.baseLanded, color: 'var(--m-ink-4)', dashed: true, testId: `debtplan-debt-chart-min-${outcome.id}` },
             { points: chart.plan, landed: chart.planLanded, color: 'var(--m-accent)', testId: `debtplan-debt-chart-plan-${outcome.id}` },
@@ -501,9 +505,10 @@ interface PayoffOrderProps {
   writable: (account: AccountRow) => boolean;
   today: string;
   money: Money;
+  short: Money;
 }
 
-function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, writable, today, money }: Readonly<PayoffOrderProps>) {
+function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, writable, today, money, short }: Readonly<PayoffOrderProps>) {
   const { t } = useLang();
   const stressChips = (account: AccountRow, open: boolean) => (
     <div className="mt-3 flex items-center gap-1.5" inert={onStress && open ? undefined : true}>
@@ -542,6 +547,7 @@ function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, on
               onApply={onApply && open ? (paymentCents) => onApply(outcome.id, paymentCents) : undefined}
               today={today}
               money={money}
+              short={short}
               stress={strategy === 'tsunami' ? stressChips(status.account, open) : undefined}
               ownerNote={onApply && !open ? <OthersLoanNote account={status.account} testId={`debtplan-owner-${outcome.id}`} className="mt-2" /> : undefined}
             />
@@ -561,14 +567,16 @@ interface OverallCardProps {
   rollover: boolean;
   onRollover: () => void;
   money: Money;
+  short: Money;
   date: MonthName;
 }
 
 // the rollover switch: with it on the plan beats the minimums even with no extra, so the overall card says why
-function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, money, date }: Readonly<OverallCardProps>) {
+function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, money, short, date }: Readonly<OverallCardProps>) {
   const { t } = useLang();
   // #530: what is owed and the chart's scale hide with the sensitive figures
-  const owed = useDisplayMoney().sensitive(money);
+  const { sensitive } = useDisplayMoney();
+  const owed = sensitive(money);
   const free = (r: PlanResult) => (r.months === null ? t('debtplan.numbers.never') : date(r.months));
   const baseLegend = baseline.months === null ? t('debtplan.baselineNever') : t('debtplan.baselineFree', { date: date(baseline.months) });
   return (
@@ -580,7 +588,7 @@ function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, mone
           height={150}
           axis={chart.axis}
           ticks={chart.ticks}
-          amount={owed}
+          scale={sensitive(short)}
           series={[
             { points: chart.base, landed: chart.baseLanded, color: 'var(--m-ink-4)', dashed: true, testId: 'debtplan-chart-baseline' },
             { points: chart.plan, landed: chart.planLanded, color: 'var(--m-accent)', testId: 'debtplan-chart-plan' },
@@ -634,6 +642,7 @@ export function DebtPlanScreen() {
   const currency = space?.currency ?? 'EUR';
   const { fmt } = useDisplayMoney();
   const money: Money = (amount) => fmt(amount, currency);
+  const short: Money = (amount) => compactMoney(amount, currency, lang);
   const today = localToday();
   // #505: the plan stays a what-if for a reader — what it writes to the loans does not
   const canEdit = useCanEdit();
@@ -852,6 +861,7 @@ export function DebtPlanScreen() {
               baseline={baseline}
               budget={budget}
               rollover={inputs.rollover}
+              short={short}
               onRollover={() => changePlan({ rollover: !inputs.rollover })}
               money={money}
               date={date}
@@ -891,6 +901,7 @@ export function DebtPlanScreen() {
               writable={loanWritable}
               today={today}
               money={money}
+              short={short}
             />
           </>
         )}

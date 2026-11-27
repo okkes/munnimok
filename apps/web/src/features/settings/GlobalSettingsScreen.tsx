@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
@@ -16,6 +16,7 @@ import { Pill, Row } from '@/ui/primitives';
 import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
+import { onSettingsArrived, settingChanged } from '@/lib/settingsBus';
 import { globalWeekStart, setGlobalWeekStart } from '@/lib/weekStart';
 import type { WeekStart } from '@/db/types';
 import { ExportSheet } from './ExportSheet';
@@ -117,6 +118,8 @@ function ThemeModeSwitch() {
 function WeekStartRow() {
   const { t } = useLang();
   const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
+  // #700: chosen on another device meanwhile
+  useEffect(() => onSettingsArrived(() => setWeekStart(globalWeekStart())), []);
   const toggle = () => {
     const next = weekStart === 'monday' ? 'sunday' : 'monday';
     setGlobalWeekStart(next);
@@ -292,7 +295,7 @@ export function GlobalSettingsScreen() {
                 {tipsOff ? 'ON' : 'OFF'}
               </Pill>
             }
-            onClick={() => void store.metaPut(TIPS_DISABLED_KEY, !tipsOff)}
+            onClick={() => void store.metaPut(TIPS_DISABLED_KEY, !tipsOff).then(settingChanged)}
           />
         </div>
 

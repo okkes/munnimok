@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { syncNativeStatusBar } from '@/lib/platform';
+import { onSettingsArrived, settingChanged } from '@/lib/settingsBus';
 
 export type Theme = 'light' | 'dark';
 export type ThemeMode = Theme | 'system';
@@ -48,10 +49,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     syncNativeStatusBar(theme); // native shells: icon color must follow the theme
   }, [theme]);
 
+  // #700: the choice follows the account; one made on another device is read from where it was written
+  useEffect(() => onSettingsArrived(() => setModeState(readStoredMode())), []);
+
   const setMode = useCallback((next: ThemeMode) => {
     if (next === 'system') localStorage.removeItem(LS_KEY);
     else localStorage.setItem(LS_KEY, next);
     setModeState(next);
+    settingChanged();
   }, []);
 
   // the quick toggle always pins an explicit theme: leaving "system" is a deliberate act
@@ -62,6 +67,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(LS_KEY, next);
       return next;
     });
+    settingChanged();
   }, []);
 
   const value = useMemo(() => ({ theme, mode, setMode, toggle }), [theme, mode, setMode, toggle]);

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useSpaceAccounts } from './transactions';
 import { visibleAccounts } from '@/db/joined';
-import { isDebtTracked, loanProgress, loanRemainingCents } from '@/domain/debts';
+import { isDebtTracked, loanOverpaidCents, loanProgress, loanRemainingCents, paidOffYear } from '@/domain/debts';
 import { isRetiredDefault } from '@/domain/defaultAccounts';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
@@ -26,6 +26,10 @@ export interface LoanStatus {
   account: AccountRow;
   remainingCents: number;
   progress: number;
+  /** #693: what was paid back beyond what it owed */
+  overpaidCents: number;
+  /** #697: the year it was marked paid off; null while open (or unknown) */
+  paidOffYear: number | null;
 }
 
 export function useLoanStatuses(): LoanStatus[] | undefined {
@@ -36,7 +40,13 @@ export function useLoanStatuses(): LoanStatus[] | undefined {
     loans.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
     return loans.map((account) => {
       const remainingCents = loanRemainingCents(account);
-      return { account, remainingCents, progress: loanProgress(account, remainingCents) };
+      return {
+        account,
+        remainingCents,
+        progress: loanProgress(account, remainingCents),
+        overpaidCents: loanOverpaidCents(account),
+        paidOffYear: paidOffYear(account),
+      };
     });
   }, [accounts]);
 }

@@ -6,7 +6,7 @@ import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { writeTxTransform } from '@/db/joined';
-import { applyLoanLinkDelta, countPreAnchorTx, countsTowardLoan, isPristineLoan, settlePristineLoans } from './loanBalance';
+import { applyLoanLinkDelta, countPreAnchorTx, countsTowardLoan, isPristineLoan, loanStepOf, overpaidByPayment, settlePristineLoans, wouldOverpayCents } from './loanBalance';
 
 const SPACE = 's1';
 
@@ -74,6 +74,51 @@ describe('loans v2 balance coupling', () => {
     const again = await countPreAnchorTx(store, repo, { ...tx, loanCounted: 1 } as never, async () => undefined);
     expect(again).toBe(false);
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-40_000);
+  });
+});
+
+describe('#693: a loan paid back beyond what it owed', () => {
+  const loan = { id: 'loan1', type: 'loan' as const, source: 'manual' as const, balanceCents: 70_000, balanceAsOf: '2026-06-01' };
+  const row = (id: string, fields: Record<string, unknown>) => ({ id, accountId: 'main', date: '2026-11-24', amountCents: 0, ...fields }) as Parameters<typeof loanStepOf>[0];
+
+  it('a row moves the loan from its own ledger by its amount, from another account by its opposite — never twice, never uncounted', () => {
+    expect(loanStepOf(row('leg', { accountId: 'loan1', amountCents: 75_000 }), loan)).toEqual({ id: 'leg', date: '2026-11-24', deltaCents: 75_000 });
+    expect(loanStepOf(row('pay', { linkedAccountId: 'loan1', amountCents: -75_000 }), loan)).toEqual({ id: 'pay', date: '2026-11-24', deltaCents: 75_000 });
+    // its mirror on the ledger already carries it
+    expect(loanStepOf(row('paired', { linkedAccountId: 'loan1', amountCents: -75_000, transferPeerId: 'leg' }), loan)).toBeNull();
+    // older than the balance date: inside the typed balance, unless counted in by hand
+    expect(loanStepOf(row('old', { linkedAccountId: 'loan1', amountCents: -75_000, date: '2026-05-01' }), loan)).toBeNull();
+    expect(loanStepOf(row('counted', { linkedAccountId: 'loan1', amountCents: -75_000, date: '2026-05-01', loanCounted: 1 }), loan)?.deltaCents).toBe(75_000);
+    expect(loanStepOf(row('gone', { accountId: 'loan1', amountCents: 75_000, deleted: 1 }), loan)).toBeNull();
+    expect(loanStepOf(row('other', { linkedAccountId: 'loan2', amountCents: -75_000 }), loan)).toBeNull();
+  });
+
+  it('names the payment that went past zero and the part of it that was too much; a loan that still owes names none', () => {
+    const txs = [
+      row('borrow', { accountId: 'loan1', amountCents: -80_000, date: '2026-11-12' }),
+      row('pay-a', { linkedAccountId: 'loan1', amountCents: -75_000 }),
+      row('pay-b', { linkedAccountId: 'loan1', amountCents: -75_000 }),
+      row('coffee', { amountCents: -450 }),
+    ];
+    expect([...overpaidByPayment(loan, txs)]).toEqual([['pay-b', 70_000]]);
+    expect(overpaidByPayment({ ...loan, balanceCents: -5_000 }, txs).size).toBe(0);
+    expect(overpaidByPayment({ ...loan, type: 'credit' }, txs).size).toBe(0);
+  });
+
+  it('before a payment is linked: what it pays beyond what the loan still owes — nothing where the link moves nothing', () => {
+    const owing = { ...loan, balanceCents: -80_000 };
+    const pay = { amountCents: -150_000, date: '2026-11-24' };
+    expect(wouldOverpayCents(owing, pay)).toBe(70_000);
+    expect(wouldOverpayCents(owing, { ...pay, amountCents: -80_000 })).toBe(0);
+    expect(wouldOverpayCents({ ...owing, balanceCents: 0 }, { ...pay, amountCents: -1_000 })).toBe(1_000);
+    // money coming in is a draw; a mirrored pair moved the loan when it was made; an old row is inside the balance
+    expect(wouldOverpayCents(owing, { ...pay, amountCents: 150_000 })).toBe(0);
+    expect(wouldOverpayCents(owing, { ...pay, transferPeerId: 'leg' })).toBe(0);
+    expect(wouldOverpayCents(owing, { ...pay, date: '2026-05-01' })).toBe(0);
+    // the bank keeps a fetched loan's balance; a card and an ordinary account are no loan to overpay
+    expect(wouldOverpayCents({ ...owing, source: 'connector' }, pay)).toBe(0);
+    expect(wouldOverpayCents({ ...owing, type: 'credit' }, pay)).toBe(0);
+    expect(wouldOverpayCents({ ...owing, type: 'savings' }, pay)).toBe(0);
   });
 });
 

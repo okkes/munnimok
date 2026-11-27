@@ -21,7 +21,7 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="plan-sheet"]')).toBeVisible();
     await page.waitForTimeout(350);
     await shot(page, k('71-planning-subject'));
-    await page.keyboard.press('Escape');
+    await page.click('[data-testid="plan-page-back"]');
     await expect(page.locator('[data-testid="plan-sheet"]')).toBeHidden();
 
     await page.click('[data-testid="plan-ahead"]');

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { onSettingsArrived, settingChanged } from '@/lib/settingsBus';
 import { mirrorLangForSw } from '@/lib/swBridge';
 import { en } from './en';
 import type { TranslationKey } from './en';
@@ -72,12 +73,24 @@ export function LangProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LS_KEY, next);
     setLangOverridden(true);
     setLangState(next);
+    settingChanged();
   }, []);
+
+  // #700: the language follows the account; one chosen on another device is read from where it was written
+  useEffect(
+    () =>
+      onSettingsArrived(() => {
+        setLangOverridden(localStorage.getItem(LS_KEY) !== null);
+        setLangState(readStoredLang());
+      }),
+    [],
+  );
 
   const followDeviceLang = useCallback(() => {
     localStorage.removeItem(LS_KEY);
     setLangOverridden(false);
     setLangState(deviceLang());
+    settingChanged();
   }, []);
 
   useEffect(() => {

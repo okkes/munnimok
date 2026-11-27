@@ -27,6 +27,7 @@ import type { DebtHandoff } from './handoff';
 import { LoanMatchSheet, loanMatchCandidates } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Picture } from '@/ui/Picture';
 import { ProgressBar, Tile } from '@/ui/primitives';
@@ -167,6 +168,11 @@ export function DebtsScreen() {
   // #530: what is owed — and a loan's size — hides with the sensitive figures; the payments stay
   const owed = (cents: number) => fmtSensitive(cents, currency);
   const active = (statuses ?? []).filter((s) => s.account.archived !== 1);
+  // #697: a loan marked paid off folds away, and is gone from this list once its year is over (it stays an archived
+  // account); one whose year is unknown is kept rather than lost
+  const thisYear = Number(today.slice(0, 4));
+  const paidOff = (statuses ?? []).filter((s) => s.account.archived === 1 && (s.paidOffYear ?? thisYear) === thisYear);
+  const [showPaidOff, setShowPaidOff] = useState(false);
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
   const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.account), 0);
@@ -181,7 +187,7 @@ export function DebtsScreen() {
   }, [statuses, today, t, lang]);
 
   const renderCard = (status: LoanStatus) => {
-    const { account, remainingCents, progress } = status;
+    const { account, remainingCents, progress, overpaidCents } = status;
     const projection = projectPayoff(
       remainingCents,
       account.paymentCents,
@@ -215,6 +221,11 @@ export function DebtsScreen() {
               </span>
             </span>
             {subParts.length > 0 && <span className="block text-[11px] text-ink-4">{subParts.join(' · ')}</span>}
+            {overpaidCents > 0 && (
+              <span className="block text-[11px] font-medium text-warning" data-testid={`debt-overpaid-${account.id}`}>
+                {t('debts.overpaidTitle', { amount: owed(overpaidCents) })}
+              </span>
+            )}
           </span>
         </div>
         {/* progress needs the original size — without it the bar would lie 0% */}
@@ -328,8 +339,24 @@ export function DebtsScreen() {
           </button>
         )}
         <UnassignedPaymentsCard bare={bare} loans={(statuses ?? []).map((s) => s.account)} currency={currency} />
-        <div className="flex flex-col gap-2.5 pt-3">{(statuses ?? []).map(renderCard)}</div>
-        {statuses?.length === 0 && (
+        <div className="flex flex-col gap-2.5 pt-3">{active.map(renderCard)}</div>
+        {paidOff.length > 0 && (
+          <section data-testid="debts-paidoff">
+            <button
+              data-testid="debts-paidoff-toggle"
+              aria-expanded={showPaidOff}
+              onClick={() => setShowPaidOff((shown) => !shown)}
+              className="m-tap mt-4 flex w-full items-center gap-1 border-none bg-transparent px-1 py-1 text-[12px] font-medium text-ink-3"
+            >
+              {t('debts.paidOffFold', { n: paidOff.length })}
+              <Icon name={showPaidOff ? 'chevron-up' : 'chevron-down'} size={15} />
+            </button>
+            <Collapse open={showPaidOff}>
+              <div className="flex flex-col gap-2.5 pt-1.5">{paidOff.map(renderCard)}</div>
+            </Collapse>
+          </section>
+        )}
+        {statuses !== undefined && active.length === 0 && paidOff.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="debts-empty">
             <Icon name="hand-coin-outline" size={34} color="var(--m-ink-4)" />
             <p className="text-[14px] font-medium text-ink-2">{t('debts.emptyTitle')}</p>

@@ -301,7 +301,13 @@ const goalCashOutRoute = createRoute({ getParentRoute: () => appRoute, path: '/g
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const debtPlanRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/plan', component: DebtPlanScreen });
-const planningRoute = createRoute({ getParentRoute: () => appRoute, path: '/planning', component: PlanningScreen });
+const planningRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/planning',
+  component: PlanningScreen,
+  // #692: a subject opens on a page of its own — a step back away from the plan
+  validateSearch: (search: Record<string, unknown>): { subject?: string } => (typeof search.subject === 'string' && search.subject ? { subject: search.subject } : {}),
+});
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
 const connectionsRoute = createRoute({
   getParentRoute: () => appRoute,

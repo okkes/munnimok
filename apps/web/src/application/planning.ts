@@ -109,7 +109,7 @@ export interface PlanningOps {
   reorderSubjects: (orderedIds: string[]) => Promise<void>;
   setSegments: (plan: PlanRow, segments: PlanSegmentConfig[]) => Promise<void>;
   snooze: (subjectId: string, on: boolean) => Promise<void>;
-  /** #692: how a cost that is not due every period is set aside; written on the cost, so every plan of it reads the same */
+  /** #692: how a subject whose money leaves in a later period is set aside; the plan's own choice, kept on the subject */
   setPace: (subjectId: string, pace: PlanPace) => Promise<void>;
   /** a sub under a chosen main becomes an exclusion; a subject left with no category goes (#535) */
   freeCategories: (holderId: string, catIds: string[]) => Promise<void>;
@@ -154,6 +154,7 @@ const shapeFields = (shape: SubjectShape, planId: string, fundedCents = 0): Subj
   sourceId: orNull(shape.sourceId),
   fundedCents,
   snoozed: 0,
+  pace: orNull(shape.pace),
 });
 
 const idForShape = (repo: Repo, planId: string, shape: SubjectShape): string =>
@@ -169,6 +170,7 @@ const planFields = (kind: PlanKind, periodStart: string, segments: PlanSegmentCo
   periodStart,
   segments: orNull(segments),
   oneOffs: [],
+  fresh: 0 as 0 | 1,
 });
 
 interface LaidRow {
@@ -179,7 +181,7 @@ interface LaidRow {
 
 // what a copy sets itself instead of taking from its source: these ride with the row's first write
 const OWN_SUBJECT_FIELDS = ['planId', 'fundedCents', 'snoozed'] as const;
-const OWN_PLAN_FIELDS = ['periodStart', 'oneOffs'] as const;
+const OWN_PLAN_FIELDS = ['periodStart', 'oneOffs', 'fresh'] as const;
 
 const ONE_OFF_KIND: Partial<Record<PlanSegmentKind, string>> = { recurring: 'recurring', debts: 'debt', events: 'event', goals: 'goal' };
 
@@ -223,16 +225,26 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
       });
 
   // a device that knows no plan for the period may just not have pulled it: rows go down stamped, nothing is overwritten
-  const layOut = async (model: PlanningModel, period: Period, rows: readonly LaidRow[], from: Pick<PlanRow, 'segments' | 'fieldVersions'> | undefined): Promise<number> => {
+  // `fresh` (#692): started by hand on its own period — nothing set aside before it rolls in; a carry-over never is
+  const layOut = async (
+    model: PlanningModel,
+    period: Period,
+    rows: readonly LaidRow[],
+    from: Pick<PlanRow, 'segments' | 'fieldVersions'> | undefined,
+    fresh = false,
+  ): Promise<number> => {
     const id = planId(spaceId, 'actual', period.start);
-    const plan = planFields('actual', period.start, from?.segments);
+    const plan = { ...planFields('actual', period.start, from?.segments), fresh: fresh ? (1 as const) : (0 as const) };
     const known = await store.get('plan', id);
     if (!known) {
       // the subjects before the plan: a push cut short leaves no plan standing, and whoever opens the period next finishes it
-      return repo.upsertStamped(spaceId, [
+      const written = await repo.upsertStamped(spaceId, [
         ...rows.flatMap((row) => carriedWrites('planSubject', row.id, row.fields, row.versions, 'planId', OWN_SUBJECT_FIELDS)),
         ...carriedWrites('plan', id, plan, from?.fieldVersions ?? {}, 'kind', OWN_PLAN_FIELDS),
       ]);
+      // the person's own act, under a clock of now: a carry-over another device laid down meanwhile does not undo it
+      if (fresh) await repo.upsert('plan', spaceId, id, { fresh: 1 });
+      return written;
     }
     // started over: the new rows must outrank the tombstones, and nothing of before comes back with them
     if (known.deleted === 1) await removeSubjects(model.data.subjects.filter((s) => s.planId === id));
@@ -363,7 +375,8 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
       let rows: LaidRow[] = [];
       if (source) rows = carriedRows(model, source, period, id);
       else if (from.kind === 'recommendation') rows = recommendedRows(model, period, from, id);
-      await layOut(model, period, rows, source ?? latest);
+      // a period ahead is started early, not started over: what rolls into it once it is the current one stays
+      await layOut(model, period, rows, source ?? latest, period.start <= model.period.start);
       act('planStart');
       return id;
     },
@@ -513,11 +526,9 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     },
 
     setPace: async (subjectId, pace) => {
-      const subject = await store.get('planSubject', subjectId);
-      if (subject?.segment !== 'recurring' || !subject.sourceId) return;
       // null, not undefined: JSON drops an undefined field, so "back to spreading" would never sync
-      await repo.upsert('recurring', spaceId, subject.sourceId, { planPace: pace === 'catchUp' ? 'catchUp' : (null as never) });
-      act(pace === 'catchUp' ? 'planPaceCatchUp' : 'planPaceSpread', subject.name);
+      await write(subjectId, { pace: pace === 'catchUp' ? 'catchUp' : (null as never) });
+      act(pace === 'catchUp' ? 'planPaceCatchUp' : 'planPaceSpread', await nameOf(subjectId));
     },
 
     freeCategories: async (holderId, catIds) => {

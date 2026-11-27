@@ -7,6 +7,7 @@ import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { logActivity } from '@/application/activity';
 import { useLoanStatuses } from '@/application/debts';
+import { overpaidByPayment } from '@/application/loanBalance';
 import { useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { estimatePaymentPlan, hasNoFixedPayment, paymentsPerYear, projectPayoff } from '@/domain/debts';
@@ -60,10 +61,13 @@ export function DebtDetailScreen() {
       .slice(0, 50);
   }, [status, txs]);
 
+  // #693: the payments that took the loan past zero, with the part of each that was too much
+  const overBy = useMemo(() => (status ? overpaidByPayment(status.account, payments) : new Map<string, number>()), [status, payments]);
+
   const { fmt, fmtSensitive } = useDisplayMoney();
   if (!status) return <div className="h-full" data-testid="screen-debt-detail" />;
 
-  const { account, remainingCents, progress } = status;
+  const { account, remainingCents, progress, overpaidCents } = status;
   const canChange = loanWritable(account);
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
@@ -147,6 +151,16 @@ export function DebtDetailScreen() {
             </>
           }
         />
+        {/* #693: a loan at zero that was paid past it looked simply "done" — the excess is said out loud */}
+        {overpaidCents > 0 && (
+          <div className="mt-3 flex items-start gap-2.5 rounded-card bg-warning-soft px-3 py-2.5" data-testid="debtdetail-overpaid">
+            <Icon name="alert-outline" size={18} color="var(--m-warning)" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-ink">{t('debts.overpaidTitle', { amount: owed(overpaidCents) })}</p>
+              <p className="mt-0.5 text-[12px] leading-snug text-ink-2">{t('debts.overpaidBody')}</p>
+            </div>
+          </div>
+        )}
         {account.note && (
           <p className="mt-3 rounded-card border border-line bg-surface px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="debtdetail-note">
             {account.note}
@@ -181,7 +195,14 @@ export function DebtDetailScreen() {
         {payments.length > 0 ? (
           <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="debtdetail-payments">
             {payments.map((tx) => (
-              <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+              <div key={tx.id}>
+                <TxRow tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+                {overBy.has(tx.id) && (
+                  <p className="-mt-1 pb-2 pl-[52px] text-[11px] font-medium text-warning" data-testid={`debtdetail-over-${tx.id}`}>
+                    {t('debts.overpaidBy', { amount: money(overBy.get(tx.id) ?? 0) })}
+                  </p>
+                )}
+              </div>
             ))}
           </div>
         ) : (

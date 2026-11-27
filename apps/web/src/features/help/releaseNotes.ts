@@ -12,6 +12,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.33.0',
+    date: '2026-11-27',
+    items: [
+      {
+        en: 'Planning: a subject now opens on a page of its own. It shows the amount set aside, what that leaves in the pool, and three actions: Back to pool, Fill to target and Cover from…. Nothing changes until you tap Save changes.',
+        nl: 'Plannen: een onderwerp opent nu op een eigen pagina. Je ziet het bedrag dat opzij staat, wat er dan in de pot overblijft, en drie acties: Terug naar pot, Vul tot doelbedrag en Dekken uit…. Er verandert niets tot je op Wijzigingen opslaan tikt.',
+        tr: 'Planlama: bir konu artık kendi sayfasında açılıyor. Ayrılan tutarı, havuzda ne kaldığını ve üç eylemi görürsün: Havuza geri al, Hedefe kadar doldur ve Şuradan karşıla…. Değişiklikleri kaydet’e dokunana kadar hiçbir şey değişmez.',
+      },
+      {
+        en: 'Planning: the Funding plan (Spread out or Catch up) now also works for loan payments, goals and events that are paid in a later period, and the choice moves with the subject into the next period. Start over now really starts with nothing funded: only a plan that a new period carried over keeps what was set aside before.',
+        nl: 'Plannen: het Spaarplan (Verdelen of Inhalen) werkt nu ook voor aflossingen, doelen en evenementen die in een latere periode betaald worden, en de keuze gaat met het onderwerp mee naar de volgende periode. “Opnieuw beginnen” begint nu echt met niets gevuld: alleen een plan dat een nieuwe periode zelf overnam houdt wat eerder opzij was gezet.',
+        tr: 'Planlama: Biriktirme planı (Yay ya da Arayı kapat) artık sonraki bir dönemde ödenen kredi taksitleri, hedefler ve etkinlikler için de var; seçim konuyla birlikte sonraki döneme geçer. “Baştan başla” artık gerçekten sıfırdan başlar: yalnızca yeni dönemin kendiliğinden devraldığı plan önceden ayrılanı tutar.',
+      },
+      {
+        en: 'Your own settings now follow your account: language, appearance, Week starts on, Hide sensitive figures, Hide tips and the receipt choices are the same on every device you sign in on.',
+        nl: 'Je eigen instellingen volgen nu je account: taal, weergave, Week begint op, Gevoelige bedragen verbergen, Tips verbergen en de bonkeuzes zijn gelijk op elk apparaat waarop je inlogt.',
+        tr: 'Kendi ayarların artık hesabını izliyor: dil, görünüm, Hafta başlangıcı, Hassas tutarları gizle, İpuçlarını gizle ve fiş seçimleri giriş yaptığın her cihazda aynı.',
+      },
+      {
+        en: 'Debts: loans you marked paid off fold away under “Paid off this year”, and leave the list when the year is over. The payoff planner’s chart names its amounts on a scale at the left, and its year labels no longer run into each other.',
+        nl: 'Schulden: leningen die je als afgelost markeerde staan ingeklapt onder “Dit jaar afgelost” en verdwijnen uit de lijst als het jaar voorbij is. De grafiek van de aflosplanner toont zijn bedragen op een schaal links, en de jaartallen lopen niet meer in elkaar.',
+        tr: 'Borçlar: ödendi olarak işaretlediğin krediler “Bu yıl ödenenler” altında katlanır ve yıl bitince listeden çıkar. Borç ödeme planının grafiği tutarlarını solda bir ölçekte gösterir; yıl etiketleri artık birbirine girmez.',
+      },
+      {
+        en: 'Loans: when a loan is paid back more than it owed, munni says so. A payment larger than what its loan still owes warns you in the review and in “Add payment”, before you confirm. Afterwards the loan’s card and page read “Paid back … too much”, and the payment that went past zero is marked.',
+        nl: 'Schulden: als je een lening verder aflost dan je schuldig was, zegt munni dat. Een betaling die groter is dan wat de lening nog open heeft staan, waarschuwt je bij het beoordelen en bij “Betaling toevoegen”, voordat je bevestigt. Daarna lees je op de kaart en de pagina van de lening “… te veel afgelost”, en de betaling die door nul ging is gemarkeerd.',
+        tr: 'Borçlar: bir krediyi borcundan fazla geri ödediğinde munni bunu söyler. Kredinin kalan borcundan büyük bir ödeme, incelemede ve “Ödeme ekle”de, sen onaylamadan önce uyarır. Sonrasında kredinin kartında ve sayfasında “… fazla geri ödendi” yazar ve sıfırı geçen ödeme işaretlenir.',
+      },
+      {
+        en: 'Transfers, savings and loan payments now show a “Money movement” on their page: From → To, with the account this transaction is on in green. Tap the other side, or Change, to pick another counterparty.',
+        nl: 'Overboekingen, spaarstortingen en aflossingen tonen nu een “Geldbeweging” op hun pagina: Van → Naar, met de rekening van deze transactie in het groen. Tik op de andere kant, of op Wijzig, om een andere tegenpartij te kiezen.',
+        tr: 'Transferler, birikimler ve kredi ödemeleri artık sayfalarında bir “Para hareketi” gösteriyor: Kaynak → Hedef; bu işlemin bulunduğu hesap yeşil. Başka bir karşı taraf seçmek için diğer tarafa ya da Değiştir’e dokun.',
+      },
+    ],
+  },
+  {
     version: '5.32.0',
     date: '2026-11-26',
     items: [

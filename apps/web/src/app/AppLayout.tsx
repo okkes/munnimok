@@ -6,6 +6,7 @@ import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
 import { useSession } from './session';
 import { HelpProvider } from '@/features/help/HelpContext';
+import { useAccountSettingsSync } from '@/application/accountSettings';
 import { useRecurringReminders } from '@/application/recurring';
 import { useConnectionKeepAlive } from '@/application/connections';
 import { useReceiptAutoCategorise } from '@/features/shopping/useCategoriser';
@@ -156,6 +157,12 @@ function RecurringReminders() {
   return null;
 }
 
+/** #700: a signed-in person's settings follow their account */
+function AccountSettingsSync() {
+  useAccountSettingsSync();
+  return null;
+}
+
 function StoreKeepAlive() {
   useConnectionKeepAlive();
   useReceiptAutoCategorise();
@@ -282,6 +289,7 @@ export function AppLayout() {
             <UnsavedNotice />
             <RecurringReminders />
             <StoreKeepAlive />
+            <AccountSettingsSync />
             <ReviewSuggestionsPrep />
             <BudgetAlerts />
             <PlanAttention />
