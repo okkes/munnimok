@@ -190,8 +190,10 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   await moveReceiptFeeds(store, upkeep, confirmed);
   // #692: "catch up" kept on a recurring cost moves to the plan subjects of that cost — stamped behind the value it
   // replaces, so any copy may do it
-  const { movePlanPaces } = await import('@/application/planPaceMove');
+  const { markRestartedPlans, movePlanPaces } = await import('@/application/planPaceMove');
   await movePlanPaces(store, upkeep);
+  // #692: this period's plan, if it was started over before the reset rule existed, begins with nothing too
+  await markRestartedPlans(store, upkeep);
 }
 
 async function startFirstSync(
