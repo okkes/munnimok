@@ -77,7 +77,7 @@ const without = (opinion: Opinion, parts: readonly FillPart[]): Opinion => ({
 export function opinionBeforeFill(tx: Opinionated & { autoFill?: string | null }): Opinion {
   const own = opinionOf(tx);
   const mark = readMark(tx.autoFill);
-  return mark && mark.hash === opinionHash(own) ? without(own, mark.parts) : own;
+  return mark?.hash === opinionHash(own) ? without(own, mark.parts) : own;
 }
 
 export interface FillPlan {
