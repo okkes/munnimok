@@ -99,6 +99,8 @@ export function carriedFields(meta: TxMetaRow, reserved: TransactionRow, booked:
   if (meta.recurringId) fields.recurringId = meta.recurringId;
   if (meta.linkedAccountId) fields.linkedAccountId = meta.linkedAccountId;
   if (reimbursements) fields.reimbursements = reimbursements;
+  // #565: what munni filled on the hold is still munni's on the booking — a better answer may replace it there too
+  if (meta.autoFill) fields.autoFill = meta.autoFill;
   return fields;
 }
 

@@ -43,7 +43,7 @@ import { cardRowGates } from './cardRows';
 import { canBeRecurringCost } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang, TFunc } from '@/i18n';
-import { wouldOverpayCents } from '@/application/loanBalance';
+import { overpaidByPayment, wouldOverpayCents } from '@/application/loanBalance';
 import { loanRemainingCents } from '@/domain/debts';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -554,10 +554,17 @@ function loanOverNote(
   t: TFunc,
   lang: Lang,
   loan: Parameters<typeof wouldOverpayCents>[0] & { name: string } | undefined,
-  tx: Pick<SpaceTx, 'amountCents' | 'date' | 'currency' | 'transferPeerId' | 'loanCounted'>,
+  tx: Pick<SpaceTx, 'id' | 'amountCents' | 'date' | 'currency' | 'transferPeerId' | 'loanCounted' | 'linkedAccountId'>,
   draft: ReviewDraft | null,
+  rows: readonly SpaceTx[] | undefined,
 ): string | undefined {
   if (!loan || draft?.linkedAccountId !== loan.id || draft.splits?.length || draft.cats?.length) return undefined;
+  // #565: a payment munni linked when it landed has moved the loan already — the card says what it did, not what it would do
+  if (tx.linkedAccountId === loan.id) {
+    const steps = overpaidByPayment(loan, rows ?? []);
+    const beyond = steps.get(tx.id) ?? (tx.transferPeerId ? steps.get(tx.transferPeerId) : undefined) ?? 0;
+    return beyond > 0 ? t('tx.loanOverpaid', { amount: fmtCents(beyond, tx.currency, lang), name: loan.name }) : undefined;
+  }
   const over = wouldOverpayCents(loan, tx);
   if (over <= 0) return undefined;
   return t('tx.loanWouldOverpay', { amount: fmtCents(over, tx.currency, lang), name: loan.name, owed: fmtCents(loanRemainingCents(loan), tx.currency, lang) });
@@ -2113,7 +2120,7 @@ export function ReviewScreen() {
                   onOpenCategories={() => setCatsOpen(true)}
                   onEditCounter={counterRowDoors.onEdit}
                   counterRequired={counterRequired}
-                  counterNote={loanOverNote(t, lang, counterAcct, tx, draft)}
+                  counterNote={loanOverNote(t, lang, counterAcct, tx, draft, allTxs)}
                   counterTx={counterTxRow}
                 />
                 <FormBlockerNote show={catRequired && !catChosen} text={t('review.catRequired')} testId="review-cat-required" className="px-4 pb-2" />

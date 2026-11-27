@@ -69,7 +69,14 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     eventId: meta?.eventId,
     splitRef: meta?.splitRef,
     loanCounted: meta?.loanCounted,
+    autoFill: meta?.autoFill,
   };
+}
+
+/** #565: reads a row of the space again under another opinion — its view type follows its category and counterparty */
+export async function txRederiver(store: StorageBackend, spaceId: string): Promise<(row: SpaceTx) => SpaceTx> {
+  const facts = await accountFacts(store, spaceId, await spaceAccountLinks(store, spaceId));
+  return (row) => deriveViewTypes(row, facts);
 }
 
 /** non-deleted; archived ones still serve history */
@@ -264,7 +271,20 @@ export async function asSpaceAccount(
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
-    'catId' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted' | 'splitRef'
+    | 'catId'
+    | 'needsReview'
+    | 'notes'
+    | 'titleOverride'
+    | 'cats'
+    | 'splits'
+    | 'reimbursements'
+    | 'linkedAccountId'
+    | 'transferPeerId'
+    | 'recurringId'
+    | 'eventId'
+    | 'loanCounted'
+    | 'splitRef'
+    | 'autoFill'
   >
 >;
 

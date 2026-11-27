@@ -161,6 +161,10 @@ describe('TxDetailScreen (demo identity)', () => {
     await screen.findByTestId('screen-tx-detail');
     // the pot's pre-edit baseline: the delete must restore exactly this (capturing after the mint raced its two-step write)
     const db = new MunniDB('munni_demo');
+    // #565: munni fills the waiting rows when they land, and a filled transfer mints its own leg into the pot — the
+    // baseline is read once that has happened
+    await waitFor(async () => expect(await db.table('meta').get('reviewSuggest:demo_space')).toBeTruthy(), { timeout: 8000 });
+    await (globalThis as { __munniSuggestSettled?: () => Promise<void> }).__munniSuggestSettled?.();
     const potBase = (await waitFor(async () => {
       const pot = await db.accounts.get('demo_save');
       expect(pot).toBeTruthy();

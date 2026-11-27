@@ -1,3 +1,4 @@
+import { stillOwnFill } from './autoFill';
 import { REIMBURSED_ID, UNCATEGORIZED_ID } from './categories';
 import { merchantKey } from './merchantKey';
 import type { TxSplitCat } from '@/db/types';
@@ -45,6 +46,11 @@ export interface MemoryInput {
   cats?: TxSplitCat[];
   eventId?: string;
   ledger?: string;
+  /** #565: a reserved charge is out of the review, yet what munni filled on it is no habit of the person's */
+  pending?: 0 | 1;
+  autoFill?: string;
+  linkedAccountId?: string;
+  recurringId?: string;
 }
 
 /** a spread teaches only when EVERY entry is percentage-based — absolute
@@ -73,6 +79,8 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
   const memory: MerchantMemory = new Map();
   for (const row of rows) {
     if (row.needsReview === 1 || !row.catId || row.catId === UNCATEGORIZED_ID) continue;
+    // munni must not learn from its own guess: a reserved charge it filled reads as reviewed (it never is)
+    if (row.pending === 1 && stillOwnFill(row)) continue;
     // a credit filed Reimbursed is settlement bookkeeping a link wrote, never a habit: the category only arrives through a link
     if (row.catId === REIMBURSED_ID) continue;
     const key = merchantKey(row.merchant);

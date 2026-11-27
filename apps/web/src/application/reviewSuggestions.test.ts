@@ -149,6 +149,44 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries' });
   });
 
+  it('a pass hands what it prepared to the fill — the spaces it prepared, on the rows it read — and nothing when it prepared nothing', async () => {
+    const { store } = await seed();
+    const filled: string[][] = [];
+    const passes = createSuggestPasses(store, async () => undefined, {
+      delayMs: 5,
+      idle: (callback) => callback(),
+      apply: async (spaceIds, views) => {
+        // the pass's own read of the space is handed along
+        expect((await views(SPACE)).length).toBeGreaterThan(0);
+        filled.push([...spaceIds]);
+      },
+    });
+    passes.request();
+    await passes.settled();
+    expect(filled).toEqual([[SPACE]]);
+    // nothing landed since: the space is current, and the fill is not asked
+    passes.request();
+    await passes.settled();
+    expect(filled).toHaveLength(1);
+    passes.dispose();
+  });
+
+  it('a row munni filled is suggested on what it held before, so a better answer is not held back by the fill', async () => {
+    const { store, repo } = await seed();
+    const { writeMark } = await import('@/domain/autoFill');
+    const kiosk = { accountId: 'chk', currency: 'EUR', merchant: 'Zorro Kiosk' };
+    // the person filed this kiosk under groceries once
+    await repo.upsert('transaction', SPACE, 'k1', { ...kiosk, date: '2026-10-30', amountCents: -500, catId: 'groceries', needsReview: 0 });
+    // a waiting row a fill filed under restaurants, and nobody touched it since
+    await repo.upsert('transaction', SPACE, 'k2', { ...kiosk, date: '2026-10-31', amountCents: -730, needsReview: 1, catId: 'restaurants', autoFill: writeMark(['c'], { catId: 'restaurants' }) });
+    await prepareReviewSuggestions(store);
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))?.fill?.catId).toBe('groceries');
+    // changed by hand: the mark no longer fits, and its category is the person's
+    await repo.upsert('transaction', SPACE, 'k2', { catId: 'household' });
+    await prepareReviewSuggestions(store);
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))?.fill?.catId).toBe('household');
+  });
+
   it('an edited recurring cost moves the fingerprint and its row is prepared again; a balance that moved does not', async () => {
     const { store, repo } = await seed();
     await prepareReviewSuggestions(store);
