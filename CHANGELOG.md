@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.34.0](https://github.com/okkes/munnimok/compare/v5.33.0...v5.34.0) (2026-11-27)
+
+
+### ✨ Features
+
+* **web:** what munni works out is filled into a transaction when it lands ([#565](https://github.com/okkes/munnimok/issues/565)) ([8abbda7](https://github.com/okkes/munnimok/commit/8abbda7a5d84c735b6b3ad8345c74619ff645dc7))
+
+
+### 🐞 Bug Fixes
+
+* **web:** a new device does not fill the history it receives after its first look ([#565](https://github.com/okkes/munnimok/issues/565)) ([7059629](https://github.com/okkes/munnimok/commit/70596294cb02a45dce5e22e904f7630204be6c75))
+
 ## [5.33.0](https://github.com/okkes/munnimok/compare/v5.32.0...v5.33.0) (2026-11-27)
 
 
