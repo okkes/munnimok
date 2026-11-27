@@ -181,7 +181,11 @@ describe('the review card: prepared suggestions and every row standing', () => {
     await land(async (repo) => {
       // the fill looked at the space once: what waited then is the review's, what lands now is filled
       const db = new MunniDB('munni_demo');
-      await waitFor(async () => expect(await db.meta.get(`autoFillWaiting:${DEMO_SPACE_ID}`)).toBeTruthy(), { timeout: 8000 });
+      const key = `autoFillWaiting:${DEMO_SPACE_ID}`;
+      await waitFor(async () => expect(await db.meta.get(key)).toBeTruthy(), { timeout: 8000 });
+      // this device has looked for a year already: the test's January payment is no history to it
+      const looked = (await db.meta.get(key))!.value as { ids: string[]; since: string };
+      await db.meta.put({ key, value: { ...looked, since: '2025-01-01' } });
       db.close();
       // its plan is €600 a month, so a €600 payment is this loan's
       await repo.upsert('account', DEMO_SPACE_ID, 'loan-a', { type: 'loan', source: 'manual', currency: 'EUR', name: 'ING Loan 1', balanceCents: -43792, balanceAsOf: '2025-12-01', paymentCents: 60000, paymentEvery: 'month' });

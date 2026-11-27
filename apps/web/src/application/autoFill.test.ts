@@ -13,6 +13,8 @@ import { autoFillSpace, autoFillSpaces } from './autoFill';
 import { prepareReviewSuggestions } from './reviewSuggestions';
 
 const SPACE = 's1';
+/** the day of the device's first look: rows land dated the day before */
+const TODAY = '2026-11-21';
 const stores: DexieBackend[] = [];
 afterEach(async () => {
   for (const store of stores.splice(0)) await store.destroy();
@@ -33,7 +35,7 @@ async function fixture(readOnly = false, looked = true) {
   /** what the app does when rows land: prepare the suggestions, then write them */
   const pass = async () => {
     await prepareReviewSuggestions(store, [SPACE]);
-    return autoFillSpace(store, repo.upkeep(), SPACE);
+    return autoFillSpace(store, repo.upkeep(), SPACE, undefined, TODAY);
   };
   const row = async (id: string) => (await visibleTransactions(store, SPACE)).find((tx) => tx.id === id)!;
   // the device's first look at the space: from here on, what lands is new
@@ -143,6 +145,18 @@ describe('#565: a transaction is filled with what munni works out the moment it 
     expect((await row('new1')).catId).toBe('groceries');
     expect((await row('old2')).catId ?? null).toBeNull();
     expect((await row('old2')).autoFill ?? null).toBeNull();
+  });
+
+  it('a new device looks first and receives the history after: what is dated before that look is history, the last days arrived', async () => {
+    const { land, pass, row } = await fixture();
+    await land('months-old', { date: '2026-08-03' });
+    await land('just-before', { date: '2026-11-13' });
+    await land('last-week', { date: '2026-11-14' });
+    expect(await pass()).toBe(1);
+    expect((await row('months-old')).catId ?? null).toBeNull();
+    expect((await row('just-before')).catId ?? null).toBeNull();
+    // a bank books a charge days after it was made: a week of grace
+    expect((await row('last-week')).catId).toBe('groceries');
   });
 
   it('a row that arrives takes the receipt that fits it to the cent', async () => {

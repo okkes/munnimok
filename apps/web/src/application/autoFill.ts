@@ -29,15 +29,34 @@ const sameSeen = (a: Seen, b: Seen): boolean => {
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 };
 
-/** the rows that were waiting when this device first looked at the space: they are the review's as before — a fill is
- *  for what arrives, and filling a backlog would move budgets and manual balances by months at once. A row another
- *  device filled is not held back */
-async function waitedBefore(store: StorageBackend, spaceId: string, rows: readonly SpaceTx[]): Promise<Set<string>> {
-  const stored = (await store.metaGet(waitingKey(spaceId)))?.value as string[] | undefined;
+/** a bank books a charge days after it was made: a row this much older than the device's first look still arrived */
+const ARRIVAL_GRACE_DAYS = 7;
+
+interface Backlog {
+  /** the rows that were waiting when this device first looked at the space */
+  ids: string[];
+  /** rows dated before this day are history, however late this device receives them (yyyy-mm-dd) */
+  since: string;
+}
+
+const dayBefore = (today: string, days: number): string => {
+  const day = new Date(`${today}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - days);
+  return day.toISOString().slice(0, 10);
+};
+
+/** what stays the review's as before: the rows that waited when this device first looked at the space, and whatever
+ *  is dated before that look (a new device receives the whole history AFTER its first look). A fill is for what
+ *  arrives — filling a backlog would move budgets, loans and manual balances by months at once. A row another device
+ *  filled is not held back */
+async function backlogOf(store: StorageBackend, spaceId: string, rows: readonly SpaceTx[], today: string): Promise<(tx: SpaceTx) => boolean> {
+  const stored = (await store.metaGet(waitingKey(spaceId)))?.value as Backlog | undefined;
   const present = new Set(rows.map((tx) => tx.id));
-  const kept = stored ? stored.filter((id) => present.has(id)) : rows.filter((tx) => !readMark(tx.autoFill)).map((tx) => tx.id);
-  if (kept.length !== stored?.length) await store.metaPut(waitingKey(spaceId), kept);
-  return new Set(kept);
+  const ids = stored ? stored.ids.filter((id) => present.has(id)) : rows.filter((tx) => !readMark(tx.autoFill)).map((tx) => tx.id);
+  const backlog: Backlog = { ids, since: stored?.since ?? dayBefore(today, ARRIVAL_GRACE_DAYS) };
+  if (ids.length !== stored?.ids.length) await store.metaPut(waitingKey(spaceId), backlog);
+  const waited = new Set(ids);
+  return (tx) => !readMark(tx.autoFill) && (waited.has(tx.id) || tx.date < backlog.since);
 }
 
 /** writes one row's fill where this device may; says whether it wrote, and its answer for the record */
@@ -62,12 +81,19 @@ async function attachFitting(repo: Repo, spaceId: string, tx: SpaceTx, receiptId
 }
 
 /** writes the space's prepared suggestions into the rows that arrived since this device first looked; says how many
- *  writes it made. `views` are the rows the suggestions were prepared on (the pass's own read) */
-export async function autoFillSpace(store: StorageBackend, repo: Repo, spaceId: string, views: SpaceViews = memoViews(store)): Promise<number> {
+ *  writes it made. `views` are the rows the suggestions were prepared on (the pass's own read); `today` dates a first
+ *  look */
+export async function autoFillSpace(
+  store: StorageBackend,
+  repo: Repo,
+  spaceId: string,
+  views: SpaceViews = memoViews(store),
+  today: string = new Date().toISOString().slice(0, 10),
+): Promise<number> {
   if (!repo.canWrite(spaceId)) return 0;
   const rows = (await views(spaceId)).filter(awaitsOpinion);
-  const backlog = await waitedBefore(store, spaceId, rows);
-  const arrived = rows.filter((tx) => !backlog.has(tx.id));
+  const inBacklog = await backlogOf(store, spaceId, rows, today);
+  const arrived = rows.filter((tx) => !inBacklog(tx));
   if (arrived.length === 0) return 0;
   const suggestions = await storedSuggestions(store, spaceId);
   const seen = ((await store.metaGet(seenKey(spaceId)))?.value as Seen | undefined) ?? {};

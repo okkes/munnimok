@@ -637,8 +637,8 @@ describe('Receipts (demo identity)', () => {
     await seedLink(repo, ASKED_C, feed, { proposedTxId: 'walk-c' });
     // #565: what waited before the fill came is the review's — a fitting receipt is not attached by itself there, so
     // the walk asks about each sibling as it always did (a transaction that ARRIVES takes its receipt at once)
-    const waiting = ((await db.meta.get('autoFillWaiting:demo_space'))?.value as string[] | undefined) ?? [];
-    await db.meta.put({ key: 'autoFillWaiting:demo_space', value: [...waiting, 'walk-a', 'walk-b', 'walk-c', 'walk-d'] });
+    const looked = (await db.meta.get('autoFillWaiting:demo_space'))?.value as { ids: string[]; since: string } | undefined;
+    await db.meta.put({ key: 'autoFillWaiting:demo_space', value: { ids: [...(looked?.ids ?? []), 'walk-a', 'walk-b', 'walk-c', 'walk-d'], since: looked?.since ?? '2026-01-01' } });
     db.close();
     renderApp('/transactions/walk-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
