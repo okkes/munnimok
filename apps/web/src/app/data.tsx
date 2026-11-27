@@ -188,6 +188,10 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // receipt moves with files of its own). What depends on where a receipt went waits for a confirmed copy
   const { moveReceiptFeeds } = await import('@/application/receiptFeeds');
   await moveReceiptFeeds(store, upkeep, confirmed);
+  // #692: "catch up" kept on a recurring cost moves to the plan subjects of that cost — stamped behind the value it
+  // replaces, so any copy may do it
+  const { movePlanPaces } = await import('@/application/planPaceMove');
+  await movePlanPaces(store, upkeep);
 }
 
 async function startFirstSync(

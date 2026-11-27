@@ -29,6 +29,7 @@ import { slackCents,
   estimateTarget,
   eventNetBefore,
   goalRealizedCents,
+  debtDueLater,
   isLongCadence,
   periodLedger,
   periodsAhead,
@@ -226,6 +227,8 @@ function rollOver(input: RollOverInput): Leftover[] {
     const own = input.periodOf(plan);
     const nextStart = input.chain[index + 1]?.periodStart;
     const left = new Map<string, number>();
+    // #692: a plan started by hand on its own period begins with nothing — what earlier plans set aside is released
+    if (plan.fresh === 1) before = NOTHING_ROLLED;
     for (const subject of input.subjectsByPlan.get(plan.id) ?? []) {
       if (subject.deleted !== 0 || !subject.sourceId || !input.keeps(subject, own)) continue;
       let cents = subject.fundedCents + (before.get(subject.sourceId) ?? 0) - input.realized(subject, own);
@@ -354,11 +357,15 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
       periodAfter: (p) => nextPeriod(space.periodType, space.periodDay, parseLocalDate(p.end)),
       keeps: (subject, own) => {
         if (subject.segment === 'events' || subject.segment === 'goals') return true;
+        // #692: a loan payment that is not due inside the period keeps what is set aside for it, like a yearly bill
+        const loan = subject.segment === 'debts' ? loansById.get(subject.sourceId ?? '') : undefined;
+        if (loan) return !poolIds.has(loan.id) && debtDueLater(loan, own);
         const rec = subject.segment === 'recurring' ? recurringsById.get(subject.sourceId ?? '') : undefined;
         return !!rec && isLongCadence(rec, own);
       },
       realized: realizedOf,
     });
+    if (actualByStart.get(forPeriod.start)?.fresh === 1) return NOTHING_ROLLED;
     for (let i = leftovers.length - 1; i >= 0; i -= 1) if (leftovers[i].start < forPeriod.start) return leftovers[i].left;
     return NOTHING_ROLLED;
   };

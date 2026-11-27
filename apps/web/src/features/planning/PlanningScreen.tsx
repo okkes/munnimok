@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -43,7 +43,7 @@ import { SourceTile } from './SourceTile';
 import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
 import type { EditorPreset } from './SubjectEditor';
-import { SubjectSheet } from './SubjectSheet';
+import { SubjectScreen } from './SubjectScreen';
 import { UnplannedSheet, unplannedPill } from './UnplannedSheet';
 import { SEGMENT_META, UNPLANNED_KIND_KEY, UNPLANNED_SEGMENT } from './planningUi';
 
@@ -307,7 +307,12 @@ export function PlanningScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheet, setSheet] = useState<MenuItem | 'ahead' | null>(null);
   const [reorderSegment, setReorderSegment] = useState<PlanSegmentKind | null>(null);
-  const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
+  // #692: the open subject is a page of its own and a history entry: back — the arrow, the browser's, the phone's — leaves it
+  const navigate = useNavigate();
+  const router = useRouter();
+  const { subject: openSubjectId = null } = useSearch({ strict: false }) as { subject?: string };
+  const openSubject = (id: string) => void navigate({ to: '/planning', search: { subject: id } });
+  const closeSubject = () => router.history.back();
   const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
   const [unplannedOpen, setUnplannedOpen] = useState<UnplannedRow | null>(null);
@@ -393,7 +398,7 @@ export function PlanningScreen() {
           onFill={() => fundSegment(s.kind)}
           onFundToTarget={fundToTarget}
           onAdd={() => (s.kind === 'expenses' ? setEditing({ subject: null }) : setAdding(s.kind))}
-          onOpen={(view) => setOpenSubjectId(view.subject.id)}
+          onOpen={(view) => openSubject(view.subject.id)}
           folded={folds.has(s.kind)}
           onToggleFold={() => toggleSegmentFold(s.kind)}
         />
@@ -495,6 +500,26 @@ export function PlanningScreen() {
     );
   };
 
+  if (openView && model && plan) {
+    return (
+      <SubjectScreen
+        key={openView.subject.id}
+        view={openView}
+        model={model}
+        plan={plan}
+        editability={editability}
+        ops={ops}
+        fmt={fmt}
+        currency={currency}
+        onClose={closeSubject}
+        onEdit={(subject) => {
+          closeSubject();
+          setEditing({ subject });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-planning">
       <AppBar
@@ -593,22 +618,6 @@ export function PlanningScreen() {
               void ops.clearPlan(plan).then(() => setStartOverOpen(false));
             }}
           />
-          {openView && (
-            <SubjectSheet
-              view={openView}
-              model={model}
-              plan={plan}
-              editability={editability}
-              ops={ops}
-              fmt={fmt}
-              currency={currency}
-              onClose={() => setOpenSubjectId(null)}
-              onEdit={(subject) => {
-                setOpenSubjectId(null);
-                setEditing({ subject });
-              }}
-            />
-          )}
           {editing !== null && (
             <SubjectEditor
               open
