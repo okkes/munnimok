@@ -802,6 +802,9 @@ namespace Munni.Api.Migrations
                     b.Property<string>("Picture")
                         .HasColumnType("text");
 
+                    b.Property<string>("Settings")
+                        .HasColumnType("text");
+
                     b.Property<string>("Sub")
                         .IsRequired()
                         .HasColumnType("text");

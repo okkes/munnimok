@@ -275,6 +275,7 @@ app.MapDevices();
 app.MapSocial();
 app.MapSplits();
 app.MapPush();
+app.MapAccountSettings();
 app.MapLogos(app.Configuration);
 app.MapImageSearch(imageSearchEnabled);
 app.MapReceiptReading(receiptAiEnabled);

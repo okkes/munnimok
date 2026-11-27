@@ -362,6 +362,8 @@ public class User
     public DateTimeOffset? NotificationsClearedAt { get; set; }
     /// <summary>#614: the same per part of the list the bell shows — a JSON map from "general" or a space id to its moment</summary>
     public string? NotificationsClearedScopes { get; set; }
+    /// <summary>#700: the settings the person carries from device to device — a JSON map from a setting's name to its value and the moment it was chosen</summary>
+    public string? Settings { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
