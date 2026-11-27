@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { writeMark } from './autoFill';
 import { merchantKey } from './merchantKey';
 import { buildMerchantMemory, predictFromMemory } from './merchantMemory';
 import type { MemoryInput } from './merchantMemory';
@@ -47,6 +48,15 @@ describe('merchant memory', () => {
     const hit = predictFromMemory(memory, 'Albert Heijn 2201', -1800);
     expect(hit?.catId).toBe('groceries');
     expect(hit?.evidence).toBe(1);
+  });
+
+  it('#565: a reserved charge munni filled itself teaches nothing; one a person filed does', () => {
+    const own = writeMark(['c'], { catId: 'restaurants' });
+    const filled = buildMerchantMemory([confirmed({ pending: 1, catId: 'restaurants', autoFill: own })]);
+    expect(predictFromMemory(filled, 'Albert Heijn 2201', -1800)).toBeNull();
+    // the person changed it on its page: the mark no longer fits, and it counts as their choice
+    const chosen = buildMerchantMemory([confirmed({ pending: 1, catId: 'household', autoFill: own })]);
+    expect(predictFromMemory(chosen, 'Albert Heijn 2201', -1800)?.catId).toBe('household');
   });
 
   it('#161 (user rule): one deviation never beats the standing habit', () => {

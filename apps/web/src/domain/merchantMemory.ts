@@ -1,3 +1,4 @@
+import { stillOwnFill } from './autoFill';
 import { REIMBURSED_ID, UNCATEGORIZED_ID } from './categories';
 import { merchantKey } from './merchantKey';
 import type { TxSplitCat } from '@/db/types';
@@ -45,6 +46,11 @@ export interface MemoryInput {
   cats?: TxSplitCat[];
   eventId?: string;
   ledger?: string;
+  /** #565: a reserved charge is out of the review, yet what munni filled on it is no habit of the person's */
+  pending?: 0 | 1;
+  autoFill?: string;
+  linkedAccountId?: string;
+  recurringId?: string;
 }
 
 /** a spread teaches only when EVERY entry is percentage-based — absolute
@@ -68,13 +74,18 @@ function absorbRow(entry: MerchantStats, row: MemoryInput, weight: number): void
   if (row.eventId) entry.eventVotes.set(row.eventId, (entry.eventVotes.get(row.eventId) ?? 0) + weight);
 }
 
+/** only what a person filed is a habit: not a row still waiting, not munni's own guess on a reserved charge (it reads
+ *  as reviewed and never is, #565), not the Reimbursed a settlement link wrote */
+function teaches(row: MemoryInput): boolean {
+  if (row.needsReview === 1 || !row.catId || row.catId === UNCATEGORIZED_ID || row.catId === REIMBURSED_ID) return false;
+  return !(row.pending === 1 && stillOwnFill(row));
+}
+
 export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string): MerchantMemory {
   const now = today ?? rows.reduce((max, r) => (r.date > max ? r.date : max), '1970-01-01');
   const memory: MerchantMemory = new Map();
   for (const row of rows) {
-    if (row.needsReview === 1 || !row.catId || row.catId === UNCATEGORIZED_ID) continue;
-    // a credit filed Reimbursed is settlement bookkeeping a link wrote, never a habit: the category only arrives through a link
-    if (row.catId === REIMBURSED_ID) continue;
+    if (!teaches(row) || !row.catId) continue;
     const key = merchantKey(row.merchant);
     if (!key) continue;
     const sign: 1 | -1 = row.amountCents >= 0 ? 1 : -1;

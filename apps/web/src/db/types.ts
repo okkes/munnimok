@@ -222,6 +222,8 @@ export interface TransactionRow extends SyncEnvelope {
   counterIban?: string;
   /** bank-reported reserved charge, not yet booked — replaced by its booked twin */
   pending?: 0 | 1;
+  /** #565: munni filled parts of the row's own opinion when it landed (see TxMetaRow.autoFill) */
+  autoFill?: string;
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
   // which upload created this row: rollback removes a batch's rows and ONLY its rows (deduped rows keep their first batch)
@@ -288,6 +290,9 @@ export interface TxMetaRow extends SyncEnvelope {
   splitRef?: SplitRef | null;
   /** this row predates the loan's known-true balance date but the user chose to count it in (one-shot) */
   loanCounted?: 1;
+  /** #565: munni filled parts of this opinion when the row landed — which parts, and a fingerprint of the opinion right
+   *  after (domain/autoFill). It only means something while the fingerprint still fits */
+  autoFill?: string;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';

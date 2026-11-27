@@ -177,6 +177,31 @@ describe('the review card: prepared suggestions and every row standing', () => {
     expect(screen.queryByTestId('review-loan-over')).toBeNull();
   }, 30_000);
 
+  it('#565: a payment munni linked to its loan when it landed has moved the loan — the card says what went beyond', async () => {
+    await land(async (repo) => {
+      // the fill looked at the space once: what waited then is the review's, what lands now is filled
+      const db = new MunniDB('munni_demo');
+      const key = `autoFillWaiting:${DEMO_SPACE_ID}`;
+      await waitFor(async () => expect(await db.meta.get(key)).toBeTruthy(), { timeout: 8000 });
+      // this device has looked for a year already: the test's January payment is no history to it
+      const looked = (await db.meta.get(key))!.value as { ids: string[]; since: string };
+      await db.meta.put({ key, value: { ...looked, since: '2025-01-01' } });
+      db.close();
+      // its plan is €600 a month, so a €600 payment is this loan's
+      await repo.upsert('account', DEMO_SPACE_ID, 'loan-a', { type: 'loan', source: 'manual', currency: 'EUR', name: 'ING Loan 1', balanceCents: -43792, balanceAsOf: '2025-12-01', paymentCents: 60000, paymentEvery: 'month' });
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'repay-big', { ...flagged, date: '2026-01-01', amountCents: -60000, merchant: 'ING BANK NV', catId: 'loanRepayment' });
+    });
+    await openReview('ING BANK NV');
+    // the loan took the payment at once: it is counted, and €162.08 of it went past zero
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('ING Loan 1'), { timeout: 8000 });
+    // until the fill has landed the card speaks of what a Confirm would do; then of what happened
+    await waitFor(() => expect(screen.getByTestId('review-loan-over').textContent).toBe('€162.08 of this went beyond what ING Loan 1 still owed'), { timeout: 8000 });
+    const db = new MunniDB('munni_demo');
+    expect(await db.transactions.get('repay-big')).toMatchObject({ linkedAccountId: 'loan-a', needsReview: 1 });
+    expect((await db.accounts.get('loan-a'))?.balanceCents).toBe(16208);
+    db.close();
+  }, 30_000);
+
   it('#565/#556: the payment a loan\'s plan fits arrives linked to that loan, and the list marks it', async () => {
     await land(async (repo) => {
       const loan = { type: 'loan' as const, source: 'manual' as const, currency: 'EUR', paymentEvery: 'month' as const };

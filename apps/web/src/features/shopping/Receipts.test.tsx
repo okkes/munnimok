@@ -620,6 +620,9 @@ describe('Receipts (demo identity)', () => {
 
   it('a bulk recategorize walks the siblings’ receipts in turn (#495): a fit attached from its look, a proposal answered yes, one skipped — then the walk is done', async () => {
     await openFirstTx();
+    // no app, no pass: the rows below are set up as a backlog before anything looks at them
+    cleanup();
+    await (globalThis as { __munniSuggestPass?: Promise<unknown> }).__munniSuggestPass;
     const { db, repo } = await demoRepo();
     const FIT_B = 'rcp2:ah:demo_conn_ah:wb';
     const ASKED_C = 'rcp2:ah:demo_conn_ah:wc';
@@ -632,8 +635,11 @@ describe('Receipts (demo identity)', () => {
       feed = await seedShopReceipt(repo, 'demo_conn_ah', 'ah', receiptId, { date: '2026-03-09', totalCents: cents, merchant: 'Albert Heijn' });
     }
     await seedLink(repo, ASKED_C, feed, { proposedTxId: 'walk-c' });
+    // #565: what waited before the fill came is the review's — a fitting receipt is not attached by itself there, so
+    // the walk asks about each sibling as it always did (a transaction that ARRIVES takes its receipt at once)
+    const looked = (await db.meta.get('autoFillWaiting:demo_space'))?.value as { ids: string[]; since: string } | undefined;
+    await db.meta.put({ key: 'autoFillWaiting:demo_space', value: { ids: [...(looked?.ids ?? []), 'walk-a', 'walk-b', 'walk-c', 'walk-d'], since: looked?.since ?? '2026-01-01' } });
     db.close();
-    cleanup();
     renderApp('/transactions/walk-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
