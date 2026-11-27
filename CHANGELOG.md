@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.33.0](https://github.com/okkes/munnimok/compare/v5.32.0...v5.33.0) (2026-11-27)
+
+
+### ✨ Features
+
+* **api:** the person's settings are kept on their account ([#700](https://github.com/okkes/munnimok/issues/700)) ([8aedb5e](https://github.com/okkes/munnimok/commit/8aedb5ea663ffb773207c49dccfc7d54cd6a5c4b))
+* **web:** a loan paid back beyond what it owed says so ([#693](https://github.com/okkes/munnimok/issues/693)) ([3ecd594](https://github.com/okkes/munnimok/commit/3ecd594d944ca0553227e8e3465e14dd8c583105))
+* **web:** a plan already started over this period begins with nothing after the update ([#692](https://github.com/okkes/munnimok/issues/692)) ([74f0f43](https://github.com/okkes/munnimok/commit/74f0f4382342d6af024d5ea0c17599f9662ecc81))
+* **web:** a plan subject opens on its own page, a start-over starts with nothing, and every later payment has a funding plan ([#692](https://github.com/okkes/munnimok/issues/692)) ([eca9069](https://github.com/okkes/munnimok/commit/eca9069dcc06660790b08c369f18ff9894d782c7))
+* **web:** a transaction with a counterparty account draws the money movement ([#696](https://github.com/okkes/munnimok/issues/696)) ([50da35e](https://github.com/okkes/munnimok/commit/50da35ed23713a11cd30db5e9e9bbec27e2bef43))
+* **web:** language, appearance and the receipt choices follow the account to every device ([#700](https://github.com/okkes/munnimok/issues/700)) ([276d84d](https://github.com/okkes/munnimok/commit/276d84d07bee564f9a23508ddf305f921ecd3716))
+* **web:** loans marked paid off fold away on Debts, and leave it when their year is over ([#697](https://github.com/okkes/munnimok/issues/697)) ([7e27a9c](https://github.com/okkes/munnimok/commit/7e27a9c648e18fcedf292c6d1e4ffb09fabddffe))
+
+
+### 🐞 Bug Fixes
+
+* **web:** the debt planner's chart names its amounts on a scale and its year marks no longer touch ([#698](https://github.com/okkes/munnimok/issues/698)) ([ea8d7b3](https://github.com/okkes/munnimok/commit/ea8d7b3ebadc3f19bad46536f637e4dbbb7bc1a3))
+
 ## [5.32.0](https://github.com/okkes/munnimok/compare/v5.31.0...v5.32.0) (2026-11-26)
 
 
