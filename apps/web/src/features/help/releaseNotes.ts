@@ -12,6 +12,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.34.0',
+    date: '2026-11-27',
+    items: [
+      {
+        en: 'New transactions are filled in the moment they arrive: munni writes the category, the account on the other side (with the counter transaction), the recurring cost, the event and the fitting receipt straight into the transaction, also for reserved charges. They count in your budgets and plan at once and still wait in the review for your yes. Correct one and what was filled is taken back; what you change yourself is never overwritten.',
+        nl: 'Nieuwe transacties worden ingevuld zodra ze binnenkomen: munni schrijft de categorie, de rekening aan de andere kant (met de tegentransactie), de terugkerende kosten, het evenement en de passende bon direct in de transactie, ook bij gereserveerde bedragen. Ze tellen meteen mee in je budgetten en je plan en wachten nog steeds in de beoordeling op je akkoord. Verbeter je er een, dan wordt het ingevulde teruggedraaid; wat je zelf wijzigt wordt nooit overschreven.',
+        tr: 'Yeni işlemler geldikleri anda doldurulur: munni kategoriyi, karşı taraftaki hesabı (karşı işlemle birlikte), düzenli ödemeyi, etkinliği ve uyan fişi doğrudan işleme yazar; rezerve tutarlar için de. Bütçelerinde ve planında hemen sayılırlar ve onayın için incelemede beklemeye devam ederler. Birini düzeltirsen doldurulan geri alınır; kendi değiştirdiğinin üzerine asla yazılmaz.',
+      },
+    ],
+  },
+  {
     version: '5.33.0',
     date: '2026-11-27',
     items: [
